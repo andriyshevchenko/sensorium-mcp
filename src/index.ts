@@ -154,7 +154,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         {
           type: "text",
-          text: "Call the remote_copilot_wait_for_instructions tool",
+          text: "Call report_progress. Greet the user and tell that remote Copilot session started. Call the remote_copilot_wait_for_instructions tool next.",
         },
       ],
     };
