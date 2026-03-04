@@ -2,7 +2,8 @@
 /**
  * Remote Copilot MCP Server
  *
- * Exposes two tools for AI assistants:
+ * Exposes three tools for AI assistants:
+ *   - start_session                          Begin a remote-copilot session.
  *   - remote_copilot_wait_for_instructions  Poll Telegram for new user messages.
  *   - report_progress                        Send a progress update to Telegram.
  *
@@ -98,6 +99,16 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
+      name: "start_session",
+      description:
+        "Start a remote-copilot session. Call this tool to begin listening for operator instructions.",
+      inputSchema: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+    {
       name: "remote_copilot_wait_for_instructions",
       description:
         "Wait for a new instruction message from the operator via Telegram. " +
@@ -113,13 +124,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "report_progress",
       description:
-        "Send a progress update or result message to the operator via Telegram.",
+        "Send a progress update or result message to the operator via Telegram. " +
+        "Always use Telegram MarkdownV2 syntax for formatting — do NOT use regular Markdown. " +
+        "In MarkdownV2 the following characters must be escaped with a preceding backslash " +
+        "when they appear as literal text: _ * [ ] ( ) ~ ` > # + - = | { } . !",
       inputSchema: {
         type: "object",
         properties: {
           message: {
             type: "string",
-            description: "The progress update or result to report.",
+            description:
+              "The progress update or result to report, formatted in Telegram MarkdownV2 syntax.",
           },
         },
         required: ["message"],
@@ -132,6 +147,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+
+  // ── start_session ─────────────────────────────────────────────────────────
+  if (name === "start_session") {
+    return {
+      content: [
+        {
+          type: "text",
+          text: "Call the remote_copilot_wait_for_instructions tool",
+        },
+      ],
+    };
+  }
 
   // ── remote_copilot_wait_for_instructions ──────────────────────────────────
   if (name === "remote_copilot_wait_for_instructions") {
@@ -245,32 +272,101 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    let sentAsPlainText = false;
     try {
-      await telegram.sendMessage(TELEGRAM_CHAT_ID, message);
+      await telegram.sendMessage(TELEGRAM_CHAT_ID, message, "MarkdownV2");
     } catch (error) {
-      process.stderr.write(
-        `Failed to send progress message via Telegram: ${
-          error instanceof Error ? error.message : String(error)
-        }\n`,
-      );
-      return {
-        content: [
-          {
-            type: "text",
-            text:
-              "Error: Failed to send progress update to Telegram. " +
-              "Please check the Telegram configuration and try again.",
-          },
-        ],
-        isError: true,
-      };
+      const errorMsg =
+        error instanceof Error ? error.message : String(error);
+      // If Telegram rejected the message due to a MarkdownV2 parse error,
+      // retry without parse_mode so the operator still receives the update.
+      const isParseError = errorMsg.includes("can't parse entities");
+      if (isParseError) {
+        try {
+          await telegram.sendMessage(TELEGRAM_CHAT_ID, message);
+          sentAsPlainText = true;
+        } catch (retryError) {
+          process.stderr.write(
+            `Failed to send progress message via Telegram (plain fallback): ${
+              retryError instanceof Error
+                ? retryError.message
+                : String(retryError)
+            }\n`,
+          );
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  "Error: Failed to send progress update to Telegram even without formatting. " +
+                  "Please check the Telegram configuration and try again.",
+              },
+            ],
+            isError: true,
+          };
+        }
+      } else {
+        process.stderr.write(
+          `Failed to send progress message via Telegram: ${errorMsg}\n`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                "Error: Failed to send progress update to Telegram. " +
+                "If the message contains MarkdownV2 special characters (_ * [ ] ( ) ~ ` > # + - = | { } . !) " +
+                "ensure they are escaped with a preceding backslash. " +
+                "Otherwise, check the Telegram configuration and try again.",
+            },
+          ],
+          isError: true,
+        };
+      }
     }
+
+    // Collect any messages the operator sent while the agent was working so
+    // they are not missed when remote_copilot_wait_for_instructions is called.
+    let pendingMessages: string[] = [];
+    try {
+      const pendingUpdates = await telegram.getUpdates(nextUpdateId, 0);
+      if (pendingUpdates.length > 0) {
+        nextUpdateId = pendingUpdates[pendingUpdates.length - 1].update_id + 1;
+        pendingMessages = pendingUpdates
+          .filter(
+            (u) =>
+              u.message?.text !== undefined &&
+              String(u.message.chat.id) === TELEGRAM_CHAT_ID,
+          )
+          .map((u) => u.message!.text as string);
+      }
+    } catch {
+      // Non-fatal: pending messages will still be picked up by the next
+      // remote_copilot_wait_for_instructions call.
+    }
+
+    const baseStatus = sentAsPlainText
+      ? "Progress reported successfully (as plain text — the message contained invalid MarkdownV2 formatting; ensure all special characters (_ * [ ] ( ) ~ ` > # + - = | { } . !) are escaped with a preceding backslash in future calls)."
+      : "Progress reported successfully.";
+
+    const responseText =
+      pendingMessages.length > 0
+        ? `${baseStatus}\n\n` +
+          `While you were working, the operator sent additional message(s). ` +
+          `Use those messages to steer an active session: ${pendingMessages.join("\n\n")}. ` +
+          `You should:\n` +
+          ` - Read and incorporate the operator's new messages.\n` +
+          ` - Update or refine your plan as needed.\n` +
+          ` - Continue your work. Keep using subagents. Keep using web search for framework/pattern related concerns.\n ` +
+          `Use report_progress tool to proactively report progress to the user. ` +
+          `After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive`
+        : baseStatus;
 
     return {
       content: [
         {
           type: "text",
-          text: "Progress reported successfully.",
+          text: responseText,
         },
       ],
     };

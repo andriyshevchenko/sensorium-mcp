@@ -75,13 +75,22 @@ export class TelegramClient {
 
   /**
    * Send a text message to a chat.
+   * @param parseMode  Optional parse mode. Telegram accepts "MarkdownV2", "Markdown", or "HTML".
    */
-  async sendMessage(chatId: string, text: string): Promise<void> {
+  async sendMessage(
+    chatId: string,
+    text: string,
+    parseMode?: "MarkdownV2" | "Markdown" | "HTML",
+  ): Promise<void> {
     const url = `${this.baseUrl}/sendMessage`;
+    const body: Record<string, unknown> = { chat_id: chatId, text };
+    if (parseMode) {
+      body.parse_mode = parseMode;
+    }
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text }),
+      body: JSON.stringify(body),
     });
     let data: SendMessageResult | undefined;
     let parseError: unknown;
