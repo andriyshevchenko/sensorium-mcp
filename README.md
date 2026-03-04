@@ -4,12 +4,13 @@ An MCP (Model Context Protocol) server for remote control of AI assistants via T
 
 ## Overview
 
-This server exposes two tools that allow an AI assistant (e.g. GitHub Copilot) to be operated remotely through a Telegram bot:
+This server exposes three tools that allow an AI assistant (e.g. GitHub Copilot) to be operated remotely through a Telegram bot:
 
 | Tool | Description |
 |------|-------------|
+| `start_session` | Begin a remote-copilot session. Returns a prompt to call `remote_copilot_wait_for_instructions`. |
 | `remote_copilot_wait_for_instructions` | Blocks (long-polls Telegram) until a new message arrives or the timeout elapses. Returns the prompt in a format that instructs the agent to act and then call the tool again, keeping the feedback loop alive. |
-| `report_progress` | Sends a progress update or result message back to the operator via Telegram. |
+| `report_progress` | Sends a progress update or result message back to the operator via Telegram using **Telegram MarkdownV2** formatting. Also surfaces any intermediate messages the operator sent during the work cycle. |
 
 ## Prerequisites
 
@@ -49,14 +50,17 @@ Add to your MCP configuration:
 ```json
 {
   "mcpServers": {
-    "remote-copilot": {
-      "command": "node",
-      "args": ["/path/to/remote-copilot-mcp/dist/index.js"],
+    "remote-copilot-mcp": {
+      "command": "npx",
+      "args": [
+        "remote-copilot-mcp@latest"
+      ],
       "env": {
-        "TELEGRAM_TOKEN": "<your-bot-token>",
-        "TELEGRAM_CHAT_ID": "<your-chat-id>",
+        "TELEGRAM_TOKEN": "${input:TELEGRAM_TOKEN}",
+        "TELEGRAM_CHAT_ID": "${input:TELEGRAM_CHAT_ID}",
         "WAIT_TIMEOUT_MINUTES": "30"
-      }
+      },
+      "type": "stdio"
     }
   }
 }
@@ -64,12 +68,12 @@ Add to your MCP configuration:
 
 ## How it works
 
-1. The AI assistant calls `remote_copilot_wait_for_instructions`.
+1. The AI assistant calls `start_session`, which instructs it to call `remote_copilot_wait_for_instructions`.
 2. The server long-polls the Telegram Bot API (`getUpdates`) in 45-second windows until a message is received or the configured timeout elapses.
 3. When a message arrives the tool returns:
    > *Follow the instructions: \<prompt\>. Create plan, use subagents. Use web search for framework/pattern related concerns. Use report_progress tool to proactively report progress to the user. After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive*
 4. If the timeout elapses with no message the tool returns a notice instructing the assistant to call `remote_copilot_wait_for_instructions` again.
-5. At any point the assistant can call `report_progress` to send a status update back to the Telegram chat.
+5. At any point the assistant can call `report_progress` to send a status update back to the Telegram chat using **Telegram MarkdownV2** syntax. The call also checks for any messages the operator sent in the meantime and returns them so they are not missed.
 
 ## Development
 
