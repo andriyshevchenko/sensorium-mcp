@@ -1,0 +1,67 @@
+name: Publish to NPM
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version bump type (patch | minor | major) or an explicit version (e.g. 1.2.3)"
+        required: true
+        default: patch
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Fetch full history so `npm version` can commit & tag
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Validate version input
+        run: |
+          set -e
+          VERSION="${{ github.event.inputs.version }}"
+          if [ "$VERSION" = "patch" ] || [ "$VERSION" = "minor" ] || [ "$VERSION" = "major" ]; then
+            exit 0
+          fi
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            exit 0
+          fi
+          echo "Error: Invalid version input '$VERSION'. Expected 'patch', 'minor', 'major', or a semantic version like '1.2.3'." >&2
+          exit 1
+
+      - name: Bump version
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # [skip ci] prevents CI from running on the version-bump commit; CI may still run on the subsequent tag push.
+          npm version '${{ github.event.inputs.version }}' --message "chore: release v%s [skip ci]"
+
+      - name: Push version commit and tag
+        run: git push --follow-tags
+
+      - name: Publish to NPM
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}

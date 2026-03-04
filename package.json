@@ -1,0 +1,39 @@
+{
+  "name": "remote-copilot-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for remote control of AI assistants via Telegram",
+  "main": "dist/index.js",
+  "bin": {
+    "remote-copilot-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"No tests defined\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andriyshevchenko/remote-copilot-mcp.git"
+  },
+  "keywords": ["mcp", "telegram", "copilot", "ai-assistant"],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/andriyshevchenko/remote-copilot-mcp/issues"
+  },
+  "homepage": "https://github.com/andriyshevchenko/remote-copilot-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
