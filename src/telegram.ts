@@ -84,9 +84,11 @@ export class TelegramClient {
       body: JSON.stringify({ chat_id: chatId, text }),
     });
     let data: SendMessageResult | undefined;
+    let parseError: unknown;
     try {
       data = (await response.json()) as SendMessageResult;
-    } catch {
+    } catch (err) {
+      parseError = err;
       data = undefined;
     }
     if (!response.ok) {
@@ -95,7 +97,14 @@ export class TelegramClient {
         `Telegram sendMessage failed: ${response.status} ${description}`,
       );
     }
-    if (data?.ok === false) {
+    if (data === undefined) {
+      throw new Error(
+        `Telegram sendMessage failed: response body could not be parsed as JSON${
+          parseError instanceof Error ? `: ${parseError.message}` : ""
+        }`,
+      );
+    }
+    if (data.ok === false) {
       const description = data.description ?? "Unknown Telegram API error";
       throw new Error(`Telegram API error in sendMessage: ${description}`);
     }
