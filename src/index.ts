@@ -272,6 +272,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    let sentAsPlainText = false;
     try {
       await telegram.sendMessage(TELEGRAM_CHAT_ID, message, "MarkdownV2");
     } catch (error) {
@@ -283,6 +284,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (isParseError) {
         try {
           await telegram.sendMessage(TELEGRAM_CHAT_ID, message);
+          sentAsPlainText = true;
         } catch (retryError) {
           process.stderr.write(
             `Failed to send progress message via Telegram (plain fallback): ${
@@ -343,9 +345,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // remote_copilot_wait_for_instructions call.
     }
 
+    const baseStatus = sentAsPlainText
+      ? "Progress reported successfully (as plain text — the message contained invalid MarkdownV2 formatting; ensure all special characters (_ * [ ] ( ) ~ ` > # + - = | { } . !) are escaped with a preceding backslash in future calls)."
+      : "Progress reported successfully.";
+
     const responseText =
       pendingMessages.length > 0
-        ? `Progress reported successfully.\n\n` +
+        ? `${baseStatus}\n\n` +
           `While you were working, the operator sent additional message(s). ` +
           `Use those messages to steer an active session: ${pendingMessages.join("\n\n")}. ` +
           `You should:\n` +
@@ -354,7 +360,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ` - Continue your work. Keep using subagents. Keep using web search for framework/pattern related concerns.\n ` +
           `Use report_progress tool to proactively report progress to the user. ` +
           `After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive`
-        : "Progress reported successfully.";
+        : baseStatus;
 
     return {
       content: [
