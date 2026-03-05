@@ -17,19 +17,23 @@
  *                           (default: 30).
  */
 
-import { createRequire } from "module";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { createRequire } from "module";
 import { TelegramClient } from "./telegram.js";
 
 const _require = createRequire(import.meta.url);
 const { version: PKG_VERSION } = _require("../package.json") as {
   version: string;
 };
+const telegramifyMarkdown = _require("telegramify-markdown") as (
+  markdown: string,
+  unsupportedTagsStrategy?: "escape" | "remove",
+) => string;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -70,7 +74,7 @@ const telegram = new TelegramClient(TELEGRAM_TOKEN);
 let nextUpdateId = await (async () => {
   try {
     let offset = 0;
-    for (;;) {
+    for (; ;) {
       const updates = await telegram.getUpdates(offset, 0);
       if (updates.length === 0) break;
       offset = updates[updates.length - 1].update_id + 1;
@@ -79,7 +83,7 @@ let nextUpdateId = await (async () => {
   } catch (err) {
     process.stderr.write(
       `Warning: Failed to drain Telegram update backlog on startup: ${err instanceof Error ? err.message : String(err)}\n` +
-        "Old messages may be replayed. Continuing with offset 0.\n",
+      "Old messages may be replayed. Continuing with offset 0.\n",
     );
     return 0;
   }
@@ -125,16 +129,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "report_progress",
       description:
         "Send a progress update or result message to the operator via Telegram. " +
-        "Always use Telegram MarkdownV2 syntax for formatting — do NOT use regular Markdown. " +
-        "In MarkdownV2 the following characters must be escaped with a preceding backslash " +
-        "when they appear as literal text: _ * [ ] ( ) ~ ` > # + - = | { } . !",
+        "Use standard Markdown for formatting (headings, bold, italic, lists, code blocks, etc.). " +
+        "It will be automatically converted to Telegram-compatible formatting.",
       inputSchema: {
         type: "object",
         properties: {
           message: {
             type: "string",
             description:
-              "The progress update or result to report, formatted in Telegram MarkdownV2 syntax.",
+              "The progress update or result to report. Use standard Markdown for formatting.",
           },
         },
         required: ["message"],
@@ -255,12 +258,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── report_progress ───────────────────────────────────────────────────────
   if (name === "report_progress") {
-    const message =
+    const rawMessage =
       typeof (args as Record<string, unknown>)?.message === "string"
         ? ((args as Record<string, unknown>).message as string)
         : "";
 
-    if (!message) {
+    if (!rawMessage) {
       return {
         content: [
           {
@@ -271,6 +274,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         isError: true,
       };
     }
+
+    // Convert standard Markdown to Telegram MarkdownV2 (handles headings,
+    // lists, bold/italic, code blocks, and special-character escaping).
+    const message = telegramifyMarkdown(rawMessage, "escape");
 
     let sentAsPlainText = false;
     try {
@@ -287,10 +294,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           sentAsPlainText = true;
         } catch (retryError) {
           process.stderr.write(
-            `Failed to send progress message via Telegram (plain fallback): ${
-              retryError instanceof Error
-                ? retryError.message
-                : String(retryError)
+            `Failed to send progress message via Telegram (plain fallback): ${retryError instanceof Error
+              ? retryError.message
+              : String(retryError)
             }\n`,
           );
           return {
@@ -315,9 +321,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               type: "text",
               text:
                 "Error: Failed to send progress update to Telegram. " +
-                "If the message contains MarkdownV2 special characters (_ * [ ] ( ) ~ ` > # + - = | { } . !) " +
-                "ensure they are escaped with a preceding backslash. " +
-                "Otherwise, check the Telegram configuration and try again.",
+                "Check the Telegram configuration and try again.",
             },
           ],
           isError: true,
@@ -346,20 +350,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     const baseStatus = sentAsPlainText
-      ? "Progress reported successfully (as plain text — the message contained invalid MarkdownV2 formatting; ensure all special characters (_ * [ ] ( ) ~ ` > # + - = | { } . !) are escaped with a preceding backslash in future calls)."
+      ? "Progress reported successfully (as plain text — formatting could not be applied)."
       : "Progress reported successfully.";
 
     const responseText =
       pendingMessages.length > 0
         ? `${baseStatus}\n\n` +
-          `While you were working, the operator sent additional message(s). ` +
-          `Use those messages to steer an active session: ${pendingMessages.join("\n\n")}. ` +
-          `You should:\n` +
-          ` - Read and incorporate the operator's new messages.\n` +
-          ` - Update or refine your plan as needed.\n` +
-          ` - Continue your work. Keep using subagents. Keep using web search for framework/pattern related concerns.\n ` +
-          `Use report_progress tool to proactively report progress to the user. ` +
-          `After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive`
+        `While you were working, the operator sent additional message(s). ` +
+        `Use those messages to steer an active session: ${pendingMessages.join("\n\n")}. ` +
+        `You should:\n` +
+        ` - Read and incorporate the operator's new messages.\n` +
+        ` - Update or refine your plan as needed.\n` +
+        ` - Continue your work. Keep using subagents. Keep using web search for framework/pattern related concerns.\n ` +
+        `Use report_progress tool to proactively report progress to the user. ` +
+        `After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive`
         : baseStatus;
 
     return {
