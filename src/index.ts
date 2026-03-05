@@ -38,22 +38,19 @@ const telegramifyMarkdown = _require("telegramify-markdown") as (
 /**
  * Convert standard Markdown to Telegram MarkdownV2.
  *
- * telegramify-markdown has a bug where fenced code blocks are converted to
- * single-backtick inline code instead of triple-backtick blocks.  We work
- * around it by:
- *   1. Extracting all fenced code blocks and replacing them with placeholder
- *      tokens before calling the library.
- *   2. Letting the library handle everything else (headings, bold/italic,
- *      lists, special-char escaping).
- *   3. Re-inserting each code block in proper MarkdownV2 triple-backtick
- *      format, escaping only `\` and backtick inside the code content.
+ * Works around two telegramify-markdown bugs:
+ *   1. Fenced code blocks are emitted as single-backtick inline code instead
+ *      of triple-backtick blocks → pre-extract, re-insert after conversion.
+ *   2. Blockquotes with 'escape' strategy produce double-escaped characters
+ *      (e.g. `\\.` instead of `\.`) → pre-convert `> text` to `▎ text`
+ *      (a common Telegram convention) so the library never sees blockquotes.
  */
 function convertMarkdown(markdown: string): string {
   const blocks: Array<{ lang: string; code: string }> = [];
   const placeholder = (i: number) => `CODEBLOCKPLACEHOLDER${i}END`;
 
-  // Extract fenced code blocks (``` ... ```).
-  const stripped = markdown.replace(
+  // 1. Extract fenced code blocks (``` ... ```).
+  let preprocessed = markdown.replace(
     /^```(\w*)\n([\s\S]*?)\n?```\s*$/gm,
     (_match, lang: string, code: string) => {
       blocks.push({ lang, code });
@@ -61,11 +58,15 @@ function convertMarkdown(markdown: string): string {
     },
   );
 
-  // Convert the rest with telegramify-markdown.
-  let converted = telegramifyMarkdown(stripped, "escape");
+  // 2. Convert Markdown blockquotes (> text) to ▎ prefix lines so
+  //    telegramify-markdown never attempts to escape them.
+  preprocessed = preprocessed.replace(/^>\s?(.*)$/gm, "▎ $1");
 
-  // Re-insert code blocks in MarkdownV2 format.
-  // Inside pre/code blocks only `\` and `` ` `` need escaping.
+  // 3. Convert the rest with telegramify-markdown.
+  let converted = telegramifyMarkdown(preprocessed, "escape");
+
+  // 4. Re-insert code blocks in MarkdownV2 format.
+  //    Inside pre/code blocks only `\` and `` ` `` need escaping.
   converted = converted.replace(
     /CODEBLOCKPLACEHOLDER(\d+)END/g,
     (_m, idx: string) => {
