@@ -275,7 +275,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text:
                   `Follow the instructions: ${prompt}. ` +
                   `Create plan, use subagents. ` +
-                  `Use web search for framework/pattern related concerns. ` +
                   `Use report_progress tool to proactively report progress to the user. ` +
                   `After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive`,
               },
@@ -405,7 +404,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `You should:\n` +
         ` - Read and incorporate the operator's new messages.\n` +
         ` - Update or refine your plan as needed.\n` +
-        ` - Continue your work. Keep using subagents. Keep using web search for framework/pattern related concerns.\n ` +
+        ` - Continue your work. Keep using subagents.\n ` +
         `Use report_progress tool to proactively report progress to the user. ` +
         `After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive`
         : baseStatus;
