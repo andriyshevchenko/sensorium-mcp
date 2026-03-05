@@ -37,10 +37,10 @@ Set the following environment variables:
 
 ## Usage
 
-### Run directly
+### Simply use this prompt
 
 ```bash
-TELEGRAM_TOKEN=<token> TELEGRAM_CHAT_ID=<chat_id> npm start
+Start remote copilot session
 ```
 
 ### Configure in MCP client (e.g. VS Code Copilot)
@@ -74,13 +74,3 @@ Add to your MCP configuration:
    > *Follow the instructions: \<prompt\>. Create plan, use subagents. Use web search for framework/pattern related concerns. Use report_progress tool to proactively report progress to the user. After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive*
 4. If the timeout elapses with no message the tool returns a notice instructing the assistant to call `remote_copilot_wait_for_instructions` again.
 5. At any point the assistant can call `report_progress` to send a status update back to the Telegram chat using **Telegram MarkdownV2** syntax. The call also checks for any messages the operator sent in the meantime and returns them so they are not missed.
-
-## Development
-
-```bash
-# Run in development mode (no build step needed)
-TELEGRAM_TOKEN=<token> TELEGRAM_CHAT_ID=<chat_id> npm run dev
-
-# Compile TypeScript
-npm run build
-```
