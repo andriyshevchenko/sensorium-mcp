@@ -35,6 +35,49 @@ const telegramifyMarkdown = _require("telegramify-markdown") as (
   unsupportedTagsStrategy?: "escape" | "remove",
 ) => string;
 
+/**
+ * Convert standard Markdown to Telegram MarkdownV2.
+ *
+ * telegramify-markdown has a bug where fenced code blocks are converted to
+ * single-backtick inline code instead of triple-backtick blocks.  We work
+ * around it by:
+ *   1. Extracting all fenced code blocks and replacing them with placeholder
+ *      tokens before calling the library.
+ *   2. Letting the library handle everything else (headings, bold/italic,
+ *      lists, special-char escaping).
+ *   3. Re-inserting each code block in proper MarkdownV2 triple-backtick
+ *      format, escaping only `\` and backtick inside the code content.
+ */
+function convertMarkdown(markdown: string): string {
+  const blocks: Array<{ lang: string; code: string }> = [];
+  const placeholder = (i: number) => `CODEBLOCKPLACEHOLDER${i}END`;
+
+  // Extract fenced code blocks (``` ... ```).
+  const stripped = markdown.replace(
+    /^```(\w*)\n([\s\S]*?)\n?```\s*$/gm,
+    (_match, lang: string, code: string) => {
+      blocks.push({ lang, code });
+      return placeholder(blocks.length - 1);
+    },
+  );
+
+  // Convert the rest with telegramify-markdown.
+  let converted = telegramifyMarkdown(stripped, "escape");
+
+  // Re-insert code blocks in MarkdownV2 format.
+  // Inside pre/code blocks only `\` and `` ` `` need escaping.
+  converted = converted.replace(
+    /CODEBLOCKPLACEHOLDER(\d+)END/g,
+    (_m, idx: string) => {
+      const { lang, code } = blocks[parseInt(idx, 10)];
+      const escaped = code.replace(/\\/g, "\\\\").replace(/`/g, "\\`");
+      return `\`\`\`${lang}\n${escaped}\n\`\`\``;
+    },
+  );
+
+  return converted;
+}
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -277,7 +320,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // Convert standard Markdown to Telegram MarkdownV2 (handles headings,
     // lists, bold/italic, code blocks, and special-character escaping).
-    const message = telegramifyMarkdown(rawMessage, "escape");
+    const message = convertMarkdown(rawMessage);
 
     let sentAsPlainText = false;
     try {
@@ -286,11 +329,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const errorMsg =
         error instanceof Error ? error.message : String(error);
       // If Telegram rejected the message due to a MarkdownV2 parse error,
-      // retry without parse_mode so the operator still receives the update.
+      // retry as plain text using the original un-converted message.
       const isParseError = errorMsg.includes("can't parse entities");
       if (isParseError) {
         try {
-          await telegram.sendMessage(TELEGRAM_CHAT_ID, message);
+          await telegram.sendMessage(TELEGRAM_CHAT_ID, rawMessage);
           sentAsPlainText = true;
         } catch (retryError) {
           process.stderr.write(
