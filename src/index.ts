@@ -38,10 +38,13 @@ const telegramifyMarkdown = _require("telegramify-markdown") as (
 /**
  * Convert standard Markdown to Telegram MarkdownV2.
  *
- * Works around two telegramify-markdown bugs:
+ * Works around several telegramify-markdown limitations:
  *   1. Fenced code blocks are emitted as single-backtick inline code instead
  *      of triple-backtick blocks → pre-extract, re-insert after conversion.
- *   2. Blockquotes with 'escape' strategy produce double-escaped characters
+ *   2. Markdown tables contain `|` which is a MarkdownV2 reserved character;
+ *      telegramify-markdown does not handle tables → pre-extract and wrap in
+ *      a plain code block so the table layout is preserved.
+ *   3. Blockquotes with 'escape' strategy produce double-escaped characters
  *      (e.g. `\\.` instead of `\.`) → pre-convert `> text` to `▎ text`
  *      (a common Telegram convention) so the library never sees blockquotes.
  */
@@ -58,14 +61,26 @@ function convertMarkdown(markdown: string): string {
     },
   );
 
-  // 2. Convert Markdown blockquotes (> text) to ▎ prefix lines so
+  // 2. Extract Markdown tables (consecutive lines starting with `|`) and
+  //    wrap them in a plain code block so `|` never reaches the MarkdownV2
+  //    escape layer.
+  preprocessed = preprocessed.replace(
+    /^(\|.+)\n((?:\|.*\n?)*)/gm,
+    (_match, firstRow: string, rest: string) => {
+      const tableText = (firstRow + "\n" + rest).trimEnd();
+      blocks.push({ lang: "", code: tableText });
+      return placeholder(blocks.length - 1) + "\n";
+    },
+  );
+
+  // 3. Convert Markdown blockquotes (> text) to ▎ prefix lines so
   //    telegramify-markdown never attempts to escape them.
   preprocessed = preprocessed.replace(/^>\s?(.*)$/gm, "▎ $1");
 
-  // 3. Convert the rest with telegramify-markdown.
+  // 4. Convert the rest with telegramify-markdown.
   let converted = telegramifyMarkdown(preprocessed, "escape");
 
-  // 4. Re-insert code blocks in MarkdownV2 format.
+  // 5. Re-insert code blocks in MarkdownV2 format.
   //    Inside pre/code blocks only `\` and `` ` `` need escaping.
   converted = converted.replace(
     /CODEBLOCKPLACEHOLDER(\d+)END/g,

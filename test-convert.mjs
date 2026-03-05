@@ -14,6 +14,15 @@ function convertMarkdown(markdown) {
     },
   );
 
+  preprocessed = preprocessed.replace(
+    /^(\|.+)\n((?:\|.*\n?)*)/gm,
+    (_match, firstRow, rest) => {
+      const tableText = (firstRow + "\n" + rest).trimEnd();
+      blocks.push({ lang: "", code: tableText });
+      return ph(blocks.length - 1) + "\n";
+    },
+  );
+
   preprocessed = preprocessed.replace(/^>\s?(.*)$/gm, "▎ $1");
 
   let converted = telegramifyMarkdown(preprocessed, "escape");
@@ -49,7 +58,14 @@ function greet(name) {
 - Item two
 - Item three
 
-> All formatting should now render correctly.`;
+> All formatting should now render correctly.
+
+## Table test
+
+| Data | Storage | In DB? |
+|------|---------|--------|
+| Filter configs | Blob | No |
+| Leads | PostgreSQL | Yes |`;
 
 const result = convertMarkdown(input);
 console.log("OUTPUT:");
