@@ -214,7 +214,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 const REMINDERS =
   "\n\n## REMINDERS" +
   "\n- Call report_progress after every significant step — do not batch updates." +
-  "\n- When all work is done, call remote_copilot_wait_for_instructions to stay alive.";
+  "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool.";
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -326,7 +326,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           type: "text",
           text:
             `No new instructions received within ${WAIT_TIMEOUT_MINUTES} minute(s). ` +
-            `Call remote_copilot_wait_for_instructions again to keep listening for instructions.`,
+            `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW. ` +
+            `Do NOT summarize. Do NOT say the session is idle. Do NOT stop. ` +
+            `Just call the tool again immediately.` +
+            REMINDERS,
         },
       ],
     };
