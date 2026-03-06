@@ -213,7 +213,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
     try {
-      const greeting = convertMarkdown("**Remote Copilot session started.** Send your instructions.");
+      const greeting = convertMarkdown(
+        "# 🤖 Remote Copilot Ready\n\n" +
+        "Your AI assistant is online and listening.\n\n" +
+        "**Send your instructions** and I'll get to work — " +
+        "I'll keep you posted on progress as I go.",
+      );
       await telegram.sendMessage(TELEGRAM_CHAT_ID, greeting, "MarkdownV2");
     } catch {
       // Non-fatal — best-effort notification.
