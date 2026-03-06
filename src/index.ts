@@ -212,11 +212,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
+    try {
+      const greeting = convertMarkdown("**Remote Copilot session started.** Send your instructions.");
+      await telegram.sendMessage(TELEGRAM_CHAT_ID, greeting, "MarkdownV2");
+    } catch {
+      // Non-fatal — best-effort notification.
+    }
     return {
       content: [
         {
           type: "text",
-          text: "Call report_progress. Greet the user and tell that remote Copilot session started. Call the remote_copilot_wait_for_instructions tool next.",
+          text: "Session started. Call the remote_copilot_wait_for_instructions tool next.",
         },
       ],
     };
