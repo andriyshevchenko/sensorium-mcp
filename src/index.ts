@@ -207,6 +207,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 // ── Tool implementations ────────────────────────────────────────────────────
 
+/**
+ * Appended to every tool response so the agent is reminded of its
+ * obligations on every single tool call, not just at the start of a session.
+ */
+const REMINDERS =
+  "\n\n## REMINDERS" +
+  "\n- Call report_progress after every significant step — do not batch updates." +
+  "\n- When all work is done, call remote_copilot_wait_for_instructions to stay alive.";
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
@@ -299,10 +308,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               {
                 type: "text",
                 text:
-                  `Follow the instructions: ${prompt}. ` +
-                  `Create plan, use subagents. ` +
-                  `Use report_progress tool to proactively report progress to the user. ` +
-                  `After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive`,
+                  `Follow the instructions: ${prompt}. Create plan, use subagents.` +
+                  REMINDERS,
               },
             ],
           };
@@ -418,9 +425,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // remote_copilot_wait_for_instructions call.
     }
 
-    const baseStatus = sentAsPlainText
-      ? "Progress reported successfully (as plain text — formatting could not be applied)."
-      : "Progress reported successfully.";
+    const baseStatus =
+      (sentAsPlainText
+        ? "Progress reported successfully (as plain text — formatting could not be applied)."
+        : "Progress reported successfully.") + REMINDERS;
 
     const responseText =
       pendingMessages.length > 0
@@ -430,9 +438,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `You should:\n` +
         ` - Read and incorporate the operator's new messages.\n` +
         ` - Update or refine your plan as needed.\n` +
-        ` - Continue your work. Keep using subagents.\n ` +
-        `Use report_progress tool to proactively report progress to the user. ` +
-        `After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive`
+        ` - Continue your work. Keep using subagents.` +
+        REMINDERS
         : baseStatus;
 
     return {
