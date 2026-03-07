@@ -182,11 +182,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "start_session",
       description:
-        "Start a remote-copilot session. Automatically creates a dedicated Telegram topic " +
-        "thread for this session (requires the chat to be a forum supergroup with the bot " +
-        "as admin). Pass the optional threadId to resume an existing session topic instead " +
-        "of creating a new one. Call this tool once at the beginning, then call " +
-        "remote_copilot_wait_for_instructions.",
+        "Start or resume a remote-copilot session. " +
+        "Creates a new dedicated Telegram topic thread for this session. " +
+        "If you are CONTINUING an existing chat (not a fresh conversation), " +
+        "look back through the conversation history for a previous start_session " +
+        "result that mentioned a Thread ID, then pass it as the threadId parameter " +
+        "to resume that existing topic instead of creating a new one. " +
+        "Requires the Telegram chat to be a forum supergroup with the bot as admin. " +
+        "Call this tool once, then call remote_copilot_wait_for_instructions.",
       inputSchema: {
         type: "object",
         properties: {
