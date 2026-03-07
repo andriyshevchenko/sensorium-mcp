@@ -9,7 +9,10 @@
  *
  * Required environment variables:
  *   TELEGRAM_TOKEN    – Telegram Bot API token.
- *   TELEGRAM_CHAT_ID  – Target chat / user ID.
+ *   TELEGRAM_CHAT_ID  – ID of a Telegram forum supergroup (topics must be enabled).
+ *                       The bot must be an admin with can_manage_topics right.
+ *                       Each start_session call automatically creates a new topic
+ *                       thread so concurrent sessions never interfere.
  *
  * Optional environment variables:
  *   WAIT_TIMEOUT_MINUTES  – How long to wait for a message before timing out
@@ -152,6 +155,11 @@ let nextUpdateId = await (async () => {
 // preventing VS Code Copilot's loop-detection heuristic from killing the agent.
 let waitCallCount = 0;
 
+// Thread ID of the active session's forum topic. Set by start_session.
+// All sends and receives are scoped to this thread so concurrent sessions
+// in different topics never interfere with each other.
+let currentThreadId: number | undefined;
+
 // ---------------------------------------------------------------------------
 // MCP Server
 // ---------------------------------------------------------------------------
@@ -168,7 +176,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "start_session",
       description:
-        "Start a remote-copilot session. Call this tool to begin listening for operator instructions.",
+        "Start a remote-copilot session. Automatically creates a dedicated Telegram topic " +
+        "thread for this session (requires the chat to be a forum supergroup with the bot " +
+        "as admin). Call this tool once at the beginning, then call " +
+        "remote_copilot_wait_for_instructions.",
       inputSchema: {
         type: "object",
         properties: {},
@@ -225,6 +236,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
+    // Create a new forum topic for this session so it is isolated from others.
+    const topicName = `Copilot — ${new Date().toLocaleString("en-GB", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    })}`;
+    try {
+      const topic = await telegram.createForumTopic(TELEGRAM_CHAT_ID, topicName);
+      currentThreadId = topic.message_thread_id;
+    } catch (err) {
+      // Forum topics not available (e.g. plain group or DM) — fall back to no thread.
+      process.stderr.write(
+        `Warning: Could not create forum topic: ${err instanceof Error ? err.message : String(err)}\n` +
+        "Falling back to main chat (no thread isolation).\n",
+      );
+      currentThreadId = undefined;
+    }
     try {
       const greeting = convertMarkdown(
         "# 🤖 Remote Copilot Ready\n\n" +
@@ -232,7 +259,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         "**Send your instructions** and I'll get to work — " +
         "I'll keep you posted on progress as I go.",
       );
-      await telegram.sendMessage(TELEGRAM_CHAT_ID, greeting, "MarkdownV2");
+      await telegram.sendMessage(TELEGRAM_CHAT_ID, greeting, "MarkdownV2", currentThreadId);
     } catch {
       // Non-fatal — best-effort notification.
     }
@@ -295,12 +322,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Advance the offset so we don't see these updates again.
         nextUpdateId = updates[updates.length - 1].update_id + 1;
 
-        // Collect text messages from the target chat.
+        // Collect text messages from the target chat, scoped to the active thread.
         const messages = updates
           .filter(
             (u) =>
               u.message?.text !== undefined &&
-              String(u.message.chat.id) === TELEGRAM_CHAT_ID,
+              String(u.message.chat.id) === TELEGRAM_CHAT_ID &&
+              (currentThreadId === undefined ||
+                u.message.message_thread_id === currentThreadId),
           )
           .map((u) => u.message!.text as string);
 
@@ -365,7 +394,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     let sentAsPlainText = false;
     try {
-      await telegram.sendMessage(TELEGRAM_CHAT_ID, message, "MarkdownV2");
+      await telegram.sendMessage(TELEGRAM_CHAT_ID, message, "MarkdownV2", currentThreadId);
     } catch (error) {
       const errorMsg =
         error instanceof Error ? error.message : String(error);
@@ -374,7 +403,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const isParseError = errorMsg.includes("can't parse entities");
       if (isParseError) {
         try {
-          await telegram.sendMessage(TELEGRAM_CHAT_ID, rawMessage);
+          await telegram.sendMessage(TELEGRAM_CHAT_ID, rawMessage, undefined, currentThreadId);
           sentAsPlainText = true;
         } catch (retryError) {
           process.stderr.write(
@@ -424,7 +453,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           .filter(
             (u) =>
               u.message?.text !== undefined &&
-              String(u.message.chat.id) === TELEGRAM_CHAT_ID,
+              String(u.message.chat.id) === TELEGRAM_CHAT_ID &&
+              (currentThreadId === undefined ||
+                u.message.message_thread_id === currentThreadId),
           )
           .map((u) => u.message!.text as string);
       }

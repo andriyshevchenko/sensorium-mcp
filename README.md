@@ -8,15 +8,18 @@ This server exposes three tools that allow an AI assistant (e.g. GitHub Copilot)
 
 | Tool | Description |
 |------|-------------|
-| `start_session` | Begin a remote-copilot session. Returns a prompt to call `remote_copilot_wait_for_instructions`. |
-| `remote_copilot_wait_for_instructions` | Blocks (long-polls Telegram) until a new message arrives or the timeout elapses. Returns the prompt in a format that instructs the agent to act and then call the tool again, keeping the feedback loop alive. |
-| `report_progress` | Sends a progress update or result message back to the operator via Telegram using **Telegram MarkdownV2** formatting. Also surfaces any intermediate messages the operator sent during the work cycle. |
+| `start_session` | Begin a remote-copilot session. Automatically creates a dedicated Telegram topic thread in the forum supergroup so each session is fully isolated. |
+| `remote_copilot_wait_for_instructions` | Blocks (long-polls Telegram) until a new message arrives in the active topic or the timeout elapses. |
+| `report_progress` | Sends a progress update back to the operator in the active topic thread, using standard Markdown (auto-converted to Telegram MarkdownV2). |
 
 ## Prerequisites
 
 - Node.js 18 or later (uses native `fetch`)
 - A [Telegram bot token](https://core.telegram.org/bots#botfather) (`TELEGRAM_TOKEN`)
-- The chat ID of the operator (`TELEGRAM_CHAT_ID`)
+- A Telegram **forum supergroup** where the bot is an admin with the **Manage Topics** right
+  - In Telegram: create a group → *Edit → Topics → Enable*
+  - Add your bot as admin and grant it *Manage Topics*
+  - Copy the group's chat ID (e.g. `-1001234567890`) as `TELEGRAM_CHAT_ID`
 
 ## Installation
 
@@ -32,7 +35,7 @@ Set the following environment variables:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `TELEGRAM_TOKEN` | ✅ | — | Telegram Bot API token from @BotFather |
-| `TELEGRAM_CHAT_ID` | ✅ | — | Chat / user ID that the bot will listen to |
+| `TELEGRAM_CHAT_ID` | ✅ | — | Chat ID of the forum supergroup (e.g. `-1001234567890`). The bot must be admin with Manage Topics right. |
 | `WAIT_TIMEOUT_MINUTES` | ❌ | `30` | Minutes to wait for a message before timing out |
 
 ## Usage
@@ -68,9 +71,8 @@ Add to your MCP configuration:
 
 ## How it works
 
-1. The AI assistant calls `start_session`, which instructs it to call `remote_copilot_wait_for_instructions`.
-2. The server long-polls the Telegram Bot API (`getUpdates`) in 45-second windows until a message is received or the configured timeout elapses.
-3. When a message arrives the tool returns:
-   > *Follow the instructions: \<prompt\>. Create plan, use subagents. Use web search for framework/pattern related concerns. Use report_progress tool to proactively report progress to the user. After you're done (don't skip this step), call remote_copilot_wait_for_instructions again to keep the feedback loop alive*
-4. If the timeout elapses with no message the tool returns a notice instructing the assistant to call `remote_copilot_wait_for_instructions` again.
-5. At any point the assistant can call `report_progress` to send a status update back to the Telegram chat using **Telegram MarkdownV2** syntax. The call also checks for any messages the operator sent in the meantime and returns them so they are not missed.
+1. The AI calls `start_session`, which **automatically creates a new Telegram topic** (e.g. *Copilot — 07 Mar 2026, 14:30*) in the forum supergroup. All sends and receives for this session are scoped to that thread, so multiple parallel sessions never interfere.
+2. The server long-polls the Telegram Bot API (`getUpdates`) in 45-second windows, filtering messages by the active topic's `message_thread_id`.
+3. When a message arrives the tool instructs the AI to act on it, then call `remote_copilot_wait_for_instructions` again to keep the loop alive.
+4. If the timeout elapses with no message the tool tells the AI to call the tool again immediately (with a unique timestamp so VS Code's loop-detection heuristic is not triggered).
+5. At any point the AI calls `report_progress` to post a status update to the active topic thread. The message is written in standard Markdown and automatically converted to Telegram MarkdownV2. Intermediate operator messages are also surfaced so they are not missed.

@@ -8,6 +8,7 @@ export interface TelegramMessage {
   chat: { id: number };
   text?: string;
   date: number;
+  message_thread_id?: number;
 }
 
 export interface TelegramUpdate {
@@ -24,6 +25,17 @@ export interface GetUpdatesResult {
 export interface SendMessageResult {
   ok: boolean;
   result?: TelegramMessage;
+  description?: string;
+}
+
+export interface ForumTopic {
+  message_thread_id: number;
+  name: string;
+}
+
+export interface CreateForumTopicResult {
+  ok: boolean;
+  result?: ForumTopic;
   description?: string;
 }
 
@@ -74,18 +86,48 @@ export class TelegramClient {
   }
 
   /**
-   * Send a text message to a chat.
+   * Create a topic in a forum supergroup.
+   * The bot must be an admin with can_manage_topics right.
+   * @returns The created ForumTopic (contains message_thread_id).
+   */
+  async createForumTopic(chatId: string, name: string): Promise<ForumTopic> {
+    const url = `${this.baseUrl}/createForumTopic`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, name }),
+    });
+    let data: CreateForumTopicResult | undefined;
+    try {
+      data = (await response.json()) as CreateForumTopicResult;
+    } catch {
+      data = undefined;
+    }
+    if (!response.ok || !data?.ok || !data.result) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram createForumTopic failed: ${description}`);
+    }
+    return data.result;
+  }
+
+  /**
+   * Send a text message to a chat, optionally scoped to a forum topic thread.
    * @param parseMode  Optional parse mode. Telegram accepts "MarkdownV2", "Markdown", or "HTML".
+   * @param threadId   Optional message_thread_id for forum supergroups.
    */
   async sendMessage(
     chatId: string,
     text: string,
     parseMode?: "MarkdownV2" | "Markdown" | "HTML",
+    threadId?: number,
   ): Promise<void> {
     const url = `${this.baseUrl}/sendMessage`;
     const body: Record<string, unknown> = { chat_id: chatId, text };
     if (parseMode) {
       body.parse_mode = parseMode;
+    }
+    if (threadId !== undefined) {
+      body.message_thread_id = threadId;
     }
     const response = await fetch(url, {
       method: "POST",
