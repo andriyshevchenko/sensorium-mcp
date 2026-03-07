@@ -160,6 +160,12 @@ let waitCallCount = 0;
 // in different topics never interfere with each other.
 let currentThreadId: number | undefined;
 
+// Timestamp of the last keep-alive ping sent to Telegram.
+// Used to send periodic "session still alive" messages so the operator knows
+// the agent hasn't silently died.
+let lastKeepAliveSentAt = Date.now();
+const KEEP_ALIVE_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
 // ---------------------------------------------------------------------------
 // MCP Server
 // ---------------------------------------------------------------------------
@@ -178,11 +184,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description:
         "Start a remote-copilot session. Automatically creates a dedicated Telegram topic " +
         "thread for this session (requires the chat to be a forum supergroup with the bot " +
-        "as admin). Call this tool once at the beginning, then call " +
+        "as admin). Pass the optional threadId to resume an existing session topic instead " +
+        "of creating a new one. Call this tool once at the beginning, then call " +
         "remote_copilot_wait_for_instructions.",
       inputSchema: {
         type: "object",
-        properties: {},
+        properties: {
+          threadId: {
+            type: "number",
+            description:
+              "Optional. The Telegram message_thread_id of an existing topic to resume. " +
+              "When provided, no new topic is created — the session continues in the existing thread.",
+          },
+        },
         required: [],
       },
     },
@@ -225,11 +239,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 /**
  * Appended to every tool response so the agent is reminded of its
  * obligations on every single tool call, not just at the start of a session.
+ * Includes the active thread ID so the agent can resume the session after a
+ * VS Code restart by passing it to start_session.
  */
-const REMINDERS =
-  "\n\n## REMINDERS" +
-  "\n- Call report_progress after every significant step — do not batch updates." +
-  "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool.";
+function getReminders(threadId?: number): string {
+  const threadHint = threadId !== undefined
+    ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
+    : "";
+  return (
+    "\n\n## REMINDERS" +
+    "\n- Call report_progress after every significant step — do not batch updates." +
+    "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool." +
+    threadHint
+  );
+}
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -341,7 +364,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 type: "text",
                 text:
                   `Follow the instructions: ${prompt}. Create plan, use subagents.` +
-                  REMINDERS,
+                  getReminders(currentThreadId),
               },
             ],
           };
@@ -353,6 +376,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // Timeout elapsed with no actionable message.
     const now = new Date().toISOString();
+
+    // Keep-alive ping: send a periodic heartbeat to Telegram so the operator
+    // knows the session is still alive even with no activity.
+    if (Date.now() - lastKeepAliveSentAt >= KEEP_ALIVE_INTERVAL_MS) {
+      lastKeepAliveSentAt = Date.now();
+      try {
+        const ping = convertMarkdown(
+          `🟢 **Session alive** — ${new Date().toLocaleString("en-GB", {
+            day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+          })}` +
+          (currentThreadId !== undefined ? ` \\(thread ${currentThreadId}\\)` : ""),
+        );
+        await telegram.sendMessage(TELEGRAM_CHAT_ID, ping, "MarkdownV2", currentThreadId);
+      } catch {
+        // Non-fatal.
+      }
+    }
+
     return {
       content: [
         {
@@ -363,7 +404,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW. ` +
             `Do NOT summarize. Do NOT say the session is idle. Do NOT stop. ` +
             `Just call the tool again immediately.` +
-            REMINDERS,
+            getReminders(currentThreadId),
         },
       ],
     };
@@ -467,7 +508,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const baseStatus =
       (sentAsPlainText
         ? "Progress reported successfully (as plain text — formatting could not be applied)."
-        : "Progress reported successfully.") + REMINDERS;
+        : "Progress reported successfully.") + getReminders(currentThreadId);
 
     const responseText =
       pendingMessages.length > 0
@@ -478,7 +519,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ` - Read and incorporate the operator's new messages.\n` +
         ` - Update or refine your plan as needed.\n` +
         ` - Continue your work. Keep using subagents.` +
-        REMINDERS
+        getReminders(currentThreadId)
         : baseStatus;
 
     return {
