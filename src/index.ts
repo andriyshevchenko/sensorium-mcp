@@ -164,7 +164,7 @@ let currentThreadId: number | undefined;
 // Used to send periodic "session still alive" messages so the operator knows
 // the agent hasn't silently died.
 let lastKeepAliveSentAt = Date.now();
-const KEEP_ALIVE_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
+const KEEP_ALIVE_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour
 
 // ---------------------------------------------------------------------------
 // MCP Server
@@ -382,6 +382,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // Keep-alive ping: send a periodic heartbeat to Telegram so the operator
     // knows the session is still alive even with no activity.
+    let keepAliveSent = false;
     if (Date.now() - lastKeepAliveSentAt >= KEEP_ALIVE_INTERVAL_MS) {
       lastKeepAliveSentAt = Date.now();
       try {
@@ -392,6 +393,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           (currentThreadId !== undefined ? ` \\(thread ${currentThreadId}\\)` : ""),
         );
         await telegram.sendMessage(TELEGRAM_CHAT_ID, ping, "MarkdownV2", currentThreadId);
+        keepAliveSent = true;
       } catch {
         // Non-fatal.
       }
@@ -402,8 +404,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         {
           type: "text",
           text:
-            `[Poll #${callNumber} ended at ${now}] ` +
-            `No new instructions received within ${WAIT_TIMEOUT_MINUTES} minute(s). ` +
+            `[Poll #${callNumber} ended at ${now}]` +
+            (keepAliveSent ? ` Keep-alive ping sent to Telegram at ${now}.` : "") +
+            ` No new instructions received within ${WAIT_TIMEOUT_MINUTES} minute(s). ` +
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW. ` +
             `Do NOT summarize. Do NOT say the session is idle. Do NOT stop. ` +
             `Just call the tool again immediately.` +
