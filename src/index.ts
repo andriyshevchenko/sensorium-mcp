@@ -27,6 +27,9 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createRequire } from "module";
+import { readFileSync, writeFileSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 import { TelegramClient } from "./telegram.js";
 
 const _require = createRequire(import.meta.url);
@@ -155,6 +158,49 @@ let nextUpdateId = await (async () => {
 // preventing VS Code Copilot's loop-detection heuristic from killing the agent.
 let waitCallCount = 0;
 
+// ---------------------------------------------------------------------------
+// Session store — persists topic name → thread ID mappings to disk so the
+// agent can resume a named session even after a VS Code restart.
+// Format: { "<chatId>": { "<lowercased name>": threadId } }
+// ---------------------------------------------------------------------------
+
+const SESSION_STORE_PATH = join(homedir(), ".remote-copilot-mcp-sessions.json");
+
+type SessionMap = Record<string, Record<string, number>>;
+
+function loadSessionMap(): SessionMap {
+  try {
+    const raw = readFileSync(SESSION_STORE_PATH, "utf8");
+    return JSON.parse(raw) as SessionMap;
+  } catch {
+    return {};
+  }
+}
+
+function saveSessionMap(map: SessionMap): void {
+  try {
+    writeFileSync(SESSION_STORE_PATH, JSON.stringify(map, null, 2), "utf8");
+  } catch (err) {
+    process.stderr.write(
+      `Warning: Could not save session map to ${SESSION_STORE_PATH}: ${
+        err instanceof Error ? err.message : String(err)
+      }\n`,
+    );
+  }
+}
+
+function lookupSession(chatId: string, name: string): number | undefined {
+  const map = loadSessionMap();
+  return map[chatId]?.[name.toLowerCase()];
+}
+
+function persistSession(chatId: string, name: string, threadId: number): void {
+  const map = loadSessionMap();
+  if (!map[chatId]) map[chatId] = {};
+  map[chatId][name.toLowerCase()] = threadId;
+  saveSessionMap(map);
+}
+
 // Thread ID of the active session's forum topic. Set by start_session.
 // All sends and receives are scoped to this thread so concurrent sessions
 // in different topics never interfere with each other.
@@ -183,11 +229,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "start_session",
       description:
         "Start or resume a remote-copilot session. " +
-        "Creates a new dedicated Telegram topic thread for this session. " +
+        "When called with a name that was used before, the server looks up the " +
+        "existing Telegram topic for that name and resumes it instead of creating a new one. " +
         "If you are CONTINUING an existing chat (not a fresh conversation), " +
         "look back through the conversation history for a previous start_session " +
         "result that mentioned a Thread ID, then pass it as the threadId parameter " +
-        "to resume that existing topic instead of creating a new one. " +
+        "to resume that existing topic. " +
         "Requires the Telegram chat to be a forum supergroup with the bot as admin. " +
         "Call this tool once, then call remote_copilot_wait_for_instructions.",
       inputSchema: {
@@ -269,16 +316,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
-    const resumeThreadId = typeof typedArgs.threadId === "number"
+    const explicitThreadId = typeof typedArgs.threadId === "number"
       ? typedArgs.threadId as number
       : undefined;
     const customName = typeof typedArgs.name === "string" && typedArgs.name.trim()
       ? typedArgs.name.trim()
       : undefined;
 
-    if (resumeThreadId !== undefined) {
-      // Resume mode: reuse an existing topic thread.
-      currentThreadId = resumeThreadId;
+    // Determine the thread to use:
+    // 1. Explicit threadId beats everything.
+    // 2. A known name looks up the persisted mapping — resume if found.
+    // 3. Otherwise create a new topic.
+    let resolvedPreexisting = false;
+
+    if (explicitThreadId !== undefined) {
+      currentThreadId = explicitThreadId;
+      // If a name was also supplied, keep the mapping up to date.
+      if (customName) persistSession(TELEGRAM_CHAT_ID, customName, explicitThreadId);
+      resolvedPreexisting = true;
+    } else if (customName !== undefined) {
+      const stored = lookupSession(TELEGRAM_CHAT_ID, customName);
+      if (stored !== undefined) {
+        currentThreadId = stored;
+        resolvedPreexisting = true;
+      }
+    }
+
+    if (resolvedPreexisting) {
+      // Resume mode: send notification to the existing thread.
       lastKeepAliveSentAt = Date.now();
       try {
         const msg = convertMarkdown("🔄 **Session resumed.** Continuing in this thread.");
@@ -296,6 +361,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
         const topic = await telegram.createForumTopic(TELEGRAM_CHAT_ID, topicName);
         currentThreadId = topic.message_thread_id;
+        // Persist so the same name resumes this thread next time.
+        persistSession(TELEGRAM_CHAT_ID, topicName, currentThreadId);
       } catch (err) {
         // Forum topics not available (e.g. plain group or DM) — fall back to no thread.
         process.stderr.write(
@@ -326,7 +393,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         {
           type: "text",
           text:
-            `Session ${resumeThreadId !== undefined ? "resumed" : "started"}.${threadNote}` +
+            `Session ${resolvedPreexisting ? "resumed" : "started"}.${threadNote}` +
             ` Call the remote_copilot_wait_for_instructions tool next.` +
             getReminders(currentThreadId),
         },
