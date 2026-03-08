@@ -31,8 +31,8 @@ import { readFileSync, writeFileSync } from "fs";
 import { createRequire } from "module";
 import { homedir } from "os";
 import { join } from "path";
+import { readThreadMessages, startDispatcher } from "./dispatcher.js";
 import { TelegramClient } from "./telegram.js";
-import { startDispatcher, readThreadMessages } from "./dispatcher.js";
 
 const _require = createRequire(import.meta.url);
 const { version: PKG_VERSION } = _require("../package.json") as {
@@ -274,26 +274,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "send_file",
       description:
         "Send a file (image or document) to the operator via Telegram. " +
-        "Provide the file content as a base64-encoded string. " +
+        "PREFERRED: provide filePath to send a file directly from disk (fast, no size limit). " +
+        "Alternative: provide base64-encoded content. " +
         "Images (JPEG, PNG, GIF, WebP) are sent as photos; other files as documents.",
       inputSchema: {
         type: "object",
         properties: {
+          filePath: {
+            type: "string",
+            description:
+              "Absolute path to the file on disk. PREFERRED over base64 — the server reads " +
+              "and sends the file directly without passing data through the LLM context.",
+          },
           base64: {
             type: "string",
-            description: "The file content encoded as a base64 string.",
+            description: "The file content encoded as a base64 string. Use filePath instead when possible.",
           },
           filename: {
             type: "string",
             description:
-              "The filename including extension (e.g. 'report.pdf', 'screenshot.png').",
+              "The filename including extension (e.g. 'report.pdf', 'screenshot.png'). " +
+              "Required when using base64. When using filePath, defaults to the file's basename.",
           },
           caption: {
             type: "string",
             description: "Optional caption to display with the file.",
           },
         },
-        required: ["base64", "filename"],
+        required: [],
       },
     },
   ],
@@ -445,9 +453,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             } catch (err) {
               contentBlocks.push({
                 type: "text",
-                text: `[Photo received but could not be downloaded: ${
-                  err instanceof Error ? err.message : String(err)
-                }]`,
+                text: `[Photo received but could not be downloaded: ${err instanceof Error ? err.message : String(err)
+                  }]`,
               });
             }
           }
@@ -477,9 +484,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             } catch (err) {
               contentBlocks.push({
                 type: "text",
-                text: `[Document "${doc.file_name ?? "file"}" received but could not be downloaded: ${
-                  err instanceof Error ? err.message : String(err)
-                }]`,
+                text: `[Document "${doc.file_name ?? "file"}" received but could not be downloaded: ${err instanceof Error ? err.message : String(err)
+                  }]`,
               });
             }
           }
@@ -680,19 +686,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── send_file ─────────────────────────────────────────────────────────────
   if (name === "send_file") {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const filePath = typeof typedArgs.filePath === "string" ? typedArgs.filePath.trim() : "";
     const base64Data = typeof typedArgs.base64 === "string" ? typedArgs.base64 : "";
-    const filename = typeof typedArgs.filename === "string" ? typedArgs.filename : "file";
     const caption = typeof typedArgs.caption === "string" ? typedArgs.caption : undefined;
 
-    if (!base64Data) {
+    if (!filePath && !base64Data) {
       return {
-        content: [{ type: "text", text: "Error: 'base64' argument is required for send_file." }],
+        content: [{ type: "text", text: "Error: either 'filePath' or 'base64' argument is required for send_file." }],
         isError: true,
       };
     }
 
     try {
-      const buffer = Buffer.from(base64Data, "base64");
+      let buffer: Buffer;
+      let filename: string;
+
+      if (filePath) {
+        // Read directly from disk — fast, no LLM context overhead.
+        const { readFileSync } = await import("fs");
+        const { basename } = await import("path");
+        buffer = readFileSync(filePath);
+        filename = typeof typedArgs.filename === "string" && typedArgs.filename.trim()
+          ? typedArgs.filename.trim()
+          : basename(filePath);
+      } else {
+        buffer = Buffer.from(base64Data, "base64");
+        filename = typeof typedArgs.filename === "string" && typedArgs.filename.trim()
+          ? typedArgs.filename.trim()
+          : "file";
+      }
+
       const ext = filename.split(".").pop()?.toLowerCase() ?? "";
       const imageExts = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
 
@@ -717,7 +740,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [
           {
             type: "text",
-            text: `Error: Failed to send file "${filename}" to Telegram: ${errorMsg}`,
+            text: `Error: Failed to send file to Telegram: ${errorMsg}`,
           },
         ],
         isError: true,
