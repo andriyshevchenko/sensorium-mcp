@@ -193,6 +193,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: "object",
         properties: {
+          name: {
+            type: "string",
+            description:
+              "Optional. A human-readable label for this session's Telegram topic (e.g. 'Fix auth bug'). " +
+              "If omitted, a timestamp-based name is used.",
+          },
           threadId: {
             type: "number",
             description:
@@ -262,38 +268,67 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
-    // Create a new forum topic for this session so it is isolated from others.
-    const topicName = `Copilot — ${new Date().toLocaleString("en-GB", {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", hour12: false,
-    })}`;
-    try {
-      const topic = await telegram.createForumTopic(TELEGRAM_CHAT_ID, topicName);
-      currentThreadId = topic.message_thread_id;
-    } catch (err) {
-      // Forum topics not available (e.g. plain group or DM) — fall back to no thread.
-      process.stderr.write(
-        `Warning: Could not create forum topic: ${err instanceof Error ? err.message : String(err)}\n` +
-        "Falling back to main chat (no thread isolation).\n",
-      );
-      currentThreadId = undefined;
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const resumeThreadId = typeof typedArgs.threadId === "number"
+      ? typedArgs.threadId as number
+      : undefined;
+    const customName = typeof typedArgs.name === "string" && typedArgs.name.trim()
+      ? typedArgs.name.trim()
+      : undefined;
+
+    if (resumeThreadId !== undefined) {
+      // Resume mode: reuse an existing topic thread.
+      currentThreadId = resumeThreadId;
+      lastKeepAliveSentAt = Date.now();
+      try {
+        const msg = convertMarkdown("🔄 **Session resumed.** Continuing in this thread.");
+        await telegram.sendMessage(TELEGRAM_CHAT_ID, msg, "MarkdownV2", currentThreadId);
+      } catch {
+        // Non-fatal.
+      }
+    } else {
+      // New session: create a dedicated forum topic.
+      const topicName = customName ??
+        `Copilot — ${new Date().toLocaleString("en-GB", {
+          day: "2-digit", month: "short", year: "numeric",
+          hour: "2-digit", minute: "2-digit", hour12: false,
+        })}`;
+      try {
+        const topic = await telegram.createForumTopic(TELEGRAM_CHAT_ID, topicName);
+        currentThreadId = topic.message_thread_id;
+      } catch (err) {
+        // Forum topics not available (e.g. plain group or DM) — fall back to no thread.
+        process.stderr.write(
+          `Warning: Could not create forum topic: ${err instanceof Error ? err.message : String(err)}\n` +
+          "Falling back to main chat (no thread isolation).\n",
+        );
+        currentThreadId = undefined;
+      }
+      lastKeepAliveSentAt = Date.now();
+      try {
+        const greeting = convertMarkdown(
+          "# 🤖 Remote Copilot Ready\n\n" +
+          "Your AI assistant is online and listening.\n\n" +
+          "**Send your instructions** and I'll get to work — " +
+          "I'll keep you posted on progress as I go.",
+        );
+        await telegram.sendMessage(TELEGRAM_CHAT_ID, greeting, "MarkdownV2", currentThreadId);
+      } catch {
+        // Non-fatal.
+      }
     }
-    try {
-      const greeting = convertMarkdown(
-        "# 🤖 Remote Copilot Ready\n\n" +
-        "Your AI assistant is online and listening.\n\n" +
-        "**Send your instructions** and I'll get to work — " +
-        "I'll keep you posted on progress as I go.",
-      );
-      await telegram.sendMessage(TELEGRAM_CHAT_ID, greeting, "MarkdownV2", currentThreadId);
-    } catch {
-      // Non-fatal — best-effort notification.
-    }
+
+    const threadNote = currentThreadId !== undefined
+      ? ` Thread ID: ${currentThreadId} (pass this to start_session as threadId to resume this topic later).`
+      : "";
     return {
       content: [
         {
           type: "text",
-          text: "Session started. Call the remote_copilot_wait_for_instructions tool next.",
+          text:
+            `Session ${resumeThreadId !== undefined ? "resumed" : "started"}.${threadNote}` +
+            ` Call the remote_copilot_wait_for_instructions tool next.` +
+            getReminders(currentThreadId),
         },
       ],
     };
