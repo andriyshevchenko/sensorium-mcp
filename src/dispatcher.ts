@@ -211,11 +211,21 @@ async function pollOnce(
     telegram: TelegramClient,
     chatId: string,
 ): Promise<void> {
+    // Always refresh lock FIRST so the timestamp stays fresh even during
+    // long polls that return no messages.  The old code only refreshed
+    // after processing updates, causing the lock to go stale after ~5 min
+    // of inactivity and letting a second instance grab the poller role.
+    writeLock();
+
     const POLL_TIMEOUT_SECONDS = 30;
     let offset = readOffset();
 
     try {
         const updates = await telegram.getUpdates(offset, POLL_TIMEOUT_SECONDS);
+
+        // Refresh again after the (potentially 30-second) long poll returns.
+        writeLock();
+
         if (updates.length === 0) return;
 
         offset = updates[updates.length - 1].update_id + 1;
@@ -259,9 +269,6 @@ async function pollOnce(
             `[dispatcher] Poll error: ${err instanceof Error ? err.message : String(err)}\n`,
         );
     }
-
-    // Refresh lock timestamp so other instances know we're alive.
-    writeLock();
 }
 
 /**
@@ -308,6 +315,16 @@ export async function startDispatcher(
         pollerRunning = true;
         const loop = async () => {
             while (pollerRunning) {
+                // Check if another instance stole the lock (shouldn't happen
+                // now that we refresh before and after each poll, but be safe).
+                const currentLock = readLock();
+                if (currentLock && currentLock.pid !== process.pid) {
+                    process.stderr.write(
+                        `[dispatcher] Lock taken by PID ${currentLock.pid}. Stepping down to consumer.\n`,
+                    );
+                    pollerRunning = false;
+                    break;
+                }
                 await pollOnce(telegram, chatId);
                 // Small delay between polls to avoid tight-looping on errors.
                 await new Promise<void>((r) => setTimeout(r, 500));
