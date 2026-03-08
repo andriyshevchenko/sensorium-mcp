@@ -219,7 +219,6 @@ async function pollOnce(
         if (updates.length === 0) return;
 
         offset = updates[updates.length - 1].update_id + 1;
-        writeOffset(offset);
 
         for (const u of updates) {
             if (!u.message) continue;
@@ -252,6 +251,9 @@ async function pollOnce(
 
             appendToThread(threadId, stored);
         }
+
+        // Commit offset only after all messages have been written to disk.
+        writeOffset(offset);
     } catch (err) {
         process.stderr.write(
             `[dispatcher] Poll error: ${err instanceof Error ? err.message : String(err)}\n`,

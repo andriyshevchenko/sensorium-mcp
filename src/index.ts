@@ -488,7 +488,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             contentBlocks.push({ type: "text", text: s.message.text });
           }
         }
-
+        if (contentBlocks.length === 0) {
+          // All messages were unsupported types (stickers, voice, etc.);
+          // continue polling instead of returning empty instructions.
+          await new Promise<void>((r) => setTimeout(r, POLL_INTERVAL_MS));
+          continue;
+        }
         return {
           content: [
             {
@@ -623,19 +628,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const pendingStored = readThreadMessages(currentThreadId);
       if (pendingStored.length > 0) {
-        pendingMessages = pendingStored.map((s) => {
-          if (s.message.photo) {
-            return s.message.caption
-              ? `[Photo] ${s.message.caption}`
-              : "[Photo sent — call remote_copilot_wait_for_instructions to receive it with full image data]";
+        for (const s of pendingStored) {
+          if (s.message.photo && s.message.photo.length > 0) {
+            pendingMessages.push(
+              s.message.caption
+                ? `[Photo received] ${s.message.caption}`
+                : "[Photo received from operator]",
+            );
+          } else if (s.message.document) {
+            pendingMessages.push(
+              s.message.caption
+                ? `[Document: ${s.message.document.file_name ?? "file"}] ${s.message.caption}`
+                : `[Document received: ${s.message.document.file_name ?? "file"}]`,
+            );
+          } else if (s.message.text) {
+            pendingMessages.push(s.message.text);
           }
-          if (s.message.document) {
-            return s.message.caption
-              ? `[Document: ${s.message.document.file_name ?? "file"}] ${s.message.caption}`
-              : `[Document sent: ${s.message.document.file_name ?? "file"} — call remote_copilot_wait_for_instructions to receive it]`;
-          }
-          return s.message.text ?? "";
-        }).filter(Boolean);
+        }
       }
     } catch {
       // Non-fatal: pending messages will still be picked up by the next
