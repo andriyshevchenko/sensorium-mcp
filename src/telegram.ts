@@ -91,28 +91,47 @@ export class TelegramClient {
     url.searchParams.set("timeout", String(timeout));
     url.searchParams.set("allowed_updates", JSON.stringify(["message"]));
 
-    const response = await fetch(url.toString(), signal ? { signal } : {});
-    let data: GetUpdatesResult | undefined;
-    try {
-      data = (await response.json()) as GetUpdatesResult;
-    } catch (parseErr) {
-      process.stderr.write(
-        `Failed to parse Telegram getUpdates response: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}\n`,
-      );
-      data = undefined;
+    // Retry loop: Telegram returns 409 when another getUpdates poller is active
+    // (e.g. two VS Code windows with the same bot token). Back off and retry
+    // until the other instance releases the lock or the request is aborted.
+    const MAX_409_RETRIES = 12;
+    const RETRY_DELAY_MS = 5000;
+
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetch(url.toString(), signal ? { signal } : {});
+      let data: GetUpdatesResult | undefined;
+      try {
+        data = (await response.json()) as GetUpdatesResult;
+      } catch (parseErr) {
+        process.stderr.write(
+          `Failed to parse Telegram getUpdates response: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}\n`,
+        );
+        data = undefined;
+      }
+
+      // 409 Conflict: another poller is running. Wait and retry.
+      if (response.status === 409 && attempt < MAX_409_RETRIES) {
+        process.stderr.write(
+          `Telegram getUpdates 409 Conflict (attempt ${attempt + 1}/${MAX_409_RETRIES}) — ` +
+          `another bot instance is polling. Retrying in ${RETRY_DELAY_MS / 1000}s...\n`,
+        );
+        await new Promise<void>((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        continue;
+      }
+
+      if (!response.ok) {
+        const description = data?.description ?? response.statusText;
+        throw new Error(
+          `Telegram getUpdates failed: ${response.status} ${description}`,
+        );
+      }
+      if (!data || !data.ok) {
+        throw new Error(
+          `Telegram API error in getUpdates${data?.description ? `: ${data.description}` : ""}`,
+        );
+      }
+      return data.result;
     }
-    if (!response.ok) {
-      const description = data?.description ?? response.statusText;
-      throw new Error(
-        `Telegram getUpdates failed: ${response.status} ${description}`,
-      );
-    }
-    if (!data || !data.ok) {
-      throw new Error(
-        `Telegram API error in getUpdates${data?.description ? `: ${data.description}` : ""}`,
-      );
-    }
-    return data.result;
   }
 
   /**
