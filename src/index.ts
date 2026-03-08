@@ -383,32 +383,63 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Advance the offset so we don't see these updates again.
         nextUpdateId = updates[updates.length - 1].update_id + 1;
 
-        // Collect text messages from the target chat, scoped to the active thread.
-        const messages = updates
-          .filter(
-            (u) =>
-              u.message?.text !== undefined &&
-              String(u.message.chat.id) === TELEGRAM_CHAT_ID &&
-              (currentThreadId === undefined ||
-                u.message.message_thread_id === currentThreadId),
-          )
-          .map((u) => u.message!.text as string);
+        // Collect messages (text or photo) from the target chat, scoped to the active thread.
+        const qualifiedUpdates = updates.filter(
+          (u) =>
+            (u.message?.text !== undefined || u.message?.photo !== undefined) &&
+            String(u.message?.chat.id) === TELEGRAM_CHAT_ID &&
+            (currentThreadId === undefined ||
+              u.message?.message_thread_id === currentThreadId),
+        );
 
-        if (messages.length > 0) {
-          const prompt = messages.join("\n\n");
+        if (qualifiedUpdates.length > 0) {
+          type TextBlock = { type: "text"; text: string };
+          type ImageBlock = { type: "image"; data: string; mimeType: string };
+          const contentBlocks: Array<TextBlock | ImageBlock> = [];
+
+          for (const u of qualifiedUpdates) {
+            const msg = u.message!;
+            // Photos: download the largest size and embed as base64.
+            if (msg.photo && msg.photo.length > 0) {
+              const largest = msg.photo[msg.photo.length - 1];
+              try {
+                const { base64, mimeType } = await telegram.downloadFileAsBase64(
+                  largest.file_id,
+                );
+                contentBlocks.push({ type: "image", data: base64, mimeType });
+                if (msg.caption) {
+                  contentBlocks.push({
+                    type: "text",
+                    text: `[Image caption]: ${msg.caption}`,
+                  });
+                }
+              } catch (err) {
+                contentBlocks.push({
+                  type: "text",
+                  text: `[Photo received but could not be downloaded: ${
+                    err instanceof Error ? err.message : String(err)
+                  }]`,
+                });
+              }
+            }
+            // Text messages.
+            if (msg.text) {
+              contentBlocks.push({ type: "text", text: msg.text });
+            }
+          }
+
           return {
             content: [
               {
                 type: "text",
-                text:
-                  `Follow the instructions: ${prompt}. Create plan, use subagents.` +
-                  getReminders(currentThreadId),
+                text: "Follow these operator instructions — create plan, use subagents:",
               },
+              ...contentBlocks,
+              { type: "text", text: getReminders(currentThreadId) },
             ],
           };
         }
-        // Updates existed but none were relevant text messages from our chat;
-        // continue polling.
+        // Updates existed but none were relevant messages from our chat; continue polling.
       }
     }
 
@@ -534,12 +565,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         pendingMessages = pendingUpdates
           .filter(
             (u) =>
-              u.message?.text !== undefined &&
-              String(u.message.chat.id) === TELEGRAM_CHAT_ID &&
+              (u.message?.text !== undefined || u.message?.photo !== undefined) &&
+              String(u.message?.chat.id) === TELEGRAM_CHAT_ID &&
               (currentThreadId === undefined ||
-                u.message.message_thread_id === currentThreadId),
+                u.message?.message_thread_id === currentThreadId),
           )
-          .map((u) => u.message!.text as string);
+          .map((u) => {
+            const msg = u.message!;
+            if (msg.photo) {
+              return msg.caption ? `[Photo] ${msg.caption}` : "[Photo sent — call remote_copilot_wait_for_instructions to receive it with full image data]";
+            }
+            return msg.text as string;
+          });
       }
     } catch {
       // Non-fatal: pending messages will still be picked up by the next

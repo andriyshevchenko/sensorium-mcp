@@ -7,8 +7,27 @@ export interface TelegramMessage {
   message_id: number;
   chat: { id: number };
   text?: string;
+  caption?: string;
   date: number;
   message_thread_id?: number;
+  photo?: PhotoSize[];
+  document?: TelegramDocument;
+}
+
+export interface PhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
+export interface TelegramDocument {
+  file_id: string;
+  file_unique_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
 }
 
 export interface TelegramUpdate {
@@ -36,6 +55,17 @@ export interface ForumTopic {
 export interface CreateForumTopicResult {
   ok: boolean;
   result?: ForumTopic;
+  description?: string;
+}
+
+export interface TelegramFile {
+  file_id: string;
+  file_path: string;
+}
+
+export interface GetFileResult {
+  ok: boolean;
+  result?: TelegramFile;
   description?: string;
 }
 
@@ -159,5 +189,57 @@ export class TelegramClient {
       const description = data.description ?? "Unknown Telegram API error";
       throw new Error(`Telegram API error in sendMessage: ${description}`);
     }
+  }
+
+  /**
+   * Get metadata for a file stored on Telegram servers.
+   */
+  async getFile(fileId: string): Promise<TelegramFile> {
+    const url = `${this.baseUrl}/getFile`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_id: fileId }),
+    });
+    let data: GetFileResult | undefined;
+    try {
+      data = (await response.json()) as GetFileResult;
+    } catch {
+      data = undefined;
+    }
+    if (!response.ok || !data?.ok || !data.result) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram getFile failed: ${description}`);
+    }
+    return data.result;
+  }
+
+  /**
+   * Download a file from Telegram by file_id and return it as base64 with MIME type.
+   * Telegram Bot API supports files up to 20 MB.
+   */
+  async downloadFileAsBase64(
+    fileId: string,
+  ): Promise<{ base64: string; mimeType: string }> {
+    const file = await this.getFile(fileId);
+    const downloadUrl = `https://api.telegram.org/file/bot${this.token}/${file.file_path}`;
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download Telegram file: ${response.status} ${response.statusText}`,
+      );
+    }
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+    const ext = file.file_path.split(".").pop()?.toLowerCase() ?? "";
+    const mimeMap: Record<string, string> = {
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      webp: "image/webp",
+      bmp: "image/bmp",
+    };
+    return { base64, mimeType: mimeMap[ext] ?? "image/jpeg" };
   }
 }
