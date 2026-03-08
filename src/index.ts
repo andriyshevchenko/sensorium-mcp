@@ -26,11 +26,12 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createRequire } from "module";
 import { readFileSync, writeFileSync } from "fs";
+import { createRequire } from "module";
 import { homedir } from "os";
 import { join } from "path";
 import { TelegramClient } from "./telegram.js";
+import { startDispatcher, readThreadMessages } from "./dispatcher.js";
 
 const _require = createRequire(import.meta.url);
 const { version: PKG_VERSION } = _require("../package.json") as {
@@ -123,36 +124,18 @@ if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
 }
 
 // ---------------------------------------------------------------------------
-// Telegram client + update-offset tracking
+// Telegram client + dispatcher
 // ---------------------------------------------------------------------------
 
 const telegram = new TelegramClient(TELEGRAM_TOKEN);
 
-/**
- * The next update_id we want to receive.
- * Persisted across tool calls within the same server process so we never
- * re-deliver a message that was already handled.
- *
- * Initialised by draining the existing Telegram update backlog on startup
- * so that old messages are not replayed as instructions.
- */
-let nextUpdateId = await (async () => {
-  try {
-    let offset = 0;
-    for (; ;) {
-      const updates = await telegram.getUpdates(offset, 0);
-      if (updates.length === 0) break;
-      offset = updates[updates.length - 1].update_id + 1;
-    }
-    return offset;
-  } catch (err) {
-    process.stderr.write(
-      `Warning: Failed to drain Telegram update backlog on startup: ${err instanceof Error ? err.message : String(err)}\n` +
-      "Old messages may be replayed. Continuing with offset 0.\n",
-    );
-    return 0;
-  }
-})();
+// ---------------------------------------------------------------------------
+// Start the shared dispatcher — one process polls Telegram, all instances
+// read from per-thread files. This eliminates 409 Conflict errors and
+// ensures no updates are lost between concurrent sessions.
+// ---------------------------------------------------------------------------
+
+startDispatcher(telegram, TELEGRAM_CHAT_ID);
 
 // Monotonically increasing counter so every timeout response is unique,
 // preventing VS Code Copilot's loop-detection heuristic from killing the agent.
@@ -182,8 +165,7 @@ function saveSessionMap(map: SessionMap): void {
     writeFileSync(SESSION_STORE_PATH, JSON.stringify(map, null, 2), "utf8");
   } catch (err) {
     process.stderr.write(
-      `Warning: Could not save session map to ${SESSION_STORE_PATH}: ${
-        err instanceof Error ? err.message : String(err)
+      `Warning: Could not save session map to ${SESSION_STORE_PATH}: ${err instanceof Error ? err.message : String(err)
       }\n`,
     );
   }
@@ -402,112 +384,66 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   // ── remote_copilot_wait_for_instructions ──────────────────────────────────
-  if (name === "remote_copilot_wait_for_instructions") {    const callNumber = ++waitCallCount;    const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
+  if (name === "remote_copilot_wait_for_instructions") {
+    const callNumber = ++waitCallCount; const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
     const deadline = Date.now() + timeoutMs;
 
-    // Telegram's maximum long-poll timeout is 50 s; we loop until the
-    // wall-clock deadline is reached.
-    const POLL_TIMEOUT_SECONDS = 45;
+    // Poll the dispatcher's per-thread file instead of calling getUpdates
+    // directly. This avoids 409 conflicts between concurrent instances.
+    const POLL_INTERVAL_MS = 2000;
 
     while (Date.now() < deadline) {
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
+      const stored = readThreadMessages(currentThreadId);
 
-      const pollSeconds = Math.min(
-        POLL_TIMEOUT_SECONDS,
-        Math.ceil(remaining / 1000),
-      );
+      if (stored.length > 0) {
+        type TextBlock = { type: "text"; text: string };
+        type ImageBlock = { type: "image"; data: string; mimeType: string };
+        const contentBlocks: Array<TextBlock | ImageBlock> = [];
 
-      const controller = new AbortController();
-      // Give the fetch a bit of extra headroom over the Telegram timeout.
-      const fetchTimeoutId = setTimeout(
-        () => controller.abort(),
-        (pollSeconds + 10) * 1000,
-      );
-
-      let updates;
-      try {
-        updates = await telegram.getUpdates(
-          nextUpdateId,
-          pollSeconds,
-          controller.signal,
-        );
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === "AbortError") {
-          // Fetch was aborted due to per-request timeout; retry if overall
-          // deadline has not yet been reached.
-          continue;
-        }
-        throw new Error(
-          `Failed to fetch updates from Telegram: ${err instanceof Error ? err.message : String(err)}`,
-          { cause: err },
-        );
-      } finally {
-        clearTimeout(fetchTimeoutId);
-      }
-
-      if (updates.length > 0) {
-        // Advance the offset so we don't see these updates again.
-        nextUpdateId = updates[updates.length - 1].update_id + 1;
-
-        // Collect messages (text or photo) from the target chat, scoped to the active thread.
-        const qualifiedUpdates = updates.filter(
-          (u) =>
-            (u.message?.text !== undefined || u.message?.photo !== undefined) &&
-            String(u.message?.chat.id) === TELEGRAM_CHAT_ID &&
-            (currentThreadId === undefined ||
-              u.message?.message_thread_id === currentThreadId),
-        );
-
-        if (qualifiedUpdates.length > 0) {
-          type TextBlock = { type: "text"; text: string };
-          type ImageBlock = { type: "image"; data: string; mimeType: string };
-          const contentBlocks: Array<TextBlock | ImageBlock> = [];
-
-          for (const u of qualifiedUpdates) {
-            const msg = u.message!;
-            // Photos: download the largest size and embed as base64.
-            if (msg.photo && msg.photo.length > 0) {
-              const largest = msg.photo[msg.photo.length - 1];
-              try {
-                const { base64, mimeType } = await telegram.downloadFileAsBase64(
-                  largest.file_id,
-                );
-                contentBlocks.push({ type: "image", data: base64, mimeType });
-                if (msg.caption) {
-                  contentBlocks.push({
-                    type: "text",
-                    text: `[Image caption]: ${msg.caption}`,
-                  });
-                }
-              } catch (err) {
+        for (const s of stored) {
+          // Photos: download the largest size and embed as base64.
+          if (s.message.photo && s.message.photo.length > 0) {
+            const largest = s.message.photo[s.message.photo.length - 1];
+            try {
+              const { base64, mimeType } = await telegram.downloadFileAsBase64(
+                largest.file_id,
+              );
+              contentBlocks.push({ type: "image", data: base64, mimeType });
+              if (s.message.caption) {
                 contentBlocks.push({
                   type: "text",
-                  text: `[Photo received but could not be downloaded: ${
-                    err instanceof Error ? err.message : String(err)
-                  }]`,
+                  text: `[Image caption]: ${s.message.caption}`,
                 });
               }
-            }
-            // Text messages.
-            if (msg.text) {
-              contentBlocks.push({ type: "text", text: msg.text });
+            } catch (err) {
+              contentBlocks.push({
+                type: "text",
+                text: `[Photo received but could not be downloaded: ${
+                  err instanceof Error ? err.message : String(err)
+                }]`,
+              });
             }
           }
-
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Follow these operator instructions — create plan, use subagents:",
-              },
-              ...contentBlocks,
-              { type: "text", text: getReminders(currentThreadId) },
-            ],
-          };
+          // Text messages.
+          if (s.message.text) {
+            contentBlocks.push({ type: "text", text: s.message.text });
+          }
         }
-        // Updates existed but none were relevant messages from our chat; continue polling.
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Follow these operator instructions — create plan, use subagents:",
+            },
+            ...contentBlocks,
+            { type: "text", text: getReminders(currentThreadId) },
+          ],
+        };
       }
+
+      // No messages yet — sleep briefly and check again.
+      await new Promise<void>((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
 
     // Timeout elapsed with no actionable message.
@@ -626,24 +562,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // they are not missed when remote_copilot_wait_for_instructions is called.
     let pendingMessages: string[] = [];
     try {
-      const pendingUpdates = await telegram.getUpdates(nextUpdateId, 0);
-      if (pendingUpdates.length > 0) {
-        nextUpdateId = pendingUpdates[pendingUpdates.length - 1].update_id + 1;
-        pendingMessages = pendingUpdates
-          .filter(
-            (u) =>
-              (u.message?.text !== undefined || u.message?.photo !== undefined) &&
-              String(u.message?.chat.id) === TELEGRAM_CHAT_ID &&
-              (currentThreadId === undefined ||
-                u.message?.message_thread_id === currentThreadId),
-          )
-          .map((u) => {
-            const msg = u.message!;
-            if (msg.photo) {
-              return msg.caption ? `[Photo] ${msg.caption}` : "[Photo sent — call remote_copilot_wait_for_instructions to receive it with full image data]";
-            }
-            return msg.text as string;
-          });
+      const pendingStored = readThreadMessages(currentThreadId);
+      if (pendingStored.length > 0) {
+        pendingMessages = pendingStored.map((s) => {
+          if (s.message.photo) {
+            return s.message.caption
+              ? `[Photo] ${s.message.caption}`
+              : "[Photo sent — call remote_copilot_wait_for_instructions to receive it with full image data]";
+          }
+          return s.message.text as string;
+        });
       }
     } catch {
       // Non-fatal: pending messages will still be picked up by the next

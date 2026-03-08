@@ -199,8 +199,7 @@ export class TelegramClient {
     }
     if (data === undefined) {
       throw new Error(
-        `Telegram sendMessage failed: response body could not be parsed as JSON${
-          parseError instanceof Error ? `: ${parseError.message}` : ""
+        `Telegram sendMessage failed: response body could not be parsed as JSON${parseError instanceof Error ? `: ${parseError.message}` : ""
         }`,
       );
     }
