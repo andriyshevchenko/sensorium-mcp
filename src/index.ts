@@ -2,10 +2,11 @@
 /**
  * Remote Copilot MCP Server
  *
- * Exposes three tools for AI assistants:
+ * Exposes four tools for AI assistants:
  *   - start_session                          Begin a remote-copilot session.
  *   - remote_copilot_wait_for_instructions  Poll Telegram for new user messages.
  *   - report_progress                        Send a progress update to Telegram.
+ *   - send_file                              Send a file/image to the operator.
  *
  * Required environment variables:
  *   TELEGRAM_TOKEN    – Telegram Bot API token.
@@ -135,7 +136,7 @@ const telegram = new TelegramClient(TELEGRAM_TOKEN);
 // ensures no updates are lost between concurrent sessions.
 // ---------------------------------------------------------------------------
 
-startDispatcher(telegram, TELEGRAM_CHAT_ID);
+await startDispatcher(telegram, TELEGRAM_CHAT_ID);
 
 // Monotonically increasing counter so every timeout response is unique,
 // preventing VS Code Copilot's loop-detection heuristic from killing the agent.
@@ -267,6 +268,32 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: ["message"],
+      },
+    },
+    {
+      name: "send_file",
+      description:
+        "Send a file (image or document) to the operator via Telegram. " +
+        "Provide the file content as a base64-encoded string. " +
+        "Images (JPEG, PNG, GIF, WebP) are sent as photos; other files as documents.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          base64: {
+            type: "string",
+            description: "The file content encoded as a base64 string.",
+          },
+          filename: {
+            type: "string",
+            description:
+              "The filename including extension (e.g. 'report.pdf', 'screenshot.png').",
+          },
+          caption: {
+            type: "string",
+            description: "Optional caption to display with the file.",
+          },
+        },
+        required: ["base64", "filename"],
       },
     },
   ],
@@ -424,6 +451,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               });
             }
           }
+          // Documents: download and embed as base64.
+          if (s.message.document) {
+            const doc = s.message.document;
+            try {
+              const { base64, mimeType } = await telegram.downloadFileAsBase64(
+                doc.file_id,
+              );
+              const isImage = mimeType.startsWith("image/");
+              if (isImage) {
+                contentBlocks.push({ type: "image", data: base64, mimeType });
+              } else {
+                // Non-image documents: include as text with base64 data.
+                contentBlocks.push({
+                  type: "text",
+                  text: `[Document: ${doc.file_name ?? "file"} (${doc.mime_type ?? mimeType})]\nBase64 content: ${base64}`,
+                });
+              }
+              if (s.message.caption) {
+                contentBlocks.push({
+                  type: "text",
+                  text: `[Document caption]: ${s.message.caption}`,
+                });
+              }
+            } catch (err) {
+              contentBlocks.push({
+                type: "text",
+                text: `[Document "${doc.file_name ?? "file"}" received but could not be downloaded: ${
+                  err instanceof Error ? err.message : String(err)
+                }]`,
+              });
+            }
+          }
           // Text messages.
           if (s.message.text) {
             contentBlocks.push({ type: "text", text: s.message.text });
@@ -459,7 +518,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           `🟢 **Session alive** — ${new Date().toLocaleString("en-GB", {
             day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false,
           })}` +
-          (currentThreadId !== undefined ? ` \\(thread ${currentThreadId}\\)` : ""),
+          (currentThreadId !== undefined ? ` (thread ${currentThreadId})` : ""),
         );
         await telegram.sendMessage(TELEGRAM_CHAT_ID, ping, "MarkdownV2", currentThreadId);
         keepAliveSent = true;
@@ -570,8 +629,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               ? `[Photo] ${s.message.caption}`
               : "[Photo sent — call remote_copilot_wait_for_instructions to receive it with full image data]";
           }
-          return s.message.text as string;
-        });
+          if (s.message.document) {
+            return s.message.caption
+              ? `[Document: ${s.message.document.file_name ?? "file"}] ${s.message.caption}`
+              : `[Document sent: ${s.message.document.file_name ?? "file"} — call remote_copilot_wait_for_instructions to receive it]`;
+          }
+          return s.message.text ?? "";
+        }).filter(Boolean);
       }
     } catch {
       // Non-fatal: pending messages will still be picked up by the next
@@ -591,8 +655,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `You should:\n` +
         ` - Read and incorporate the operator's new messages.\n` +
         ` - Update or refine your plan as needed.\n` +
-        ` - Continue your work. Keep using subagents.` +
-        getReminders(currentThreadId)
+        ` - Continue your work. Keep using subagents.`
         : baseStatus;
 
     return {
@@ -603,6 +666,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         },
       ],
     };
+  }
+
+  // ── send_file ─────────────────────────────────────────────────────────────
+  if (name === "send_file") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const base64Data = typeof typedArgs.base64 === "string" ? typedArgs.base64 : "";
+    const filename = typeof typedArgs.filename === "string" ? typedArgs.filename : "file";
+    const caption = typeof typedArgs.caption === "string" ? typedArgs.caption : undefined;
+
+    if (!base64Data) {
+      return {
+        content: [{ type: "text", text: "Error: 'base64' argument is required for send_file." }],
+        isError: true,
+      };
+    }
+
+    try {
+      const buffer = Buffer.from(base64Data, "base64");
+      const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+      const imageExts = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
+
+      if (imageExts.has(ext)) {
+        await telegram.sendPhoto(TELEGRAM_CHAT_ID, buffer, filename, caption, currentThreadId);
+      } else {
+        await telegram.sendDocument(TELEGRAM_CHAT_ID, buffer, filename, caption, currentThreadId);
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `File "${filename}" sent to Telegram successfully.` + getReminders(currentThreadId),
+          },
+        ],
+      };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`Failed to send file via Telegram: ${errorMsg}\n`);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: Failed to send file "${filename}" to Telegram: ${errorMsg}`,
+          },
+        ],
+        isError: true,
+      };
+    }
   }
 
   // Unknown tool

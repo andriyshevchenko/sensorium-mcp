@@ -257,7 +257,87 @@ export class TelegramClient {
       gif: "image/gif",
       webp: "image/webp",
       bmp: "image/bmp",
+      pdf: "application/pdf",
+      txt: "text/plain",
+      json: "application/json",
+      xml: "application/xml",
+      csv: "text/csv",
+      zip: "application/zip",
+      svg: "image/svg+xml",
     };
-    return { base64, mimeType: mimeMap[ext] ?? "image/jpeg" };
+    // Prefer Content-Type header from the response, fall back to extension map.
+    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim();
+    const mimeType = contentType && contentType !== "application/octet-stream"
+      ? contentType
+      : (mimeMap[ext] ?? "application/octet-stream");
+    return { base64, mimeType };
+  }
+
+  /**
+   * Send a document (file) to a chat via multipart/form-data.
+   * @param fileBuffer  The file content as a Buffer.
+   * @param filename    The filename to display in Telegram.
+   * @param caption     Optional caption (plain text).
+   * @param threadId    Optional message_thread_id for forum supergroups.
+   */
+  async sendDocument(
+    chatId: string,
+    fileBuffer: Buffer,
+    filename: string,
+    caption?: string,
+    threadId?: number,
+  ): Promise<void> {
+    const url = `${this.baseUrl}/sendDocument`;
+    const formData = new FormData();
+    formData.append("chat_id", chatId);
+    formData.append("document", new Blob([new Uint8Array(fileBuffer)]), filename);
+    if (caption) formData.append("caption", caption);
+    if (threadId !== undefined) formData.append("message_thread_id", String(threadId));
+
+    const response = await fetch(url, { method: "POST", body: formData });
+    let data: SendMessageResult | undefined;
+    try {
+      data = (await response.json()) as SendMessageResult;
+    } catch {
+      data = undefined;
+    }
+    if (!response.ok || data?.ok !== true) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram sendDocument failed: ${response.status} ${description}`);
+    }
+  }
+
+  /**
+   * Send a photo to a chat via multipart/form-data.
+   * @param imageBuffer The image content as a Buffer.
+   * @param filename    The filename (e.g. "screenshot.png").
+   * @param caption     Optional caption.
+   * @param threadId    Optional message_thread_id for forum supergroups.
+   */
+  async sendPhoto(
+    chatId: string,
+    imageBuffer: Buffer,
+    filename: string,
+    caption?: string,
+    threadId?: number,
+  ): Promise<void> {
+    const url = `${this.baseUrl}/sendPhoto`;
+    const formData = new FormData();
+    formData.append("chat_id", chatId);
+    formData.append("photo", new Blob([new Uint8Array(imageBuffer)]), filename);
+    if (caption) formData.append("caption", caption);
+    if (threadId !== undefined) formData.append("message_thread_id", String(threadId));
+
+    const response = await fetch(url, { method: "POST", body: formData });
+    let data: SendMessageResult | undefined;
+    try {
+      data = (await response.json()) as SendMessageResult;
+    } catch {
+      data = undefined;
+    }
+    if (!response.ok || data?.ok !== true) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram sendPhoto failed: ${response.status} ${description}`);
+    }
   }
 }

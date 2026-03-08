@@ -4,13 +4,22 @@ An MCP (Model Context Protocol) server for remote control of AI assistants via T
 
 ## Overview
 
-This server exposes three tools that allow an AI assistant (e.g. GitHub Copilot) to be operated remotely through a Telegram bot:
+This server exposes four tools that allow an AI assistant (e.g. GitHub Copilot) to be operated remotely through a Telegram bot:
 
 | Tool | Description |
 |------|-------------|
-| `start_session` | Begin a remote-copilot session. Automatically creates a dedicated Telegram topic thread in the forum supergroup so each session is fully isolated. |
-| `remote_copilot_wait_for_instructions` | Blocks (long-polls Telegram) until a new message arrives in the active topic or the timeout elapses. |
-| `report_progress` | Sends a progress update back to the operator in the active topic thread, using standard Markdown (auto-converted to Telegram MarkdownV2). |
+| `start_session` | Begin or resume a remote-copilot session. Creates a dedicated Telegram topic thread (or resumes an existing one by name or thread ID). |
+| `remote_copilot_wait_for_instructions` | Blocks until a new message (text, photo, or document) arrives in the active topic or the timeout elapses. |
+| `report_progress` | Sends a progress update back to the operator using standard Markdown (auto-converted to Telegram MarkdownV2). |
+| `send_file` | Sends a file or image to the operator via Telegram (base64-encoded). Images are sent as photos; everything else as documents. |
+
+## Features
+
+- **Concurrent sessions** — Multiple VS Code windows can run independent sessions simultaneously. A shared file-based dispatcher ensures only one process polls Telegram (`getUpdates`), while each session reads from its own per-thread message file. No 409 conflicts, no lost updates.
+- **Named session persistence** — Sessions are mapped by name to Telegram thread IDs in `~/.remote-copilot-mcp-sessions.json`. Calling `start_session({ name: "Fix auth bug" })` always resumes the same thread, even across VS Code restarts.
+- **Image & document support** — Send photos or documents to the agent from Telegram; the agent receives them as native MCP image content blocks or base64 text. The agent can also send files back via the `send_file` tool.
+- **Automatic Markdown conversion** — Standard Markdown in `report_progress` is automatically converted to Telegram MarkdownV2, including code blocks, tables, blockquotes, and special characters.
+- **Keep-alive pings** — Periodic heartbeat messages to Telegram so the operator knows the agent is still alive during long idle periods.
 
 ## Prerequisites
 
@@ -71,8 +80,20 @@ Add to your MCP configuration:
 
 ## How it works
 
-1. The AI calls `start_session`, which **automatically creates a new Telegram topic** (e.g. *Copilot — 07 Mar 2026, 14:30*) in the forum supergroup. All sends and receives for this session are scoped to that thread, so multiple parallel sessions never interfere.
-2. The server long-polls the Telegram Bot API (`getUpdates`) in 45-second windows, filtering messages by the active topic's `message_thread_id`.
-3. When a message arrives the tool instructs the AI to act on it, then call `remote_copilot_wait_for_instructions` again to keep the loop alive.
-4. If the timeout elapses with no message the tool tells the AI to call the tool again immediately (with a unique timestamp so VS Code's loop-detection heuristic is not triggered).
-5. At any point the AI calls `report_progress` to post a status update to the active topic thread. The message is written in standard Markdown and automatically converted to Telegram MarkdownV2. Intermediate operator messages are also surfaced so they are not missed.
+1. The AI calls `start_session`, which creates a new Telegram topic (e.g. *Copilot — 07 Mar 2026, 14:30*) or resumes an existing one by name/thread ID.
+2. A shared **dispatcher** runs a single `getUpdates` poller (elected via a lock file at `~/.remote-copilot-mcp/poller.lock`). It writes incoming messages to per-thread JSONL files under `~/.remote-copilot-mcp/threads/`. Each MCP instance reads from its own thread file — no 409 conflicts between concurrent sessions.
+3. When a message arrives (text, photo, or document), the tool downloads any media, converts it to MCP content blocks (image or text with base64), and instructs the AI to act on it.
+4. The AI calls `report_progress` to post status updates and `send_file` to send files/images back to the operator.
+5. If the timeout elapses with no message, the tool tells the AI to call `remote_copilot_wait_for_instructions` again immediately.
+
+### Architecture
+
+```
+~/.remote-copilot-mcp/
+  poller.lock                 ← PID + timestamp; first instance becomes the poller
+  offset                      ← shared getUpdates offset
+  threads/
+    <threadId>.jsonl           ← messages for each topic thread
+    general.jsonl              ← messages with no thread ID
+~/.remote-copilot-mcp-sessions.json  ← name → threadId mapping
+```

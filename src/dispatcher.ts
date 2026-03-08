@@ -27,6 +27,7 @@ import {
     existsSync,
     mkdirSync,
     readFileSync,
+    renameSync,
     unlinkSync,
     writeFileSync
 } from "fs";
@@ -152,6 +153,11 @@ export interface StoredMessage {
             width: number;
             height: number;
         }>;
+        document?: {
+            file_id: string;
+            file_name?: string;
+            mime_type?: string;
+        };
         date: number;
     };
 }
@@ -173,19 +179,25 @@ function appendToThread(threadId: number | "general", msg: StoredMessage): void 
 
 /**
  * Read and clear all pending messages for a thread.
- * Returns an empty array if none.
+ * Uses rename for atomic read-and-clear to prevent message loss.
  */
 export function readThreadMessages(threadId: number | undefined): StoredMessage[] {
     const key: number | "general" = threadId ?? "general";
     const file = threadFilePath(key);
+    const tmp = file + ".reading." + process.pid;
     try {
-        const raw = readFileSync(file, "utf8").trim();
-        if (!raw) return [];
-        // Atomically clear the file after reading.
-        writeFileSync(file, "", "utf8");
-        return raw.split("\n").map((line) => JSON.parse(line) as StoredMessage);
+        // Atomically move the file so the poller appends to a fresh file.
+        renameSync(file, tmp);
+    } catch {
+        return []; // File doesn't exist or is empty.
+    }
+    try {
+        const raw = readFileSync(tmp, "utf8").trim();
+        return raw ? raw.split("\n").map((line) => JSON.parse(line) as StoredMessage) : [];
     } catch {
         return [];
+    } finally {
+        try { unlinkSync(tmp); } catch { /* already gone */ }
     }
 }
 
@@ -194,7 +206,6 @@ export function readThreadMessages(threadId: number | undefined): StoredMessage[
 // ---------------------------------------------------------------------------
 
 let pollerRunning = false;
-let pollerInterval: ReturnType<typeof setInterval> | null = null;
 
 async function pollOnce(
     telegram: TelegramClient,
@@ -230,6 +241,11 @@ async function pollOnce(
                         width: p.width,
                         height: p.height,
                     })),
+                    document: u.message.document ? {
+                        file_id: u.message.document.file_id,
+                        file_name: u.message.document.file_name,
+                        mime_type: u.message.document.mime_type,
+                    } : undefined,
                     date: u.message.date,
                 },
             };
@@ -255,38 +271,35 @@ async function pollOnce(
  *
  * Returns: whether this instance became the poller.
  */
-export function startDispatcher(
+export async function startDispatcher(
     telegram: TelegramClient,
     chatId: string,
-): boolean {
+): Promise<boolean> {
     ensureDirs();
     const isPoller = tryAcquireLock();
 
     if (isPoller) {
         process.stderr.write("[dispatcher] This instance is the poller.\n");
 
-        // Run an initial drain for fresh offset if offset file doesn't exist.
+        // Drain old updates before starting the poll loop to avoid replaying stale messages.
         if (!existsSync(OFFSET_FILE)) {
-            // Drain asynchronously — first poll will handle it.
-            void (async () => {
-                try {
-                    let off = 0;
-                    for (; ;) {
-                        const updates = await telegram.getUpdates(off, 0);
-                        if (updates.length === 0) break;
-                        off = updates[updates.length - 1].update_id + 1;
-                    }
-                    writeOffset(off);
-                    process.stderr.write(
-                        `[dispatcher] Drained old updates. Offset set to ${off}.\n`,
-                    );
-                } catch (err) {
-                    process.stderr.write(
-                        `[dispatcher] Warning: Could not drain old updates: ${err instanceof Error ? err.message : String(err)
-                        }\n`,
-                    );
+            try {
+                let off = 0;
+                for (; ;) {
+                    const updates = await telegram.getUpdates(off, 0);
+                    if (updates.length === 0) break;
+                    off = updates[updates.length - 1].update_id + 1;
                 }
-            })();
+                writeOffset(off);
+                process.stderr.write(
+                    `[dispatcher] Drained old updates. Offset set to ${off}.\n`,
+                );
+            } catch (err) {
+                process.stderr.write(
+                    `[dispatcher] Warning: Could not drain old updates: ${err instanceof Error ? err.message : String(err)
+                    }\n`,
+                );
+            }
         }
 
         // Continuous poll loop.
@@ -328,9 +341,5 @@ export function startDispatcher(
  */
 export function stopDispatcher(): void {
     pollerRunning = false;
-    if (pollerInterval) {
-        clearInterval(pollerInterval);
-        pollerInterval = null;
-    }
     removeLock();
 }
