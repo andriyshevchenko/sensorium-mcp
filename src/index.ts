@@ -321,6 +321,7 @@ function getReminders(threadId?: number): string {
     : "";
   return (
     "\n\n## REMINDERS" +
+    "\n- **ALWAYS delegate work to subagents.** Never do research, code edits, file reads, or multi-step tasks inline. Launch a subagent for each task. This keeps the context window clean." +
     "\n- Call report_progress after every significant step — do not batch updates." +
     "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool." +
     threadHint
@@ -504,7 +505,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: "Follow these operator instructions — create plan, use subagents:",
+              text: "Follow these operator instructions. " +
+                "CRITICAL: You MUST use subagents (runSubagent) for ALL work — research, code changes, file operations, analysis, etc. " +
+                "Never do multi-step work inline. Create a plan, then execute each step via a subagent. " +
+                "Report progress to Telegram after each subagent completes. " +
+                "Here are the operator's instructions:",
             },
             ...contentBlocks,
             { type: "text", text: getReminders(currentThreadId) },
@@ -670,7 +675,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `You should:\n` +
         ` - Read and incorporate the operator's new messages.\n` +
         ` - Update or refine your plan as needed.\n` +
-        ` - Continue your work. Keep using subagents.`
+        ` - Continue your work. Delegate ALL tasks to subagents — never do multi-step work inline.`
         : baseStatus;
 
     return {
