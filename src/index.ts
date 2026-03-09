@@ -31,7 +31,7 @@ import { readFileSync, writeFileSync } from "fs";
 import { createRequire } from "module";
 import { homedir } from "os";
 import { join } from "path";
-import { readThreadMessages, startDispatcher } from "./dispatcher.js";
+import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
 import { TelegramClient } from "./telegram.js";
 
 const _require = createRequire(import.meta.url);
@@ -654,11 +654,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    // Collect any messages the operator sent while the agent was working so
-    // they are not missed when remote_copilot_wait_for_instructions is called.
+    // Peek at any messages the operator sent while the agent was working.
+    // Uses non-destructive peek so photos/documents are preserved for
+    // full delivery via remote_copilot_wait_for_instructions.
     let pendingMessages: string[] = [];
     try {
-      const pendingStored = readThreadMessages(currentThreadId);
+      const pendingStored = peekThreadMessages(currentThreadId);
       if (pendingStored.length > 0) {
         for (const s of pendingStored) {
           if (s.message.photo && s.message.photo.length > 0) {
@@ -729,7 +730,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (filePath) {
         // Read directly from disk — fast, no LLM context overhead.
-        const { readFileSync } = await import("fs");
         const { basename } = await import("path");
         buffer = readFileSync(filePath);
         filename = typeof typedArgs.filename === "string" && typedArgs.filename.trim()

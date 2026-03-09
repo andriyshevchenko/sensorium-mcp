@@ -166,15 +166,14 @@ function threadFilePath(threadId: number | "general"): string {
     return join(THREADS_DIR, `${threadId}.jsonl`);
 }
 
+/**
+ * Append a message to a thread's JSONL file.
+ * Throws on write failure so the caller can track which messages were persisted.
+ */
 function appendToThread(threadId: number | "general", msg: StoredMessage): void {
     const file = threadFilePath(threadId);
-    try {
-        const line = JSON.stringify(msg) + "\n";
-        // appendFileSync would be ideal, but writeFileSync with flag "a" works.
-        writeFileSync(file, line, { flag: "a", encoding: "utf8" });
-    } catch {
-        // Non-fatal — message may be lost for this thread.
-    }
+    const line = JSON.stringify(msg) + "\n";
+    writeFileSync(file, line, { flag: "a", encoding: "utf8" });
 }
 
 /**
@@ -193,11 +192,46 @@ export function readThreadMessages(threadId: number | undefined): StoredMessage[
     }
     try {
         const raw = readFileSync(tmp, "utf8").trim();
-        return raw ? raw.split("\n").map((line) => JSON.parse(line) as StoredMessage) : [];
+        if (!raw) return [];
+        const results: StoredMessage[] = [];
+        for (const line of raw.split("\n")) {
+            try {
+                results.push(JSON.parse(line) as StoredMessage);
+            } catch {
+                // Skip corrupt line — partial write or power loss.
+                process.stderr.write(
+                    `[dispatcher] Skipping corrupt JSONL line in ${key}.jsonl\n`,
+                );
+            }
+        }
+        return results;
     } catch {
         return [];
     } finally {
         try { unlinkSync(tmp); } catch { /* already gone */ }
+    }
+}
+
+/**
+ * Non-destructive peek at pending messages for a thread.
+ * Unlike readThreadMessages, this does NOT consume the messages — they remain
+ * in the thread file for the next readThreadMessages call.
+ */
+export function peekThreadMessages(threadId: number | undefined): StoredMessage[] {
+    const key: number | "general" = threadId ?? "general";
+    const file = threadFilePath(key);
+    try {
+        const raw = readFileSync(file, "utf8").trim();
+        if (!raw) return [];
+        const results: StoredMessage[] = [];
+        for (const line of raw.split("\n")) {
+            try {
+                results.push(JSON.parse(line) as StoredMessage);
+            } catch { /* skip corrupt */ }
+        }
+        return results;
+    } catch {
+        return [];
     }
 }
 
@@ -223,16 +257,25 @@ async function pollOnce(
     try {
         const updates = await telegram.getUpdates(offset, POLL_TIMEOUT_SECONDS);
 
-        // Refresh again after the (potentially 30-second) long poll returns.
+        // Refresh again after the (potentially 10-second) long poll returns.
         writeLock();
 
         if (updates.length === 0) return;
 
-        offset = updates[updates.length - 1].update_id + 1;
+        // Track the highest offset for which ALL messages were successfully written.
+        let committedOffset = offset;
+        let allSucceeded = true;
 
         for (const u of updates) {
-            if (!u.message) continue;
-            if (String(u.message.chat.id) !== chatId) continue;
+            if (!u.message) {
+                // Non-message update — skip but still advance past it.
+                committedOffset = u.update_id + 1;
+                continue;
+            }
+            if (String(u.message.chat.id) !== chatId) {
+                committedOffset = u.update_id + 1;
+                continue;
+            }
 
             const threadId: number | "general" =
                 u.message.message_thread_id ?? "general";
@@ -259,11 +302,29 @@ async function pollOnce(
                 },
             };
 
-            appendToThread(threadId, stored);
+            try {
+                appendToThread(threadId, stored);
+                committedOffset = u.update_id + 1;
+            } catch (writeErr) {
+                process.stderr.write(
+                    `[dispatcher] Failed to write message ${u.update_id} to thread ${threadId}: ${
+                        writeErr instanceof Error ? writeErr.message : String(writeErr)
+                    }\n`,
+                );
+                allSucceeded = false;
+                break; // Stop processing — don't skip messages.
+            }
         }
 
-        // Commit offset only after all messages have been written to disk.
-        writeOffset(offset);
+        // Only advance offset to the last successfully written message.
+        if (committedOffset > offset) {
+            writeOffset(committedOffset);
+        }
+        if (!allSucceeded) {
+            process.stderr.write(
+                "[dispatcher] Partial batch write. Will retry remaining messages on next poll.\n",
+            );
+        }
     } catch (err) {
         process.stderr.write(
             `[dispatcher] Poll error: ${err instanceof Error ? err.message : String(err)}\n`,
@@ -280,49 +341,27 @@ async function pollOnce(
  *
  * Returns: whether this instance became the poller.
  */
-export function startDispatcher(
+export async function startDispatcher(
     telegram: TelegramClient,
     chatId: string,
-): boolean {
+): Promise<boolean> {
     ensureDirs();
     const isPoller = tryAcquireLock();
 
-    if (isPoller) {
-        process.stderr.write("[dispatcher] This instance is the poller.\n");
+    // Shared cleanup + loop helpers to avoid duplication.
+    const registerCleanup = () => {
+        const cleanup = () => {
+            pollerRunning = false;
+            removeLock();
+        };
+        process.on("exit", cleanup);
+        process.on("SIGINT", () => { cleanup(); process.exit(0); });
+        process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+    };
 
-        // Continuous poll loop.
-        pollerRunning = true;
-
-        // On first run with no offset file, skip all old updates in one call
-        // by fetching the latest update_id and setting the offset past it.
-        // This avoids a slow multi-round drain from offset 0.
-        if (!existsSync(OFFSET_FILE)) {
-            process.stderr.write(
-                "[dispatcher] No offset file. Skipping old updates...\n",
-            );
-            void (async () => {
-                try {
-                    // getUpdates with offset=-1 returns the latest pending update.
-                    const latest = await telegram.getUpdates(-1, 0);
-                    if (latest.length > 0) {
-                        const skipTo = latest[latest.length - 1].update_id + 1;
-                        writeOffset(skipTo);
-                        process.stderr.write(
-                            `[dispatcher] Skipped to offset ${skipTo}.\n`,
-                        );
-                    } else {
-                        writeOffset(0);
-                    }
-                } catch {
-                    writeOffset(0);
-                }
-            })();
-        }
-
+    const startLoop = () => {
         const loop = async () => {
             while (pollerRunning) {
-                // Check if another instance stole the lock (shouldn't happen
-                // now that we refresh before and after each poll, but be safe).
                 const currentLock = readLock();
                 if (currentLock && currentLock.pid !== process.pid) {
                     process.stderr.write(
@@ -332,26 +371,48 @@ export function startDispatcher(
                     break;
                 }
                 await pollOnce(telegram, chatId);
-                // Small delay between polls to avoid tight-looping on errors.
                 await new Promise<void>((r) => setTimeout(r, 500));
             }
         };
         void loop();
+    };
 
-        // Clean up lock on process exit.
-        const cleanup = () => {
-            pollerRunning = false;
-            removeLock();
-        };
-        process.on("exit", cleanup);
-        process.on("SIGINT", () => {
-            cleanup();
-            process.exit(0);
-        });
-        process.on("SIGTERM", () => {
-            cleanup();
-            process.exit(0);
-        });
+    if (isPoller) {
+        process.stderr.write("[dispatcher] This instance is the poller.\n");
+
+        // On first run with no offset file, skip all old updates in one call
+        // by fetching the latest update_id and setting the offset past it.
+        // Awaited so the poll loop never sees offset=0.
+        if (!existsSync(OFFSET_FILE)) {
+            process.stderr.write(
+                "[dispatcher] No offset file. Skipping old updates...\n",
+            );
+            try {
+                const latest = await telegram.getUpdates(-1, 0);
+                if (latest.length > 0) {
+                    const skipTo = latest[latest.length - 1].update_id + 1;
+                    writeOffset(skipTo);
+                    process.stderr.write(
+                        `[dispatcher] Skipped to offset ${skipTo}.\n`,
+                    );
+                } else {
+                    writeOffset(0);
+                }
+            } catch (err) {
+                // Don't write offset=0 — leave it at whatever the current value is.
+                // If the file still doesn't exist, readOffset() returns 0 which is
+                // acceptable because the drain simply failed to optimise.
+                process.stderr.write(
+                    `[dispatcher] Warning: drain failed: ${
+                        err instanceof Error ? err.message : String(err)
+                    }. Poll loop will start from offset 0.\n`,
+                );
+            }
+        }
+
+        pollerRunning = true;
+        startLoop();
+        registerCleanup();
     } else {
         process.stderr.write(
             "[dispatcher] Another instance is the poller. This instance is a consumer only.\n",
@@ -367,28 +428,10 @@ export function startDispatcher(
                     "[dispatcher] Promoted to poller (previous poller seems inactive).\n",
                 );
                 pollerRunning = true;
-                const loop = async () => {
-                    while (pollerRunning) {
-                        const currentLock = readLock();
-                        if (currentLock && currentLock.pid !== process.pid) {
-                            pollerRunning = false;
-                            break;
-                        }
-                        await pollOnce(telegram, chatId);
-                        await new Promise<void>((r) => setTimeout(r, 500));
-                    }
-                };
-                void loop();
-                const cleanup = () => {
-                    pollerRunning = false;
-                    removeLock();
-                };
-                process.on("exit", cleanup);
-                process.on("SIGINT", () => { cleanup(); process.exit(0); });
-                process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+                startLoop();
+                registerCleanup();
             }
         }, CONSUMER_RETRY_MS);
-        // Don't keep the process alive just for this timer.
         retryTimer.unref();
     }
 
