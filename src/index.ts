@@ -320,10 +320,26 @@ function getReminders(threadId?: number): string {
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
   return (
-    "\n\n## REMINDERS" +
-    "\n- **ALWAYS delegate work to subagents.** Never do research, code edits, file reads, or multi-step tasks inline. Launch a subagent for each task. This keeps the context window clean." +
-    "\n- Call report_progress after every significant step — do not batch updates." +
-    "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool." +
+    "\n\n## YOUR ROLE: ORCHESTRATOR" +
+    "\nYou are a **high-level orchestrator**. Your ONLY job is to plan, delegate, and report. You must NEVER do actual work yourself." +
+    "\n" +
+    "\n### Rules" +
+    "\n1. **Plan first**: Break operator instructions into a todo list (use manage_todo_list)." +
+    "\n2. **Delegate everything**: For EACH todo item, launch a subagent (runSubagent). Never read files, write code, search, or analyze inline. Your context window is precious — keep it clean." +
+    "\n3. **Report after each todo**: After EVERY completed todo item, immediately call report_progress to update the operator on Telegram. Include what was done and what’s next." +
+    "\n4. **Mark progress**: Update manage_todo_list as you go — mark items in-progress before launching the subagent, completed after." +
+    "\n5. **Loop forever**: When all todos are done, call remote_copilot_wait_for_instructions. Never stop, never summarize, never end the session." +
+    "\n" +
+    "\n### What you CAN do inline" +
+    "\n- Call tools: report_progress, send_file, manage_todo_list, remote_copilot_wait_for_instructions, start_session" +
+    "\n- Think/reason about the plan" +
+    "\n- Summarize subagent results for the report" +
+    "\n" +
+    "\n### What you must NEVER do inline" +
+    "\n- Read or edit files" +
+    "\n- Search code or docs" +
+    "\n- Write or debug code" +
+    "\n- Any multi-step research or implementation" +
     threadHint
   );
 }
@@ -505,11 +521,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: "Follow these operator instructions. " +
-                "CRITICAL: You MUST use subagents (runSubagent) for ALL work — research, code changes, file operations, analysis, etc. " +
-                "Never do multi-step work inline. Create a plan, then execute each step via a subagent. " +
-                "Report progress to Telegram after each subagent completes. " +
-                "Here are the operator's instructions:",
+              text: "New operator instructions received. " +
+                "You are the ORCHESTRATOR — do NOT do any work yourself. Follow this workflow:\n" +
+                "1. Create a todo list (manage_todo_list) breaking these instructions into discrete tasks.\n" +
+                "2. For EACH todo: mark in-progress → launch a subagent (runSubagent) → mark completed → call report_progress.\n" +
+                "3. When all todos are done, call remote_copilot_wait_for_instructions.\n" +
+                "4. NEVER read files, write code, or do research inline. Subagents handle ALL of that.\n\n" +
+                "Operator instructions:",
             },
             ...contentBlocks,
             { type: "text", text: getReminders(currentThreadId) },
@@ -674,8 +692,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `Use those messages to steer an active session: ${pendingMessages.join("\n\n")}. ` +
         `You should:\n` +
         ` - Read and incorporate the operator's new messages.\n` +
-        ` - Update or refine your plan as needed.\n` +
-        ` - Continue your work. Delegate ALL tasks to subagents — never do multi-step work inline.`
+        ` - Update your todo list and plan accordingly.\n` +
+        ` - Continue delegating ALL work to subagents — never do implementation inline.\n` +
+        ` - Call report_progress after incorporating the new direction.`
         : baseStatus;
 
     return {
