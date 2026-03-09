@@ -331,7 +331,7 @@ function getReminders(threadId?: number): string {
     "\n\n## REMINDERS" +
     "\n- Call report_progress after every significant step — do not batch updates." +
     "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool." +
-    "\n- For large tasks: break work into steps. Use subagents only for self-contained subtasks with clear deliverables (e.g. 'search codebase for X', 'implement module Y in file Z', 'write tests for W'). Do NOT delegate vague or multi-step goals to a subagent." +
+    "\n- Prefer subagents for parts of your work which can be safely delegated" +
     threadHint
   );
 }
