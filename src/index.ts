@@ -331,13 +331,7 @@ function getReminders(threadId?: number): string {
     "\n\n## REMINDERS" +
     "\n- Call report_progress after every significant step — do not batch updates." +
     "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool." +
-    "\n- YOU plan and coordinate. Subagents do the work:" +
-    "\n  \u2192 Searching/reading code \u2192 subagent" +
-    "\n  \u2192 Implementing a change in specific files \u2192 subagent" +
-    "\n  \u2192 Writing/running tests \u2192 subagent" +
-    "\n  \u2192 Web research \u2192 subagent" +
-    "\n  \u2192 Planning, deciding, reporting progress \u2192 you (main thread)" +
-    "\n  Give each subagent ONE concrete task and tell it exactly what to return." +
+    "\n- For large tasks: break work into steps. Use subagents only for self-contained subtasks with clear deliverables (e.g. 'search codebase for X', 'implement module Y in file Z', 'write tests for W'). Do NOT delegate vague or multi-step goals to a subagent." +
     threadHint
   );
 }
@@ -536,7 +530,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: "Follow the operator's instructions below. Make a plan, then delegate each step to a subagent:",
+              text: "Follow the operator's instructions below. First create a plan, then execute it step by step:",
             },
             ...contentBlocks,
             { type: "text", text: getReminders(currentThreadId) },
