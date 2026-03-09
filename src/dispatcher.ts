@@ -98,7 +98,7 @@ function isPidAlive(pid: number): boolean {
  * - If lock file exists, PID is alive, but lock is >5 min old → take it (stale).
  * - Otherwise → someone else is the poller.
  */
-const STALE_LOCK_MS = 5 * 60 * 1000;
+const STALE_LOCK_MS = 90 * 1000; // 90 seconds
 
 function tryAcquireLock(): boolean {
     const existing = readLock();
@@ -217,7 +217,7 @@ async function pollOnce(
     // of inactivity and letting a second instance grab the poller role.
     writeLock();
 
-    const POLL_TIMEOUT_SECONDS = 30;
+    const POLL_TIMEOUT_SECONDS = 10;
     let offset = readOffset();
 
     try {
@@ -280,39 +280,45 @@ async function pollOnce(
  *
  * Returns: whether this instance became the poller.
  */
-export async function startDispatcher(
+export function startDispatcher(
     telegram: TelegramClient,
     chatId: string,
-): Promise<boolean> {
+): boolean {
     ensureDirs();
     const isPoller = tryAcquireLock();
 
     if (isPoller) {
         process.stderr.write("[dispatcher] This instance is the poller.\n");
 
-        // Drain old updates before starting the poll loop to avoid replaying stale messages.
-        if (!existsSync(OFFSET_FILE)) {
-            try {
-                let off = 0;
-                for (; ;) {
-                    const updates = await telegram.getUpdates(off, 0);
-                    if (updates.length === 0) break;
-                    off = updates[updates.length - 1].update_id + 1;
-                }
-                writeOffset(off);
-                process.stderr.write(
-                    `[dispatcher] Drained old updates. Offset set to ${off}.\n`,
-                );
-            } catch (err) {
-                process.stderr.write(
-                    `[dispatcher] Warning: Could not drain old updates: ${err instanceof Error ? err.message : String(err)
-                    }\n`,
-                );
-            }
-        }
-
         // Continuous poll loop.
         pollerRunning = true;
+
+        // On first run with no offset file, skip all old updates in one call
+        // by fetching the latest update_id and setting the offset past it.
+        // This avoids a slow multi-round drain from offset 0.
+        if (!existsSync(OFFSET_FILE)) {
+            process.stderr.write(
+                "[dispatcher] No offset file. Skipping old updates...\n",
+            );
+            void (async () => {
+                try {
+                    // getUpdates with offset=-1 returns the latest pending update.
+                    const latest = await telegram.getUpdates(-1, 0);
+                    if (latest.length > 0) {
+                        const skipTo = latest[latest.length - 1].update_id + 1;
+                        writeOffset(skipTo);
+                        process.stderr.write(
+                            `[dispatcher] Skipped to offset ${skipTo}.\n`,
+                        );
+                    } else {
+                        writeOffset(0);
+                    }
+                } catch {
+                    writeOffset(0);
+                }
+            })();
+        }
+
         const loop = async () => {
             while (pollerRunning) {
                 // Check if another instance stole the lock (shouldn't happen
@@ -350,6 +356,40 @@ export async function startDispatcher(
         process.stderr.write(
             "[dispatcher] Another instance is the poller. This instance is a consumer only.\n",
         );
+
+        // Periodically try to become the poller in case the current one dies
+        // but its PID remains alive (zombie process, stuck socket, etc.).
+        const CONSUMER_RETRY_MS = 30_000;
+        const retryTimer = setInterval(() => {
+            if (tryAcquireLock()) {
+                clearInterval(retryTimer);
+                process.stderr.write(
+                    "[dispatcher] Promoted to poller (previous poller seems inactive).\n",
+                );
+                pollerRunning = true;
+                const loop = async () => {
+                    while (pollerRunning) {
+                        const currentLock = readLock();
+                        if (currentLock && currentLock.pid !== process.pid) {
+                            pollerRunning = false;
+                            break;
+                        }
+                        await pollOnce(telegram, chatId);
+                        await new Promise<void>((r) => setTimeout(r, 500));
+                    }
+                };
+                void loop();
+                const cleanup = () => {
+                    pollerRunning = false;
+                    removeLock();
+                };
+                process.on("exit", cleanup);
+                process.on("SIGINT", () => { cleanup(); process.exit(0); });
+                process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+            }
+        }, CONSUMER_RETRY_MS);
+        // Don't keep the process alive just for this timer.
+        retryTimer.unref();
     }
 
     return isPoller;

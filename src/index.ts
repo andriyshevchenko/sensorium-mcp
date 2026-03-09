@@ -184,6 +184,14 @@ function persistSession(chatId: string, name: string, threadId: number): void {
   saveSessionMap(map);
 }
 
+function removeSession(chatId: string, name: string): void {
+  const map = loadSessionMap();
+  if (map[chatId]) {
+    delete map[chatId][name.toLowerCase()];
+    saveSessionMap(map);
+  }
+}
+
 // Thread ID of the active session's forum topic. Set by start_session.
 // All sends and receives are scoped to this thread so concurrent sessions
 // in different topics never interfere with each other.
@@ -361,15 +369,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (resolvedPreexisting) {
-      // Resume mode: send notification to the existing thread.
+      // Resume mode: verify the thread is still alive by sending a message.
+      // If the topic was deleted, drop the cached mapping and fall through to
+      // create a new topic.
       lastKeepAliveSentAt = Date.now();
       try {
         const msg = convertMarkdown("🔄 **Session resumed.** Continuing in this thread.");
         await telegram.sendMessage(TELEGRAM_CHAT_ID, msg, "MarkdownV2", currentThreadId);
-      } catch {
-        // Non-fatal.
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        // Telegram returns "Bad Request: message thread not found" or
+        // "Bad Request: the topic was closed" for deleted/closed topics.
+        const isThreadGone = /thread not found|topic.*(closed|deleted|not found)/i.test(errMsg);
+        if (isThreadGone) {
+          process.stderr.write(
+            `[start_session] Cached thread ${currentThreadId} is gone (${errMsg}). Creating new topic.\n`,
+          );
+          // Drop the stale mapping.
+          if (customName) removeSession(TELEGRAM_CHAT_ID, customName);
+          resolvedPreexisting = false;
+          currentThreadId = undefined;
+        }
+        // Other errors (network, etc.) are non-fatal — proceed anyway.
       }
-    } else {
+    }
+
+    if (!resolvedPreexisting) {
       // New session: create a dedicated forum topic.
       const topicName = customName ??
         `Copilot — ${new Date().toLocaleString("en-GB", {
