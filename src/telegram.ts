@@ -390,7 +390,11 @@ export class TelegramClient {
    * Convert text to speech using OpenAI TTS API.
    * Returns OGG Opus audio suitable for Telegram's sendVoice.
    */
-  static async textToSpeech(text: string, apiKey: string): Promise<Buffer> {
+  static async textToSpeech(
+    text: string,
+    apiKey: string,
+    voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "nova",
+  ): Promise<Buffer> {
     const response = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: {
@@ -400,7 +404,7 @@ export class TelegramClient {
       body: JSON.stringify({
         model: "tts-1",
         input: text,
-        voice: "nova",
+        voice,
         response_format: "opus",
       }),
     });

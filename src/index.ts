@@ -338,6 +338,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             description:
               "The text to speak. Maximum 4096 characters (OpenAI TTS limit).",
           },
+          voice: {
+            type: "string",
+            description:
+              "The TTS voice to use. Each has a different personality: " +
+              "alloy (neutral), echo (warm male), fable (storytelling), " +
+              "onyx (deep authoritative), nova (friendly female), shimmer (gentle). " +
+              "Choose based on the tone you want to convey.",
+            enum: ["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
+          },
         },
         required: ["text"],
       },
@@ -840,6 +849,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "send_voice") {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const text = typeof typedArgs.text === "string" ? typedArgs.text.trim() : "";
+    const validVoices = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] as const;
+    type Voice = typeof validVoices[number];
+    const voice: Voice = typeof typedArgs.voice === "string" && validVoices.includes(typedArgs.voice as Voice)
+      ? typedArgs.voice as Voice
+      : "nova";
 
     if (!text) {
       return {
@@ -863,7 +877,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     try {
-      const audioBuffer = await TelegramClient.textToSpeech(text, OPENAI_API_KEY);
+      const audioBuffer = await TelegramClient.textToSpeech(text, OPENAI_API_KEY, voice);
       await telegram.sendVoice(TELEGRAM_CHAT_ID, audioBuffer, currentThreadId);
       return {
         content: [
