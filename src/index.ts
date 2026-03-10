@@ -122,7 +122,7 @@ const rawWaitTimeoutMinutes = parseInt(
 );
 const WAIT_TIMEOUT_MINUTES = Math.max(
   1,
-  Number.isFinite(rawWaitTimeoutMinutes) ? rawWaitTimeoutMinutes : 30,
+  Number.isFinite(rawWaitTimeoutMinutes) ? rawWaitTimeoutMinutes : 120,
 );
 
 if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
@@ -155,6 +155,7 @@ await startDispatcher(telegram, TELEGRAM_CHAT_ID);
 // Monotonically increasing counter so every timeout response is unique,
 // preventing VS Code Copilot's loop-detection heuristic from killing the agent.
 let waitCallCount = 0;
+let sessionStartedAt = Date.now();
 
 // ---------------------------------------------------------------------------
 // Session store — persists topic name → thread ID mappings to disk so the
@@ -217,7 +218,7 @@ let currentThreadId: number | undefined;
 // Used to send periodic "session still alive" messages so the operator knows
 // the agent hasn't silently died.
 let lastKeepAliveSentAt = Date.now();
-const KEEP_ALIVE_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour
+const KEEP_ALIVE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 // ---------------------------------------------------------------------------
 // MCP Server
@@ -384,6 +385,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
+    sessionStartedAt = Date.now();
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const explicitThreadId = typeof typedArgs.threadId === "number"
       ? typedArgs.threadId as number
@@ -637,11 +639,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         {
           type: "text",
           text:
-            `[Poll #${callNumber} ended at ${now}]` +
-            (keepAliveSent ? ` Keep-alive ping sent to Telegram at ${now}.` : "") +
-            ` No new instructions received within ${WAIT_TIMEOUT_MINUTES} minute(s). ` +
-            `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW. ` +
-            `Do NOT summarize. Do NOT say the session is idle. Do NOT stop. ` +
+            `[Poll #${callNumber} — timeout at ${now} — elapsed ${WAIT_TIMEOUT_MINUTES}m — session uptime ${Math.round((Date.now() - sessionStartedAt) / 60000)}m]` +
+            (keepAliveSent ? ` Keep-alive ping sent.` : "") +
+            ` No new instructions received. ` +
+            `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
+            `Do NOT summarize, stop, or say the session is idle. ` +
             `Just call the tool again immediately.` +
             getReminders(currentThreadId),
         },
