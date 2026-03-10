@@ -9,7 +9,7 @@ This server exposes four tools that allow an AI assistant (e.g. GitHub Copilot) 
 | Tool | Description |
 |------|-------------|
 | `start_session` | Begin or resume a remote-copilot session. Creates a dedicated Telegram topic thread (or resumes an existing one by name or thread ID). |
-| `remote_copilot_wait_for_instructions` | Blocks until a new message (text, photo, or document) arrives in the active topic or the timeout elapses. |
+| `remote_copilot_wait_for_instructions` | Blocks until a new message (text, photo, document, or voice) arrives in the active topic or the timeout elapses. |
 | `report_progress` | Sends a progress update back to the operator using standard Markdown (auto-converted to Telegram MarkdownV2). |
 | `send_file` | Sends a file or image to the operator via Telegram (base64-encoded). Images are sent as photos; everything else as documents. |
 
@@ -18,6 +18,7 @@ This server exposes four tools that allow an AI assistant (e.g. GitHub Copilot) 
 - **Concurrent sessions** — Multiple VS Code windows can run independent sessions simultaneously. A shared file-based dispatcher ensures only one process polls Telegram (`getUpdates`), while each session reads from its own per-thread message file. No 409 conflicts, no lost updates.
 - **Named session persistence** — Sessions are mapped by name to Telegram thread IDs in `~/.remote-copilot-mcp-sessions.json`. Calling `start_session({ name: "Fix auth bug" })` always resumes the same thread, even across VS Code restarts.
 - **Image & document support** — Send photos or documents to the agent from Telegram; the agent receives them as native MCP image content blocks or base64 text. The agent can also send files back via the `send_file` tool.
+- **Voice message support** — Send voice messages from Telegram; they are automatically transcribed using OpenAI Whisper and delivered as text to the agent. Requires `OPENAI_API_KEY`.
 - **Automatic Markdown conversion** — Standard Markdown in `report_progress` is automatically converted to Telegram MarkdownV2, including code blocks, tables, blockquotes, and special characters.
 - **Keep-alive pings** — Periodic heartbeat messages to Telegram so the operator knows the agent is still alive during long idle periods.
 
@@ -46,6 +47,7 @@ Set the following environment variables:
 | `TELEGRAM_TOKEN` | ✅ | — | Telegram Bot API token from @BotFather |
 | `TELEGRAM_CHAT_ID` | ✅ | — | Chat ID of the forum supergroup (e.g. `-1001234567890`). The bot must be admin with Manage Topics right. |
 | `WAIT_TIMEOUT_MINUTES` | ❌ | `30` | Minutes to wait for a message before timing out |
+| `OPENAI_API_KEY` | ❌ | — | OpenAI API key for voice message transcription (Whisper). Without it, voice messages show a placeholder instead of a transcript. |
 
 ## Usage
 

@@ -19,6 +19,9 @@
  *   WAIT_TIMEOUT_MINUTES  – How long to wait for a message before timing out
  *                           and instructing the agent to call the tool again
  *                           (default: 30).
+ *   OPENAI_API_KEY        – OpenAI API key for voice message transcription
+ *                           via Whisper. Without it, voice messages show a
+ *                           placeholder instead of a transcript.
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -108,6 +111,7 @@ function convertMarkdown(markdown: string): string {
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
 const rawWaitTimeoutMinutes = parseInt(
   process.env.WAIT_TIMEOUT_MINUTES ?? "",
   10,
@@ -122,6 +126,12 @@ if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
     "Error: TELEGRAM_TOKEN and TELEGRAM_CHAT_ID environment variables are required.\n",
   );
   process.exit(1);
+}
+
+if (!OPENAI_API_KEY) {
+  process.stderr.write(
+    "Warning: OPENAI_API_KEY not set — voice messages will not be transcribed.\n",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -519,9 +529,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (s.message.text) {
             contentBlocks.push({ type: "text", text: s.message.text });
           }
+          // Voice messages: transcribe using OpenAI Whisper.
+          if (s.message.voice) {
+            if (OPENAI_API_KEY) {
+              try {
+                const transcript = await telegram.transcribeVoice(
+                  s.message.voice.file_id,
+                  OPENAI_API_KEY,
+                );
+                contentBlocks.push({
+                  type: "text",
+                  text: transcript
+                    ? `[Voice message — ${s.message.voice.duration}s, transcribed]: ${transcript}`
+                    : `[Voice message — ${s.message.voice.duration}s, transcribed]: (empty — no speech detected)`,
+                });
+              } catch (err) {
+                contentBlocks.push({
+                  type: "text",
+                  text: `[Voice message — ${s.message.voice.duration}s — transcription failed: ${
+                    err instanceof Error ? err.message : String(err)
+                  }]`,
+                });
+              }
+            } else {
+              contentBlocks.push({
+                type: "text",
+                text: `[Voice message received — ${s.message.voice.duration}s — cannot transcribe: OPENAI_API_KEY not set]`,
+              });
+            }
+          }
         }
         if (contentBlocks.length === 0) {
-          // All messages were unsupported types (stickers, voice, etc.);
+          // All messages were unsupported types (stickers, etc.);
           // continue polling instead of returning empty instructions.
           await new Promise<void>((r) => setTimeout(r, POLL_INTERVAL_MS));
           continue;
@@ -673,6 +712,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               s.message.caption
                 ? `[Document: ${s.message.document.file_name ?? "file"}] ${s.message.caption}`
                 : `[Document received: ${s.message.document.file_name ?? "file"}]`,
+            );
+          } else if (s.message.voice) {
+            pendingMessages.push(
+              `[Voice message — ${s.message.voice.duration}s — will be transcribed on next wait]`,
             );
           } else if (s.message.text) {
             pendingMessages.push(s.message.text);

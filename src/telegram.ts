@@ -12,6 +12,7 @@ export interface TelegramMessage {
   message_thread_id?: number;
   photo?: PhotoSize[];
   document?: TelegramDocument;
+  voice?: TelegramVoice;
 }
 
 export interface PhotoSize {
@@ -26,6 +27,14 @@ export interface TelegramDocument {
   file_id: string;
   file_unique_id: string;
   file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
+export interface TelegramVoice {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
   mime_type?: string;
   file_size?: number;
 }
@@ -233,12 +242,11 @@ export class TelegramClient {
   }
 
   /**
-   * Download a file from Telegram by file_id and return it as base64 with MIME type.
-   * Telegram Bot API supports files up to 20 MB.
+   * Download a file from Telegram by file_id and return it as a Buffer.
    */
-  async downloadFileAsBase64(
+  async downloadFileAsBuffer(
     fileId: string,
-  ): Promise<{ base64: string; mimeType: string }> {
+  ): Promise<{ buffer: Buffer; filePath: string }> {
     const file = await this.getFile(fileId);
     const downloadUrl = `https://api.telegram.org/file/bot${this.token}/${file.file_path}`;
     const response = await fetch(downloadUrl);
@@ -247,9 +255,20 @@ export class TelegramClient {
         `Failed to download Telegram file: ${response.status} ${response.statusText}`,
       );
     }
-    const buffer = await response.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
-    const ext = file.file_path.split(".").pop()?.toLowerCase() ?? "";
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return { buffer, filePath: file.file_path };
+  }
+
+  /**
+   * Download a file from Telegram by file_id and return it as base64 with MIME type.
+   * Telegram Bot API supports files up to 20 MB.
+   */
+  async downloadFileAsBase64(
+    fileId: string,
+  ): Promise<{ base64: string; mimeType: string }> {
+    const { buffer, filePath } = await this.downloadFileAsBuffer(fileId);
+    const base64 = buffer.toString("base64");
+    const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
     const mimeMap: Record<string, string> = {
       jpg: "image/jpeg",
       jpeg: "image/jpeg",
@@ -265,11 +284,8 @@ export class TelegramClient {
       zip: "application/zip",
       svg: "image/svg+xml",
     };
-    // Prefer Content-Type header from the response, fall back to extension map.
-    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim();
-    const mimeType = contentType && contentType !== "application/octet-stream"
-      ? contentType
-      : (mimeMap[ext] ?? "application/octet-stream");
+    // Prefer Content-Type from the download response via the stored buffer path.
+    const mimeType = mimeMap[ext] ?? "application/octet-stream";
     return { base64, mimeType };
   }
 
@@ -339,5 +355,38 @@ export class TelegramClient {
       const description = data?.description ?? response.statusText;
       throw new Error(`Telegram sendPhoto failed: ${response.status} ${description}`);
     }
+  }
+
+  /**
+   * Transcribe a voice message using OpenAI Whisper API.
+   * @param fileId   Telegram file_id of the voice message.
+   * @param apiKey   OpenAI API key.
+   * @returns The transcribed text.
+   */
+  async transcribeVoice(fileId: string, apiKey: string): Promise<string> {
+    const { buffer } = await this.downloadFileAsBuffer(fileId);
+    // Telegram stores voice as .oga (OGG Opus). Whisper accepts .ogg but
+    // not .oga, so we hardcode the extension.
+    const filename = "voice.ogg";
+
+    const formData = new FormData();
+    formData.append("file", new Blob([new Uint8Array(buffer)]), filename);
+    formData.append("model", "whisper-1");
+
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => response.statusText);
+      throw new Error(
+        `OpenAI Whisper transcription failed: ${response.status} ${errText}`,
+      );
+    }
+
+    const result = (await response.json()) as { text?: string };
+    return result.text ?? "";
   }
 }
