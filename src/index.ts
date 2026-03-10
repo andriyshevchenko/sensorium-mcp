@@ -32,10 +32,10 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, renameSync, writeFileSync } from "fs";
 import { createRequire } from "module";
 import { homedir } from "os";
-import { join } from "path";
+import { basename, join } from "path";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
 import { textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
 import { TelegramClient } from "./telegram.js";
@@ -177,7 +177,9 @@ function loadSessionMap(): SessionMap {
 
 function saveSessionMap(map: SessionMap): void {
   try {
-    writeFileSync(SESSION_STORE_PATH, JSON.stringify(map, null, 2), "utf8");
+    const tmp = SESSION_STORE_PATH + `.tmp.${process.pid}`;
+    writeFileSync(tmp, JSON.stringify(map, null, 2), "utf8");
+    renameSync(tmp, SESSION_STORE_PATH); // atomic replace
   } catch (err) {
     process.stderr.write(
       `Warning: Could not save session map to ${SESSION_STORE_PATH}: ${errorMessage(err)
@@ -658,9 +660,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return errorResult("Error: 'message' argument is required for report_progress.");
     }
 
-    // Convert standard Markdown to Telegram MarkdownV2 (handles headings,
-    // lists, bold/italic, code blocks, and special-character escaping).
-    const message = convertMarkdown(rawMessage);
+    // Convert standard Markdown to Telegram MarkdownV2.
+    let message: string;
+    try {
+      message = convertMarkdown(rawMessage);
+    } catch {
+      // Fall back to raw text if Markdown conversion throws.
+      message = rawMessage;
+    }
 
     let sentAsPlainText = false;
     try {
@@ -771,7 +778,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (filePath) {
         // Read directly from disk — fast, no LLM context overhead.
-        const { basename } = await import("path");
         buffer = readFileSync(filePath);
         filename = typeof typedArgs.filename === "string" && typedArgs.filename.trim()
           ? typedArgs.filename.trim()

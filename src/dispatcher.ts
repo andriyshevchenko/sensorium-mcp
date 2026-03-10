@@ -27,6 +27,7 @@ import {
     existsSync,
     mkdirSync,
     readFileSync,
+    readdirSync,
     renameSync,
     unlinkSync,
     writeFileSync
@@ -47,6 +48,36 @@ const OFFSET_FILE = join(BASE_DIR, "offset");
 
 function ensureDirs(): void {
     mkdirSync(THREADS_DIR, { recursive: true });
+    recoverOrphanedReads();
+}
+
+/**
+ * On startup, scan for orphaned `.reading.PID` files left by hard-crashed
+ * processes and append their content back to the original thread file
+ * so those messages aren't permanently lost.
+ */
+function recoverOrphanedReads(): void {
+    try {
+        const files = readdirSync(THREADS_DIR);
+        for (const f of files) {
+            const match = f.match(/^(.+)\.reading\.(\d+)$/);
+            if (match) {
+                const pid = Number.parseInt(match[2], 10);
+                if (!isPidAlive(pid)) {
+                    const orphan = join(THREADS_DIR, f);
+                    const original = join(THREADS_DIR, match[1]);
+                    try {
+                        const content = readFileSync(orphan, "utf8");
+                        writeFileSync(original, content, { flag: "a", encoding: "utf8" });
+                        unlinkSync(orphan);
+                        process.stderr.write(
+                            `[dispatcher] Recovered orphaned file: ${f}\n`,
+                        );
+                    } catch { /* best effort */ }
+                }
+            }
+        }
+    } catch { /* non-fatal */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -93,10 +124,10 @@ function isPidAlive(pid: number): boolean {
 }
 
 /**
- * Try to become the poller. Returns true if this process now holds the lock.
- * - If no lock file exists → take it.
- * - If lock file exists but the PID is dead → take it.
- * - If lock file exists, PID is alive, but lock is >5 min old → take it (stale).
+ * Try to become the poller using exclusive file creation to prevent TOCTOU races.
+ * - If no lock file exists → atomically create it (flag: "wx").
+ * - If lock file exists but the PID is dead → remove and retry.
+ * - If lock file exists, PID is alive, but lock is stale → remove and retry.
  * - Otherwise → someone else is the poller.
  */
 const STALE_LOCK_MS = 90 * 1000; // 90 seconds
@@ -109,10 +140,20 @@ function tryAcquireLock(): boolean {
         if (alive && !stale) {
             return false; // Someone else is actively polling.
         }
-        // Dead or stale — take over.
+        // Dead or stale — remove before attempting exclusive create.
+        try { unlinkSync(LOCK_FILE); } catch { /* race-ok */ }
     }
-    writeLock();
-    return true;
+    // Atomic exclusive create: fails if another process created first.
+    try {
+        writeFileSync(
+            LOCK_FILE,
+            JSON.stringify({ pid: process.pid, ts: Date.now() }),
+            { encoding: "utf8", flag: "wx" },
+        );
+        return true;
+    } catch {
+        return false; // Another process won the race.
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -242,22 +283,26 @@ export function peekThreadMessages(threadId: number | undefined): StoredMessage[
 // ---------------------------------------------------------------------------
 
 let pollerRunning = false;
+let pollAbortController: AbortController | undefined;
 
 async function pollOnce(
     telegram: TelegramClient,
     chatId: string,
 ): Promise<void> {
-    // Always refresh lock FIRST so the timestamp stays fresh even during
-    // long polls that return no messages.  The old code only refreshed
-    // after processing updates, causing the lock to go stale after ~5 min
-    // of inactivity and letting a second instance grab the poller role.
     writeLock();
 
     const POLL_TIMEOUT_SECONDS = 10;
     let offset = readOffset();
 
+    // Refresh the lock periodically during long polls / 409 retries
+    // to prevent it from going stale (STALE_LOCK_MS = 90 s).
+    const lockRefresher = setInterval(() => writeLock(), 15_000);
+
     try {
-        const updates = await telegram.getUpdates(offset, POLL_TIMEOUT_SECONDS);
+        pollAbortController = new AbortController();
+        const updates = await telegram.getUpdates(
+            offset, POLL_TIMEOUT_SECONDS, pollAbortController.signal,
+        );
 
         // Refresh again after the (potentially 10-second) long poll returns.
         writeLock();
@@ -332,9 +377,13 @@ async function pollOnce(
             );
         }
     } catch (err) {
+        // Ignore abort errors during shutdown.
+        if (err instanceof DOMException && err.name === "AbortError") return;
         process.stderr.write(
             `[dispatcher] Poll error: ${errorMessage(err)}\n`,
         );
+    } finally {
+        clearInterval(lockRefresher);
     }
 }
 
@@ -353,19 +402,36 @@ export async function startDispatcher(
 ): Promise<boolean> {
     ensureDirs();
     const isPoller = tryAcquireLock();
+    const CONSUMER_RETRY_MS = 30_000;
 
-    // Shared cleanup + loop helpers to avoid duplication.
+    // Shared cleanup + loop helpers.
     let cleanupRegistered = false;
     const registerCleanup = () => {
         if (cleanupRegistered) return;
         cleanupRegistered = true;
         const cleanup = () => {
             pollerRunning = false;
+            pollAbortController?.abort();
             removeLock();
         };
         process.on("exit", cleanup);
         process.on("SIGINT", () => { cleanup(); process.exit(0); });
         process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+    };
+
+    const installConsumerRetry = () => {
+        const timer = setInterval(() => {
+            if (tryAcquireLock()) {
+                clearInterval(timer);
+                process.stderr.write(
+                    "[dispatcher] Promoted to poller (previous poller seems inactive).\n",
+                );
+                pollerRunning = true;
+                startLoop();
+                registerCleanup();
+            }
+        }, CONSUMER_RETRY_MS);
+        timer.unref();
     };
 
     const startLoop = () => {
@@ -377,6 +443,8 @@ export async function startDispatcher(
                         `[dispatcher] Lock taken by PID ${currentLock.pid}. Stepping down to consumer.\n`,
                     );
                     pollerRunning = false;
+                    // Re-install consumer retry so we can be promoted again.
+                    installConsumerRetry();
                     break;
                 }
                 await pollOnce(telegram, chatId);
@@ -397,7 +465,12 @@ export async function startDispatcher(
                 "[dispatcher] No offset file. Skipping old updates...\n",
             );
             try {
-                const latest = await telegram.getUpdates(-1, 0);
+                // Use a short timeout to prevent blocking startup if another
+                // poller is active (409 retry loop could stall for 60+ seconds).
+                const drainAbort = new AbortController();
+                const drainTimeout = setTimeout(() => drainAbort.abort(), 10_000);
+                const latest = await telegram.getUpdates(-1, 0, drainAbort.signal);
+                clearTimeout(drainTimeout);
                 if (latest.length > 0) {
                     const skipTo = latest[latest.length - 1].update_id + 1;
                     writeOffset(skipTo);
@@ -428,19 +501,7 @@ export async function startDispatcher(
 
         // Periodically try to become the poller in case the current one dies
         // but its PID remains alive (zombie process, stuck socket, etc.).
-        const CONSUMER_RETRY_MS = 30_000;
-        const retryTimer = setInterval(() => {
-            if (tryAcquireLock()) {
-                clearInterval(retryTimer);
-                process.stderr.write(
-                    "[dispatcher] Promoted to poller (previous poller seems inactive).\n",
-                );
-                pollerRunning = true;
-                startLoop();
-                registerCleanup();
-            }
-        }, CONSUMER_RETRY_MS);
-        retryTimer.unref();
+        installConsumerRetry();
     }
 
     return isPoller;
