@@ -37,13 +37,15 @@ import { createRequire } from "module";
 import { homedir } from "os";
 import { join } from "path";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
+import { textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
 import { TelegramClient } from "./telegram.js";
+import { errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
 
-const _require = createRequire(import.meta.url);
-const { version: PKG_VERSION } = _require("../package.json") as {
+const esmRequire = createRequire(import.meta.url);
+const { version: PKG_VERSION } = esmRequire("../package.json") as {
   version: string;
 };
-const telegramifyMarkdown = _require("telegramify-markdown") as (
+const telegramifyMarkdown = esmRequire("telegramify-markdown") as (
   markdown: string,
   unsupportedTagsStrategy?: "escape" | "remove",
 ) => string;
@@ -178,7 +180,7 @@ function saveSessionMap(map: SessionMap): void {
     writeFileSync(SESSION_STORE_PATH, JSON.stringify(map, null, 2), "utf8");
   } catch (err) {
     process.stderr.write(
-      `Warning: Could not save session map to ${SESSION_STORE_PATH}: ${err instanceof Error ? err.message : String(err)
+      `Warning: Could not save session map to ${SESSION_STORE_PATH}: ${errorMessage(err)
       }\n`,
     );
   }
@@ -336,7 +338,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           text: {
             type: "string",
             description:
-              "The text to speak. Maximum 4096 characters (OpenAI TTS limit).",
+              `The text to speak. Maximum ${OPENAI_TTS_MAX_CHARS} characters (OpenAI TTS limit).`,
           },
           voice: {
             type: "string",
@@ -416,7 +418,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const msg = convertMarkdown("🔄 **Session resumed.** Continuing in this thread.");
         await telegram.sendMessage(TELEGRAM_CHAT_ID, msg, "MarkdownV2", currentThreadId);
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = errorMessage(err);
         // Telegram returns "Bad Request: message thread not found" or
         // "Bad Request: the topic was closed" for deleted/closed topics.
         const isThreadGone = /thread not found|topic.*(closed|deleted|not found)/i.test(errMsg);
@@ -448,7 +450,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } catch (err) {
         // Forum topics not available (e.g. plain group or DM) — fall back to no thread.
         process.stderr.write(
-          `Warning: Could not create forum topic: ${err instanceof Error ? err.message : String(err)}\n` +
+          `Warning: Could not create forum topic: ${errorMessage(err)}\n` +
           "Falling back to main chat (no thread isolation).\n",
         );
         currentThreadId = undefined;
@@ -500,32 +502,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         type ImageBlock = { type: "image"; data: string; mimeType: string };
         const contentBlocks: Array<TextBlock | ImageBlock> = [];
 
-        for (const s of stored) {
+        for (const msg of stored) {
           // Photos: download the largest size and embed as base64.
-          if (s.message.photo && s.message.photo.length > 0) {
-            const largest = s.message.photo[s.message.photo.length - 1];
+          if (msg.message.photo && msg.message.photo.length > 0) {
+            const largest = msg.message.photo[msg.message.photo.length - 1];
             try {
               const { base64, mimeType } = await telegram.downloadFileAsBase64(
                 largest.file_id,
               );
               contentBlocks.push({ type: "image", data: base64, mimeType });
-              if (s.message.caption) {
+              if (msg.message.caption) {
                 contentBlocks.push({
                   type: "text",
-                  text: `[Image caption]: ${s.message.caption}`,
+                  text: `[Image caption]: ${msg.message.caption}`,
                 });
               }
             } catch (err) {
               contentBlocks.push({
                 type: "text",
-                text: `[Photo received but could not be downloaded: ${err instanceof Error ? err.message : String(err)
-                  }]`,
+                text: `[Photo received but could not be downloaded: ${errorMessage(err)}]`,
               });
             }
           }
           // Documents: download and embed as base64.
-          if (s.message.document) {
-            const doc = s.message.document;
+          if (msg.message.document) {
+            const doc = msg.message.document;
             try {
               const { base64, mimeType } = await telegram.downloadFileAsBase64(
                 doc.file_id,
@@ -540,49 +541,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   text: `[Document: ${doc.file_name ?? "file"} (${doc.mime_type ?? mimeType})]\nBase64 content: ${base64}`,
                 });
               }
-              if (s.message.caption) {
+              if (msg.message.caption) {
                 contentBlocks.push({
                   type: "text",
-                  text: `[Document caption]: ${s.message.caption}`,
+                  text: `[Document caption]: ${msg.message.caption}`,
                 });
               }
             } catch (err) {
               contentBlocks.push({
                 type: "text",
-                text: `[Document "${doc.file_name ?? "file"}" received but could not be downloaded: ${err instanceof Error ? err.message : String(err)
-                  }]`,
+                text: `[Document "${doc.file_name ?? "file"}" received but could not be downloaded: ${errorMessage(err)}]`,
               });
             }
           }
           // Text messages.
-          if (s.message.text) {
-            contentBlocks.push({ type: "text", text: s.message.text });
+          if (msg.message.text) {
+            contentBlocks.push({ type: "text", text: msg.message.text });
           }
           // Voice messages: transcribe using OpenAI Whisper.
-          if (s.message.voice) {
+          if (msg.message.voice) {
             if (OPENAI_API_KEY) {
               try {
-                const transcript = await telegram.transcribeVoice(
-                  s.message.voice.file_id,
-                  OPENAI_API_KEY,
+                const { buffer } = await telegram.downloadFileAsBuffer(
+                  msg.message.voice.file_id,
                 );
+                const transcript = await transcribeAudio(buffer, OPENAI_API_KEY);
                 contentBlocks.push({
                   type: "text",
                   text: transcript
-                    ? `[Voice message — ${s.message.voice.duration}s, transcribed]: ${transcript}`
-                    : `[Voice message — ${s.message.voice.duration}s, transcribed]: (empty — no speech detected)`,
+                    ? `[Voice message — ${msg.message.voice.duration}s, transcribed]: ${transcript}`
+                    : `[Voice message — ${msg.message.voice.duration}s, transcribed]: (empty — no speech detected)`,
                 });
               } catch (err) {
                 contentBlocks.push({
                   type: "text",
-                  text: `[Voice message — ${s.message.voice.duration}s — transcription failed: ${err instanceof Error ? err.message : String(err)
-                    }]`,
+                  text: `[Voice message — ${msg.message.voice.duration}s — transcription failed: ${errorMessage(err)}]`,
                 });
               }
             } else {
               contentBlocks.push({
                 type: "text",
-                text: `[Voice message received — ${s.message.voice.duration}s — cannot transcribe: OPENAI_API_KEY not set]`,
+                text: `[Voice message received — ${msg.message.voice.duration}s — cannot transcribe: OPENAI_API_KEY not set]`,
               });
             }
           }
@@ -656,15 +655,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         : "";
 
     if (!rawMessage) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Error: 'message' argument is required for report_progress.",
-          },
-        ],
-        isError: true,
-      };
+      return errorResult("Error: 'message' argument is required for report_progress.");
     }
 
     // Convert standard Markdown to Telegram MarkdownV2 (handles headings,
@@ -675,49 +666,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       await telegram.sendMessage(TELEGRAM_CHAT_ID, message, "MarkdownV2", currentThreadId);
     } catch (error) {
-      const errorMsg =
-        error instanceof Error ? error.message : String(error);
+      const errMsg = errorMessage(error);
       // If Telegram rejected the message due to a MarkdownV2 parse error,
       // retry as plain text using the original un-converted message.
-      const isParseError = errorMsg.includes("can't parse entities");
+      const isParseError = errMsg.includes("can't parse entities");
       if (isParseError) {
         try {
           await telegram.sendMessage(TELEGRAM_CHAT_ID, rawMessage, undefined, currentThreadId);
           sentAsPlainText = true;
         } catch (retryError) {
           process.stderr.write(
-            `Failed to send progress message via Telegram (plain fallback): ${retryError instanceof Error
-              ? retryError.message
-              : String(retryError)
-            }\n`,
+            `Failed to send progress message via Telegram (plain fallback): ${errorMessage(retryError)}\n`,
           );
-          return {
-            content: [
-              {
-                type: "text",
-                text:
-                  "Error: Failed to send progress update to Telegram even without formatting. " +
-                  "Please check the Telegram configuration and try again.",
-              },
-            ],
-            isError: true,
-          };
+          return errorResult(
+            "Error: Failed to send progress update to Telegram even without formatting. " +
+            "Please check the Telegram configuration and try again.",
+          );
         }
       } else {
         process.stderr.write(
-          `Failed to send progress message via Telegram: ${errorMsg}\n`,
+          `Failed to send progress message via Telegram: ${errMsg}\n`,
         );
-        return {
-          content: [
-            {
-              type: "text",
-              text:
-                "Error: Failed to send progress update to Telegram. " +
-                "Check the Telegram configuration and try again.",
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(
+          "Error: Failed to send progress update to Telegram. " +
+          "Check the Telegram configuration and try again.",
+        );
       }
     }
 
@@ -728,25 +701,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const pendingStored = peekThreadMessages(currentThreadId);
       if (pendingStored.length > 0) {
-        for (const s of pendingStored) {
-          if (s.message.photo && s.message.photo.length > 0) {
+        for (const msg of pendingStored) {
+          if (msg.message.photo && msg.message.photo.length > 0) {
             pendingMessages.push(
-              s.message.caption
-                ? `[Photo received] ${s.message.caption}`
+              msg.message.caption
+                ? `[Photo received] ${msg.message.caption}`
                 : "[Photo received from operator]",
             );
-          } else if (s.message.document) {
+          } else if (msg.message.document) {
             pendingMessages.push(
-              s.message.caption
-                ? `[Document: ${s.message.document.file_name ?? "file"}] ${s.message.caption}`
-                : `[Document received: ${s.message.document.file_name ?? "file"}]`,
+              msg.message.caption
+                ? `[Document: ${msg.message.document.file_name ?? "file"}] ${msg.message.caption}`
+                : `[Document received: ${msg.message.document.file_name ?? "file"}]`,
             );
-          } else if (s.message.voice) {
+          } else if (msg.message.voice) {
             pendingMessages.push(
-              `[Voice message — ${s.message.voice.duration}s — will be transcribed on next wait]`,
+              `[Voice message — ${msg.message.voice.duration}s — will be transcribed on next wait]`,
             );
-          } else if (s.message.text) {
-            pendingMessages.push(s.message.text);
+          } else if (msg.message.text) {
+            pendingMessages.push(msg.message.text);
           }
         }
       }
@@ -789,10 +762,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const caption = typeof typedArgs.caption === "string" ? typedArgs.caption : undefined;
 
     if (!filePath && !base64Data) {
-      return {
-        content: [{ type: "text", text: "Error: either 'filePath' or 'base64' argument is required for send_file." }],
-        isError: true,
-      };
+      return errorResult("Error: either 'filePath' or 'base64' argument is required for send_file.");
     }
 
     try {
@@ -814,9 +784,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-      const imageExts = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
 
-      if (imageExts.has(ext)) {
+      if (IMAGE_EXTENSIONS.has(ext)) {
         await telegram.sendPhoto(TELEGRAM_CHAT_ID, buffer, filename, caption, currentThreadId);
       } else {
         await telegram.sendDocument(TELEGRAM_CHAT_ID, buffer, filename, caption, currentThreadId);
@@ -831,17 +800,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ],
       };
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`Failed to send file via Telegram: ${errorMsg}\n`);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error: Failed to send file to Telegram: ${errorMsg}`,
-          },
-        ],
-        isError: true,
-      };
+      process.stderr.write(`Failed to send file via Telegram: ${errorMessage(err)}\n`);
+      return errorResult(`Error: Failed to send file to Telegram: ${errorMessage(err)}`);
     }
   }
 
@@ -849,35 +809,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "send_voice") {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const text = typeof typedArgs.text === "string" ? typedArgs.text.trim() : "";
-    const validVoices = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] as const;
-    type Voice = typeof validVoices[number];
-    const voice: Voice = typeof typedArgs.voice === "string" && validVoices.includes(typedArgs.voice as Voice)
-      ? typedArgs.voice as Voice
+    const validVoices = TTS_VOICES;
+    const voice: TTSVoice = typeof typedArgs.voice === "string" && (validVoices as readonly string[]).includes(typedArgs.voice)
+      ? typedArgs.voice as TTSVoice
       : "nova";
 
     if (!text) {
-      return {
-        content: [{ type: "text", text: "Error: 'text' argument is required for send_voice." }],
-        isError: true,
-      };
+      return errorResult("Error: 'text' argument is required for send_voice.");
     }
 
     if (!OPENAI_API_KEY) {
-      return {
-        content: [{ type: "text", text: "Error: OPENAI_API_KEY is not set. Cannot generate voice." }],
-        isError: true,
-      };
+      return errorResult("Error: OPENAI_API_KEY is not set. Cannot generate voice.");
     }
 
-    if (text.length > 4096) {
-      return {
-        content: [{ type: "text", text: `Error: text is ${text.length} characters — exceeds OpenAI TTS limit of 4096.` }],
-        isError: true,
-      };
+    if (text.length > OPENAI_TTS_MAX_CHARS) {
+      return errorResult(`Error: text is ${text.length} characters — exceeds OpenAI TTS limit of ${OPENAI_TTS_MAX_CHARS}.`);
     }
 
     try {
-      const audioBuffer = await TelegramClient.textToSpeech(text, OPENAI_API_KEY, voice);
+      const audioBuffer = await textToSpeech(text, OPENAI_API_KEY, voice);
       await telegram.sendVoice(TELEGRAM_CHAT_ID, audioBuffer, currentThreadId);
       return {
         content: [
@@ -888,30 +838,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ],
       };
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`Failed to send voice via Telegram: ${errorMsg}\n`);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error: Failed to send voice message: ${errorMsg}`,
-          },
-        ],
-        isError: true,
-      };
+      process.stderr.write(`Failed to send voice via Telegram: ${errorMessage(err)}\n`);
+      return errorResult(`Error: Failed to send voice message: ${errorMessage(err)}`);
     }
   }
 
   // Unknown tool
-  return {
-    content: [
-      {
-        type: "text",
-        text: `Unknown tool: ${name}`,
-      },
-    ],
-    isError: true,
-  };
+  return errorResult(`Unknown tool: ${name}`);
 });
 
 // ---------------------------------------------------------------------------

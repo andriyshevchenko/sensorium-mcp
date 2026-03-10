@@ -3,6 +3,10 @@
  * No third-party HTTP client required.
  */
 
+// ---------------------------------------------------------------------------
+// Type definitions
+// ---------------------------------------------------------------------------
+
 export interface TelegramMessage {
   message_id: number;
   chat: { id: number };
@@ -44,13 +48,13 @@ export interface TelegramUpdate {
   message?: TelegramMessage;
 }
 
-export interface GetUpdatesResult {
+interface GetUpdatesResult {
   ok: boolean;
   result: TelegramUpdate[];
   description?: string;
 }
 
-export interface SendMessageResult {
+interface SendMessageResult {
   ok: boolean;
   result?: TelegramMessage;
   description?: string;
@@ -61,22 +65,46 @@ export interface ForumTopic {
   name: string;
 }
 
-export interface CreateForumTopicResult {
+interface CreateForumTopicResult {
   ok: boolean;
   result?: ForumTopic;
   description?: string;
 }
 
-export interface TelegramFile {
+interface TelegramFile {
   file_id: string;
   file_path: string;
 }
 
-export interface GetFileResult {
+interface GetFileResult {
   ok: boolean;
   result?: TelegramFile;
   description?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Extension → MIME type mapping (used by downloadFileAsBase64)
+// ---------------------------------------------------------------------------
+
+const MIME_MAP: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  pdf: "application/pdf",
+  txt: "text/plain",
+  json: "application/json",
+  xml: "application/xml",
+  csv: "text/csv",
+  zip: "application/zip",
+  svg: "image/svg+xml",
+};
+
+// ---------------------------------------------------------------------------
+// Client
+// ---------------------------------------------------------------------------
 
 export class TelegramClient {
   private readonly baseUrl: string;
@@ -84,6 +112,48 @@ export class TelegramClient {
   constructor(private readonly token: string) {
     this.baseUrl = `https://api.telegram.org/bot${token}`;
   }
+
+  // ── Private helpers ─────────────────────────────────────────────────────
+
+  /** Safely parse a JSON response, returning undefined on failure. */
+  private async tryParseJson<T>(response: Response): Promise<T | undefined> {
+    try {
+      return (await response.json()) as T;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Send a media file via multipart/form-data.
+   * Shared implementation for sendDocument, sendPhoto, and sendVoice.
+   */
+  private async sendMedia(
+    method: string,
+    chatId: string,
+    fieldName: string,
+    blob: Blob,
+    filename: string,
+    options?: { caption?: string; threadId?: number },
+  ): Promise<void> {
+    const url = `${this.baseUrl}/${method}`;
+    const formData = new FormData();
+    formData.append("chat_id", chatId);
+    formData.append(fieldName, blob, filename);
+    if (options?.caption) formData.append("caption", options.caption);
+    if (options?.threadId !== undefined) {
+      formData.append("message_thread_id", String(options.threadId));
+    }
+
+    const response = await fetch(url, { method: "POST", body: formData });
+    const data = await this.tryParseJson<SendMessageResult>(response);
+    if (!response.ok || data?.ok !== true) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram ${method} failed: ${response.status} ${description}`);
+    }
+  }
+
+  // ── Public API ──────────────────────────────────────────────────────────
 
   /**
    * Long-poll for updates.
@@ -100,22 +170,17 @@ export class TelegramClient {
     url.searchParams.set("timeout", String(timeout));
     url.searchParams.set("allowed_updates", JSON.stringify(["message"]));
 
-    // Retry loop: Telegram returns 409 when another getUpdates poller is active
-    // (e.g. two VS Code windows with the same bot token). Back off and retry
-    // until the other instance releases the lock or the request is aborted.
     const MAX_409_RETRIES = 12;
     const RETRY_DELAY_MS = 5000;
 
     for (let attempt = 0; ; attempt++) {
       const response = await fetch(url.toString(), signal ? { signal } : {});
-      let data: GetUpdatesResult | undefined;
-      try {
-        data = (await response.json()) as GetUpdatesResult;
-      } catch (parseErr) {
+      const data = await this.tryParseJson<GetUpdatesResult>(response);
+
+      if (data === undefined) {
         process.stderr.write(
-          `Failed to parse Telegram getUpdates response: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}\n`,
+          "Failed to parse Telegram getUpdates response.\n",
         );
-        data = undefined;
       }
 
       // 409 Conflict: another poller is running. Wait and retry.
@@ -146,7 +211,6 @@ export class TelegramClient {
   /**
    * Create a topic in a forum supergroup.
    * The bot must be an admin with can_manage_topics right.
-   * @returns The created ForumTopic (contains message_thread_id).
    */
   async createForumTopic(chatId: string, name: string): Promise<ForumTopic> {
     const url = `${this.baseUrl}/createForumTopic`;
@@ -155,12 +219,7 @@ export class TelegramClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, name }),
     });
-    let data: CreateForumTopicResult | undefined;
-    try {
-      data = (await response.json()) as CreateForumTopicResult;
-    } catch {
-      data = undefined;
-    }
+    const data = await this.tryParseJson<CreateForumTopicResult>(response);
     if (!response.ok || !data?.ok || !data.result) {
       const description = data?.description ?? response.statusText;
       throw new Error(`Telegram createForumTopic failed: ${description}`);
@@ -170,8 +229,6 @@ export class TelegramClient {
 
   /**
    * Send a text message to a chat, optionally scoped to a forum topic thread.
-   * @param parseMode  Optional parse mode. Telegram accepts "MarkdownV2", "Markdown", or "HTML".
-   * @param threadId   Optional message_thread_id for forum supergroups.
    */
   async sendMessage(
     chatId: string,
@@ -181,25 +238,16 @@ export class TelegramClient {
   ): Promise<void> {
     const url = `${this.baseUrl}/sendMessage`;
     const body: Record<string, unknown> = { chat_id: chatId, text };
-    if (parseMode) {
-      body.parse_mode = parseMode;
-    }
-    if (threadId !== undefined) {
-      body.message_thread_id = threadId;
-    }
+    if (parseMode) body.parse_mode = parseMode;
+    if (threadId !== undefined) body.message_thread_id = threadId;
+
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    let data: SendMessageResult | undefined;
-    let parseError: unknown;
-    try {
-      data = (await response.json()) as SendMessageResult;
-    } catch (err) {
-      parseError = err;
-      data = undefined;
-    }
+    const data = await this.tryParseJson<SendMessageResult>(response);
+
     if (!response.ok) {
       const description = data?.description ?? response.statusText;
       throw new Error(
@@ -207,10 +255,7 @@ export class TelegramClient {
       );
     }
     if (data === undefined) {
-      throw new Error(
-        `Telegram sendMessage failed: response body could not be parsed as JSON${parseError instanceof Error ? `: ${parseError.message}` : ""
-        }`,
-      );
+      throw new Error("Telegram sendMessage failed: response body could not be parsed as JSON");
     }
     if (data.ok !== true) {
       const description = data.description ?? "Unknown Telegram API error";
@@ -228,12 +273,7 @@ export class TelegramClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ file_id: fileId }),
     });
-    let data: GetFileResult | undefined;
-    try {
-      data = (await response.json()) as GetFileResult;
-    } catch {
-      data = undefined;
-    }
+    const data = await this.tryParseJson<GetFileResult>(response);
     if (!response.ok || !data?.ok || !data.result) {
       const description = data?.description ?? response.statusText;
       throw new Error(`Telegram getFile failed: ${description}`);
@@ -261,41 +301,19 @@ export class TelegramClient {
 
   /**
    * Download a file from Telegram by file_id and return it as base64 with MIME type.
-   * Telegram Bot API supports files up to 20 MB.
    */
   async downloadFileAsBase64(
     fileId: string,
   ): Promise<{ base64: string; mimeType: string }> {
     const { buffer, filePath } = await this.downloadFileAsBuffer(fileId);
-    const base64 = buffer.toString("base64");
     const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-    const mimeMap: Record<string, string> = {
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-      png: "image/png",
-      gif: "image/gif",
-      webp: "image/webp",
-      bmp: "image/bmp",
-      pdf: "application/pdf",
-      txt: "text/plain",
-      json: "application/json",
-      xml: "application/xml",
-      csv: "text/csv",
-      zip: "application/zip",
-      svg: "image/svg+xml",
+    return {
+      base64: buffer.toString("base64"),
+      mimeType: MIME_MAP[ext] ?? "application/octet-stream",
     };
-    // Prefer Content-Type from the download response via the stored buffer path.
-    const mimeType = mimeMap[ext] ?? "application/octet-stream";
-    return { base64, mimeType };
   }
 
-  /**
-   * Send a document (file) to a chat via multipart/form-data.
-   * @param fileBuffer  The file content as a Buffer.
-   * @param filename    The filename to display in Telegram.
-   * @param caption     Optional caption (plain text).
-   * @param threadId    Optional message_thread_id for forum supergroups.
-   */
+  /** Send a document (file) to a chat. */
   async sendDocument(
     chatId: string,
     fileBuffer: Buffer,
@@ -303,33 +321,11 @@ export class TelegramClient {
     caption?: string,
     threadId?: number,
   ): Promise<void> {
-    const url = `${this.baseUrl}/sendDocument`;
-    const formData = new FormData();
-    formData.append("chat_id", chatId);
-    formData.append("document", new Blob([new Uint8Array(fileBuffer)]), filename);
-    if (caption) formData.append("caption", caption);
-    if (threadId !== undefined) formData.append("message_thread_id", String(threadId));
-
-    const response = await fetch(url, { method: "POST", body: formData });
-    let data: SendMessageResult | undefined;
-    try {
-      data = (await response.json()) as SendMessageResult;
-    } catch {
-      data = undefined;
-    }
-    if (!response.ok || data?.ok !== true) {
-      const description = data?.description ?? response.statusText;
-      throw new Error(`Telegram sendDocument failed: ${response.status} ${description}`);
-    }
+    await this.sendMedia("sendDocument", chatId, "document",
+      new Blob([new Uint8Array(fileBuffer)]), filename, { caption, threadId });
   }
 
-  /**
-   * Send a photo to a chat via multipart/form-data.
-   * @param imageBuffer The image content as a Buffer.
-   * @param filename    The filename (e.g. "screenshot.png").
-   * @param caption     Optional caption.
-   * @param threadId    Optional message_thread_id for forum supergroups.
-   */
+  /** Send a photo to a chat. */
   async sendPhoto(
     chatId: string,
     imageBuffer: Buffer,
@@ -337,118 +333,17 @@ export class TelegramClient {
     caption?: string,
     threadId?: number,
   ): Promise<void> {
-    const url = `${this.baseUrl}/sendPhoto`;
-    const formData = new FormData();
-    formData.append("chat_id", chatId);
-    formData.append("photo", new Blob([new Uint8Array(imageBuffer)]), filename);
-    if (caption) formData.append("caption", caption);
-    if (threadId !== undefined) formData.append("message_thread_id", String(threadId));
-
-    const response = await fetch(url, { method: "POST", body: formData });
-    let data: SendMessageResult | undefined;
-    try {
-      data = (await response.json()) as SendMessageResult;
-    } catch {
-      data = undefined;
-    }
-    if (!response.ok || data?.ok !== true) {
-      const description = data?.description ?? response.statusText;
-      throw new Error(`Telegram sendPhoto failed: ${response.status} ${description}`);
-    }
+    await this.sendMedia("sendPhoto", chatId, "photo",
+      new Blob([new Uint8Array(imageBuffer)]), filename, { caption, threadId });
   }
 
-  /**
-   * Send a voice message (OGG Opus) to a chat.
-   * @param audioBuffer  OGG Opus audio content.
-   * @param threadId     Optional message_thread_id for forum supergroups.
-   */
+  /** Send a voice message (OGG Opus) to a chat. */
   async sendVoice(
     chatId: string,
     audioBuffer: Buffer,
     threadId?: number,
   ): Promise<void> {
-    const url = `${this.baseUrl}/sendVoice`;
-    const formData = new FormData();
-    formData.append("chat_id", chatId);
-    formData.append("voice", new Blob([new Uint8Array(audioBuffer)]), "voice.ogg");
-    if (threadId !== undefined) formData.append("message_thread_id", String(threadId));
-
-    const response = await fetch(url, { method: "POST", body: formData });
-    let data: SendMessageResult | undefined;
-    try {
-      data = (await response.json()) as SendMessageResult;
-    } catch {
-      data = undefined;
-    }
-    if (!response.ok || data?.ok !== true) {
-      const description = data?.description ?? response.statusText;
-      throw new Error(`Telegram sendVoice failed: ${response.status} ${description}`);
-    }
-  }
-
-  /**
-   * Convert text to speech using OpenAI TTS API.
-   * Returns OGG Opus audio suitable for Telegram's sendVoice.
-   */
-  static async textToSpeech(
-    text: string,
-    apiKey: string,
-    voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "nova",
-  ): Promise<Buffer> {
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "tts-1",
-        input: text,
-        voice,
-        response_format: "opus",
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => response.statusText);
-      throw new Error(
-        `OpenAI TTS failed: ${response.status} ${errText}`,
-      );
-    }
-
-    return Buffer.from(await response.arrayBuffer());
-  }
-
-  /**
-   * Transcribe a voice message using OpenAI Whisper API.
-   * @param fileId   Telegram file_id of the voice message.
-   * @param apiKey   OpenAI API key.
-   * @returns The transcribed text.
-   */
-  async transcribeVoice(fileId: string, apiKey: string): Promise<string> {
-    const { buffer } = await this.downloadFileAsBuffer(fileId);
-    // Telegram stores voice as .oga (OGG Opus). Whisper accepts .ogg but
-    // not .oga, so we hardcode the extension.
-    const filename = "voice.ogg";
-
-    const formData = new FormData();
-    formData.append("file", new Blob([new Uint8Array(buffer)]), filename);
-    formData.append("model", "whisper-1");
-
-    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => response.statusText);
-      throw new Error(
-        `OpenAI Whisper transcription failed: ${response.status} ${errText}`,
-      );
-    }
-
-    const result = (await response.json()) as { text?: string };
-    return result.text ?? "";
+    await this.sendMedia("sendVoice", chatId, "voice",
+      new Blob([new Uint8Array(audioBuffer)]), "voice.ogg", { threadId });
   }
 }

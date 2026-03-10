@@ -34,6 +34,7 @@ import {
 import { homedir } from "os";
 import { join } from "path";
 import type { TelegramClient } from "./telegram.js";
+import { errorMessage } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -171,6 +172,22 @@ function threadFilePath(threadId: number | "general"): string {
     return join(THREADS_DIR, `${threadId}.jsonl`);
 }
 
+/** Parse JSONL content into StoredMessage[], skipping corrupt lines. */
+function parseJsonlLines(raw: string, label: string): StoredMessage[] {
+    if (!raw) return [];
+    const results: StoredMessage[] = [];
+    for (const line of raw.split("\n")) {
+        try {
+            results.push(JSON.parse(line) as StoredMessage);
+        } catch {
+            process.stderr.write(
+                `[dispatcher] Skipping corrupt JSONL line in ${label}\n`,
+            );
+        }
+    }
+    return results;
+}
+
 /**
  * Append a message to a thread's JSONL file.
  * Throws on write failure so the caller can track which messages were persisted.
@@ -190,26 +207,13 @@ export function readThreadMessages(threadId: number | undefined): StoredMessage[
     const file = threadFilePath(key);
     const tmp = file + ".reading." + process.pid;
     try {
-        // Atomically move the file so the poller appends to a fresh file.
         renameSync(file, tmp);
     } catch {
-        return []; // File doesn't exist or is empty.
+        return [];
     }
     try {
         const raw = readFileSync(tmp, "utf8").trim();
-        if (!raw) return [];
-        const results: StoredMessage[] = [];
-        for (const line of raw.split("\n")) {
-            try {
-                results.push(JSON.parse(line) as StoredMessage);
-            } catch {
-                // Skip corrupt line — partial write or power loss.
-                process.stderr.write(
-                    `[dispatcher] Skipping corrupt JSONL line in ${key}.jsonl\n`,
-                );
-            }
-        }
-        return results;
+        return parseJsonlLines(raw, `${key}.jsonl`);
     } catch {
         return [];
     } finally {
@@ -227,14 +231,7 @@ export function peekThreadMessages(threadId: number | undefined): StoredMessage[
     const file = threadFilePath(key);
     try {
         const raw = readFileSync(file, "utf8").trim();
-        if (!raw) return [];
-        const results: StoredMessage[] = [];
-        for (const line of raw.split("\n")) {
-            try {
-                results.push(JSON.parse(line) as StoredMessage);
-            } catch { /* skip corrupt */ }
-        }
-        return results;
+        return parseJsonlLines(raw, `${key}.jsonl`);
     } catch {
         return [];
     }
@@ -317,8 +314,8 @@ async function pollOnce(
                 committedOffset = u.update_id + 1;
             } catch (writeErr) {
                 process.stderr.write(
-                    `[dispatcher] Failed to write message ${u.update_id} to thread ${threadId}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)
-                    }\n`,
+                `[dispatcher] Failed to write message ${u.update_id} to thread ${threadId}: ${errorMessage(writeErr)
+                }\n`,
                 );
                 allSucceeded = false;
                 break; // Stop processing — don't skip messages.
@@ -336,7 +333,7 @@ async function pollOnce(
         }
     } catch (err) {
         process.stderr.write(
-            `[dispatcher] Poll error: ${err instanceof Error ? err.message : String(err)}\n`,
+            `[dispatcher] Poll error: ${errorMessage(err)}\n`,
         );
     }
 }
@@ -358,7 +355,10 @@ export async function startDispatcher(
     const isPoller = tryAcquireLock();
 
     // Shared cleanup + loop helpers to avoid duplication.
+    let cleanupRegistered = false;
     const registerCleanup = () => {
+        if (cleanupRegistered) return;
+        cleanupRegistered = true;
         const cleanup = () => {
             pollerRunning = false;
             removeLock();
@@ -412,8 +412,8 @@ export async function startDispatcher(
                 // If the file still doesn't exist, readOffset() returns 0 which is
                 // acceptable because the drain simply failed to optimise.
                 process.stderr.write(
-                    `[dispatcher] Warning: drain failed: ${err instanceof Error ? err.message : String(err)
-                    }. Poll loop will start from offset 0.\n`,
+                `[dispatcher] Warning: drain failed: ${errorMessage(err)
+                }. Poll loop will start from offset 0.\n`,
                 );
             }
         }
