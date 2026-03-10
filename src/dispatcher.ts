@@ -317,8 +317,7 @@ async function pollOnce(
                 committedOffset = u.update_id + 1;
             } catch (writeErr) {
                 process.stderr.write(
-                    `[dispatcher] Failed to write message ${u.update_id} to thread ${threadId}: ${
-                        writeErr instanceof Error ? writeErr.message : String(writeErr)
+                    `[dispatcher] Failed to write message ${u.update_id} to thread ${threadId}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)
                     }\n`,
                 );
                 allSucceeded = false;
@@ -413,8 +412,7 @@ export async function startDispatcher(
                 // If the file still doesn't exist, readOffset() returns 0 which is
                 // acceptable because the drain simply failed to optimise.
                 process.stderr.write(
-                    `[dispatcher] Warning: drain failed: ${
-                        err instanceof Error ? err.message : String(err)
+                    `[dispatcher] Warning: drain failed: ${err instanceof Error ? err.message : String(err)
                     }. Poll loop will start from offset 0.\n`,
                 );
             }
