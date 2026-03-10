@@ -546,9 +546,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               } catch (err) {
                 contentBlocks.push({
                   type: "text",
-                  text: `[Voice message — ${s.message.voice.duration}s — transcription failed: ${
-                    err instanceof Error ? err.message : String(err)
-                  }]`,
+                  text: `[Voice message — ${s.message.voice.duration}s — transcription failed: ${err instanceof Error ? err.message : String(err)
+                    }]`,
                 });
               }
             } else {
