@@ -2,11 +2,12 @@
 /**
  * Remote Copilot MCP Server
  *
- * Exposes four tools for AI assistants:
+ * Exposes five tools for AI assistants:
  *   - start_session                          Begin a remote-copilot session.
  *   - remote_copilot_wait_for_instructions  Poll Telegram for new user messages.
  *   - report_progress                        Send a progress update to Telegram.
  *   - send_file                              Send a file/image to the operator.
+ *   - send_voice                             Send a voice message to the operator.
  *
  * Required environment variables:
  *   TELEGRAM_TOKEN    – Telegram Bot API token.
@@ -20,8 +21,9 @@
  *                           and instructing the agent to call the tool again
  *                           (default: 30).
  *   OPENAI_API_KEY        – OpenAI API key for voice message transcription
- *                           via Whisper. Without it, voice messages show a
- *                           placeholder instead of a transcript.
+ *                           via Whisper and text-to-speech via TTS. Without it,
+ *                           voice messages show a placeholder and send_voice
+ *                           is disabled.
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -320,6 +322,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: [],
+      },
+    },
+    {
+      name: "send_voice",
+      description:
+        "Send a voice message to the operator via Telegram. " +
+        "The text is converted to speech using OpenAI TTS and sent as a Telegram voice message. " +
+        "Requires OPENAI_API_KEY to be set.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          text: {
+            type: "string",
+            description:
+              "The text to speak. Maximum 4096 characters (OpenAI TTS limit).",
+          },
+        },
+        required: ["text"],
       },
     },
   ],
@@ -809,6 +829,58 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text",
             text: `Error: Failed to send file to Telegram: ${errorMsg}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  // ── send_voice ──────────────────────────────────────────────────────────
+  if (name === "send_voice") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const text = typeof typedArgs.text === "string" ? typedArgs.text.trim() : "";
+
+    if (!text) {
+      return {
+        content: [{ type: "text", text: "Error: 'text' argument is required for send_voice." }],
+        isError: true,
+      };
+    }
+
+    if (!OPENAI_API_KEY) {
+      return {
+        content: [{ type: "text", text: "Error: OPENAI_API_KEY is not set. Cannot generate voice." }],
+        isError: true,
+      };
+    }
+
+    if (text.length > 4096) {
+      return {
+        content: [{ type: "text", text: `Error: text is ${text.length} characters — exceeds OpenAI TTS limit of 4096.` }],
+        isError: true,
+      };
+    }
+
+    try {
+      const audioBuffer = await TelegramClient.textToSpeech(text, OPENAI_API_KEY);
+      await telegram.sendVoice(TELEGRAM_CHAT_ID, audioBuffer, currentThreadId);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Voice message sent to Telegram successfully.` + getReminders(currentThreadId),
+          },
+        ],
+      };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`Failed to send voice via Telegram: ${errorMsg}\n`);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: Failed to send voice message: ${errorMsg}`,
           },
         ],
         isError: true,

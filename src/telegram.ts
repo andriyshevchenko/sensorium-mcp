@@ -358,6 +358,64 @@ export class TelegramClient {
   }
 
   /**
+   * Send a voice message (OGG Opus) to a chat.
+   * @param audioBuffer  OGG Opus audio content.
+   * @param threadId     Optional message_thread_id for forum supergroups.
+   */
+  async sendVoice(
+    chatId: string,
+    audioBuffer: Buffer,
+    threadId?: number,
+  ): Promise<void> {
+    const url = `${this.baseUrl}/sendVoice`;
+    const formData = new FormData();
+    formData.append("chat_id", chatId);
+    formData.append("voice", new Blob([new Uint8Array(audioBuffer)]), "voice.ogg");
+    if (threadId !== undefined) formData.append("message_thread_id", String(threadId));
+
+    const response = await fetch(url, { method: "POST", body: formData });
+    let data: SendMessageResult | undefined;
+    try {
+      data = (await response.json()) as SendMessageResult;
+    } catch {
+      data = undefined;
+    }
+    if (!response.ok || data?.ok !== true) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram sendVoice failed: ${response.status} ${description}`);
+    }
+  }
+
+  /**
+   * Convert text to speech using OpenAI TTS API.
+   * Returns OGG Opus audio suitable for Telegram's sendVoice.
+   */
+  static async textToSpeech(text: string, apiKey: string): Promise<Buffer> {
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "tts-1",
+        input: text,
+        voice: "nova",
+        response_format: "opus",
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => response.statusText);
+      throw new Error(
+        `OpenAI TTS failed: ${response.status} ${errText}`,
+      );
+    }
+
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  /**
    * Transcribe a voice message using OpenAI Whisper API.
    * @param fileId   Telegram file_id of the voice message.
    * @param apiKey   OpenAI API key.
