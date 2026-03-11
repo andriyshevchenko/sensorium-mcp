@@ -577,22 +577,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   msg.message.voice.file_id,
                 );
 
-                // Run transcription and emotion analysis in parallel.
-                const [transcript, emotion] = await Promise.all([
+                // Run transcription and voice analysis in parallel.
+                const [transcript, analysis] = await Promise.all([
                   transcribeAudio(buffer, OPENAI_API_KEY),
                   VOICE_ANALYSIS_URL
                     ? analyzeVoiceEmotion(buffer, VOICE_ANALYSIS_URL)
                     : Promise.resolve(null),
                 ]);
 
-                const emotionTag = emotion
-                  ? ` | tone: ${emotion.emotion} (${Math.round(emotion.confidence * 100)}%)`
-                  : "";
+                // Build rich voice analysis tag from VANPY results.
+                const tags: string[] = [];
+                if (analysis?.emotion) tags.push(`tone: ${analysis.emotion}`);
+                if (analysis?.gender) tags.push(`speaker: ${analysis.gender}`);
+                if (analysis?.age_estimate) tags.push(`~${Math.round(analysis.age_estimate)}yr`);
+                const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
+
                 contentBlocks.push({
                   type: "text",
                   text: transcript
-                    ? `[Voice message — ${msg.message.voice.duration}s${emotionTag}, transcribed]: ${transcript}`
-                    : `[Voice message — ${msg.message.voice.duration}s${emotionTag}, transcribed]: (empty — no speech detected)`,
+                    ? `[Voice message — ${msg.message.voice.duration}s${analysisTag}, transcribed]: ${transcript}`
+                    : `[Voice message — ${msg.message.voice.duration}s${analysisTag}, transcribed]: (empty — no speech detected)`,
                 });
               } catch (err) {
                 contentBlocks.push({
