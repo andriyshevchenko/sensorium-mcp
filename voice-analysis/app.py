@@ -2,12 +2,16 @@
 Voice Analysis microservice powered by VANPY models.
 
 Accepts an audio file (OGG/WAV/etc.) via POST /analyze and returns rich
-speaker analysis using VANPY's HuggingFace models:
-- Emotion classification (7 classes) via SpeechBrain ECAPA + SVM
-- Gender classification via SpeechBrain ECAPA + SVM
-- Age estimation via ECAPA + Librosa features + ANN
+speaker analysis using VANPY's HuggingFace models — all running on a single
+shared SpeechBrain ECAPA-TDNN 192-dim speaker embedding:
 
-All models by Gregory Koushnir (Ben-Gurion University), Apache 2.0 license.
+  - Emotion classification (7 classes) — SVM on ECAPA
+  - Arousal / Dominance / Valence intensity from emotion label
+  - Gender classification — SVM on ECAPA
+  - Age estimation (years) — SVR on ECAPA
+  - Height estimation (cm) — SVR on ECAPA
+
+All models by Gregory Koushnir (Ben-Gurion University), Apache 2.0.
 Paper: https://arxiv.org/abs/2502.17579
 
 NOTE: Must run with a single uvicorn worker (no --workers > 1).
@@ -16,23 +20,19 @@ NOTE: Must run with a single uvicorn worker (no --workers > 1).
 import asyncio
 import io
 import logging
-import tempfile
 from contextlib import asynccontextmanager
 from typing import Any
-from pathlib import Path
 
 import joblib
 import librosa
 import numpy as np
 import pandas as pd
-import soundfile as sf
 import torch
 import torchaudio
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from huggingface_hub import hf_hub_download
 from speechbrain.inference.speaker import EncoderClassifier
-from voice_emotion_classification import EmotionClassificationPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -42,69 +42,122 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_CONTENT_TYPES = {
     "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/flac",
     "audio/mp4", "audio/webm", "audio/aac", "video/ogg",
-    "application/ogg", "application/octet-stream",  # Telegram sends as octet-stream
+    "application/ogg", "application/octet-stream",
 }
 
-# Models loaded at startup
-emotion_pipeline: EmotionClassificationPipeline | None = None
-gender_pipeline: dict | None = None   # {"model": SVM, "scaler": StandardScaler}
+# ---------------------------------------------------------------------------
+# Label constants
+# ---------------------------------------------------------------------------
+
+GENDER_LABELS = ["female", "male"]  # from config.json in HF repo
+
+EMOTION_LABELS = [
+    "angry", "disgust", "fearful", "happy", "neutral/calm", "sad", "surprised",
+]
+
+# Arousal / Dominance / Valence mapping for RAVDESS 7-class emotions.
+# Values on a 1-5 scale based on established affective computing literature
+# (Russell's circumplex model, Warriner et al. VAD norms).
+EMOTION_ADV: dict[str, dict[str, float]] = {
+    "angry":        {"arousal": 4.3, "dominance": 3.9, "valence": 1.8},
+    "disgust":      {"arousal": 3.4, "dominance": 3.2, "valence": 1.7},
+    "fearful":      {"arousal": 4.1, "dominance": 1.6, "valence": 1.6},
+    "happy":        {"arousal": 4.0, "dominance": 3.8, "valence": 4.4},
+    "neutral/calm": {"arousal": 2.0, "dominance": 3.0, "valence": 3.2},
+    "sad":          {"arousal": 2.1, "dominance": 1.9, "valence": 1.6},
+    "surprised":    {"arousal": 4.2, "dominance": 2.8, "valence": 3.1},
+}
+
+# ---------------------------------------------------------------------------
+# Feature column names shared by all ECAPA-based models (192 dims)
+# ---------------------------------------------------------------------------
+ECAPA_COLUMNS = [f"{i}_speechbrain_embedding" for i in range(192)]
+
+
+# ---------------------------------------------------------------------------
+# Model singletons (loaded at startup)
+# ---------------------------------------------------------------------------
 speechbrain_encoder: EncoderClassifier | None = None
+emotion_pipeline: dict | None = None   # {"model": SVM}
+gender_pipeline: dict | None = None    # {"model": SVM, "scaler": StandardScaler}
+age_pipeline: dict | None = None       # {"model": SVR, "scaler": StandardScaler}
+height_pipeline: dict | None = None    # {"model": SVR, "scaler": StandardScaler}
 
 
-def _load_emotion() -> EmotionClassificationPipeline:
-    """Load VANPY 7-class emotion model (ECAPA + SVM)."""
-    return EmotionClassificationPipeline.from_pretrained(
-        "griko/emotion_7_cls_svm_ecapa_ravdess"
-    )
-
-
-def _load_gender():
-    """Load VANPY gender classification model (ECAPA + SVM) with scaler."""
-    model_path = hf_hub_download(
-        repo_id="griko/gender_cls_svm_ecapa_voxceleb",
-        filename="svm_model.joblib",
-    )
-    scaler_path = hf_hub_download(
-        repo_id="griko/gender_cls_svm_ecapa_voxceleb",
-        filename="scaler.joblib",
-    )
-    return {"model": joblib.load(model_path), "scaler": joblib.load(scaler_path)}
-
-
-def _get_encoder() -> EncoderClassifier:
-    """Get or create the shared SpeechBrain ECAPA encoder."""
-    return EncoderClassifier.from_hparams(
-        source="speechbrain/spkrec-ecapa-voxceleb",
-        run_opts={"device": "cpu"},
-    )
+def _load_svm(repo_id: str, model_file: str = "svm_model.joblib",
+              scaler_file: str | None = "scaler.joblib") -> dict:
+    """Generic loader for joblib SVM/SVR model + optional scaler from HuggingFace."""
+    model_path = hf_hub_download(repo_id=repo_id, filename=model_file)
+    result = {"model": joblib.load(model_path)}
+    if scaler_file:
+        scaler_path = hf_hub_download(repo_id=repo_id, filename=scaler_file)
+        result["scaler"] = joblib.load(scaler_path)
+    return result
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global emotion_pipeline, gender_pipeline, speechbrain_encoder
+    global speechbrain_encoder, emotion_pipeline, gender_pipeline
+    global age_pipeline, height_pipeline
+
     logger.info("Loading VANPY models...")
 
+    # 1. Shared ECAPA encoder (required by all classifiers)
     try:
-        emotion_pipeline = _load_emotion()
+        speechbrain_encoder = EncoderClassifier.from_hparams(
+            source="speechbrain/spkrec-ecapa-voxceleb",
+            run_opts={"device": "cpu"},
+        )
+        logger.info("  ✓ SpeechBrain ECAPA encoder loaded")
+    except Exception:
+        logger.exception("  ✗ SpeechBrain encoder failed — all models disabled")
+        yield
+        return
+
+    # 2. Emotion
+    try:
+        emotion_pipeline = _load_svm(
+            "griko/emotion_7_cls_svm_ecapa_ravdess",
+            model_file="svm_model.joblib",
+            scaler_file=None,
+        )
         logger.info("  ✓ Emotion model loaded")
     except Exception:
         logger.exception("  ✗ Emotion model failed to load")
 
+    # 3. Gender
     try:
-        speechbrain_encoder = _get_encoder()
-        logger.info("  ✓ SpeechBrain ECAPA encoder loaded")
-    except Exception:
-        logger.exception("  ✗ SpeechBrain encoder failed to load")
-
-    try:
-        gender_pipeline = _load_gender()
+        gender_pipeline = _load_svm("griko/gender_cls_svm_ecapa_voxceleb")
         logger.info("  ✓ Gender model loaded")
     except Exception:
         logger.exception("  ✗ Gender model failed to load")
 
+    # 4. Age
+    try:
+        age_pipeline = _load_svm(
+            "griko/age_reg_svr_ecapa_voxceleb2",
+            model_file="model.joblib",
+            scaler_file="scaler.joblib",
+        )
+        logger.info("  ✓ Age model loaded")
+    except Exception:
+        logger.exception("  ✗ Age model failed to load")
+
+    # 5. Height
+    try:
+        height_pipeline = _load_svm(
+            "griko/height_reg_svr_ecapa_voxceleb",
+            model_file="svr_model.joblib",
+            scaler_file="scaler.joblib",
+        )
+        logger.info("  ✓ Height model loaded")
+    except Exception:
+        logger.exception("  ✗ Height model failed to load")
+
     logger.info("Model loading complete.")
     yield
-    emotion_pipeline = gender_pipeline = speechbrain_encoder = None
+    speechbrain_encoder = None
+    emotion_pipeline = gender_pipeline = age_pipeline = height_pipeline = None
     logger.info("Models unloaded.")
 
 
@@ -116,11 +169,18 @@ async def health():
     return {
         "status": "ok",
         "models": {
+            "encoder": speechbrain_encoder is not None,
             "emotion": emotion_pipeline is not None,
             "gender": gender_pipeline is not None,
+            "age": age_pipeline is not None,
+            "height": height_pipeline is not None,
         },
     }
 
+
+# ---------------------------------------------------------------------------
+# Inference helpers
+# ---------------------------------------------------------------------------
 
 def _extract_ecapa_embedding(waveform: np.ndarray, sr: int) -> np.ndarray:
     """Extract 192-dim ECAPA embedding from audio waveform."""
@@ -137,69 +197,87 @@ def _extract_ecapa_embedding(waveform: np.ndarray, sr: int) -> np.ndarray:
     return embedding.squeeze().cpu().numpy()
 
 
+def _predict(pipeline: dict, emb_df: pd.DataFrame) -> Any:
+    """Run scaler (if present) → model.predict on an embedding DataFrame."""
+    features = emb_df
+    if "scaler" in pipeline:
+        features = pipeline["scaler"].transform(features)
+    return pipeline["model"].predict(features)
+
+
 def _run_analysis(audio_bytes: bytes) -> dict:
     """Run all ML inference synchronously (called via asyncio.to_thread)."""
     waveform, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
     duration = float(librosa.get_duration(y=waveform, sr=sr))
     result: dict = {"duration_seconds": round(duration, 3)}
 
-    # Emotion classification (uses its own encoder internally)
+    if speechbrain_encoder is None:
+        return result
+
+    # Extract the single shared embedding used by ALL classifiers
+    try:
+        embedding = _extract_ecapa_embedding(waveform, 16000)
+        emb_df = pd.DataFrame([embedding], columns=ECAPA_COLUMNS)
+    except Exception:
+        logger.exception("ECAPA embedding extraction failed")
+        return result
+
+    # --- Emotion classification ---
     if emotion_pipeline is not None:
-        tmp_path: str | None = None
         try:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                tmp_path = tmp.name
-                sf.write(tmp_path, waveform, 16000)
-            emotions = emotion_pipeline(tmp_path)
-            result["emotion"] = emotions[0] if emotions else "unknown"
-        except Exception as e:
+            pred = _predict(emotion_pipeline, emb_df)
+            label_idx = int(pred[0]) if pred is not None and len(pred) > 0 else None
+            if label_idx is not None and 0 <= label_idx < len(EMOTION_LABELS):
+                emotion_label = EMOTION_LABELS[label_idx]
+            else:
+                emotion_label = str(label_idx)
+            result["emotion"] = emotion_label
+            # Add arousal / dominance / valence
+            adv = EMOTION_ADV.get(emotion_label)
+            if adv:
+                result["arousal"] = adv["arousal"]
+                result["dominance"] = adv["dominance"]
+                result["valence"] = adv["valence"]
+        except Exception:
             logger.exception("Emotion classification failed")
             result["emotion"] = None
-            result["emotion_error"] = str(e)
-        finally:
-            if tmp_path:
-                Path(tmp_path).unlink(missing_ok=True)
-    else:
-        result["emotion"] = None
 
-    # Extract shared ECAPA embedding for gender + age
-    if speechbrain_encoder is not None:
+    # --- Gender classification ---
+    if gender_pipeline is not None:
         try:
-            embedding = _extract_ecapa_embedding(waveform, 16000)
-
-            # Gender classification
-            if gender_pipeline is not None:
-                try:
-                    emb_df = pd.DataFrame(
-                        [embedding],
-                        columns=[f"{i}_speechbrain_embedding" for i in range(192)],
-                    )
-                    scaled = gender_pipeline["scaler"].transform(emb_df)
-                    gender_pred = gender_pipeline["model"].predict(scaled)
-                    result["gender"] = (
-                        gender_pred[0]
-                        if gender_pred is not None and len(gender_pred) > 0
-                        else None
-                    )
-                except Exception as e:
-                    logger.exception("Gender classification failed")
-                    result["gender"] = None
+            pred = _predict(gender_pipeline, emb_df)
+            label_idx = int(pred[0]) if pred is not None and len(pred) > 0 else None
+            if label_idx is not None and 0 <= label_idx < len(GENDER_LABELS):
+                result["gender"] = GENDER_LABELS[label_idx]
             else:
-                result["gender"] = None
-
-        except Exception as e:
-            logger.exception("Embedding extraction failed")
+                result["gender"] = str(label_idx)
+        except Exception:
+            logger.exception("Gender classification failed")
             result["gender"] = None
-    else:
-        result["gender"] = None
+
+    # --- Age estimation ---
+    if age_pipeline is not None:
+        try:
+            pred = _predict(age_pipeline, emb_df)
+            result["age_estimate"] = round(float(pred[0]), 1) if pred is not None else None
+        except Exception:
+            logger.exception("Age estimation failed")
+            result["age_estimate"] = None
+
+    # --- Height estimation ---
+    if height_pipeline is not None:
+        try:
+            pred = _predict(height_pipeline, emb_df)
+            result["height_estimate_cm"] = round(float(pred[0]), 1) if pred is not None else None
+        except Exception:
+            logger.exception("Height estimation failed")
+            result["height_estimate_cm"] = None
 
     return _sanitize_for_json(result)
 
 
 def _sanitize_for_json(obj: Any) -> Any:
     """Recursively convert numpy types to native Python for JSON serialization."""
-    import numpy as np
-
     if isinstance(obj, dict):
         return {k: _sanitize_for_json(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -213,9 +291,13 @@ def _sanitize_for_json(obj: Any) -> Any:
     return obj
 
 
+# ---------------------------------------------------------------------------
+# HTTP endpoint
+# ---------------------------------------------------------------------------
+
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    if emotion_pipeline is None and speechbrain_encoder is None:
+    if speechbrain_encoder is None:
         raise HTTPException(status_code=503, detail="No models loaded")
 
     # Validate content type

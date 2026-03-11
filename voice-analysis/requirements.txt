@@ -1,7 +1,6 @@
 fastapi==0.115.0
 uvicorn==0.30.0
 librosa==0.10.2
-soundfile==0.12.1
 python-multipart==0.0.9
 numpy<2.0.0
 pandas>=2.0.0
@@ -11,4 +10,3 @@ huggingface-hub>=0.20.0,<1.0.0
 torch==2.5.1
 torchaudio==2.5.1
 speechbrain==1.0.3
-git+https://github.com/griko/voice-emotion-classification.git@1f606f6570679aefe79fec22673f7c713ca2bb9c

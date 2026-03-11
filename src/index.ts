@@ -587,8 +587,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
                 // Build rich voice analysis tag from VANPY results.
                 const tags: string[] = [];
-                if (analysis?.emotion) tags.push(`tone: ${analysis.emotion}`);
-                if (analysis?.gender) tags.push(`speaker: ${analysis.gender}`);
+                if (analysis?.emotion) {
+                  let emotionStr = analysis.emotion;
+                  if (analysis.arousal != null && analysis.dominance != null && analysis.valence != null) {
+                    emotionStr += ` (A:${analysis.arousal}/D:${analysis.dominance}/V:${analysis.valence})`;
+                  }
+                  tags.push(`tone: ${emotionStr}`);
+                }
+                if (analysis?.gender) tags.push(`gender: ${analysis.gender}`);
+                if (analysis?.age_estimate != null) tags.push(`age: ~${Math.round(analysis.age_estimate)}`);
+                if (analysis?.height_estimate_cm != null) tags.push(`height: ~${Math.round(analysis.height_estimate_cm)}cm`);
                 const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
 
                 contentBlocks.push({
