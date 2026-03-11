@@ -589,7 +589,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 const tags: string[] = [];
                 if (analysis?.emotion) tags.push(`tone: ${analysis.emotion}`);
                 if (analysis?.gender) tags.push(`speaker: ${analysis.gender}`);
-                if (analysis?.age_estimate) tags.push(`~${Math.round(analysis.age_estimate)}yr`);
+                if (analysis?.age_estimate != null) tags.push(`~${Math.round(analysis.age_estimate)}yr`);
                 const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
 
                 contentBlocks.push({

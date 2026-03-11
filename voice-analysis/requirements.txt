@@ -11,4 +11,4 @@ huggingface-hub>=0.20.0
 torch>=2.0.0
 torchaudio>=2.0.0
 speechbrain>=1.0.0
-git+https://github.com/griko/voice-emotion-classification.git
+git+https://github.com/griko/voice-emotion-classification.git@1f606f6570679aefe79fec22673f7c713ca2bb9c

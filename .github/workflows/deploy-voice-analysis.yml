@@ -1,0 +1,143 @@
+name: Deploy Voice Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+  push:
+    branches: [main]
+    paths:
+      - 'voice-analysis/**'
+
+# Use OIDC token for Azure authentication (federated credentials).
+# Configure in Azure AD:
+#   1. Create an App Registration (or use existing)
+#   2. Add a federated credential for GitHub Actions:
+#      - Organization: <your-github-org>
+#      - Repository: <your-repo>
+#      - Entity: branch (main) or environment (production)
+#   3. Assign Contributor role on the resource group
+#   4. Set these secrets in GitHub repo settings:
+#      - AZURE_CLIENT_ID
+#      - AZURE_TENANT_ID
+#      - AZURE_SUBSCRIPTION_ID
+
+permissions:
+  id-token: write   # Required for OIDC federated credentials
+  contents: read
+
+env:
+  RESOURCE_GROUP: rg-voice-analysis
+  LOCATION: westeurope
+  APP_NAME: voice-analysis
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'production' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC / Federated Credentials)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group exists
+        run: |
+          az group create \
+            --name "$RESOURCE_GROUP" \
+            --location "$LOCATION" \
+            --output none
+
+      - name: Deploy infrastructure (Bicep)
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file voice-analysis/infra/main.bicep \
+            --parameters \
+              location="$LOCATION" \
+              appName="$APP_NAME" \
+              imageName="${APP_NAME}:${IMAGE_TAG}" \
+            --output none
+
+      - name: Get ACR login server
+        id: acr
+        run: |
+          ACR_NAME=$(echo "${APP_NAME}acr" | tr -d '-')
+          LOGIN_SERVER=$(az acr show \
+            --name "$ACR_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query loginServer \
+            --output tsv)
+          echo "login_server=$LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+          echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image to ACR
+        run: |
+          az acr build \
+            --registry "${{ steps.acr.outputs.acr_name }}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${APP_NAME}:${IMAGE_TAG}" \
+            --file voice-analysis/Dockerfile \
+            voice-analysis/
+
+      - name: Update Container App with new image
+        run: |
+          az containerapp update \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${{ steps.acr.outputs.login_server }}/${APP_NAME}:${IMAGE_TAG}" \
+            --output none
+
+      - name: Wait for deployment and health check
+        run: |
+          APP_URL=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+
+          echo "App URL: https://${APP_URL}"
+          echo "Waiting for health check..."
+
+          for i in $(seq 1 30); do
+            if curl -sf "https://${APP_URL}/health" > /dev/null 2>&1; then
+              echo "✓ Health check passed"
+              curl -s "https://${APP_URL}/health" | jq .
+              exit 0
+            fi
+            echo "  Attempt $i/30 — waiting 10s..."
+            sleep 10
+          done
+
+          echo "✗ Health check failed after 5 minutes"
+          exit 1
+
+      - name: Print deployment summary
+        if: success()
+        run: |
+          APP_URL=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+          echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Key | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **URL** | https://${APP_URL} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Image** | ${APP_NAME}:${IMAGE_TAG} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Commit** | ${{ github.sha }} |" >> "$GITHUB_STEP_SUMMARY"

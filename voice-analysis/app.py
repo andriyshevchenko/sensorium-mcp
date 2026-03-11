@@ -9,32 +9,50 @@ speaker analysis using VANPY's HuggingFace models:
 
 All models by Gregory Koushnir (Ben-Gurion University), Apache 2.0 license.
 Paper: https://arxiv.org/abs/2502.17579
+
+NOTE: Must run with a single uvicorn worker (no --workers > 1).
 """
 
+import asyncio
 import io
 import logging
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import joblib
 import librosa
 import numpy as np
+import pandas as pd
 import soundfile as sf
+import torch
+import torchaudio
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
+from huggingface_hub import hf_hub_download
+from speechbrain.inference.speaker import EncoderClassifier
+from voice_emotion_classification import EmotionClassificationPipeline
 
 logger = logging.getLogger(__name__)
 
+# Max upload size: 25 MB (Telegram voice messages are typically < 1 MB)
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+ALLOWED_CONTENT_TYPES = {
+    "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/flac",
+    "audio/mp4", "audio/webm", "audio/aac", "video/ogg",
+    "application/ogg", "application/octet-stream",  # Telegram sends as octet-stream
+}
+
 # Models loaded at startup
-emotion_pipeline = None
+emotion_pipeline: EmotionClassificationPipeline | None = None
 gender_pipeline = None
 age_model = None
-speechbrain_encoder = None
+speechbrain_encoder: EncoderClassifier | None = None
 
 
-def _load_emotion():
+def _load_emotion() -> EmotionClassificationPipeline:
     """Load VANPY 7-class emotion model (ECAPA + SVM)."""
-    from voice_emotion_classification import EmotionClassificationPipeline
     return EmotionClassificationPipeline.from_pretrained(
         "griko/emotion_7_cls_svm_ecapa_ravdess"
     )
@@ -42,8 +60,6 @@ def _load_emotion():
 
 def _load_gender():
     """Load VANPY gender classification model (ECAPA + SVM)."""
-    import joblib
-    from huggingface_hub import hf_hub_download
     model_path = hf_hub_download(
         repo_id="griko/gender_cls_svm_ecapa_voxceleb",
         filename="svm_model.pkl",
@@ -53,9 +69,6 @@ def _load_gender():
 
 def _load_age():
     """Load VANPY age estimation model (ECAPA + Librosa + ANN)."""
-    import joblib
-    from huggingface_hub import hf_hub_download
-    # The combined model uses both ECAPA embeddings and librosa features
     model_path = hf_hub_download(
         repo_id="griko/age_reg_ann_ecapa_librosa_combined",
         filename="ann_model.pkl",
@@ -63,9 +76,8 @@ def _load_age():
     return joblib.load(model_path)
 
 
-def _get_encoder():
+def _get_encoder() -> EncoderClassifier:
     """Get or create the shared SpeechBrain ECAPA encoder."""
-    from speechbrain.inference.speaker import EncoderClassifier
     return EncoderClassifier.from_hparams(
         source="speechbrain/spkrec-ecapa-voxceleb",
         run_opts={"device": "cpu"},
@@ -77,19 +89,31 @@ async def lifespan(app: FastAPI):
     global emotion_pipeline, gender_pipeline, age_model, speechbrain_encoder
     logger.info("Loading VANPY models...")
 
-    emotion_pipeline = _load_emotion()
-    logger.info("  ✓ Emotion model loaded")
+    try:
+        emotion_pipeline = _load_emotion()
+        logger.info("  ✓ Emotion model loaded")
+    except Exception:
+        logger.exception("  ✗ Emotion model failed to load")
 
-    speechbrain_encoder = _get_encoder()
-    logger.info("  ✓ SpeechBrain ECAPA encoder loaded")
+    try:
+        speechbrain_encoder = _get_encoder()
+        logger.info("  ✓ SpeechBrain ECAPA encoder loaded")
+    except Exception:
+        logger.exception("  ✗ SpeechBrain encoder failed to load")
 
-    gender_pipeline = _load_gender()
-    logger.info("  ✓ Gender model loaded")
+    try:
+        gender_pipeline = _load_gender()
+        logger.info("  ✓ Gender model loaded")
+    except Exception:
+        logger.exception("  ✗ Gender model failed to load")
 
-    age_model = _load_age()
-    logger.info("  ✓ Age model loaded")
+    try:
+        age_model = _load_age()
+        logger.info("  ✓ Age model loaded")
+    except Exception:
+        logger.exception("  ✗ Age model failed to load")
 
-    logger.info("All models ready.")
+    logger.info("Model loading complete.")
     yield
     emotion_pipeline = gender_pipeline = age_model = speechbrain_encoder = None
     logger.info("Models unloaded.")
@@ -112,9 +136,6 @@ async def health():
 
 def _extract_ecapa_embedding(waveform: np.ndarray, sr: int) -> np.ndarray:
     """Extract 192-dim ECAPA embedding from audio waveform."""
-    import torch
-    import torchaudio
-
     wave_tensor = torch.from_numpy(waveform).float()
     if sr != 16000:
         wave_tensor = torchaudio.functional.resample(wave_tensor, sr, 16000)
@@ -128,18 +149,15 @@ def _extract_ecapa_embedding(waveform: np.ndarray, sr: int) -> np.ndarray:
     return embedding.squeeze().cpu().numpy()
 
 
-def _extract_librosa_features(waveform: np.ndarray, sr: int) -> np.ndarray:
+def _extract_librosa_features(waveform: np.ndarray, sr: int) -> dict[str, float]:
     """Extract librosa features (MFCCs, spectral, etc.) for the age model."""
-    features = {}
-    # MFCCs
+    features: dict[str, float] = {}
     mfccs = librosa.feature.mfcc(y=waveform, sr=sr, n_mfcc=13)
     for i in range(13):
         features[f"mfcc_{i}"] = float(np.mean(mfccs[i]))
-    # Delta MFCCs
     delta = librosa.feature.delta(mfccs)
     for i in range(13):
         features[f"delta_mfcc_{i}"] = float(np.mean(delta[i]))
-    # Spectral features
     features["spectral_centroid"] = float(np.mean(
         librosa.feature.spectral_centroid(y=waveform, sr=sr)
     ))
@@ -152,76 +170,117 @@ def _extract_librosa_features(waveform: np.ndarray, sr: int) -> np.ndarray:
     return features
 
 
+def _run_analysis(audio_bytes: bytes) -> dict:
+    """Run all ML inference synchronously (called via asyncio.to_thread)."""
+    waveform, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
+    duration = float(librosa.get_duration(y=waveform, sr=sr))
+    result: dict = {"duration_seconds": round(duration, 3)}
+
+    # Emotion classification (uses its own encoder internally)
+    if emotion_pipeline is not None:
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = tmp.name
+                sf.write(tmp_path, waveform, 16000)
+            emotions = emotion_pipeline(tmp_path)
+            result["emotion"] = emotions[0] if emotions else "unknown"
+        except Exception as e:
+            logger.exception("Emotion classification failed")
+            result["emotion"] = None
+            result["emotion_error"] = str(e)
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+    else:
+        result["emotion"] = None
+
+    # Extract shared ECAPA embedding for gender + age
+    if speechbrain_encoder is not None:
+        try:
+            embedding = _extract_ecapa_embedding(waveform, 16000)
+
+            # Gender classification
+            if gender_pipeline is not None:
+                try:
+                    emb_df = pd.DataFrame(
+                        [embedding],
+                        columns=[f"{i}_speechbrain_embedding" for i in range(192)],
+                    )
+                    gender_pred = gender_pipeline.predict(emb_df)
+                    result["gender"] = (
+                        gender_pred[0]
+                        if gender_pred is not None and len(gender_pred) > 0
+                        else None
+                    )
+                except Exception as e:
+                    logger.exception("Gender classification failed")
+                    result["gender"] = None
+            else:
+                result["gender"] = None
+
+            # Age estimation (uses ECAPA + librosa features)
+            if age_model is not None:
+                try:
+                    librosa_feats = _extract_librosa_features(waveform, 16000)
+                    combined: dict = {}
+                    for i in range(192):
+                        combined[f"{i}_speechbrain_embedding"] = embedding[i]
+                    combined.update(librosa_feats)
+                    age_df = pd.DataFrame([combined])
+                    age_pred = age_model.predict(age_df)
+                    result["age_estimate"] = round(float(age_pred[0]), 1)
+                except Exception as e:
+                    logger.exception("Age estimation failed")
+                    result["age_estimate"] = None
+            else:
+                result["age_estimate"] = None
+
+        except Exception as e:
+            logger.exception("Embedding extraction failed")
+            result["gender"] = None
+            result["age_estimate"] = None
+    else:
+        result["gender"] = None
+        result["age_estimate"] = None
+
+    return result
+
+
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    if emotion_pipeline is None:
-        raise HTTPException(status_code=503, detail="Models not loaded yet")
+    if emotion_pipeline is None and speechbrain_encoder is None:
+        raise HTTPException(status_code=503, detail="No models loaded")
 
-    # Read and decode audio
+    # Validate content type
+    ct = (file.content_type or "").lower()
+    if ct and ct not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported content type: {ct}. Expected audio/*.",
+        )
+
+    # Read with size limit
     try:
         audio_bytes = await file.read()
         if not audio_bytes:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
-
-        waveform, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
-        duration = float(librosa.get_duration(y=waveform, sr=sr))
+        if len(audio_bytes) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large ({len(audio_bytes)} bytes). Max: {MAX_UPLOAD_BYTES}.",
+            )
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Failed to decode audio")
-        raise HTTPException(status_code=400, detail=f"Could not process audio: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read upload: {e}")
 
-    result = {"duration_seconds": round(duration, 3)}
-
-    # Emotion classification (uses its own encoder internally)
+    # Run all ML inference off the event loop to keep /health responsive
     try:
-        # Write to temp file since the pipeline expects a file path
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            sf.write(tmp.name, waveform, 16000)
-            emotions = emotion_pipeline(tmp.name)
-            result["emotion"] = emotions[0] if emotions else "unknown"
-            Path(tmp.name).unlink(missing_ok=True)
+        result = await asyncio.to_thread(_run_analysis, audio_bytes)
     except Exception as e:
-        logger.exception("Emotion classification failed")
-        result["emotion"] = None
-        result["emotion_error"] = str(e)
-
-    # Extract shared ECAPA embedding for gender + age
-    try:
-        embedding = _extract_ecapa_embedding(waveform, 16000)
-        import pandas as pd
-
-        # Gender classification
-        try:
-            emb_df = pd.DataFrame(
-                [embedding],
-                columns=[f"{i}_speechbrain_embedding" for i in range(192)],
-            )
-            gender_pred = gender_pipeline.predict(emb_df)
-            result["gender"] = gender_pred[0] if len(gender_pred) > 0 else None
-        except Exception as e:
-            logger.exception("Gender classification failed")
-            result["gender"] = None
-
-        # Age estimation (uses ECAPA + librosa features)
-        try:
-            librosa_feats = _extract_librosa_features(waveform, 16000)
-            # Combine embedding columns + librosa feature columns
-            combined = {}
-            for i in range(192):
-                combined[f"{i}_speechbrain_embedding"] = embedding[i]
-            combined.update(librosa_feats)
-            age_df = pd.DataFrame([combined])
-            age_pred = age_model.predict(age_df)
-            result["age_estimate"] = round(float(age_pred[0]), 1)
-        except Exception as e:
-            logger.exception("Age estimation failed")
-            result["age_estimate"] = None
-
-    except Exception as e:
-        logger.exception("Embedding extraction failed")
-        result["gender"] = None
-        result["age_estimate"] = None
+        logger.exception("Analysis failed")
+        raise HTTPException(status_code=500, detail=f"Analysis error: {e}")
 
     return JSONResponse(content=result)
 

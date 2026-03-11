@@ -103,7 +103,7 @@ export interface VoiceAnalysisResult {
 export async function analyzeVoiceEmotion(
     audioBuffer: Buffer,
     serviceUrl: string,
-    timeoutMs = 15000,
+    timeoutMs = 30000,
 ): Promise<VoiceAnalysisResult | null> {
     try {
         const controller = new AbortController();
@@ -130,8 +130,11 @@ export async function analyzeVoiceEmotion(
 
         const result = (await response.json()) as VoiceAnalysisResult;
         return result;
-    } catch {
+    } catch (err) {
         // Service unavailable, timeout, or network error — non-fatal.
+        process.stderr.write(
+            `Voice analysis unavailable: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
         return null;
     }
 }
