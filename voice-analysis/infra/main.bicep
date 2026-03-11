@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 @description('Azure region for all resources')
-param location string = 'westeurope'
+param location string = 'northeurope'
 
 @description('Base name for all resources')
 param appName string = 'voice-analysis'

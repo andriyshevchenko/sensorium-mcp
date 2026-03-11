@@ -35,7 +35,7 @@ permissions:
 
 env:
   RESOURCE_GROUP: rg-voice-analysis
-  LOCATION: westeurope
+  LOCATION: northeurope
   APP_NAME: voice-analysis
   IMAGE_TAG: ${{ github.sha }}
 
