@@ -34,6 +34,28 @@ export function successResult(text: string): {
     return { content: [{ type: "text", text }] };
 }
 
+/**
+ * Map arousal/dominance/valence scores (1–5) to human-readable descriptors
+ * based on Russell's circumplex model of affect.
+ *
+ * Returns a compact string like "calm, neutral, balanced".
+ */
+export function describeADV(arousal: number, dominance: number, valence: number): string {
+    const label = (value: number, scale: readonly string[]): string => {
+        if (value <= 1.5) return scale[0];
+        if (value <= 2.5) return scale[1];
+        if (value <= 3.5) return scale[2];
+        if (value <= 4.5) return scale[3];
+        return scale[4];
+    };
+
+    const arousalWord = label(arousal, ["very calm", "calm", "moderate energy", "energized", "very intense"] as const);
+    const valenceWord = label(valence, ["very negative", "negative", "neutral", "positive", "very positive"] as const);
+    const dominanceWord = label(dominance, ["submissive", "yielding", "balanced", "assertive", "dominant"] as const);
+
+    return `${arousalWord}, ${valenceWord}, ${dominanceWord}`;
+}
+
 /** Image file extensions recognized for photo sending. */
 export const IMAGE_EXTENSIONS = new Set([
     "jpg", "jpeg", "png", "gif", "webp",

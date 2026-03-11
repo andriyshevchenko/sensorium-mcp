@@ -39,7 +39,7 @@ import { basename, join } from "path";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
 import { analyzeVoiceEmotion, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
 import { TelegramClient } from "./telegram.js";
-import { errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
+import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
 
 const esmRequire = createRequire(import.meta.url);
 const { version: PKG_VERSION } = esmRequire("../package.json") as {
@@ -590,7 +590,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 if (analysis?.emotion) {
                   let emotionStr = analysis.emotion;
                   if (analysis.arousal != null && analysis.dominance != null && analysis.valence != null) {
-                    emotionStr += ` (A:${analysis.arousal}/D:${analysis.dominance}/V:${analysis.valence})`;
+                    emotionStr += ` (${describeADV(analysis.arousal, analysis.dominance, analysis.valence)})`;
                   }
                   tags.push(`tone: ${emotionStr}`);
                 }
