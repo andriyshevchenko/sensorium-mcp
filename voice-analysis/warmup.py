@@ -22,15 +22,14 @@ from voice_emotion_classification import EmotionClassificationPipeline
 EmotionClassificationPipeline.from_pretrained("griko/emotion_7_cls_svm_ecapa_ravdess")
 logger.info("  ✓ Emotion model cached")
 
-# 3. VANPY gender model
+# 3. VANPY gender model (SVM + scaler, both joblib)
 logger.info("Downloading VANPY gender model...")
 from huggingface_hub import hf_hub_download
-hf_hub_download(repo_id="griko/gender_cls_svm_ecapa_voxceleb", filename="svm_model.pkl")
+hf_hub_download(repo_id="griko/gender_cls_svm_ecapa_voxceleb", filename="svm_model.joblib")
+hf_hub_download(repo_id="griko/gender_cls_svm_ecapa_voxceleb", filename="scaler.joblib")
 logger.info("  ✓ Gender model cached")
 
-# 4. VANPY age model
-logger.info("Downloading VANPY age model...")
-hf_hub_download(repo_id="griko/age_reg_ann_ecapa_librosa_combined", filename="ann_model.pkl")
-logger.info("  ✓ Age model cached")
+# NOTE: Age model (griko/age_reg_ann_ecapa_librosa_combined) uses TensorFlow/Keras
+# (.h5 format) and is skipped to avoid the heavy TF dependency.
 
 logger.info("All models pre-downloaded successfully.")
