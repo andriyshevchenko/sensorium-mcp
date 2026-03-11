@@ -62,45 +62,85 @@ jobs:
             --location "$LOCATION" \
             --output none
 
-      - name: Deploy infrastructure (Bicep)
+      - name: Deploy base infrastructure (Bicep)
+        id: infra
         run: |
-          az deployment group create \
+          OUTPUTS=$(az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
             --template-file voice-analysis/infra/main.bicep \
             --parameters \
               location="$LOCATION" \
               appName="$APP_NAME" \
-              imageName="${APP_NAME}:${IMAGE_TAG}" \
-            --output none
+            --query "properties.outputs" \
+            --output json)
 
-      - name: Get ACR login server
-        id: acr
-        run: |
-          ACR_NAME=$(echo "${APP_NAME}acr" | tr -d '-')
-          LOGIN_SERVER=$(az acr show \
-            --name "$ACR_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --query loginServer \
-            --output tsv)
-          echo "login_server=$LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+          ACR_NAME=$(echo "$OUTPUTS" | jq -r '.acrName.value')
+          ACR_LOGIN_SERVER=$(echo "$OUTPUTS" | jq -r '.acrLoginServer.value')
+          ENV_NAME=$(echo "$OUTPUTS" | jq -r '.envName.value')
+
           echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
+          echo "acr_login_server=$ACR_LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+          echo "env_name=$ENV_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image to ACR
         run: |
           az acr build \
-            --registry "${{ steps.acr.outputs.acr_name }}" \
+            --registry "${{ steps.infra.outputs.acr_name }}" \
             --resource-group "$RESOURCE_GROUP" \
             --image "${APP_NAME}:${IMAGE_TAG}" \
             --file voice-analysis/Dockerfile \
             voice-analysis/
 
-      - name: Update Container App with new image
+      - name: Create or update Container App
         run: |
-          az containerapp update \
-            --name "$APP_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --image "${{ steps.acr.outputs.login_server }}/${APP_NAME}:${IMAGE_TAG}" \
-            --output none
+          ACR_SERVER="${{ steps.infra.outputs.acr_login_server }}"
+          ENV_NAME="${{ steps.infra.outputs.env_name }}"
+          FULL_IMAGE="${ACR_SERVER}/${APP_NAME}:${IMAGE_TAG}"
+
+          # Check if app exists
+          if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            echo "Updating existing Container App..."
+            az containerapp update \
+              --name "$APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$FULL_IMAGE" \
+              --output none
+          else
+            echo "Creating Container App..."
+            az containerapp create \
+              --name "$APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --environment "$ENV_NAME" \
+              --image "$FULL_IMAGE" \
+              --registry-server "$ACR_SERVER" \
+              --registry-identity system \
+              --system-assigned \
+              --target-port 8000 \
+              --ingress external \
+              --cpu 2.0 \
+              --memory 4Gi \
+              --min-replicas 0 \
+              --max-replicas 1 \
+              --env-vars "HF_HOME=/app/hf_cache" \
+              --output none
+
+            echo "Assigning AcrPull role to Container App managed identity..."
+            APP_PRINCIPAL=$(az containerapp show \
+              --name "$APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "identity.principalId" \
+              --output tsv)
+            ACR_ID=$(az acr show \
+              --name "${{ steps.infra.outputs.acr_name }}" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query id \
+              --output tsv)
+            az role assignment create \
+              --assignee "$APP_PRINCIPAL" \
+              --role AcrPull \
+              --scope "$ACR_ID" \
+              --output none
+          fi
 
       - name: Wait for deployment and health check
         run: |
