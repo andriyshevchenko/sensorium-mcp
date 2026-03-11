@@ -104,6 +104,8 @@ jobs:
               --name "$APP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
               --image "$FULL_IMAGE" \
+              --min-replicas 1 \
+              --max-replicas 3 \
               --output none
           else
             echo "Creating Container App..."
@@ -119,8 +121,8 @@ jobs:
               --ingress external \
               --cpu 2.0 \
               --memory 4Gi \
-              --min-replicas 0 \
-              --max-replicas 1 \
+              --min-replicas 1 \
+              --max-replicas 3 \
               --env-vars "HF_HOME=/app/hf_cache" \
               --output none
 
