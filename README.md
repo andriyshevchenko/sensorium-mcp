@@ -48,7 +48,8 @@ Set the following environment variables:
 | `TELEGRAM_TOKEN` | ✅ | — | Telegram Bot API token from @BotFather |
 | `TELEGRAM_CHAT_ID` | ✅ | — | Chat ID of the forum supergroup (e.g. `-1001234567890`). The bot must be admin with Manage Topics right. |
 | `WAIT_TIMEOUT_MINUTES` | ❌ | `120` | Minutes to wait for a message before timing out |
-| `OPENAI_API_KEY` | ❌ | — | OpenAI API key for voice message transcription (Whisper). Without it, voice messages show a placeholder instead of a transcript. |
+| `OPENAI_API_KEY` | ❌ | — | OpenAI API key for voice message transcription (Whisper) and TTS (`send_voice`). Without it, voice messages show a placeholder instead of a transcript. |
+| `VOICE_ANALYSIS_URL` | ❌ | — | URL of the voice emotion analysis microservice (e.g. `https://voice-analysis.example.com`). When set, voice messages are analyzed for emotion and the result is included with the transcript. See `voice-analysis/` for the deployable service. |
 
 ## Usage
 

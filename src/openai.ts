@@ -81,3 +81,56 @@ export async function transcribeAudio(
     const result = (await response.json()) as { text?: string };
     return result.text ?? "";
 }
+
+// ---------------------------------------------------------------------------
+// Voice Emotion Analysis (optional external microservice)
+// ---------------------------------------------------------------------------
+
+export interface VoiceAnalysisResult {
+    emotion: string;
+    confidence: number;
+    duration_seconds: number;
+}
+
+/**
+ * Analyze a voice message for emotion using an external microservice.
+ * @param audioBuffer  Raw audio content (OGG).
+ * @param serviceUrl   Base URL of the voice analysis service (e.g. https://voice-analysis.example.com).
+ * @param timeoutMs    Request timeout in milliseconds (default: 15000).
+ * @returns Analysis result, or null if the service is unavailable or errors.
+ */
+export async function analyzeVoiceEmotion(
+    audioBuffer: Buffer,
+    serviceUrl: string,
+    timeoutMs = 15000,
+): Promise<VoiceAnalysisResult | null> {
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+        const formData = new FormData();
+        formData.append(
+            "file",
+            new Blob([new Uint8Array(audioBuffer)]),
+            "voice.ogg",
+        );
+
+        const response = await fetch(`${serviceUrl.replace(/\/+$/, "")}/analyze`, {
+            method: "POST",
+            body: formData,
+            signal: controller.signal,
+        });
+
+        clearTimeout(timer);
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const result = (await response.json()) as VoiceAnalysisResult;
+        return result;
+    } catch {
+        // Service unavailable, timeout, or network error — non-fatal.
+        return null;
+    }
+}

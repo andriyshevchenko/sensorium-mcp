@@ -37,7 +37,7 @@ import { createRequire } from "module";
 import { homedir } from "os";
 import { basename, join } from "path";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
-import { textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
+import { analyzeVoiceEmotion, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
 import { TelegramClient } from "./telegram.js";
 import { errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
 
@@ -116,6 +116,7 @@ function convertMarkdown(markdown: string): string {
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
+const VOICE_ANALYSIS_URL = process.env.VOICE_ANALYSIS_URL ?? "";
 const rawWaitTimeoutMinutes = parseInt(
   process.env.WAIT_TIMEOUT_MINUTES ?? "",
   10,
@@ -137,7 +138,11 @@ if (!OPENAI_API_KEY) {
     "Warning: OPENAI_API_KEY not set — voice messages will not be transcribed.\n",
   );
 }
-
+if (VOICE_ANALYSIS_URL) {
+  process.stderr.write(
+    `Voice analysis service configured: ${VOICE_ANALYSIS_URL}\n`,
+  );
+}
 // ---------------------------------------------------------------------------
 // Telegram client + dispatcher
 // ---------------------------------------------------------------------------
@@ -571,12 +576,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 const { buffer } = await telegram.downloadFileAsBuffer(
                   msg.message.voice.file_id,
                 );
-                const transcript = await transcribeAudio(buffer, OPENAI_API_KEY);
+
+                // Run transcription and emotion analysis in parallel.
+                const [transcript, emotion] = await Promise.all([
+                  transcribeAudio(buffer, OPENAI_API_KEY),
+                  VOICE_ANALYSIS_URL
+                    ? analyzeVoiceEmotion(buffer, VOICE_ANALYSIS_URL)
+                    : Promise.resolve(null),
+                ]);
+
+                const emotionTag = emotion
+                  ? ` | tone: ${emotion.emotion} (${Math.round(emotion.confidence * 100)}%)`
+                  : "";
                 contentBlocks.push({
                   type: "text",
                   text: transcript
-                    ? `[Voice message — ${msg.message.voice.duration}s, transcribed]: ${transcript}`
-                    : `[Voice message — ${msg.message.voice.duration}s, transcribed]: (empty — no speech detected)`,
+                    ? `[Voice message — ${msg.message.voice.duration}s${emotionTag}, transcribed]: ${transcript}`
+                    : `[Voice message — ${msg.message.voice.duration}s${emotionTag}, transcribed]: (empty — no speech detected)`,
                 });
               } catch (err) {
                 contentBlocks.push({
