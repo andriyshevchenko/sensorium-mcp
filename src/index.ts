@@ -162,12 +162,6 @@ await startDispatcher(telegram, TELEGRAM_CHAT_ID);
 let waitCallCount = 0;
 let sessionStartedAt = Date.now();
 
-// Track how many images have been inline-embedded as base64 this session.
-// After MAX_INLINE_IMAGES, images are described as text pointers to avoid
-// bloating the LLM context window with hundreds of KB of base64 per image.
-let inlineImageCount = 0;
-const MAX_INLINE_IMAGES = 5;
-
 // ---------------------------------------------------------------------------
 // Session store — persists topic name → thread ID mappings to disk so the
 // agent can resume a named session even after a VS Code restart.
@@ -426,19 +420,11 @@ function getReminders(threadId?: number): string {
   const threadHint = threadId !== undefined
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
-
-  // Warn about context budget when the session has been running for a while.
-  const sessionMinutes = Math.round((Date.now() - sessionStartedAt) / 60000);
-  const contextWarning = sessionMinutes > 30
-    ? `\n- ⚠️ Session running for ${sessionMinutes}m — your context window may be filling up. Delegate complex work to subagents to avoid hitting limits.`
-    : "";
-
   return (
     "\n\n## REMINDERS" +
-    "\n- Call report_progress after every significant step — do not batch updates." +
+    "\n- **REPORT FREQUENTLY**: Call report_progress after EVERY significant action (file edit, command, decision). Never go more than 2-3 tool calls without reporting. The operator cannot see your work unless you report it." +
     "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool." +
-    "\n- Prefer subagents for parts of your work which can be safely delegated" +
-    contextWarning +
+    "\n- Prefer subagents for focused, isolated tasks that don't require reasoning or decision-making." +
     threadHint
   );
 }
@@ -449,7 +435,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
     sessionStartedAt = Date.now();
-    inlineImageCount = 0;
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const explicitThreadId = typeof typedArgs.threadId === "number"
       ? typedArgs.threadId as number
@@ -579,35 +564,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let hasVoiceMessages = false;
 
         for (const msg of stored) {
-          // Photos: download the largest size and embed as base64 (up to budget).
+          // Photos: download the largest size and embed as base64.
           if (msg.message.photo && msg.message.photo.length > 0) {
-            if (inlineImageCount < MAX_INLINE_IMAGES) {
-              const largest = msg.message.photo[msg.message.photo.length - 1];
-              try {
-                const { base64, mimeType } = await telegram.downloadFileAsBase64(
-                  largest.file_id,
-                );
-                contentBlocks.push({ type: "image", data: base64, mimeType });
-                inlineImageCount++;
-                if (msg.message.caption) {
-                  contentBlocks.push({
-                    type: "text",
-                    text: `[Image caption]: ${msg.message.caption}`,
-                  });
-                }
-              } catch (err) {
+            const largest = msg.message.photo[msg.message.photo.length - 1];
+            try {
+              const { base64, mimeType } = await telegram.downloadFileAsBase64(
+                largest.file_id,
+              );
+              contentBlocks.push({ type: "image", data: base64, mimeType });
+              if (msg.message.caption) {
                 contentBlocks.push({
                   type: "text",
-                  text: `[Photo received but could not be downloaded: ${errorMessage(err)}]`,
+                  text: `[Image caption]: ${msg.message.caption}`,
                 });
               }
-            } else {
-              // Context budget exceeded — describe instead of embedding.
+            } catch (err) {
               contentBlocks.push({
                 type: "text",
-                text: msg.message.caption
-                  ? `[Photo received — view in Telegram thread. Caption: ${msg.message.caption}]`
-                  : `[Photo received — view in Telegram thread]`,
+                text: `[Photo received but could not be downloaded: ${errorMessage(err)}]`,
               });
             }
           }
@@ -619,17 +593,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 doc.file_id,
               );
               const isImage = mimeType.startsWith("image/");
-              if (isImage && inlineImageCount < MAX_INLINE_IMAGES) {
+              if (isImage) {
                 contentBlocks.push({ type: "image", data: base64, mimeType });
-                inlineImageCount++;
-              } else if (isImage) {
-                // Context budget exceeded for images.
-                contentBlocks.push({
-                  type: "text",
-                  text: msg.message.caption
-                    ? `[Image document: ${doc.file_name ?? "file"} — view in Telegram thread. Caption: ${msg.message.caption}]`
-                    : `[Image document: ${doc.file_name ?? "file"} — view in Telegram thread]`,
-                });
               } else {
                 // Non-image documents: include as text with base64 data.
                 contentBlocks.push({
@@ -715,7 +680,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: "Follow the operator's instructions below. First create a plan, then execute it step by step:",
+              text: "Follow the operator's instructions below. First create a plan and share it via report_progress, then execute it step by step. " +
+                "IMPORTANT: Call report_progress after EVERY significant action (each file edited, each command run, each decision made). " +
+                "The operator is watching your Telegram thread and expects frequent updates — never go more than 2-3 tool calls without reporting.",
             },
             ...contentBlocks,
             ...(hasVoiceMessages
