@@ -1,0 +1,6 @@
+{
+  "name": "gh-actions-environment-production",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:andriyshevchenko/remote-copilot-mcp:environment:production",
+  "audiences": ["api://AzureADTokenExchange"]
+}
