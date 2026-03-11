@@ -422,7 +422,7 @@ function getReminders(threadId?: number): string {
     : "";
   return (
     "\n\n## REMINDERS" +
-    "\n- **REPORT FREQUENTLY**: Call report_progress after EVERY significant action (file edit, command, decision). Never go more than 2-3 tool calls without reporting. The operator cannot see your work unless you report it." +
+    "\n- **REPORT FREQUENTLY**: Call report_progress on every significant action and every completed todo item. The operator cannot see your work unless you report it." +
     "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool." +
     "\n- Prefer subagents for focused, isolated tasks that don't require reasoning or decision-making." +
     threadHint
@@ -681,8 +681,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: "Follow the operator's instructions below. First create a plan and share it via report_progress, then execute it step by step. " +
-                "IMPORTANT: Call report_progress after EVERY significant action (each file edited, each command run, each decision made). " +
-                "The operator is watching your Telegram thread and expects frequent updates — never go more than 2-3 tool calls without reporting.",
+                "Call report_progress on every significant action and every completed todo item \u2014 the operator cannot see your work otherwise.",
             },
             ...contentBlocks,
             ...(hasVoiceMessages
