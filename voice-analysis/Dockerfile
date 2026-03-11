@@ -1,8 +1,8 @@
 FROM python:3.11-slim
 
-# System dependencies for librosa/soundfile (OGG support) and ffmpeg
+# System dependencies for librosa/soundfile (OGG support), ffmpeg, and git (for pip git deps)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libsndfile1 ffmpeg && \
+    apt-get install -y --no-install-recommends libsndfile1 ffmpeg git && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

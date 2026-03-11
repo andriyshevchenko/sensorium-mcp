@@ -97,8 +97,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: appName
           image: '${acr.properties.loginServer}/${imageName}'
           resources: {
-            cpu: json('1.0')
-            memory: '2Gi'
+            cpu: json('2.0')
+            memory: '4Gi'
           }
           env: [
             { name: 'HF_HOME', value: '/app/hf_cache' }

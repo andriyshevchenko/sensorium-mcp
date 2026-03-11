@@ -87,8 +87,9 @@ export async function transcribeAudio(
 // ---------------------------------------------------------------------------
 
 export interface VoiceAnalysisResult {
-    emotion: string;
-    confidence: number;
+    emotion: string | null;
+    gender: string | null;
+    age_estimate: number | null;
     duration_seconds: number;
 }
 

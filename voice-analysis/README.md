@@ -1,19 +1,17 @@
-# Voice Emotion Analysis Microservice
+# Voice Analysis Microservice (VANPY)
 
-A lightweight FastAPI service that detects emotion from voice audio using a wav2vec2-based model from HuggingFace.
+A FastAPI service that performs rich voice analysis using VANPY's HuggingFace models:
+- **Emotion** — 7 classes: angry, disgust, fearful, happy, neutral/calm, sad, surprised
+- **Gender** — male/female classification (98.9% accuracy on VoxCeleb2)
+- **Age** — estimated age in years (MAE ~7 years)
 
-## What it does
-
-Accepts an audio file (OGG, WAV, etc.) and returns:
-- **emotion** — one of: angry, calm, disgust, fearful, happy, neutral, sad, surprised
-- **confidence** — 0.0 to 1.0
-- **duration_seconds** — length of the audio
+All models by Gregory Koushnir (Ben-Gurion University). Paper: [arxiv.org/abs/2502.17579](https://arxiv.org/abs/2502.17579)
 
 ## API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Health check |
+| `/health` | GET | Health check (shows which models are loaded) |
 | `/analyze` | POST | Analyze audio file (multipart `file` field) |
 
 ### Example
@@ -26,9 +24,10 @@ curl -X POST https://your-service.example.com/analyze \
 
 ```json
 {
-  "emotion": "calm",
-  "confidence": 0.8234,
-  "duration_seconds": 12.5
+  "duration_seconds": 12.5,
+  "emotion": "neutral/calm",
+  "gender": "male",
+  "age_estimate": 32.4
 }
 ```
 
@@ -85,7 +84,7 @@ Set the `VOICE_ANALYSIS_URL` environment variable:
 }
 ```
 
-When configured, voice messages will show emotion alongside the transcript:
+When configured, voice messages will show analysis alongside the transcript:
 ```
-[Voice message — 12s | tone: frustrated (87%), transcribed]: Fix the login bug, it's been broken all day
+[Voice message — 12s | tone: fearful, speaker: male, ~30yr, transcribed]: Fix the login bug, it's been broken all day
 ```
