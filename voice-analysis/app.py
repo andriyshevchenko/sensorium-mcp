@@ -42,7 +42,7 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_CONTENT_TYPES = {
     "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/flac",
     "audio/mp4", "audio/webm", "audio/aac", "video/ogg",
-    "application/ogg", "application/octet-stream",
+    "application/ogg",
 }
 
 # ---------------------------------------------------------------------------
@@ -82,6 +82,9 @@ emotion_pipeline: dict | None = None   # {"model": SVM}
 gender_pipeline: dict | None = None    # {"model": SVM, "scaler": StandardScaler}
 age_pipeline: dict | None = None       # {"model": SVR, "scaler": StandardScaler}
 height_pipeline: dict | None = None    # {"model": SVR, "scaler": StandardScaler}
+
+# Limit concurrent inference to avoid OOM on small containers
+_inference_semaphore = asyncio.Semaphore(2)
 
 
 def _load_svm(repo_id: str, model_file: str = "svm_model.joblib",
@@ -185,10 +188,13 @@ async def health():
 def _extract_ecapa_embedding(waveform: np.ndarray, sr: int) -> np.ndarray:
     """Extract 192-dim ECAPA embedding from audio waveform."""
     wave_tensor = torch.from_numpy(waveform).float()
+    if wave_tensor.numel() == 0:
+        raise ValueError("Audio waveform is empty after decoding")
     if sr != 16000:
         wave_tensor = torchaudio.functional.resample(wave_tensor, sr, 16000)
-    if wave_tensor.abs().max() > 1:
-        wave_tensor = wave_tensor / wave_tensor.abs().max()
+    peak = wave_tensor.abs().max()
+    if peak > 1:
+        wave_tensor = wave_tensor / peak
 
     inputs = wave_tensor.unsqueeze(0)
     wav_lens = torch.tensor([1.0])
@@ -316,27 +322,39 @@ async def analyze(file: UploadFile = File(...)):
             detail=f"Unsupported content type: {ct}. Expected audio/*.",
         )
 
-    # Read with size limit
+    # Read with streaming size limit to prevent OOM from oversized uploads
     try:
-        audio_bytes = await file.read()
+        chunks: list[bytes] = []
+        total = 0
+        while chunk := await file.read(256 * 1024):
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large (>{MAX_UPLOAD_BYTES} bytes). Max: {MAX_UPLOAD_BYTES}.",
+                )
+            chunks.append(chunk)
+        audio_bytes = b"".join(chunks)
         if not audio_bytes:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
-        if len(audio_bytes) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large ({len(audio_bytes)} bytes). Max: {MAX_UPLOAD_BYTES}.",
-            )
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read upload: {e}")
+    except Exception:
+        logger.exception("Failed to read upload")
+        raise HTTPException(status_code=400, detail="Failed to read uploaded file")
 
     # Run all ML inference off the event loop to keep /health responsive
     try:
-        result = await asyncio.to_thread(_run_analysis, audio_bytes)
-    except Exception as e:
+        async with _inference_semaphore:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(_run_analysis, audio_bytes),
+                timeout=60.0,
+            )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Analysis timed out")
+    except Exception:
         logger.exception("Analysis failed")
-        raise HTTPException(status_code=500, detail=f"Analysis error: {e}")
+        raise HTTPException(status_code=500, detail="Internal analysis error")
 
     return JSONResponse(content=result)
 

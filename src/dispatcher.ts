@@ -468,11 +468,17 @@ export async function startDispatcher(
                         `[dispatcher] Lock taken by PID ${currentLock.pid}. Stepping down to consumer.\n`,
                     );
                     pollerRunning = false;
-                    // Re-install consumer retry so we can be promoted again.
                     installConsumerRetry();
                     break;
                 }
-                await pollOnce(telegram, chatId);
+                try {
+                    await pollOnce(telegram, chatId);
+                } catch (err) {
+                    process.stderr.write(
+                        `[dispatcher] Unexpected poll error: ${errorMessage(err)}\n`,
+                    );
+                    await new Promise<void>((r) => setTimeout(r, 5000));
+                }
                 await new Promise<void>((r) => setTimeout(r, 500));
             }
         };

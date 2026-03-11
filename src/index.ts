@@ -228,10 +228,11 @@ let currentThreadId: number | undefined;
  * Returns undefined only if no thread has ever been established.
  */
 function resolveThreadId(args: Record<string, unknown> | undefined): number | undefined {
-  const explicit = typeof args?.threadId === "number" ? args.threadId : undefined;
-  if (explicit !== undefined) {
-    // Also update the module-level fallback so subsequent calls without
-    // explicit threadId (rare, but possible) use the most recent value.
+  const raw = args?.threadId;
+  const explicit = typeof raw === "number" ? raw
+    : typeof raw === "string" ? Number(raw)
+    : undefined;
+  if (explicit !== undefined && Number.isFinite(explicit)) {
     currentThreadId = explicit;
     return explicit;
   }
@@ -548,7 +549,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         "Error: No active session. Call start_session first, then pass the returned threadId to this tool.",
       );
     }
-    const callNumber = ++waitCallCount; const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
+    const callNumber = ++waitCallCount;
+    const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
     const deadline = Date.now() + timeoutMs;
 
     // Poll the dispatcher's per-thread file instead of calling getUpdates
@@ -745,6 +747,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "report_progress") {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const effectiveThreadId = resolveThreadId(typedArgs);
+    if (effectiveThreadId === undefined) {
+      return errorResult("Error: No active session. Call start_session first, then pass the returned threadId.");
+    }
     const rawMessage =
       typeof typedArgs?.message === "string"
         ? (typedArgs.message as string)
@@ -857,7 +862,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── send_file ─────────────────────────────────────────────────────────────
   if (name === "send_file") {
-    const typedArgs = (args ?? {}) as Record<string, unknown>;    const effectiveThreadId = resolveThreadId(typedArgs);    const filePath = typeof typedArgs.filePath === "string" ? typedArgs.filePath.trim() : "";
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const effectiveThreadId = resolveThreadId(typedArgs);
+    if (effectiveThreadId === undefined) {
+      return errorResult("Error: No active session. Call start_session first, then pass the returned threadId.");
+    }
+    const filePath = typeof typedArgs.filePath === "string" ? typedArgs.filePath.trim() : "";
     const base64Data = typeof typedArgs.base64 === "string" ? typedArgs.base64 : "";
     const caption = typeof typedArgs.caption === "string" ? typedArgs.caption : undefined;
 
@@ -906,7 +916,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── send_voice ──────────────────────────────────────────────────────────
   if (name === "send_voice") {
-    const typedArgs = (args ?? {}) as Record<string, unknown>;    const effectiveThreadId = resolveThreadId(typedArgs);    const text = typeof typedArgs.text === "string" ? typedArgs.text.trim() : "";
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const effectiveThreadId = resolveThreadId(typedArgs);
+    if (effectiveThreadId === undefined) {
+      return errorResult("Error: No active session. Call start_session first, then pass the returned threadId.");
+    }
+    const text = typeof typedArgs.text === "string" ? typedArgs.text.trim() : "";
     const validVoices = TTS_VOICES;
     const voice: TTSVoice = typeof typedArgs.voice === "string" && (validVoices as readonly string[]).includes(typedArgs.voice)
       ? typedArgs.voice as TTSVoice

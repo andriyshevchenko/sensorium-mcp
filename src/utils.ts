@@ -25,14 +25,6 @@ export function errorResult(text: string): {
     return { content: [{ type: "text", text }], isError: true };
 }
 
-/**
- * Build a standard MCP success response object.
- */
-export function successResult(text: string): {
-    content: [{ type: "text"; text: string }];
-} {
-    return { content: [{ type: "text", text }] };
-}
 
 /**
  * Map arousal/dominance/valence scores (1–5) to human-readable descriptors
