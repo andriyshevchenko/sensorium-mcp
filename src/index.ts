@@ -505,6 +505,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         type TextBlock = { type: "text"; text: string };
         type ImageBlock = { type: "image"; data: string; mimeType: string };
         const contentBlocks: Array<TextBlock | ImageBlock> = [];
+        let hasVoiceMessages = false;
 
         for (const msg of stored) {
           // Photos: download the largest size and embed as base64.
@@ -564,6 +565,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
           // Voice messages: transcribe using OpenAI Whisper.
           if (msg.message.voice) {
+            hasVoiceMessages = true;
             if (OPENAI_API_KEY) {
               try {
                 const { buffer } = await telegram.downloadFileAsBuffer(
@@ -603,6 +605,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: "Follow the operator's instructions below. First create a plan, then execute it step by step:",
             },
             ...contentBlocks,
+            ...(hasVoiceMessages
+              ? [{
+                type: "text" as const,
+                text: "\n**Note:** The operator sent voice message(s). They prefer voice interaction — use `send_voice` for progress updates and responses when possible.",
+              }]
+              : []),
             { type: "text", text: getReminders(currentThreadId) },
           ],
         };
