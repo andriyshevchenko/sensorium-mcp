@@ -109,10 +109,9 @@ export async function analyzeVoiceEmotion(
     serviceUrl: string,
     timeoutMs = 30000,
 ): Promise<VoiceAnalysisResult | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-
         const formData = new FormData();
         formData.append(
             "file",
@@ -126,8 +125,6 @@ export async function analyzeVoiceEmotion(
             signal: controller.signal,
         });
 
-        clearTimeout(timer);
-
         if (!response.ok) {
             return null;
         }
@@ -140,5 +137,7 @@ export async function analyzeVoiceEmotion(
             `Voice analysis unavailable: ${err instanceof Error ? err.message : String(err)}\n`,
         );
         return null;
+    } finally {
+        clearTimeout(timer);
     }
 }

@@ -1,8 +1,5 @@
+__pycache__
+*.pyc
+.git
 infra/
 README.md
-__pycache__/
-*.pyc
-*.pyo
-.git/
-.gitignore
-.env
