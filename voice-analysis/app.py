@@ -46,8 +46,7 @@ ALLOWED_CONTENT_TYPES = {
 
 # Models loaded at startup
 emotion_pipeline: EmotionClassificationPipeline | None = None
-gender_pipeline = None
-age_model = None
+gender_pipeline: dict | None = None   # {"model": SVM, "scaler": StandardScaler}
 speechbrain_encoder: EncoderClassifier | None = None
 
 
@@ -59,21 +58,16 @@ def _load_emotion() -> EmotionClassificationPipeline:
 
 
 def _load_gender():
-    """Load VANPY gender classification model (ECAPA + SVM)."""
+    """Load VANPY gender classification model (ECAPA + SVM) with scaler."""
     model_path = hf_hub_download(
         repo_id="griko/gender_cls_svm_ecapa_voxceleb",
-        filename="svm_model.pkl",
+        filename="svm_model.joblib",
     )
-    return joblib.load(model_path)
-
-
-def _load_age():
-    """Load VANPY age estimation model (ECAPA + Librosa + ANN)."""
-    model_path = hf_hub_download(
-        repo_id="griko/age_reg_ann_ecapa_librosa_combined",
-        filename="ann_model.pkl",
+    scaler_path = hf_hub_download(
+        repo_id="griko/gender_cls_svm_ecapa_voxceleb",
+        filename="scaler.joblib",
     )
-    return joblib.load(model_path)
+    return {"model": joblib.load(model_path), "scaler": joblib.load(scaler_path)}
 
 
 def _get_encoder() -> EncoderClassifier:
@@ -86,7 +80,7 @@ def _get_encoder() -> EncoderClassifier:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global emotion_pipeline, gender_pipeline, age_model, speechbrain_encoder
+    global emotion_pipeline, gender_pipeline, speechbrain_encoder
     logger.info("Loading VANPY models...")
 
     try:
@@ -107,15 +101,9 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("  ✗ Gender model failed to load")
 
-    try:
-        age_model = _load_age()
-        logger.info("  ✓ Age model loaded")
-    except Exception:
-        logger.exception("  ✗ Age model failed to load")
-
     logger.info("Model loading complete.")
     yield
-    emotion_pipeline = gender_pipeline = age_model = speechbrain_encoder = None
+    emotion_pipeline = gender_pipeline = speechbrain_encoder = None
     logger.info("Models unloaded.")
 
 
@@ -129,7 +117,6 @@ async def health():
         "models": {
             "emotion": emotion_pipeline is not None,
             "gender": gender_pipeline is not None,
-            "age": age_model is not None,
         },
     }
 
@@ -147,27 +134,6 @@ def _extract_ecapa_embedding(waveform: np.ndarray, sr: int) -> np.ndarray:
     with torch.no_grad():
         embedding = speechbrain_encoder.encode_batch(inputs, wav_lens)
     return embedding.squeeze().cpu().numpy()
-
-
-def _extract_librosa_features(waveform: np.ndarray, sr: int) -> dict[str, float]:
-    """Extract librosa features (MFCCs, spectral, etc.) for the age model."""
-    features: dict[str, float] = {}
-    mfccs = librosa.feature.mfcc(y=waveform, sr=sr, n_mfcc=13)
-    for i in range(13):
-        features[f"mfcc_{i}"] = float(np.mean(mfccs[i]))
-    delta = librosa.feature.delta(mfccs)
-    for i in range(13):
-        features[f"delta_mfcc_{i}"] = float(np.mean(delta[i]))
-    features["spectral_centroid"] = float(np.mean(
-        librosa.feature.spectral_centroid(y=waveform, sr=sr)
-    ))
-    features["spectral_bandwidth"] = float(np.mean(
-        librosa.feature.spectral_bandwidth(y=waveform, sr=sr)
-    ))
-    features["zero_crossing_rate"] = float(np.mean(
-        librosa.feature.zero_crossing_rate(y=waveform)
-    ))
-    return features
 
 
 def _run_analysis(audio_bytes: bytes) -> dict:
@@ -207,7 +173,8 @@ def _run_analysis(audio_bytes: bytes) -> dict:
                         [embedding],
                         columns=[f"{i}_speechbrain_embedding" for i in range(192)],
                     )
-                    gender_pred = gender_pipeline.predict(emb_df)
+                    scaled = gender_pipeline["scaler"].transform(emb_df)
+                    gender_pred = gender_pipeline["model"].predict(scaled)
                     result["gender"] = (
                         gender_pred[0]
                         if gender_pred is not None and len(gender_pred) > 0
@@ -219,30 +186,11 @@ def _run_analysis(audio_bytes: bytes) -> dict:
             else:
                 result["gender"] = None
 
-            # Age estimation (uses ECAPA + librosa features)
-            if age_model is not None:
-                try:
-                    librosa_feats = _extract_librosa_features(waveform, 16000)
-                    combined: dict = {}
-                    for i in range(192):
-                        combined[f"{i}_speechbrain_embedding"] = embedding[i]
-                    combined.update(librosa_feats)
-                    age_df = pd.DataFrame([combined])
-                    age_pred = age_model.predict(age_df)
-                    result["age_estimate"] = round(float(age_pred[0]), 1)
-                except Exception as e:
-                    logger.exception("Age estimation failed")
-                    result["age_estimate"] = None
-            else:
-                result["age_estimate"] = None
-
-        except Exception as e:
+            except Exception as e:
             logger.exception("Embedding extraction failed")
             result["gender"] = None
-            result["age_estimate"] = None
     else:
         result["gender"] = None
-        result["age_estimate"] = None
 
     return result
 
