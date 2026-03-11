@@ -186,7 +186,7 @@ def _run_analysis(audio_bytes: bytes) -> dict:
             else:
                 result["gender"] = None
 
-            except Exception as e:
+        except Exception as e:
             logger.exception("Embedding extraction failed")
             result["gender"] = None
     else:
