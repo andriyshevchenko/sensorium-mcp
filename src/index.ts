@@ -421,9 +421,10 @@ function getReminders(threadId?: number): string {
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
   return (
-    "\n\n## REMINDERS" +
-    "\n- **REPORT FREQUENTLY**: Call report_progress on every significant action and every completed todo item. The operator cannot see your work unless you report it." +
-    "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool." +
+    "\n\n## MANDATORY WORKFLOW" +
+    "\n1. **Use the todo list tool** to plan your work into discrete items. This is mandatory, not optional." +
+    "\n2. **Call report_progress** every time you complete a todo item. The operator cannot see your work unless you report it." +
+    "\n3. When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize \u2014 always end by calling that tool." +
     "\n- Prefer subagents for focused, isolated tasks that don't require reasoning or decision-making." +
     threadHint
   );
@@ -680,8 +681,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: "Follow the operator's instructions below. First create a plan and share it via report_progress, then execute it step by step. " +
-                "Call report_progress on every significant action and every completed todo item \u2014 the operator cannot see your work otherwise.",
+              text: "Follow the operator's instructions below. " +
+                "You MUST use the todo list tool to plan your work into discrete items. " +
+                "Share your plan via report_progress, then execute step by step. " +
+                "Call report_progress every time you complete a todo item \u2014 the operator cannot see your work otherwise.",
             },
             ...contentBlocks,
             ...(hasVoiceMessages
