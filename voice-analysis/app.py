@@ -226,18 +226,23 @@ def _run_analysis(audio_bytes: bytes) -> dict:
     if emotion_pipeline is not None:
         try:
             pred = _predict(emotion_pipeline, emb_df)
-            label_idx = int(pred[0]) if pred is not None and len(pred) > 0 else None
-            if label_idx is not None and 0 <= label_idx < len(EMOTION_LABELS):
-                emotion_label = EMOTION_LABELS[label_idx]
+            raw = pred[0] if pred is not None and len(pred) > 0 else None
+            # SVM may return a string label or an integer index
+            if isinstance(raw, str):
+                emotion_label = raw
+            elif raw is not None:
+                idx = int(raw)
+                emotion_label = EMOTION_LABELS[idx] if 0 <= idx < len(EMOTION_LABELS) else str(idx)
             else:
-                emotion_label = str(label_idx)
+                emotion_label = None
             result["emotion"] = emotion_label
             # Add arousal / dominance / valence
-            adv = EMOTION_ADV.get(emotion_label)
-            if adv:
-                result["arousal"] = adv["arousal"]
-                result["dominance"] = adv["dominance"]
-                result["valence"] = adv["valence"]
+            if emotion_label:
+                adv = EMOTION_ADV.get(emotion_label)
+                if adv:
+                    result["arousal"] = adv["arousal"]
+                    result["dominance"] = adv["dominance"]
+                    result["valence"] = adv["valence"]
         except Exception:
             logger.exception("Emotion classification failed")
             result["emotion"] = None
@@ -246,11 +251,14 @@ def _run_analysis(audio_bytes: bytes) -> dict:
     if gender_pipeline is not None:
         try:
             pred = _predict(gender_pipeline, emb_df)
-            label_idx = int(pred[0]) if pred is not None and len(pred) > 0 else None
-            if label_idx is not None and 0 <= label_idx < len(GENDER_LABELS):
-                result["gender"] = GENDER_LABELS[label_idx]
+            raw = pred[0] if pred is not None and len(pred) > 0 else None
+            if isinstance(raw, str):
+                result["gender"] = raw
+            elif raw is not None:
+                idx = int(raw)
+                result["gender"] = GENDER_LABELS[idx] if 0 <= idx < len(GENDER_LABELS) else str(idx)
             else:
-                result["gender"] = str(label_idx)
+                result["gender"] = None
         except Exception:
             logger.exception("Gender classification failed")
             result["gender"] = None
