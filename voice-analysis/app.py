@@ -42,7 +42,7 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_CONTENT_TYPES = {
     "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/flac",
     "audio/mp4", "audio/webm", "audio/aac", "video/ogg",
-    "application/ogg",
+    "application/ogg", "application/octet-stream",
 }
 
 # ---------------------------------------------------------------------------

@@ -119,7 +119,7 @@ export async function analyzeVoiceEmotion(
         const formData = new FormData();
         formData.append(
             "file",
-            new Blob([new Uint8Array(audioBuffer)]),
+            new Blob([new Uint8Array(audioBuffer)], { type: "audio/ogg" }),
             "voice.ogg",
         );
 
