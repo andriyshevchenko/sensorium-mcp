@@ -8,7 +8,7 @@ pandas>=2.0.0
 scikit-learn>=1.3.0
 joblib>=1.3.0
 huggingface-hub>=0.20.0
-torch>=2.0.0
-torchaudio>=2.0.0
-speechbrain>=1.0.0
+torch==2.5.1
+torchaudio==2.5.1
+speechbrain==1.0.3
 git+https://github.com/griko/voice-emotion-classification.git@1f606f6570679aefe79fec22673f7c713ca2bb9c
