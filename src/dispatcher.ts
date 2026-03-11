@@ -155,6 +155,10 @@ function tryAcquireLock(): boolean {
         }
         // Dead or stale — remove before attempting exclusive create.
         try { unlinkSync(LOCK_FILE); } catch { /* race-ok */ }
+    } else if (existsSync(LOCK_FILE)) {
+        // Lock file exists but is corrupt/empty (readLock returned null).
+        // Remove it so the exclusive create below can succeed.
+        try { unlinkSync(LOCK_FILE); } catch { /* race-ok */ }
     }
     // Atomic exclusive create: fails if another process created first.
     try {
