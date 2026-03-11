@@ -627,9 +627,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             hasVoiceMessages = true;
             if (OPENAI_API_KEY) {
               try {
+                process.stderr.write(`[voice] Downloading voice file ${msg.message.voice.file_id}...\n`);
                 const { buffer } = await telegram.downloadFileAsBuffer(
                   msg.message.voice.file_id,
                 );
+                process.stderr.write(`[voice] Downloaded ${buffer.length} bytes. Starting transcription + analysis...\n`);
 
                 // Run transcription and voice analysis in parallel.
                 const [transcript, analysis] = await Promise.all([

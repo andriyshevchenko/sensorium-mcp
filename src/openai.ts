@@ -107,8 +107,12 @@ export interface VoiceAnalysisResult {
 export async function analyzeVoiceEmotion(
     audioBuffer: Buffer,
     serviceUrl: string,
-    timeoutMs = 30000,
+    timeoutMs = 120_000,
 ): Promise<VoiceAnalysisResult | null> {
+    const start = Date.now();
+    const baseUrl = serviceUrl.replace(/\/+$/, "");
+    process.stderr.write(`[voice-analysis] Starting analysis (timeout: ${timeoutMs}ms)...\n`);
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -119,23 +123,25 @@ export async function analyzeVoiceEmotion(
             "voice.ogg",
         );
 
-        const response = await fetch(`${serviceUrl.replace(/\/+$/, "")}/analyze`, {
+        const response = await fetch(`${baseUrl}/analyze`, {
             method: "POST",
             body: formData,
             signal: controller.signal,
         });
 
+        const elapsed = Date.now() - start;
         if (!response.ok) {
+            process.stderr.write(`[voice-analysis] HTTP ${response.status} after ${elapsed}ms\n`);
             return null;
         }
 
         const result = (await response.json()) as VoiceAnalysisResult;
+        process.stderr.write(`[voice-analysis] Success in ${elapsed}ms\n`);
         return result;
     } catch (err) {
-        // Service unavailable, timeout, or network error — non-fatal.
-        process.stderr.write(
-            `Voice analysis unavailable: ${err instanceof Error ? err.message : String(err)}\n`,
-        );
+        const elapsed = Date.now() - start;
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[voice-analysis] Failed after ${elapsed}ms: ${msg}\n`);
         return null;
     } finally {
         clearTimeout(timer);
