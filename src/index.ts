@@ -162,6 +162,12 @@ await startDispatcher(telegram, TELEGRAM_CHAT_ID);
 let waitCallCount = 0;
 let sessionStartedAt = Date.now();
 
+// Track how many images have been inline-embedded as base64 this session.
+// After MAX_INLINE_IMAGES, images are described as text pointers to avoid
+// bloating the LLM context window with hundreds of KB of base64 per image.
+let inlineImageCount = 0;
+const MAX_INLINE_IMAGES = 5;
+
 // ---------------------------------------------------------------------------
 // Session store — persists topic name → thread ID mappings to disk so the
 // agent can resume a named session even after a VS Code restart.
@@ -218,6 +224,25 @@ function removeSession(chatId: string, name: string): void {
 // All sends and receives are scoped to this thread so concurrent sessions
 // in different topics never interfere with each other.
 let currentThreadId: number | undefined;
+
+/**
+ * Resolve the effective thread ID for a tool call.
+ * Prefers an explicit threadId passed in the tool arguments (enabling
+ * multiple concurrent sessions in the same MCP process), then falls
+ * back to the module-level currentThreadId.
+ *
+ * Returns undefined only if no thread has ever been established.
+ */
+function resolveThreadId(args: Record<string, unknown> | undefined): number | undefined {
+  const explicit = typeof args?.threadId === "number" ? args.threadId : undefined;
+  if (explicit !== undefined) {
+    // Also update the module-level fallback so subsequent calls without
+    // explicit threadId (rare, but possible) use the most recent value.
+    currentThreadId = explicit;
+    return explicit;
+  }
+  return currentThreadId;
+}
 
 // Timestamp of the last keep-alive ping sent to Telegram.
 // Used to send periodic "session still alive" messages so the operator knows
@@ -278,7 +303,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "explicitly instructs the agent to call this tool again.",
       inputSchema: {
         type: "object",
-        properties: {},
+        properties: {
+          threadId: {
+            type: "number",
+            description:
+              "The Telegram thread ID of the active session. " +
+              "ALWAYS pass this if you received it from start_session.",
+          },
+        },
         required: [],
       },
     },
@@ -295,6 +327,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "string",
             description:
               "The progress update or result to report. Use standard Markdown for formatting.",
+          },
+          threadId: {
+            type: "number",
+            description:
+              "The Telegram thread ID of the active session. " +
+              "ALWAYS pass this if you received it from start_session.",
           },
         },
         required: ["message"],
@@ -330,6 +368,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "string",
             description: "Optional caption to display with the file.",
           },
+          threadId: {
+            type: "number",
+            description:
+              "The Telegram thread ID of the active session. " +
+              "ALWAYS pass this if you received it from start_session.",
+          },
         },
         required: [],
       },
@@ -357,6 +401,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               "Choose based on the tone you want to convey.",
             enum: ["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
           },
+          threadId: {
+            type: "number",
+            description:
+              "The Telegram thread ID of the active session. " +
+              "ALWAYS pass this if you received it from start_session.",
+          },
         },
         required: ["text"],
       },
@@ -376,11 +426,19 @@ function getReminders(threadId?: number): string {
   const threadHint = threadId !== undefined
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
+
+  // Warn about context budget when the session has been running for a while.
+  const sessionMinutes = Math.round((Date.now() - sessionStartedAt) / 60000);
+  const contextWarning = sessionMinutes > 30
+    ? `\n- ⚠️ Session running for ${sessionMinutes}m — your context window may be filling up. Delegate complex work to subagents to avoid hitting limits.`
+    : "";
+
   return (
     "\n\n## REMINDERS" +
     "\n- Call report_progress after every significant step — do not batch updates." +
     "\n- When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize — always end by calling that tool." +
     "\n- Prefer subagents for parts of your work which can be safely delegated" +
+    contextWarning +
     threadHint
   );
 }
@@ -391,6 +449,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
     sessionStartedAt = Date.now();
+    inlineImageCount = 0;
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const explicitThreadId = typeof typedArgs.threadId === "number"
       ? typedArgs.threadId as number
@@ -457,12 +516,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Persist so the same name resumes this thread next time.
         persistSession(TELEGRAM_CHAT_ID, topicName, currentThreadId);
       } catch (err) {
-        // Forum topics not available (e.g. plain group or DM) — fall back to no thread.
-        process.stderr.write(
-          `Warning: Could not create forum topic: ${errorMessage(err)}\n` +
-          "Falling back to main chat (no thread isolation).\n",
+        // Forum topics not available (e.g. plain group or DM) — cannot proceed
+        // without thread isolation. Return an error so the agent knows.
+        return errorResult(
+          `Error: Could not create forum topic: ${errorMessage(err)}. ` +
+          "Ensure the Telegram chat is a forum supergroup with the bot as admin with can_manage_topics right.",
         );
-        currentThreadId = undefined;
       }
       lastKeepAliveSentAt = Date.now();
       try {
@@ -496,6 +555,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── remote_copilot_wait_for_instructions ──────────────────────────────────
   if (name === "remote_copilot_wait_for_instructions") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const effectiveThreadId = resolveThreadId(typedArgs);
+    if (effectiveThreadId === undefined) {
+      return errorResult(
+        "Error: No active session. Call start_session first, then pass the returned threadId to this tool.",
+      );
+    }
     const callNumber = ++waitCallCount; const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
     const deadline = Date.now() + timeoutMs;
 
@@ -504,7 +570,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const POLL_INTERVAL_MS = 2000;
 
     while (Date.now() < deadline) {
-      const stored = readThreadMessages(currentThreadId);
+      const stored = readThreadMessages(effectiveThreadId);
 
       if (stored.length > 0) {
         type TextBlock = { type: "text"; text: string };
@@ -513,24 +579,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let hasVoiceMessages = false;
 
         for (const msg of stored) {
-          // Photos: download the largest size and embed as base64.
+          // Photos: download the largest size and embed as base64 (up to budget).
           if (msg.message.photo && msg.message.photo.length > 0) {
-            const largest = msg.message.photo[msg.message.photo.length - 1];
-            try {
-              const { base64, mimeType } = await telegram.downloadFileAsBase64(
-                largest.file_id,
-              );
-              contentBlocks.push({ type: "image", data: base64, mimeType });
-              if (msg.message.caption) {
+            if (inlineImageCount < MAX_INLINE_IMAGES) {
+              const largest = msg.message.photo[msg.message.photo.length - 1];
+              try {
+                const { base64, mimeType } = await telegram.downloadFileAsBase64(
+                  largest.file_id,
+                );
+                contentBlocks.push({ type: "image", data: base64, mimeType });
+                inlineImageCount++;
+                if (msg.message.caption) {
+                  contentBlocks.push({
+                    type: "text",
+                    text: `[Image caption]: ${msg.message.caption}`,
+                  });
+                }
+              } catch (err) {
                 contentBlocks.push({
                   type: "text",
-                  text: `[Image caption]: ${msg.message.caption}`,
+                  text: `[Photo received but could not be downloaded: ${errorMessage(err)}]`,
                 });
               }
-            } catch (err) {
+            } else {
+              // Context budget exceeded — describe instead of embedding.
               contentBlocks.push({
                 type: "text",
-                text: `[Photo received but could not be downloaded: ${errorMessage(err)}]`,
+                text: msg.message.caption
+                  ? `[Photo received — view in Telegram thread. Caption: ${msg.message.caption}]`
+                  : `[Photo received — view in Telegram thread]`,
               });
             }
           }
@@ -542,8 +619,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 doc.file_id,
               );
               const isImage = mimeType.startsWith("image/");
-              if (isImage) {
+              if (isImage && inlineImageCount < MAX_INLINE_IMAGES) {
                 contentBlocks.push({ type: "image", data: base64, mimeType });
+                inlineImageCount++;
+              } else if (isImage) {
+                // Context budget exceeded for images.
+                contentBlocks.push({
+                  type: "text",
+                  text: msg.message.caption
+                    ? `[Image document: ${doc.file_name ?? "file"} — view in Telegram thread. Caption: ${msg.message.caption}]`
+                    : `[Image document: ${doc.file_name ?? "file"} — view in Telegram thread]`,
+                });
               } else {
                 // Non-image documents: include as text with base64 data.
                 contentBlocks.push({
@@ -638,7 +724,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 text: "\n**Note:** The operator sent voice message(s). They prefer voice interaction — use `send_voice` for progress updates and responses when possible.",
               }]
               : []),
-            { type: "text", text: getReminders(currentThreadId) },
+            { type: "text", text: getReminders(effectiveThreadId) },
           ],
         };
       }
@@ -660,9 +746,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           `🟢 **Session alive** — ${new Date().toLocaleString("en-GB", {
             day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false,
           })}` +
-          (currentThreadId !== undefined ? ` (thread ${currentThreadId})` : ""),
+          ` (thread ${effectiveThreadId})`,
         );
-        await telegram.sendMessage(TELEGRAM_CHAT_ID, ping, "MarkdownV2", currentThreadId);
+        await telegram.sendMessage(TELEGRAM_CHAT_ID, ping, "MarkdownV2", effectiveThreadId);
         keepAliveSent = true;
       } catch {
         // Non-fatal.
@@ -680,7 +766,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
             `Do NOT summarize, stop, or say the session is idle. ` +
             `Just call the tool again immediately.` +
-            getReminders(currentThreadId),
+            getReminders(effectiveThreadId),
         },
       ],
     };
@@ -688,9 +774,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── report_progress ───────────────────────────────────────────────────────
   if (name === "report_progress") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const effectiveThreadId = resolveThreadId(typedArgs);
     const rawMessage =
-      typeof (args as Record<string, unknown>)?.message === "string"
-        ? ((args as Record<string, unknown>).message as string)
+      typeof typedArgs?.message === "string"
+        ? (typedArgs.message as string)
         : "";
 
     if (!rawMessage) {
@@ -708,7 +796,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     let sentAsPlainText = false;
     try {
-      await telegram.sendMessage(TELEGRAM_CHAT_ID, message, "MarkdownV2", currentThreadId);
+      await telegram.sendMessage(TELEGRAM_CHAT_ID, message, "MarkdownV2", effectiveThreadId);
     } catch (error) {
       const errMsg = errorMessage(error);
       // If Telegram rejected the message due to a MarkdownV2 parse error,
@@ -716,7 +804,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const isParseError = errMsg.includes("can't parse entities");
       if (isParseError) {
         try {
-          await telegram.sendMessage(TELEGRAM_CHAT_ID, rawMessage, undefined, currentThreadId);
+          await telegram.sendMessage(TELEGRAM_CHAT_ID, rawMessage, undefined, effectiveThreadId);
           sentAsPlainText = true;
         } catch (retryError) {
           process.stderr.write(
@@ -743,7 +831,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // full delivery via remote_copilot_wait_for_instructions.
     let pendingMessages: string[] = [];
     try {
-      const pendingStored = peekThreadMessages(currentThreadId);
+      const pendingStored = peekThreadMessages(effectiveThreadId);
       if (pendingStored.length > 0) {
         for (const msg of pendingStored) {
           if (msg.message.photo && msg.message.photo.length > 0) {
@@ -775,7 +863,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const baseStatus =
       (sentAsPlainText
         ? "Progress reported successfully (as plain text — formatting could not be applied)."
-        : "Progress reported successfully.") + getReminders(currentThreadId);
+        : "Progress reported successfully.") + getReminders(effectiveThreadId);
 
     const responseText =
       pendingMessages.length > 0
@@ -800,8 +888,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── send_file ─────────────────────────────────────────────────────────────
   if (name === "send_file") {
-    const typedArgs = (args ?? {}) as Record<string, unknown>;
-    const filePath = typeof typedArgs.filePath === "string" ? typedArgs.filePath.trim() : "";
+    const typedArgs = (args ?? {}) as Record<string, unknown>;    const effectiveThreadId = resolveThreadId(typedArgs);    const filePath = typeof typedArgs.filePath === "string" ? typedArgs.filePath.trim() : "";
     const base64Data = typeof typedArgs.base64 === "string" ? typedArgs.base64 : "";
     const caption = typeof typedArgs.caption === "string" ? typedArgs.caption : undefined;
 
@@ -829,16 +916,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const ext = filename.split(".").pop()?.toLowerCase() ?? "";
 
       if (IMAGE_EXTENSIONS.has(ext)) {
-        await telegram.sendPhoto(TELEGRAM_CHAT_ID, buffer, filename, caption, currentThreadId);
+        await telegram.sendPhoto(TELEGRAM_CHAT_ID, buffer, filename, caption, effectiveThreadId);
       } else {
-        await telegram.sendDocument(TELEGRAM_CHAT_ID, buffer, filename, caption, currentThreadId);
+        await telegram.sendDocument(TELEGRAM_CHAT_ID, buffer, filename, caption, effectiveThreadId);
       }
 
       return {
         content: [
           {
             type: "text",
-            text: `File "${filename}" sent to Telegram successfully.` + getReminders(currentThreadId),
+            text: `File "${filename}" sent to Telegram successfully.` + getReminders(effectiveThreadId),
           },
         ],
       };
@@ -850,8 +937,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── send_voice ──────────────────────────────────────────────────────────
   if (name === "send_voice") {
-    const typedArgs = (args ?? {}) as Record<string, unknown>;
-    const text = typeof typedArgs.text === "string" ? typedArgs.text.trim() : "";
+    const typedArgs = (args ?? {}) as Record<string, unknown>;    const effectiveThreadId = resolveThreadId(typedArgs);    const text = typeof typedArgs.text === "string" ? typedArgs.text.trim() : "";
     const validVoices = TTS_VOICES;
     const voice: TTSVoice = typeof typedArgs.voice === "string" && (validVoices as readonly string[]).includes(typedArgs.voice)
       ? typedArgs.voice as TTSVoice
@@ -871,12 +957,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     try {
       const audioBuffer = await textToSpeech(text, OPENAI_API_KEY, voice);
-      await telegram.sendVoice(TELEGRAM_CHAT_ID, audioBuffer, currentThreadId);
+      await telegram.sendVoice(TELEGRAM_CHAT_ID, audioBuffer, effectiveThreadId);
       return {
         content: [
           {
             type: "text",
-            text: `Voice message sent to Telegram successfully.` + getReminders(currentThreadId),
+            text: `Voice message sent to Telegram successfully.` + getReminders(effectiveThreadId),
           },
         ],
       };
