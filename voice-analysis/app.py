@@ -18,6 +18,7 @@ import io
 import logging
 import tempfile
 from contextlib import asynccontextmanager
+from typing import Any
 from pathlib import Path
 
 import joblib
@@ -192,7 +193,24 @@ def _run_analysis(audio_bytes: bytes) -> dict:
     else:
         result["gender"] = None
 
-    return result
+    return _sanitize_for_json(result)
+
+
+def _sanitize_for_json(obj: Any) -> Any:
+    """Recursively convert numpy types to native Python for JSON serialization."""
+    import numpy as np
+
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 
 @app.post("/analyze")
