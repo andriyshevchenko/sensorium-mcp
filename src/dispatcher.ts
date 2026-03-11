@@ -97,12 +97,25 @@ function readLock(): { pid: number; ts: number } | null {
     }
 }
 
-function writeLock(): void {
+/**
+ * Write (refresh) the lock file, but only if we still own it.
+ * Prevents a TOCTOU race where two pollers run simultaneously:
+ * if another process stole the lock between our check and write,
+ * we must not overwrite their lock.
+ *
+ * Returns true if the lock was refreshed, false if we lost ownership.
+ */
+function refreshLock(): boolean {
+    const current = readLock();
+    if (current && current.pid !== process.pid) {
+        return false; // Someone else owns the lock now.
+    }
     writeFileSync(
         LOCK_FILE,
         JSON.stringify({ pid: process.pid, ts: Date.now() }),
         "utf8",
     );
+    return true;
 }
 
 function removeLock(): void {
@@ -289,14 +302,23 @@ async function pollOnce(
     telegram: TelegramClient,
     chatId: string,
 ): Promise<void> {
-    writeLock();
+    if (!refreshLock()) {
+        // We lost lock ownership — another process took over. Step down.
+        pollerRunning = false;
+        return;
+    }
 
     const POLL_TIMEOUT_SECONDS = 10;
     let offset = readOffset();
 
     // Refresh the lock periodically during long polls / 409 retries
     // to prevent it from going stale (STALE_LOCK_MS = 90 s).
-    const lockRefresher = setInterval(() => writeLock(), 15_000);
+    const lockRefresher = setInterval(() => {
+        if (!refreshLock()) {
+            pollerRunning = false;
+            pollAbortController?.abort();
+        }
+    }, 15_000);
 
     try {
         pollAbortController = new AbortController();
@@ -305,7 +327,10 @@ async function pollOnce(
         );
 
         // Refresh again after the (potentially 10-second) long poll returns.
-        writeLock();
+        if (!refreshLock()) {
+            pollerRunning = false;
+            return;
+        }
 
         if (updates.length === 0) return;
 
@@ -402,7 +427,7 @@ export async function startDispatcher(
 ): Promise<boolean> {
     ensureDirs();
     const isPoller = tryAcquireLock();
-    const CONSUMER_RETRY_MS = 30_000;
+    const CONSUMER_RETRY_MS = 10_000;
 
     // Shared cleanup + loop helpers.
     let cleanupRegistered = false;
