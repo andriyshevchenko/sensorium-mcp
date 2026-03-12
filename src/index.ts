@@ -159,6 +159,10 @@ await startDispatcher(telegram, TELEGRAM_CHAT_ID);
 let waitCallCount = 0;
 let sessionStartedAt = Date.now();
 
+// Tracks update_ids already previewed via report_progress's peek, so the
+// same steering messages aren't shown repeatedly across multiple calls.
+const previewedUpdateIds = new Set<number>();
+
 // ---------------------------------------------------------------------------
 // Session store — persists topic name → thread ID mappings to disk so the
 // agent can resume a named session even after a VS Code restart.
@@ -567,6 +571,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const stored = readThreadMessages(effectiveThreadId);
 
       if (stored.length > 0) {
+        // Clear previewed IDs — these messages are now fully consumed.
+        previewedUpdateIds.clear();
+
         // React with 👀 on each consumed message to signal "seen" to the operator.
         for (const msg of stored) {
           void telegram.setMessageReaction(
@@ -818,18 +825,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // Peek at any messages the operator sent while the agent was working.
-    // Only report the COUNT — the full content will be delivered by the next
-    // remote_copilot_wait_for_instructions call. Showing content here via
-    // non-destructive peek caused duplication (same messages shown on every
-    // report_progress call AND again in wait_for_instructions).
-    let pendingCount = 0;
+    // Uses non-destructive peek so media is preserved for full delivery
+    // via remote_copilot_wait_for_instructions. Tracks previewed update_ids
+    // to prevent the same messages from appearing on repeated calls.
+    let pendingMessages: string[] = [];
     try {
       const pendingStored = peekThreadMessages(effectiveThreadId);
-      pendingCount = pendingStored.filter(
-        (m) => m.message.text || m.message.photo || m.message.document || m.message.voice,
-      ).length;
+      for (const msg of pendingStored) {
+        if (previewedUpdateIds.has(msg.update_id)) continue;
+        previewedUpdateIds.add(msg.update_id);
+
+        if (msg.message.photo && msg.message.photo.length > 0) {
+          pendingMessages.push(
+            msg.message.caption
+              ? `[Photo received] ${msg.message.caption}`
+              : "[Photo received from operator]",
+          );
+        } else if (msg.message.document) {
+          pendingMessages.push(
+            msg.message.caption
+              ? `[Document: ${msg.message.document.file_name ?? "file"}] ${msg.message.caption}`
+              : `[Document received: ${msg.message.document.file_name ?? "file"}]`,
+          );
+        } else if (msg.message.voice) {
+          pendingMessages.push(
+            `[Voice message — ${msg.message.voice.duration}s — will be transcribed on next wait]`,
+          );
+        } else if (msg.message.text) {
+          pendingMessages.push(msg.message.text);
+        }
+      }
     } catch {
-      // Non-fatal.
+      // Non-fatal: pending messages will still be picked up by the next
+      // remote_copilot_wait_for_instructions call.
     }
 
     const baseStatus =
@@ -838,10 +866,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         : "Progress reported successfully.") + getReminders(effectiveThreadId);
 
     const responseText =
-      pendingCount > 0
+      pendingMessages.length > 0
         ? `${baseStatus}\n\n` +
-        `The operator sent ${pendingCount} new message(s) while you were working. ` +
-        `Call remote_copilot_wait_for_instructions NOW to receive them before continuing.`
+        `While you were working, the operator sent additional message(s). ` +
+        `Use those messages to steer your active session: ${pendingMessages.join("\n\n")}. ` +
+        `You should:\n` +
+        ` - Read and incorporate the operator's new messages.\n` +
+        ` - Update or refine your plan as needed.\n` +
+        ` - Continue your work.`
         : baseStatus;
 
     return {
