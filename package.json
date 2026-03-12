@@ -1,6 +1,6 @@
 {
   "name": "remote-copilot-mcp",
-  "version": "2.2.14",
+  "version": "2.3.0",
   "description": "MCP server for remote control of AI assistants via Telegram",
   "main": "dist/index.js",
   "bin": {
