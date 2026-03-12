@@ -350,7 +350,10 @@ export class TelegramClient {
   /**
    * Set an emoji reaction on a message ("seen" indicator).
    * Non-throwing: silently ignores errors since reactions are non-critical UX.
+   * Logs only the first failure to avoid flooding stderr in busy sessions.
    */
+  private reactionWarned = false;
+
   async setMessageReaction(
     chatId: string,
     messageId: number,
@@ -367,16 +370,20 @@ export class TelegramClient {
           reaction: [{ type: "emoji", emoji }],
         }),
       });
-      if (!response.ok) {
+      if (!response.ok && !this.reactionWarned) {
+        this.reactionWarned = true;
         const data = await this.tryParseJson<{ description?: string }>(response);
         process.stderr.write(
-          `[telegram] setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText}\n`,
+          `[telegram] setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText} (further failures suppressed)\n`,
         );
       }
     } catch (err) {
-      process.stderr.write(
-        `[telegram] setMessageReaction error: ${err instanceof Error ? err.message : String(err)}\n`,
-      );
+      if (!this.reactionWarned) {
+        this.reactionWarned = true;
+        process.stderr.write(
+          `[telegram] setMessageReaction error: ${err instanceof Error ? err.message : String(err)} (further errors suppressed)\n`,
+        );
+      }
     }
   }
 }

@@ -76,13 +76,17 @@ function convertMarkdown(markdown: string): string {
     },
   );
 
-  // 2. Escape Markdown table pipe characters (`|` → `\|`) so they don't
-  //    break MarkdownV2 parsing. Tables are left as plain text (Telegram
-  //    doesn't support HTML tables anyway), but at least they render without
-  //    being wrapped in a code block.
+  // 2. Extract Markdown tables (consecutive lines starting with `|`) into
+  //    placeholders so telegramify-markdown never sees the pipe characters.
+  //    They are re-inserted post-conversion with pipes escaped for MarkdownV2.
+  const tables: string[] = [];
+  const tablePlaceholder = (i: number) => `TABLEPLACEHOLDER${i}END`;
   preprocessed = preprocessed.replace(
-    /^(\|.+)$/gm,
-    (_match, row: string) => row.replace(/\|/g, "\\|"),
+    /^(\|.+)\n((?:\|.*\n?)*)/gm,
+    (_match, firstRow: string, rest: string) => {
+      tables.push((firstRow + "\n" + rest).trimEnd());
+      return tablePlaceholder(tables.length - 1) + "\n";
+    },
   );
 
   // 3. Convert Markdown blockquotes (> text) to ▎ prefix lines so
@@ -100,6 +104,17 @@ function convertMarkdown(markdown: string): string {
       const { lang, code } = blocks[parseInt(idx, 10)];
       const escaped = code.replace(/\\/g, "\\\\").replace(/`/g, "\\`");
       return `\`\`\`${lang}\n${escaped}\n\`\`\``;
+    },
+  );
+
+  // 6. Re-insert tables with pipes escaped for MarkdownV2.
+  //    Escape MarkdownV2 special chars in table content, then escape pipes.
+  converted = converted.replace(
+    /TABLEPLACEHOLDER(\d+)END/g,
+    (_m, idx: string) => {
+      const table = tables[parseInt(idx, 10)];
+      return table
+        .replace(/([_*\[\]()~`>#+=\-{}.!|\\])/g, "\\$1");
     },
   );
 
@@ -473,6 +488,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         process.stderr.write(
           `[start_session] Drained ${stale.length} stale message(s) from thread ${currentThreadId}.\n`,
         );
+        // Notify the operator that stale messages were discarded.
+        try {
+          const notice = convertMarkdown(
+            `\u26A0\uFE0F **${stale.length} message(s) from before the session resumed were discarded.** ` +
+            `If you sent instructions while the agent was offline, please resend them.`,
+          );
+          await telegram.sendMessage(TELEGRAM_CHAT_ID, notice, "MarkdownV2", currentThreadId);
+        } catch { /* non-fatal */ }
       }
 
       // Resume mode: verify the thread is still alive by sending a message.
@@ -571,8 +594,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const stored = readThreadMessages(effectiveThreadId);
 
       if (stored.length > 0) {
-        // Clear previewed IDs — these messages are now fully consumed.
-        previewedUpdateIds.clear();
+        // Clear only the consumed IDs from the previewed set (scoped clear).
+        // This is safe because Node.js is single-threaded — no report_progress
+        // call can interleave between readThreadMessages and this cleanup.
+        for (const msg of stored) {
+          previewedUpdateIds.delete(msg.update_id);
+        }
 
         // React with 👀 on each consumed message to signal "seen" to the operator.
         for (const msg of stored) {
