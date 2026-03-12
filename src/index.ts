@@ -561,6 +561,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const stored = readThreadMessages(effectiveThreadId);
 
       if (stored.length > 0) {
+        // React with 👀 on each consumed message to signal "seen" to the operator.
+        for (const msg of stored) {
+          void telegram.setMessageReaction(
+            TELEGRAM_CHAT_ID,
+            msg.message.message_id,
+          );
+        }
+
         type TextBlock = { type: "text"; text: string };
         type ImageBlock = { type: "image"; data: string; mimeType: string };
         const contentBlocks: Array<TextBlock | ImageBlock> = [];

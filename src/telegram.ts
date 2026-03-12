@@ -346,4 +346,37 @@ export class TelegramClient {
     await this.sendMedia("sendVoice", chatId, "voice",
       new Blob([new Uint8Array(audioBuffer)]), "voice.ogg", { threadId });
   }
+
+  /**
+   * Set an emoji reaction on a message ("seen" indicator).
+   * Non-throwing: silently ignores errors since reactions are non-critical UX.
+   */
+  async setMessageReaction(
+    chatId: string,
+    messageId: number,
+    emoji: string = "\uD83D\uDC40",
+  ): Promise<void> {
+    try {
+      const url = `${this.baseUrl}/setMessageReaction`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId,
+          reaction: [{ type: "emoji", emoji }],
+        }),
+      });
+      if (!response.ok) {
+        const data = await this.tryParseJson<{ description?: string }>(response);
+        process.stderr.write(
+          `[telegram] setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText}\n`,
+        );
+      }
+    } catch (err) {
+      process.stderr.write(
+        `[telegram] setMessageReaction error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  }
 }
