@@ -76,16 +76,13 @@ function convertMarkdown(markdown: string): string {
     },
   );
 
-  // 2. Extract Markdown tables (consecutive lines starting with `|`) and
-  //    wrap them in a plain code block so `|` never reaches the MarkdownV2
-  //    escape layer.
+  // 2. Escape Markdown table pipe characters (`|` → `\|`) so they don't
+  //    break MarkdownV2 parsing. Tables are left as plain text (Telegram
+  //    doesn't support HTML tables anyway), but at least they render without
+  //    being wrapped in a code block.
   preprocessed = preprocessed.replace(
-    /^(\|.+)\n((?:\|.*\n?)*)/gm,
-    (_match, firstRow: string, rest: string) => {
-      const tableText = (firstRow + "\n" + rest).trimEnd();
-      blocks.push({ lang: "", code: tableText });
-      return placeholder(blocks.length - 1) + "\n";
-    },
+    /^(\|.+)$/gm,
+    (_match, row: string) => row.replace(/\|/g, "\\|"),
   );
 
   // 3. Convert Markdown blockquotes (> text) to ▎ prefix lines so
@@ -465,6 +462,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (resolvedPreexisting) {
+      // Drain any stale messages from the thread file so they aren't
+      // re-delivered in the next wait_for_instructions call.
+      const stale = readThreadMessages(currentThreadId);
+      if (stale.length > 0) {
+        process.stderr.write(
+          `[start_session] Drained ${stale.length} stale message(s) from thread ${currentThreadId}.\n`,
+        );
+      }
+
       // Resume mode: verify the thread is still alive by sending a message.
       // If the topic was deleted, drop the cached mapping and fall through to
       // create a new topic.
