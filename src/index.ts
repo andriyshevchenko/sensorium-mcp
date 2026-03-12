@@ -818,37 +818,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // Peek at any messages the operator sent while the agent was working.
-    // Uses non-destructive peek so photos/documents are preserved for
-    // full delivery via remote_copilot_wait_for_instructions.
-    let pendingMessages: string[] = [];
+    // Only report the COUNT — the full content will be delivered by the next
+    // remote_copilot_wait_for_instructions call. Showing content here via
+    // non-destructive peek caused duplication (same messages shown on every
+    // report_progress call AND again in wait_for_instructions).
+    let pendingCount = 0;
     try {
       const pendingStored = peekThreadMessages(effectiveThreadId);
-      if (pendingStored.length > 0) {
-        for (const msg of pendingStored) {
-          if (msg.message.photo && msg.message.photo.length > 0) {
-            pendingMessages.push(
-              msg.message.caption
-                ? `[Photo received] ${msg.message.caption}`
-                : "[Photo received from operator]",
-            );
-          } else if (msg.message.document) {
-            pendingMessages.push(
-              msg.message.caption
-                ? `[Document: ${msg.message.document.file_name ?? "file"}] ${msg.message.caption}`
-                : `[Document received: ${msg.message.document.file_name ?? "file"}]`,
-            );
-          } else if (msg.message.voice) {
-            pendingMessages.push(
-              `[Voice message — ${msg.message.voice.duration}s — will be transcribed on next wait]`,
-            );
-          } else if (msg.message.text) {
-            pendingMessages.push(msg.message.text);
-          }
-        }
-      }
+      pendingCount = pendingStored.filter(
+        (m) => m.message.text || m.message.photo || m.message.document || m.message.voice,
+      ).length;
     } catch {
-      // Non-fatal: pending messages will still be picked up by the next
-      // remote_copilot_wait_for_instructions call.
+      // Non-fatal.
     }
 
     const baseStatus =
@@ -857,14 +838,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         : "Progress reported successfully.") + getReminders(effectiveThreadId);
 
     const responseText =
-      pendingMessages.length > 0
+      pendingCount > 0
         ? `${baseStatus}\n\n` +
-        `While you were working, the operator sent additional message(s). ` +
-        `Use those messages to steer an active session: ${pendingMessages.join("\n\n")}. ` +
-        `You should:\n` +
-        ` - Read and incorporate the operator's new messages.\n` +
-        ` - Update or refine your plan as needed.\n` +
-        ` - Continue your work.`
+        `The operator sent ${pendingCount} new message(s) while you were working. ` +
+        `Call remote_copilot_wait_for_instructions NOW to receive them before continuing.`
         : baseStatus;
 
     return {
