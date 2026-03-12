@@ -189,7 +189,20 @@ export class TelegramClient {
           `Telegram getUpdates 409 Conflict (attempt ${attempt + 1}/${MAX_409_RETRIES}) — ` +
           `another bot instance is polling. Retrying in ${RETRY_DELAY_MS / 1000}s...\n`,
         );
-        await new Promise<void>((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        // Abort-aware delay: if an abort signal fires during the retry
+        // delay, throw immediately instead of sleeping the full 5s.
+        await new Promise<void>((resolve, reject) => {
+          let onAbort: (() => void) | undefined;
+          const timer = setTimeout(() => {
+            if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+            resolve();
+          }, RETRY_DELAY_MS);
+          if (signal) {
+            if (signal.aborted) { clearTimeout(timer); reject(signal.reason ?? new DOMException("Aborted", "AbortError")); return; }
+            onAbort = () => { clearTimeout(timer); reject(signal.reason ?? new DOMException("Aborted", "AbortError")); };
+            signal.addEventListener("abort", onAbort, { once: true });
+          }
+        });
         continue;
       }
 

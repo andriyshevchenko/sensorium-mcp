@@ -32,7 +32,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { readFileSync, renameSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { createRequire } from "module";
 import { homedir } from "os";
 import { basename, join } from "path";
@@ -168,6 +168,23 @@ const telegram = new TelegramClient(TELEGRAM_TOKEN);
 // ---------------------------------------------------------------------------
 
 await startDispatcher(telegram, TELEGRAM_CHAT_ID);
+
+// Directory for persisting downloaded images and documents to disk.
+const FILES_DIR = join(homedir(), ".remote-copilot-mcp", "files");
+mkdirSync(FILES_DIR, { recursive: true });
+
+/**
+ * Save a buffer to disk under FILES_DIR with a unique timestamped name.
+ * Returns the absolute file path.
+ */
+function saveFileToDisk(buffer: Buffer, filename: string): string {
+  const ts = Date.now();
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const diskName = `${ts}-${safeName}`;
+  const filePath = join(FILES_DIR, diskName);
+  writeFileSync(filePath, buffer);
+  return filePath;
+}
 
 // Monotonically increasing counter so every timeout response is unique,
 // preventing VS Code Copilot's loop-detection heuristic from killing the agent.
@@ -441,7 +458,7 @@ function getReminders(threadId?: number): string {
     "\n\n## MANDATORY WORKFLOW — YOU MUST FOLLOW ALL STEPS" +
     "\n1. **Plan first**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
     "\n2. **Report every step**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
-    "\n3. **Subagents for mechanical tasks only**: Use subagents for specific edits, searches, code reviews, and test generation. YOU must own the plan, make all decisions, and call report_progress yourself. NEVER pass the operator's full instructions to a subagent." +
+    "\n3. **Subagents for execution**: Create your plan with the todo list tool. Use subagents to execute each item of your todo list. YOU own the plan and all decisions — call report_progress yourself after each item. NEVER pass the operator's full instructions to a subagent." +
     "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize and stop." +
     threadHint
   );
@@ -615,20 +632,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         let hasVoiceMessages = false;
 
         for (const msg of stored) {
-          // Photos: download the largest size and embed as base64.
+          // Photos: download the largest size, persist to disk, and embed as base64.
           if (msg.message.photo && msg.message.photo.length > 0) {
             const largest = msg.message.photo[msg.message.photo.length - 1];
             try {
-              const { base64, mimeType } = await telegram.downloadFileAsBase64(
+              const { buffer, filePath: telegramPath } = await telegram.downloadFileAsBuffer(
                 largest.file_id,
               );
+              const ext = telegramPath.split(".").pop()?.toLowerCase() ?? "jpg";
+              const mimeType = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+              const base64 = buffer.toString("base64");
+              const diskPath = saveFileToDisk(buffer, `photo.${ext}`);
               contentBlocks.push({ type: "image", data: base64, mimeType });
-              if (msg.message.caption) {
-                contentBlocks.push({
-                  type: "text",
-                  text: `[Image caption]: ${msg.message.caption}`,
-                });
-              }
+              contentBlocks.push({
+                type: "text",
+                text: `[Photo saved to: ${diskPath}]` +
+                  (msg.message.caption ? ` Caption: ${msg.message.caption}` : ""),
+              });
             } catch (err) {
               contentBlocks.push({
                 type: "text",
@@ -636,29 +656,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               });
             }
           }
-          // Documents: download and embed as base64.
+          // Documents: download, persist to disk, and embed as base64.
           if (msg.message.document) {
             const doc = msg.message.document;
             try {
-              const { base64, mimeType } = await telegram.downloadFileAsBase64(
+              const { buffer, filePath: telegramPath } = await telegram.downloadFileAsBuffer(
                 doc.file_id,
               );
+              const filename = doc.file_name ?? basename(telegramPath);
+              const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+              const mimeType = doc.mime_type ?? (ext in { jpg: 1, jpeg: 1, png: 1, gif: 1, webp: 1 } ? `image/${ext === "jpg" ? "jpeg" : ext}` : "application/octet-stream");
+              const base64 = buffer.toString("base64");
+              const diskPath = saveFileToDisk(buffer, filename);
               const isImage = mimeType.startsWith("image/");
               if (isImage) {
                 contentBlocks.push({ type: "image", data: base64, mimeType });
               } else {
-                // Non-image documents: include as text with base64 data.
+                // Non-image documents: provide the disk path instead of
+                // dumping potentially huge base64 into the LLM context.
                 contentBlocks.push({
                   type: "text",
-                  text: `[Document: ${doc.file_name ?? "file"} (${doc.mime_type ?? mimeType})]\nBase64 content: ${base64}`,
+                  text: `[Document: ${filename} (${mimeType}) — saved to: ${diskPath}]`,
                 });
               }
-              if (msg.message.caption) {
-                contentBlocks.push({
-                  type: "text",
-                  text: `[Document caption]: ${msg.message.caption}`,
-                });
-              }
+              contentBlocks.push({
+                type: "text",
+                text: `[File saved to: ${diskPath}]` +
+                  (msg.message.caption ? ` Caption: ${msg.message.caption}` : ""),
+              });
             } catch (err) {
               contentBlocks.push({
                 type: "text",
@@ -865,14 +890,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (msg.message.photo && msg.message.photo.length > 0) {
           pendingMessages.push(
             msg.message.caption
-              ? `[Photo received] ${msg.message.caption}`
-              : "[Photo received from operator]",
+              ? `[Photo received — will be downloaded when you call wait_for_instructions] ${msg.message.caption}`
+              : "[Photo received from operator — will be downloaded when you call wait_for_instructions]",
           );
         } else if (msg.message.document) {
           pendingMessages.push(
             msg.message.caption
-              ? `[Document: ${msg.message.document.file_name ?? "file"}] ${msg.message.caption}`
-              : `[Document received: ${msg.message.document.file_name ?? "file"}]`,
+              ? `[Document: ${msg.message.document.file_name ?? "file"} — will be downloaded when you call wait_for_instructions] ${msg.message.caption}`
+              : `[Document received: ${msg.message.document.file_name ?? "file"} — will be downloaded when you call wait_for_instructions]`,
           );
         } else if (msg.message.voice) {
           pendingMessages.push(
