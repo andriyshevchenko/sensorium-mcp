@@ -422,11 +422,11 @@ function getReminders(threadId?: number): string {
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
   return (
-    "\n\n## MANDATORY WORKFLOW" +
-    "\n1. **Use the todo list tool** to plan your work into discrete items. This is mandatory, not optional." +
-    "\n2. **Call report_progress** every time you complete a todo item. The operator cannot see your work unless you report it." +
-    "\n3. When all work is done, YOU MUST call remote_copilot_wait_for_instructions. Never stop or summarize \u2014 always end by calling that tool." +
-    "\n- Prefer subagents for focused, isolated tasks that don't require reasoning or decision-making." +
+    "\n\n## MANDATORY WORKFLOW — YOU MUST FOLLOW ALL STEPS" +
+    "\n1. **Plan first**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
+    "\n2. **Report every step**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
+    "\n3. **Delegate with subagents**: For ANY task that is self-contained (code reviews, research, file searches, writing tests, generating code), launch a subagent. Do NOT do everything yourself sequentially." +
+    "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize and stop." +
     threadHint
   );
 }
@@ -693,10 +693,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: "Follow the operator's instructions below. " +
-                "You MUST use the todo list tool to plan your work into discrete items. " +
-                "Share your plan via report_progress, then execute step by step. " +
-                "Call report_progress every time you complete a todo item \u2014 the operator cannot see your work otherwise.",
+              text: "Follow the operator's instructions below.\n\n" +
+                "BEFORE doing anything: (1) Break the work into todo items. (2) Share your plan via report_progress. " +
+                "(3) For each todo: mark in-progress → do the work (use subagents for self-contained tasks) → call report_progress → mark completed. " +
+                "The operator is REMOTE — they cannot see your screen. If you don't call report_progress, they see nothing.",
             },
             ...contentBlocks,
             ...(hasVoiceMessages
