@@ -36,6 +36,10 @@ export function errorResult(text: string): {
  * Describe arousal/dominance/valence as human-readable text.
  * Accepts values on 0-1 scale (v2 audeering models) or 1-5 scale (v1 lookup).
  * Auto-detects scale: values > 1 are treated as 1-5 and normalized to 0-1.
+ *
+ * Thresholds are calibrated to the audeering model's output distribution,
+ * which is trained on MSP-Podcast (original 1-7 Likert scale normalized to 0-1).
+ * Neutral calm speech typically outputs ~0.2 across all three dimensions.
  */
 export function describeADV(arousal: number, dominance: number, valence: number): string {
     // Normalize 1-5 scale to 0-1 if needed (backward compat with v1 fallback)
@@ -45,16 +49,16 @@ export function describeADV(arousal: number, dominance: number, valence: number)
     const v = norm(valence);
 
     const label = (value: number, scale: readonly string[]): string => {
-        if (value <= 0.2) return scale[0];
-        if (value <= 0.4) return scale[1];
-        if (value <= 0.6) return scale[2];
-        if (value <= 0.8) return scale[3];
+        if (value <= 0.17) return scale[0];
+        if (value <= 0.35) return scale[1];
+        if (value <= 0.55) return scale[2];
+        if (value <= 0.73) return scale[3];
         return scale[4];
     };
 
     const arousalWord = label(a, ["very calm", "calm", "moderate energy", "energized", "very intense"] as const);
-    const valenceWord = label(v, ["very negative", "negative", "neutral", "positive", "very positive"] as const);
-    const dominanceWord = label(d, ["submissive", "yielding", "balanced", "assertive", "dominant"] as const);
+    const valenceWord = label(v, ["very subdued", "restrained", "neutral", "warm", "very expressive"] as const);
+    const dominanceWord = label(d, ["very soft-spoken", "reserved", "balanced", "assertive", "commanding"] as const);
 
     return `${arousalWord}, ${valenceWord}, ${dominanceWord}`;
 }
