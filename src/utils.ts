@@ -32,18 +32,29 @@ export function errorResult(text: string): {
  *
  * Returns a compact string like "calm, neutral, balanced".
  */
+/**
+ * Describe arousal/dominance/valence as human-readable text.
+ * Accepts values on 0-1 scale (v2 audeering models) or 1-5 scale (v1 lookup).
+ * Auto-detects scale: values > 1 are treated as 1-5 and normalized to 0-1.
+ */
 export function describeADV(arousal: number, dominance: number, valence: number): string {
+    // Normalize 1-5 scale to 0-1 if needed (backward compat with v1 fallback)
+    const norm = (v: number) => v > 1 ? (v - 1) / 4 : v;
+    const a = norm(arousal);
+    const d = norm(dominance);
+    const v = norm(valence);
+
     const label = (value: number, scale: readonly string[]): string => {
-        if (value <= 1.5) return scale[0];
-        if (value <= 2.5) return scale[1];
-        if (value <= 3.5) return scale[2];
-        if (value <= 4.5) return scale[3];
+        if (value <= 0.2) return scale[0];
+        if (value <= 0.4) return scale[1];
+        if (value <= 0.6) return scale[2];
+        if (value <= 0.8) return scale[3];
         return scale[4];
     };
 
-    const arousalWord = label(arousal, ["very calm", "calm", "moderate energy", "energized", "very intense"] as const);
-    const valenceWord = label(valence, ["very negative", "negative", "neutral", "positive", "very positive"] as const);
-    const dominanceWord = label(dominance, ["submissive", "yielding", "balanced", "assertive", "dominant"] as const);
+    const arousalWord = label(a, ["very calm", "calm", "moderate energy", "energized", "very intense"] as const);
+    const valenceWord = label(v, ["very negative", "negative", "neutral", "positive", "very positive"] as const);
+    const dominanceWord = label(d, ["submissive", "yielding", "balanced", "assertive", "dominant"] as const);
 
     return `${arousalWord}, ${valenceWord}, ${dominanceWord}`;
 }

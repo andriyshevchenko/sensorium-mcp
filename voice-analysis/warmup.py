@@ -1,44 +1,33 @@
 """
-Pre-download all HuggingFace models during Docker build.
-This avoids cold-start downloads when the container scales from zero.
+Pre-download all models during Docker build.
+This avoids cold-start downloads when the container first starts.
 """
 
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from huggingface_hub import hf_hub_download
+# 1. emotion2vec+ base via FunASR
+logger.info("Downloading emotion2vec+ base...")
+from funasr import AutoModel
+_emotion = AutoModel(model="iic/emotion2vec_plus_base")
+del _emotion
+logger.info("  ✓ emotion2vec+ base cached")
 
-# 1. SpeechBrain ECAPA encoder (shared backbone for all classifiers)
-logger.info("Downloading SpeechBrain ECAPA encoder...")
-from speechbrain.inference.speaker import EncoderClassifier
-EncoderClassifier.from_hparams(
-    source="speechbrain/spkrec-ecapa-voxceleb",
-    run_opts={"device": "cpu"},
-)
-logger.info("  ✓ ECAPA encoder cached")
+# 2. audeering emotion-dim model (arousal/dominance/valence)
+logger.info("Downloading audeering emotion-dim model...")
+from huggingface_hub import snapshot_download
+import audonnx
+_path_dim = snapshot_download("audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim")
+_model_dim = audonnx.load(_path_dim)
+logger.info("  ✓ audeering emotion-dim cached and loadable (outputs: %s)", list(_model_dim.outputs) if hasattr(_model_dim, 'outputs') else 'N/A')
+del _model_dim
 
-# 2. Emotion (SVM, no scaler)
-logger.info("Downloading VANPY emotion model...")
-hf_hub_download(repo_id="griko/emotion_7_cls_svm_ecapa_ravdess", filename="svm_model.joblib")
-logger.info("  ✓ Emotion model cached")
+# 3. audeering age-gender model
+logger.info("Downloading audeering age-gender model...")
+_path_ag = snapshot_download("audeering/wav2vec2-large-robust-24-ft-age-gender")
+_model_ag = audonnx.load(_path_ag)
+logger.info("  ✓ audeering age-gender cached and loadable (outputs: %s)", list(_model_ag.outputs) if hasattr(_model_ag, 'outputs') else 'N/A')
+del _model_ag
 
-# 3. Gender (SVM + scaler)
-logger.info("Downloading VANPY gender model...")
-hf_hub_download(repo_id="griko/gender_cls_svm_ecapa_voxceleb", filename="svm_model.joblib")
-hf_hub_download(repo_id="griko/gender_cls_svm_ecapa_voxceleb", filename="scaler.joblib")
-logger.info("  ✓ Gender model cached")
-
-# 4. Age (SVR + scaler)
-logger.info("Downloading VANPY age model...")
-hf_hub_download(repo_id="griko/age_reg_svr_ecapa_voxceleb2", filename="model.joblib")
-hf_hub_download(repo_id="griko/age_reg_svr_ecapa_voxceleb2", filename="scaler.joblib")
-logger.info("  ✓ Age model cached")
-
-# 5. Height (SVR + scaler)
-logger.info("Downloading VANPY height model...")
-hf_hub_download(repo_id="griko/height_reg_svr_ecapa_voxceleb", filename="svr_model.joblib")
-hf_hub_download(repo_id="griko/height_reg_svr_ecapa_voxceleb", filename="scaler.joblib")
-logger.info("  ✓ Height model cached")
-
-logger.info("All models pre-downloaded successfully.")
+logger.info("All v2 models pre-downloaded successfully.")

@@ -88,12 +88,12 @@ export async function transcribeAudio(
 
 export interface VoiceAnalysisResult {
     emotion: string | null;
+    emotion_scores?: Record<string, number>;
     arousal: number | null;
     dominance: number | null;
     valence: number | null;
     gender: string | null;
     age_estimate: number | null;
-    height_estimate_cm: number | null;
     duration_seconds: number;
 }
 
