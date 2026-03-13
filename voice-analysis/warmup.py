@@ -14,20 +14,22 @@ _emotion = AutoModel(model="iic/emotion2vec_plus_base")
 del _emotion
 logger.info("  ✓ emotion2vec+ base cached")
 
-# 2. audeering emotion-dim model (arousal/dominance/valence)
+# 2. audeering emotion-dim (processor + model weights)
 logger.info("Downloading audeering emotion-dim model...")
+from transformers import Wav2Vec2Processor
 from huggingface_hub import snapshot_download
-import audonnx
-_path_dim = snapshot_download("audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim")
-_model_dim = audonnx.load(_path_dim)
-logger.info("  ✓ audeering emotion-dim cached and loadable (outputs: %s)", list(_model_dim.outputs) if hasattr(_model_dim, 'outputs') else 'N/A')
-del _model_dim
+Wav2Vec2Processor.from_pretrained(
+    "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim",
+)
+snapshot_download("audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim")
+logger.info("  ✓ audeering emotion-dim cached")
 
-# 3. audeering age-gender model
+# 3. audeering age-gender (processor + model weights)
 logger.info("Downloading audeering age-gender model...")
-_path_ag = snapshot_download("audeering/wav2vec2-large-robust-24-ft-age-gender")
-_model_ag = audonnx.load(_path_ag)
-logger.info("  ✓ audeering age-gender cached and loadable (outputs: %s)", list(_model_ag.outputs) if hasattr(_model_ag, 'outputs') else 'N/A')
-del _model_ag
+Wav2Vec2Processor.from_pretrained(
+    "audeering/wav2vec2-large-robust-24-ft-age-gender",
+)
+snapshot_download("audeering/wav2vec2-large-robust-24-ft-age-gender")
+logger.info("  ✓ audeering age-gender cached")
 
 logger.info("All v2 models pre-downloaded successfully.")
