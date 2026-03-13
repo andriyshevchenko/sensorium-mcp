@@ -725,7 +725,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 }
                 if (analysis?.gender) tags.push(`gender: ${analysis.gender}`);
                 if (analysis?.age_estimate != null) tags.push(`age: ~${Math.round(analysis.age_estimate)}`);
-                if (analysis?.height_estimate_cm != null) tags.push(`height: ~${Math.round(analysis.height_estimate_cm)}cm`);
                 const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
 
                 contentBlocks.push({

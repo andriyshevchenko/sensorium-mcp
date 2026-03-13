@@ -1,38 +1,28 @@
 """
-Voice Analysis microservice powered by VANPY models.
+Voice Analysis v2 microservice — transformer-based models.
 
-Accepts an audio file (OGG/WAV/etc.) via POST /analyze and returns rich
-speaker analysis using VANPY's HuggingFace models — all running on a single
-shared SpeechBrain ECAPA-TDNN 192-dim speaker embedding:
+Upgrade from v1 (ECAPA-TDNN + SVM/SVR):
+  - Emotion:     emotion2vec+ base (FunASR, 9-class, 4788h training data)
+  - ADV:         audeering wav2vec2-large-robust-12-ft-emotion-msp-dim (continuous 0-1)
+  - Age+Gender:  audeering wav2vec2-large-robust-24-ft-age-gender (MAE ~7-11yr)
+  - Height:      REMOVED (scientifically unreliable in adult humans)
 
-  - Emotion classification (7 classes) — SVM on ECAPA
-  - Arousal / Dominance / Valence intensity from emotion label
-  - Gender classification — SVM on ECAPA
-  - Age estimation (years) — SVR on ECAPA
-  - Height estimation (cm) — SVR on ECAPA
-
-All models by Gregory Koushnir (Ben-Gurion University), Apache 2.0.
-Paper: https://arxiv.org/abs/2502.17579
-
-NOTE: Must run with a single uvicorn worker (no --workers > 1).
+All values on 0-1 scale for arousal/dominance/valence.
 """
 
 import asyncio
 import io
 import logging
+import os
+import tempfile
 from contextlib import asynccontextmanager
 from typing import Any
 
-import joblib
 import librosa
 import numpy as np
-import pandas as pd
-import torch
-import torchaudio
+import soundfile as sf
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
-from huggingface_hub import hf_hub_download
-from speechbrain.inference.speaker import EncoderClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -45,138 +35,135 @@ ALLOWED_CONTENT_TYPES = {
     "application/ogg", "application/octet-stream",
 }
 
-# ---------------------------------------------------------------------------
-# Label constants
-# ---------------------------------------------------------------------------
+GENDER_LABELS = ["child", "female", "male"]
 
-GENDER_LABELS = ["female", "male"]  # from config.json in HF repo
-
-EMOTION_LABELS = [
-    "angry", "disgust", "fearful", "happy", "neutral/calm", "sad", "surprised",
-]
-
-# Arousal / Dominance / Valence mapping for RAVDESS 7-class emotions.
-# Values on a 1-5 scale based on established affective computing literature
-# (Russell's circumplex model, Warriner et al. VAD norms).
-EMOTION_ADV: dict[str, dict[str, float]] = {
-    "angry":        {"arousal": 4.3, "dominance": 3.9, "valence": 1.8},
-    "disgust":      {"arousal": 3.4, "dominance": 3.2, "valence": 1.7},
-    "fearful":      {"arousal": 4.1, "dominance": 1.6, "valence": 1.6},
-    "happy":        {"arousal": 4.0, "dominance": 3.8, "valence": 4.4},
-    "neutral/calm": {"arousal": 2.0, "dominance": 3.0, "valence": 3.2},
-    "sad":          {"arousal": 2.1, "dominance": 1.9, "valence": 1.6},
-    "surprised":    {"arousal": 4.2, "dominance": 2.8, "valence": 3.1},
+# Fallback ADV lookup (0-1 scale) used when the audeering emotion-dim model
+# is unavailable. Derived from Russell's circumplex / Warriner norms,
+# converted from 1-5 to 0-1 via (val - 1) / 4.
+EMOTION_ADV_FALLBACK: dict[str, dict[str, float]] = {
+    "angry":     {"arousal": 0.825, "dominance": 0.725, "valence": 0.200},
+    "disgusted": {"arousal": 0.600, "dominance": 0.550, "valence": 0.175},
+    "fearful":   {"arousal": 0.775, "dominance": 0.150, "valence": 0.150},
+    "happy":     {"arousal": 0.750, "dominance": 0.700, "valence": 0.850},
+    "neutral":   {"arousal": 0.250, "dominance": 0.500, "valence": 0.550},
+    "other":     {"arousal": 0.375, "dominance": 0.375, "valence": 0.375},
+    "sad":       {"arousal": 0.275, "dominance": 0.225, "valence": 0.150},
+    "surprised": {"arousal": 0.800, "dominance": 0.450, "valence": 0.525},
+    "unknown":   {"arousal": 0.375, "dominance": 0.375, "valence": 0.375},
 }
-
-# ---------------------------------------------------------------------------
-# Feature column names shared by all ECAPA-based models (192 dims)
-# ---------------------------------------------------------------------------
-ECAPA_COLUMNS = [f"{i}_speechbrain_embedding" for i in range(192)]
-
 
 # ---------------------------------------------------------------------------
 # Model singletons (loaded at startup)
 # ---------------------------------------------------------------------------
-speechbrain_encoder: EncoderClassifier | None = None
-emotion_pipeline: dict | None = None   # {"model": SVM}
-gender_pipeline: dict | None = None    # {"model": SVM, "scaler": StandardScaler}
-age_pipeline: dict | None = None       # {"model": SVR, "scaler": StandardScaler}
-height_pipeline: dict | None = None    # {"model": SVR, "scaler": StandardScaler}
+emotion_model: Any = None       # FunASR AutoModel (emotion2vec+ base)
+emotion_dim_model: Any = None   # audonnx Model (arousal/dominance/valence)
+age_gender_model: Any = None    # audonnx Model (age + gender)
+
+# Cached output key mappings discovered during startup probing
+_emotion_dim_keys: dict[str, str] = {}   # maps "arousal"/"dominance"/"valence" → actual output key
+_age_gender_keys: dict[str, str] = {}    # maps "age"/"gender" → actual output key
 
 # Limit concurrent inference to avoid OOM on small containers
 _inference_semaphore = asyncio.Semaphore(2)
 
 
-def _load_svm(repo_id: str, model_file: str = "svm_model.joblib",
-              scaler_file: str | None = "scaler.joblib") -> dict:
-    """Generic loader for joblib SVM/SVR model + optional scaler from HuggingFace."""
-    model_path = hf_hub_download(repo_id=repo_id, filename=model_file)
-    result = {"model": joblib.load(model_path)}
-    if scaler_file:
-        scaler_path = hf_hub_download(repo_id=repo_id, filename=scaler_file)
-        result["scaler"] = joblib.load(scaler_path)
-    return result
+def _probe_audonnx_model(model: Any, name: str, sr: int = 16000) -> dict[str, Any]:
+    """Run synthetic audio through an audonnx model and log output structure."""
+    signal = np.zeros(sr, dtype=np.float32)  # 1 second of silence
+    output = model(signal, sr)
+    logger.info("  [%s] output type: %s", name, type(output).__name__)
+    if isinstance(output, dict):
+        for key, val in output.items():
+            shape = val.shape if hasattr(val, "shape") else "N/A"
+            dtype = val.dtype if hasattr(val, "dtype") else type(val).__name__
+            sample = val.flat[0] if hasattr(val, "flat") and val.size > 0 else val
+            logger.info("  [%s]   '%s': shape=%s, dtype=%s, sample=%s", name, key, shape, dtype, sample)
+    elif isinstance(output, np.ndarray):
+        logger.info("  [%s]   ndarray shape=%s, dtype=%s", name, output.shape, output.dtype)
+    return output
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global speechbrain_encoder, emotion_pipeline, gender_pipeline
-    global age_pipeline, height_pipeline
+    global emotion_model, emotion_dim_model, age_gender_model
 
-    logger.info("Loading VANPY models...")
+    logger.info("Loading voice analysis v2 models...")
 
-    # 1. Shared ECAPA encoder (required by all classifiers)
+    # 1. Emotion: emotion2vec+ base via FunASR
     try:
-        speechbrain_encoder = EncoderClassifier.from_hparams(
-            source="speechbrain/spkrec-ecapa-voxceleb",
-            run_opts={"device": "cpu"},
+        from funasr import AutoModel as FunASRAutoModel
+        emotion_model = FunASRAutoModel(model="iic/emotion2vec_plus_base")
+        logger.info("  ✓ emotion2vec+ base loaded")
+    except Exception:
+        logger.exception("  ✗ emotion2vec+ base failed to load")
+
+    # 2. Dimensional emotion (ADV): audeering wav2vec2 MSP-dim via audonnx
+    try:
+        import audonnx
+        from huggingface_hub import snapshot_download
+        model_path = snapshot_download(
+            "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim",
         )
-        logger.info("  ✓ SpeechBrain ECAPA encoder loaded")
+        emotion_dim_model = audonnx.load(model_path)
+        logger.info("  ✓ audeering emotion-dim model loaded")
+        # Probe output structure to discover key names
+        probe = _probe_audonnx_model(emotion_dim_model, "emotion-dim")
+        if isinstance(probe, dict):
+            for semantic in ("arousal", "dominance", "valence"):
+                # Try exact match first, then partial match
+                if semantic in probe:
+                    _emotion_dim_keys[semantic] = semantic
+                else:
+                    for key in probe:
+                        if semantic in key.lower():
+                            _emotion_dim_keys[semantic] = key
+                            break
+            logger.info("  [emotion-dim] key mapping: %s", _emotion_dim_keys)
     except Exception:
-        logger.exception("  ✗ SpeechBrain encoder failed — all models disabled")
-        yield
-        return
+        logger.exception("  ✗ audeering emotion-dim model failed to load")
 
-    # 2. Emotion
+    # 3. Age + Gender: audeering wav2vec2 via audonnx
     try:
-        emotion_pipeline = _load_svm(
-            "griko/emotion_7_cls_svm_ecapa_ravdess",
-            model_file="svm_model.joblib",
-            scaler_file=None,
+        import audonnx
+        from huggingface_hub import snapshot_download
+        model_path = snapshot_download(
+            "audeering/wav2vec2-large-robust-24-ft-age-gender",
         )
-        logger.info("  ✓ Emotion model loaded")
+        age_gender_model = audonnx.load(model_path)
+        logger.info("  ✓ audeering age-gender model loaded")
+        # Probe output structure
+        probe = _probe_audonnx_model(age_gender_model, "age-gender")
+        if isinstance(probe, dict):
+            for semantic in ("age", "gender"):
+                if semantic in probe:
+                    _age_gender_keys[semantic] = semantic
+                else:
+                    for key in probe:
+                        if semantic in key.lower():
+                            _age_gender_keys[semantic] = key
+                            break
+            logger.info("  [age-gender] key mapping: %s", _age_gender_keys)
     except Exception:
-        logger.exception("  ✗ Emotion model failed to load")
-
-    # 3. Gender
-    try:
-        gender_pipeline = _load_svm("griko/gender_cls_svm_ecapa_voxceleb")
-        logger.info("  ✓ Gender model loaded")
-    except Exception:
-        logger.exception("  ✗ Gender model failed to load")
-
-    # 4. Age
-    try:
-        age_pipeline = _load_svm(
-            "griko/age_reg_svr_ecapa_voxceleb2",
-            model_file="model.joblib",
-            scaler_file="scaler.joblib",
-        )
-        logger.info("  ✓ Age model loaded")
-    except Exception:
-        logger.exception("  ✗ Age model failed to load")
-
-    # 5. Height
-    try:
-        height_pipeline = _load_svm(
-            "griko/height_reg_svr_ecapa_voxceleb",
-            model_file="svr_model.joblib",
-            scaler_file="scaler.joblib",
-        )
-        logger.info("  ✓ Height model loaded")
-    except Exception:
-        logger.exception("  ✗ Height model failed to load")
+        logger.exception("  ✗ audeering age-gender model failed to load")
 
     logger.info("Model loading complete.")
     yield
-    speechbrain_encoder = None
-    emotion_pipeline = gender_pipeline = age_pipeline = height_pipeline = None
+    emotion_model = emotion_dim_model = age_gender_model = None
     logger.info("Models unloaded.")
 
 
-app = FastAPI(title="Voice Analysis Service (VANPY)", lifespan=lifespan)
+app = FastAPI(title="Voice Analysis v2", lifespan=lifespan)
 
 
 @app.get("/health")
 async def health():
     return {
         "status": "ok",
+        "version": 2,
         "models": {
-            "encoder": speechbrain_encoder is not None,
-            "emotion": emotion_pipeline is not None,
-            "gender": gender_pipeline is not None,
-            "age": age_pipeline is not None,
-            "height": height_pipeline is not None,
+            "emotion": emotion_model is not None,
+            "emotion_dim": emotion_dim_model is not None,
+            "age_gender": age_gender_model is not None,
         },
     }
 
@@ -185,107 +172,115 @@ async def health():
 # Inference helpers
 # ---------------------------------------------------------------------------
 
-def _extract_ecapa_embedding(waveform: np.ndarray, sr: int) -> np.ndarray:
-    """Extract 192-dim ECAPA embedding from audio waveform."""
-    wave_tensor = torch.from_numpy(waveform).float()
-    if wave_tensor.numel() == 0:
-        raise ValueError("Audio waveform is empty after decoding")
-    if sr != 16000:
-        wave_tensor = torchaudio.functional.resample(wave_tensor, sr, 16000)
-    peak = wave_tensor.abs().max()
-    if peak > 1:
-        wave_tensor = wave_tensor / peak
-
-    inputs = wave_tensor.unsqueeze(0)
-    wav_lens = torch.tensor([1.0])
-    with torch.no_grad():
-        embedding = speechbrain_encoder.encode_batch(inputs, wav_lens)
-    return embedding.squeeze().cpu().numpy()
-
-
-def _predict(pipeline: dict, emb_df: pd.DataFrame) -> Any:
-    """Run scaler (if present) → model.predict on an embedding DataFrame."""
-    features = emb_df
-    if "scaler" in pipeline:
-        features = pipeline["scaler"].transform(features)
-    return pipeline["model"].predict(features)
-
-
 def _run_analysis(audio_bytes: bytes) -> dict:
     """Run all ML inference synchronously (called via asyncio.to_thread)."""
     waveform, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
     duration = float(librosa.get_duration(y=waveform, sr=sr))
-    result: dict = {"duration_seconds": round(duration, 3)}
+    result: dict[str, Any] = {"duration_seconds": round(duration, 3)}
 
-    if speechbrain_encoder is None:
-        return result
-
-    # Extract the single shared embedding used by ALL classifiers
-    try:
-        embedding = _extract_ecapa_embedding(waveform, 16000)
-        emb_df = pd.DataFrame([embedding], columns=ECAPA_COLUMNS)
-    except Exception:
-        logger.exception("ECAPA embedding extraction failed")
-        return result
-
-    # --- Emotion classification ---
-    if emotion_pipeline is not None:
+    # --- Emotion (categorical, 9 classes) ---
+    emotion_label: str | None = None
+    if emotion_model is not None:
         try:
-            pred = _predict(emotion_pipeline, emb_df)
-            raw = pred[0] if pred is not None and len(pred) > 0 else None
-            # SVM may return a string label or an integer index
-            if isinstance(raw, str):
-                emotion_label = raw
-            elif raw is not None:
-                idx = int(raw)
-                emotion_label = EMOTION_LABELS[idx] if 0 <= idx < len(EMOTION_LABELS) else str(idx)
-            else:
-                emotion_label = None
-            result["emotion"] = emotion_label
-            # Add arousal / dominance / valence
-            if emotion_label:
-                adv = EMOTION_ADV.get(emotion_label)
-                if adv:
-                    result["arousal"] = adv["arousal"]
-                    result["dominance"] = adv["dominance"]
-                    result["valence"] = adv["valence"]
+            # emotion2vec expects a file path — write temp WAV
+            fd, tmp_path = tempfile.mkstemp(suffix=".wav")
+            try:
+                os.close(fd)   # close fd before sf.write to avoid double-open
+                sf.write(tmp_path, waveform, 16000)
+                res = emotion_model.generate(
+                    input=tmp_path,
+                    granularity="utterance",
+                    extract_embedding=False,
+                )
+            finally:
+                os.unlink(tmp_path)
+
+            if res and len(res) > 0:
+                entry = res[0]
+                scores = entry.get("scores", [])
+                labels = entry.get("labels", [])
+                if scores and labels:
+                    best_idx = int(np.argmax(scores))
+                    emotion_label = labels[best_idx] if best_idx < len(labels) else None
+                    result["emotion"] = emotion_label
+                    result["emotion_scores"] = {
+                        label: round(float(score), 4)
+                        for label, score in zip(labels, scores)
+                    }
         except Exception:
             logger.exception("Emotion classification failed")
             result["emotion"] = None
 
-    # --- Gender classification ---
-    if gender_pipeline is not None:
+    # --- Dimensional emotion: arousal / dominance / valence (0-1 scale) ---
+    adv_from_model = False
+    if emotion_dim_model is not None:
         try:
-            pred = _predict(gender_pipeline, emb_df)
-            raw = pred[0] if pred is not None and len(pred) > 0 else None
-            if isinstance(raw, str):
-                result["gender"] = raw
-            elif raw is not None:
-                idx = int(raw)
-                result["gender"] = GENDER_LABELS[idx] if 0 <= idx < len(GENDER_LABELS) else str(idx)
+            output = emotion_dim_model(waveform, 16000)
+            if isinstance(output, dict):
+                for semantic in ("arousal", "dominance", "valence"):
+                    key = _emotion_dim_keys.get(semantic, semantic)
+                    if key in output:
+                        val = output[key]
+                        result[semantic] = round(
+                            float(val.flat[0] if hasattr(val, "flat") else val), 4,
+                        )
+                        adv_from_model = True
+            elif isinstance(output, np.ndarray) and output.size >= 3:
+                result["arousal"] = round(float(output.flat[0]), 4)
+                result["dominance"] = round(float(output.flat[1]), 4)
+                result["valence"] = round(float(output.flat[2]), 4)
+                adv_from_model = True
             else:
-                result["gender"] = None
+                logger.warning("emotion_dim: unexpected output type %s", type(output).__name__)
         except Exception:
-            logger.exception("Gender classification failed")
-            result["gender"] = None
+            logger.exception("Dimensional emotion (ADV) failed")
 
-    # --- Age estimation ---
-    if age_pipeline is not None:
-        try:
-            pred = _predict(age_pipeline, emb_df)
-            result["age_estimate"] = round(float(pred[0]), 1) if pred is not None else None
-        except Exception:
-            logger.exception("Age estimation failed")
-            result["age_estimate"] = None
+    # Fallback: derive ADV from categorical emotion label
+    if not adv_from_model and emotion_label:
+        fallback = EMOTION_ADV_FALLBACK.get(emotion_label)
+        if fallback:
+            result["arousal"] = fallback["arousal"]
+            result["dominance"] = fallback["dominance"]
+            result["valence"] = fallback["valence"]
 
-    # --- Height estimation ---
-    if height_pipeline is not None:
+    # --- Age + Gender ---
+    if age_gender_model is not None:
         try:
-            pred = _predict(height_pipeline, emb_df)
-            result["height_estimate_cm"] = round(float(pred[0]), 1) if pred is not None else None
+            output = age_gender_model(waveform, 16000)
+            if isinstance(output, dict):
+                # Age — model may return 0-1 normalized or raw years
+                age_key = _age_gender_keys.get("age", "age")
+                if age_key in output:
+                    age_val = output[age_key]
+                    age_float = float(
+                        age_val.flat[0] if hasattr(age_val, "flat") else age_val,
+                    )
+                    # Heuristic: values in [0, 1] are normalized → scale to years.
+                    # Values > 1 are already in years. Note: infants don't produce
+                    # analyzable speech, so 0-1 year-old edge case is irrelevant.
+                    if age_float <= 1.0:
+                        age_float = age_float * 100
+                    result["age_estimate"] = round(age_float, 1)
+                # Gender (child / female / male)
+                gender_key = _age_gender_keys.get("gender", "gender")
+                if gender_key in output:
+                    gender_probs = output[gender_key]
+                    if hasattr(gender_probs, "flatten"):
+                        gender_probs = gender_probs.flatten()
+                    idx = int(np.argmax(gender_probs))
+                    result["gender"] = (
+                        GENDER_LABELS[idx] if idx < len(GENDER_LABELS) else "unknown"
+                    )
+            elif isinstance(output, np.ndarray):
+                logger.warning(
+                    "age_gender returned ndarray — shape: %s. "
+                    "Expected dict with keys %s. Probed keys: %s",
+                    output.shape, ["age", "gender"], _age_gender_keys,
+                )
         except Exception:
-            logger.exception("Height estimation failed")
-            result["height_estimate_cm"] = None
+            logger.exception("Age/gender estimation failed")
+        except Exception:
+            logger.exception("Age/gender estimation failed")
 
     return _sanitize_for_json(result)
 
@@ -296,9 +291,9 @@ def _sanitize_for_json(obj: Any) -> Any:
         return {k: _sanitize_for_json(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_sanitize_for_json(v) for v in obj]
-    if isinstance(obj, (np.integer,)):
+    if isinstance(obj, np.integer):
         return int(obj)
-    if isinstance(obj, (np.floating,)):
+    if isinstance(obj, np.floating):
         return float(obj)
     if isinstance(obj, np.ndarray):
         return obj.tolist()
@@ -311,9 +306,6 @@ def _sanitize_for_json(obj: Any) -> Any:
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    if speechbrain_encoder is None:
-        raise HTTPException(status_code=503, detail="No models loaded")
-
     # Validate content type
     ct = (file.content_type or "").lower()
     if ct and ct not in ALLOWED_CONTENT_TYPES:
@@ -331,7 +323,7 @@ async def analyze(file: UploadFile = File(...)):
             if total > MAX_UPLOAD_BYTES:
                 raise HTTPException(
                     status_code=413,
-                    detail=f"File too large (>{MAX_UPLOAD_BYTES} bytes). Max: {MAX_UPLOAD_BYTES}.",
+                    detail=f"File too large (>{MAX_UPLOAD_BYTES} bytes).",
                 )
             chunks.append(chunk)
         audio_bytes = b"".join(chunks)
@@ -348,7 +340,7 @@ async def analyze(file: UploadFile = File(...)):
         async with _inference_semaphore:
             result = await asyncio.wait_for(
                 asyncio.to_thread(_run_analysis, audio_bytes),
-                timeout=60.0,
+                timeout=120.0,
             )
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Analysis timed out")
