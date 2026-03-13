@@ -221,6 +221,17 @@ def _process_audeering(
         return model(y)
 
 
+def _normalize_emotion_label(label: str) -> str:
+    """Extract English part from emotion2vec bilingual labels.
+
+    emotion2vec returns labels like '中立/neutral', '生气/angry', etc.
+    This extracts the English part after '/'.
+    """
+    if "/" in label:
+        return label.split("/")[-1].strip()
+    return label.strip()
+
+
 def _run_analysis(audio_bytes: bytes) -> dict:
     """Run all ML inference synchronously (called via asyncio.to_thread)."""
     waveform, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
@@ -250,10 +261,11 @@ def _run_analysis(audio_bytes: bytes) -> dict:
                 labels = entry.get("labels", [])
                 if scores and labels:
                     best_idx = int(np.argmax(scores))
-                    emotion_label = labels[best_idx] if best_idx < len(labels) else None
+                    raw_label = labels[best_idx] if best_idx < len(labels) else None
+                    emotion_label = _normalize_emotion_label(raw_label) if raw_label else None
                     result["emotion"] = emotion_label
                     result["emotion_scores"] = {
-                        label: round(float(score), 4)
+                        _normalize_emotion_label(label): round(float(score), 4)
                         for label, score in zip(labels, scores)
                     }
         except Exception:
