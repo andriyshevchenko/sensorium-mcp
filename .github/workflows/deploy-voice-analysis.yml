@@ -104,8 +104,8 @@ jobs:
               --name "$APP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
               --image "$FULL_IMAGE" \
-              --cpu 4.0 \
-              --memory 8Gi \
+              --cpu 2.0 \
+              --memory 4Gi \
               --min-replicas 1 \
               --max-replicas 3 \
               --output none
@@ -121,8 +121,8 @@ jobs:
               --system-assigned \
               --target-port 8000 \
               --ingress external \
-              --cpu 4.0 \
-              --memory 8Gi \
+              --cpu 2.0 \
+              --memory 4Gi \
               --min-replicas 1 \
               --max-replicas 3 \
               --env-vars "HF_HOME=/app/hf_cache" \
