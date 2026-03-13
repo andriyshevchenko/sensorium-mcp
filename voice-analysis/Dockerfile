@@ -16,8 +16,8 @@ ENV HF_HOME=/app/hf_cache
 COPY requirements.txt .
 # Install CPU-only torch first (much smaller, ~200MB vs ~2GB for CUDA), then the rest
 RUN pip install --no-cache-dir \
-      torch==2.5.1+cpu torchaudio==2.5.1+cpu \
-      --index-url https://download.pytorch.org/whl/cpu && \
+    torch==2.5.1+cpu torchaudio==2.5.1+cpu \
+    --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .

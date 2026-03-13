@@ -264,7 +264,7 @@ function resolveThreadId(args: Record<string, unknown> | undefined): number | un
   const raw = args?.threadId;
   const explicit = typeof raw === "number" ? raw
     : typeof raw === "string" ? Number(raw)
-    : undefined;
+      : undefined;
   if (explicit !== undefined && Number.isFinite(explicit)) {
     currentThreadId = explicit;
     return explicit;
@@ -458,7 +458,7 @@ function getReminders(threadId?: number): string {
     "\n\n## MANDATORY WORKFLOW — YOU MUST FOLLOW ALL STEPS" +
     "\n1. **Plan first**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
     "\n2. **Report every step**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
-    "\n3. **Subagents for execution**: Create your plan with the todo list tool. Use subagents to execute each item of your todo list. YOU own the plan and all decisions — call report_progress yourself after each item. NEVER pass the operator's full instructions to a subagent." +
+    "\n3. **Subagents for execution**: Create your plan with the todo list tool. Use subagents to execute each item of your todo list. YOU own the plan and all decisions." +
     "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize and stop." +
     threadHint
   );

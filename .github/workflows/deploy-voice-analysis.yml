@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Deployment environment'
+        description: "Deployment environment"
         required: true
-        default: 'production'
+        default: "production"
         type: choice
         options:
           - production
@@ -14,7 +14,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'voice-analysis/**'
+      - "voice-analysis/**"
 
 # Use OIDC token for Azure authentication (federated credentials).
 # Configure in Azure AD:
@@ -30,7 +30,7 @@ on:
 #      - AZURE_SUBSCRIPTION_ID
 
 permissions:
-  id-token: write   # Required for OIDC federated credentials
+  id-token: write # Required for OIDC federated credentials
   contents: read
 
 env:
