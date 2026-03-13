@@ -457,7 +457,7 @@ function getReminders(threadId?: number): string {
   return (
     "\n\n## MANDATORY WORKFLOW" +
     "\n1. **Plan**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
-    "\n2. **Subagents for execution**: Use subagents to execute each item of your todo list. YOU own the plan and all decisions." +
+    "\n2. **Subagents**: Use subagents to execute each item of your todo list, but YOU own the plan and all decisions. Spin up parallel subagents if the work can be done concurrently." +
     "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
     "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize or stop." +
     threadHint
