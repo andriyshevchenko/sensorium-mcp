@@ -455,11 +455,11 @@ function getReminders(threadId?: number): string {
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
   return (
-    "\n\n## MANDATORY WORKFLOW — YOU MUST FOLLOW ALL STEPS" +
-    "\n1. **Plan first**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
-    "\n2. **Report every step**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
-    "\n3. **Subagents for execution**: Create your plan with the todo list tool. Use subagents to execute each item of your todo list. YOU own the plan and all decisions." +
-    "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize and stop." +
+    "\n\n## MANDATORY WORKFLOW" +
+    "\n1. **Plan**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
+    "\n2. **Subagents for execution**: Use subagents to execute each item of your todo list. YOU own the plan and all decisions." +
+    "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
+    "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize or stop." +
     threadHint
   );
 }
