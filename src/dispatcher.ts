@@ -222,6 +222,11 @@ export interface StoredMessage {
             duration: number;
             mime_type?: string;
         };
+        video_note?: {
+            file_id: string;
+            length: number;
+            duration: number;
+        };
         date: number;
     };
 }
@@ -378,6 +383,11 @@ async function pollOnce(
                         file_id: u.message.voice.file_id,
                         duration: u.message.voice.duration,
                         mime_type: u.message.voice.mime_type,
+                    } : undefined,
+                    video_note: u.message.video_note ? {
+                        file_id: u.message.video_note.file_id,
+                        length: u.message.video_note.length,
+                        duration: u.message.video_note.duration,
                     } : undefined,
                     date: u.message.date,
                 },

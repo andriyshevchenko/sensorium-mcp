@@ -1,9 +1,12 @@
 /**
- * OpenAI API client for voice services (TTS + Whisper transcription).
+ * OpenAI API client for voice services (TTS + Whisper transcription)
+ * and vision services (video frame analysis).
  *
  * Separated from telegram.ts to maintain single responsibility:
  * TelegramClient handles Telegram API, this module handles OpenAI API.
  */
+
+import { spawn } from "node:child_process";
 
 /** Valid TTS voice names. */
 export const TTS_VOICES = [
@@ -162,4 +165,149 @@ export async function analyzeVoiceEmotion(
     } finally {
         clearTimeout(timer);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Video Frame Analysis (GPT-4o vision)
+// ---------------------------------------------------------------------------
+
+/** Maximum number of frames to extract from a video. */
+const MAX_FRAMES = 6;
+
+/**
+ * Split a buffer of concatenated JPEG images by SOI marker (0xFFD8).
+ */
+function splitJpegs(buf: Buffer): Buffer[] {
+    const frames: Buffer[] = [];
+    let start = 0;
+    for (let i = 2; i < buf.length - 1; i++) {
+        if (buf[i] === 0xFF && buf[i + 1] === 0xD8) {
+            frames.push(buf.subarray(start, i));
+            start = i;
+        }
+    }
+    if (start < buf.length) frames.push(buf.subarray(start));
+    return frames.filter(f => f.length > 100); // drop tiny garbage
+}
+
+/**
+ * Extract key frames from a video buffer using ffmpeg.
+ * Pipes video via stdin and reads JPEG frames from stdout (no temp files).
+ * @param videoBuffer  Raw video file content (MP4).
+ * @param durationSec  Video duration in seconds (used to calculate interval).
+ * @returns Array of JPEG-encoded frame buffers.
+ */
+export function extractVideoFrames(
+    videoBuffer: Buffer,
+    durationSec: number,
+): Promise<Buffer[]> {
+    return new Promise((resolve, reject) => {
+        // Calculate frame interval: aim for ~1 frame every 5s, capped at MAX_FRAMES.
+        const interval = Math.max(1, Math.ceil(durationSec / MAX_FRAMES));
+
+        const args = [
+            "-i", "pipe:0",
+            "-vf", `fps=1/${interval}`,
+            "-c:v", "mjpeg",
+            "-f", "image2pipe",
+            "-q:v", "3",
+            "pipe:1",
+        ];
+
+        const proc = spawn("ffmpeg", args, {
+            stdio: ["pipe", "pipe", "pipe"],
+        });
+
+        const chunks: Buffer[] = [];
+        const errChunks: Buffer[] = [];
+
+        proc.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+        proc.stderr.on("data", (chunk: Buffer) => errChunks.push(chunk));
+
+        proc.on("error", (err) => {
+            reject(new Error(`ffmpeg not found or failed to start: ${err.message}`));
+        });
+
+        proc.on("close", (code) => {
+            if (code !== 0) {
+                const stderr = Buffer.concat(errChunks).toString("utf8").slice(-500);
+                reject(new Error(`ffmpeg exited with code ${code}: ${stderr}`));
+                return;
+            }
+            const combined = Buffer.concat(chunks);
+            if (combined.length === 0) {
+                resolve([]);
+                return;
+            }
+            const frames = splitJpegs(combined).slice(0, MAX_FRAMES);
+            resolve(frames);
+        });
+
+        proc.stdin.write(videoBuffer);
+        proc.stdin.end();
+    });
+}
+
+/**
+ * Analyze video frames using OpenAI GPT-4o vision.
+ * @param frames     Array of JPEG frame buffers.
+ * @param durationSec  Video duration for timestamp context.
+ * @param apiKey     OpenAI API key.
+ * @returns Human-readable description of the video content.
+ */
+export async function analyzeVideoFrames(
+    frames: Buffer[],
+    durationSec: number,
+    apiKey: string,
+): Promise<string> {
+    if (frames.length === 0) {
+        return "(no frames could be extracted from the video)";
+    }
+
+    const interval = Math.max(1, Math.ceil(durationSec / MAX_FRAMES));
+    const timestamps = frames.map((_, i) => `${i * interval}s`).join(", ");
+
+    // Build multi-image content array.
+    type ContentPart =
+        | { type: "text"; text: string }
+        | { type: "image_url"; image_url: { url: string; detail: "low" | "high" } };
+
+    const content: ContentPart[] = [
+        {
+            type: "text",
+            text: `These are ${frames.length} sequential frames extracted from a ${durationSec}s video message at timestamps: [${timestamps}]. ` +
+                `Describe what is happening in the video concisely (2-3 sentences). ` +
+                `Note any people, actions, objects, movement, text, or scene changes.`,
+        },
+        ...frames.map((frame): ContentPart => ({
+            type: "image_url",
+            image_url: {
+                url: `data:image/jpeg;base64,${frame.toString("base64")}`,
+                detail: "low", // circle videos are small (240-384px)
+            },
+        })),
+    ];
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            model: "gpt-4o",
+            messages: [{ role: "user", content }],
+            max_tokens: 300,
+        }),
+    });
+
+    if (!response.ok) {
+        const errText = await response.text().catch(() => response.statusText);
+        throw new Error(`OpenAI vision analysis failed: ${response.status} ${errText}`);
+    }
+
+    const result = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+    };
+    return result.choices?.[0]?.message?.content?.trim() ?? "(no description generated)";
 }

@@ -17,6 +17,7 @@ export interface TelegramMessage {
   photo?: PhotoSize[];
   document?: TelegramDocument;
   voice?: TelegramVoice;
+  video_note?: TelegramVideoNote;
 }
 
 export interface PhotoSize {
@@ -40,6 +41,15 @@ export interface TelegramVoice {
   file_unique_id: string;
   duration: number;
   mime_type?: string;
+  file_size?: number;
+}
+
+export interface TelegramVideoNote {
+  file_id: string;
+  file_unique_id: string;
+  length: number;       // width = height (square circle video)
+  duration: number;     // seconds, max 60
+  thumbnail?: PhotoSize;
   file_size?: number;
 }
 

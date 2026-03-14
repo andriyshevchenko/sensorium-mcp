@@ -37,7 +37,7 @@ import { createRequire } from "module";
 import { homedir } from "os";
 import { basename, join } from "path";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
-import { analyzeVoiceEmotion, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
+import { analyzeVoiceEmotion, analyzeVideoFrames, extractVideoFrames, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
 import { TelegramClient } from "./telegram.js";
 import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
 import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
@@ -823,6 +823,74 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               contentBlocks.push({
                 type: "text",
                 text: `[Voice message received — ${msg.message.voice.duration}s — cannot transcribe: OPENAI_API_KEY not set]`,
+              });
+            }
+          }
+          // Video notes (circle videos): extract frames, analyze with GPT-4o vision,
+          // optionally transcribe the audio track.
+          if (msg.message.video_note) {
+            hasVoiceMessages = true; // Video notes often contain speech
+            const vn = msg.message.video_note;
+            if (OPENAI_API_KEY) {
+              try {
+                process.stderr.write(`[video-note] Downloading circle video ${vn.file_id} (${vn.duration}s)...\n`);
+                const { buffer } = await telegram.downloadFileAsBuffer(vn.file_id);
+                process.stderr.write(`[video-note] Downloaded ${buffer.length} bytes. Extracting frames + transcribing...\n`);
+
+                // Run frame extraction, audio transcription, and voice analysis in parallel.
+                const [frames, transcript, analysis] = await Promise.all([
+                  extractVideoFrames(buffer, vn.duration).catch((err) => {
+                    process.stderr.write(`[video-note] Frame extraction failed: ${errorMessage(err)}\n`);
+                    return [] as Buffer[];
+                  }),
+                  transcribeAudio(buffer, OPENAI_API_KEY).catch(() => ""),
+                  VOICE_ANALYSIS_URL
+                    ? analyzeVoiceEmotion(buffer, VOICE_ANALYSIS_URL).catch(() => null)
+                    : Promise.resolve(null),
+                ]);
+
+                // Analyze frames with GPT-4o vision.
+                let sceneDescription = "";
+                if (frames.length > 0) {
+                  process.stderr.write(`[video-note] Analyzing ${frames.length} frames with GPT-4o vision...\n`);
+                  sceneDescription = await analyzeVideoFrames(frames, vn.duration, OPENAI_API_KEY);
+                  process.stderr.write(`[video-note] Vision analysis complete.\n`);
+                }
+
+                // Build analysis tags (same as voice messages).
+                const tags: string[] = [];
+                if (analysis?.emotion) {
+                  let emotionStr = analysis.emotion;
+                  if (analysis.arousal != null && analysis.dominance != null && analysis.valence != null) {
+                    emotionStr += ` (${describeADV(analysis.arousal, analysis.dominance, analysis.valence)})`;
+                  }
+                  tags.push(`tone: ${emotionStr}`);
+                }
+                if (analysis?.audio_events && analysis.audio_events.length > 0) {
+                  const eventLabels = analysis.audio_events
+                    .map(e => `${e.label} (${Math.round(e.score * 100)}%)`)
+                    .join(", ");
+                  tags.push(`sounds: ${eventLabels}`);
+                }
+                const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
+
+                const parts: string[] = [];
+                parts.push(`[Video note — ${vn.duration}s${analysisTag}]`);
+                if (sceneDescription) parts.push(`Scene: ${sceneDescription}`);
+                if (transcript) parts.push(`Audio: "${transcript}"`);
+                if (!sceneDescription && !transcript) parts.push("(no visual or audio content could be extracted)");
+
+                contentBlocks.push({ type: "text", text: parts.join("\n") });
+              } catch (err) {
+                contentBlocks.push({
+                  type: "text",
+                  text: `[Video note — ${vn.duration}s — analysis failed: ${errorMessage(err)}]`,
+                });
+              }
+            } else {
+              contentBlocks.push({
+                type: "text",
+                text: `[Video note received — ${vn.duration}s — cannot analyze: OPENAI_API_KEY not set]`,
               });
             }
           }
