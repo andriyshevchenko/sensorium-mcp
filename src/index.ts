@@ -951,10 +951,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
             `Do NOT summarize, stop, or say the session is idle. ` +
             `Just call the tool again immediately.` +
-            `\n\n💡 **While waiting**, you can work autonomously:` +
-            `\n- Use \`schedule_wake_up\` to set a delayed task (e.g. "run tests in 30 minutes", "check deployment status in 5 minutes").` +
-            `\n- Do background work: review code, check for TODOs, run linting, update docs — then report_progress when done.` +
-            `\n- The operator will see your progress reports whenever they return.` +
+            `\n\nNo instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Do what you find interesting.` +
             scheduleHint +
             getReminders(effectiveThreadId),
         },
