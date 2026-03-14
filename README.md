@@ -1,103 +1,158 @@
+[![npm version](https://img.shields.io/npm/v/sensorium-mcp)](https://www.npmjs.com/package/sensorium-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 # sensorium-mcp
 
-An MCP (Model Context Protocol) server for remote control of AI assistants via Telegram.
+MCP server with 5-layer memory, voice analysis, and Telegram bridge for AI assistants.
 
-## Overview
+## Why?
 
-This server exposes four tools that allow an AI assistant (e.g. GitHub Copilot) to be operated remotely through a Telegram bot:
+AI assistants forget everything between sessions. Every restart is a blank slate — no memory of your preferences, past decisions, or ongoing projects. Voice messages arrive as opaque audio blobs. And there's no way to talk to your agent when it's running headless in CI or on a remote machine.
 
-| Tool | Description |
-|------|-------------|
-| `start_session` | Begin or resume a sensorium session. Creates a dedicated Telegram topic thread (or resumes an existing one by name or thread ID). |
-| `remote_copilot_wait_for_instructions` | Blocks until a new message (text, photo, document, or voice) arrives in the active topic or the timeout elapses. |
-| `report_progress` | Sends a progress update back to the operator using standard Markdown (auto-converted to Telegram MarkdownV2). |
-| `send_file` | Sends a file or image to the operator via Telegram (base64-encoded). Images are sent as photos; everything else as documents. |
-| `send_voice` | Sends a voice message to the operator via Telegram. Text is converted to speech using OpenAI TTS (max 4096 chars). |
+**sensorium-mcp** fixes all three problems:
 
-## Features
+- **Persistent memory** that survives across sessions, automatically capturing episodes and consolidating knowledge
+- **Voice understanding** with transcription and real-time emotion analysis
+- **Remote control** via Telegram — give instructions, send files, receive progress updates from anywhere
 
-- **Concurrent sessions** — Multiple VS Code windows can run independent sessions simultaneously. A shared file-based dispatcher ensures only one process polls Telegram (`getUpdates`), while each session reads from its own per-thread message file. No 409 conflicts, no lost updates.
-- **Named session persistence** — Sessions are mapped by name to Telegram thread IDs in `~/.remote-copilot-mcp-sessions.json`. Calling `start_session({ name: "Fix auth bug" })` always resumes the same thread, even across VS Code restarts.
-- **Image & document support** — Send photos or documents to the agent from Telegram; the agent receives them as native MCP image content blocks or base64 text. The agent can also send files back via the `send_file` tool.
-- **Voice message support** — Send voice messages from Telegram; they are automatically transcribed using OpenAI Whisper and delivered as text to the agent. The agent can also send voice responses back via OpenAI TTS. Requires `OPENAI_API_KEY`.
-- **Automatic Markdown conversion** — Standard Markdown in `report_progress` is automatically converted to Telegram MarkdownV2, including code blocks, tables, blockquotes, and special characters.
-- **Keep-alive pings** — Periodic heartbeat messages to Telegram so the operator knows the agent is still alive during long idle periods.
-
-## Prerequisites
-
-- Node.js 18 or later (uses native `fetch`)
-- A [Telegram bot token](https://core.telegram.org/bots#botfather) (`TELEGRAM_TOKEN`)
-- A Telegram **forum supergroup** where the bot is an admin with the **Manage Topics** right
-  - In Telegram: create a group → *Edit → Topics → Enable*
-  - Add your bot as admin and grant it *Manage Topics*
-  - Copy the group's chat ID (e.g. `-1001234567890`) as `TELEGRAM_CHAT_ID`
-
-## Installation
+## Quickstart
 
 ```bash
-npm install
-npm run build
+npx sensorium-mcp@latest
 ```
 
-## Configuration
-
-Set the following environment variables:
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `TELEGRAM_TOKEN` | ✅ | — | Telegram Bot API token from @BotFather |
-| `TELEGRAM_CHAT_ID` | ✅ | — | Chat ID of the forum supergroup (e.g. `-1001234567890`). The bot must be admin with Manage Topics right. |
-| `WAIT_TIMEOUT_MINUTES` | ❌ | `120` | Minutes to wait for a message before timing out |
-| `OPENAI_API_KEY` | ❌ | — | OpenAI API key for voice message transcription (Whisper) and TTS (`send_voice`). Without it, voice messages show a placeholder instead of a transcript. |
-| `VOICE_ANALYSIS_URL` | ❌ | — | URL of the voice emotion analysis microservice (e.g. `https://voice-analysis.example.com`). When set, voice messages are analyzed for emotion and the result is included with the transcript. See `voice-analysis/` for the deployable service. |
-
-## Usage
-
-### Simply use this prompt
-
-```bash
-Start remote copilot session
-```
-
-### Configure in MCP client (e.g. VS Code Copilot)
-
-Add to your MCP configuration:
+Or add to your VS Code `mcp.json`:
 
 ```json
 {
-  "mcpServers": {
+  "servers": {
     "sensorium-mcp": {
       "command": "npx",
-      "args": [
-        "sensorium-mcp@latest"
-      ],
+      "args": ["sensorium-mcp@latest"],
       "env": {
-        "TELEGRAM_TOKEN": "${input:TELEGRAM_TOKEN}",
-        "TELEGRAM_CHAT_ID": "${input:TELEGRAM_CHAT_ID}",
+        "TELEGRAM_TOKEN": "...",
+        "TELEGRAM_CHAT_ID": "...",
+        "OPENAI_API_KEY": "...",
         "WAIT_TIMEOUT_MINUTES": "30"
-      },
-      "type": "stdio"
+      }
     }
   }
 }
 ```
 
-## How it works
-
-1. The AI calls `start_session`, which creates a new Telegram topic (e.g. *Copilot — 07 Mar 2026, 14:30*) or resumes an existing one by name/thread ID.
-2. A shared **dispatcher** runs a single `getUpdates` poller (elected via a lock file at `~/.remote-copilot-mcp/poller.lock`). It writes incoming messages to per-thread JSONL files under `~/.remote-copilot-mcp/threads/`. Each MCP instance reads from its own thread file — no 409 conflicts between concurrent sessions.
-3. When a message arrives (text, photo, or document), the tool downloads any media, converts it to MCP content blocks (image or text with base64), and instructs the AI to act on it.
-4. The AI calls `report_progress` to post status updates and `send_file` to send files/images back to the operator.
-5. If the timeout elapses with no message, the tool tells the AI to call `remote_copilot_wait_for_instructions` again immediately.
-
-### Architecture
+Then tell your agent:
 
 ```
-~/.remote-copilot-mcp/
+Start remote copilot session
+```
+
+## Features
+
+### 5-Layer Memory System
+
+Every operator message is automatically captured. Knowledge is extracted and consolidated during idle time using GPT-5 mini.
+
+| Layer | What it stores |
+|-------|---------------|
+| **Working Memory** | Current session context — active goals, recent messages |
+| **Episodic Memory** | Auto-saved conversation episodes (every operator message) |
+| **Semantic Memory** | Extracted facts, preferences, patterns, entities, relationships |
+| **Procedural Memory** | Multi-step procedures and workflows |
+| **Meta-Memory** | Confidence scores, decay tracking, topic indexing |
+
+Storage: SQLite at `~/.sensorium-mcp/memory.db`. No external database required.
+
+**Auto-bootstrap** — session start auto-injects a memory briefing so the agent immediately knows who you are and what you've been working on.
+
+**Auto-ingest** — every operator message is saved as an episode automatically.
+
+**Intelligent consolidation** — GPT-5 mini analyzes accumulated episodes and extracts durable knowledge (facts, preferences, patterns) during idle periods.
+
+### Remote Control via Telegram
+
+Operate your AI assistant from anywhere through a Telegram forum supergroup.
+
+- Concurrent sessions with a shared file-based dispatcher (no 409 conflicts)
+- Named session persistence across VS Code restarts
+- Image, document, and video note support
+- Voice messages with Whisper transcription
+- Automatic Markdown → Telegram MarkdownV2 conversion
+
+### Voice Analysis
+
+Real-time voice emotion analysis via an optional microservice (see `voice-analysis/`).
+
+- Detects emotions, gender, arousal/dominance/valence
+- Video note (circle video) support with audio extraction
+- Deployable via Docker
+
+### Scheduler
+
+Schedule tasks that fire during `wait_for_instructions`.
+
+- **One-shot**: `runAt` — trigger at a specific time
+- **Idle-triggered**: `afterIdleMinutes` — trigger after N minutes of inactivity
+
+### Dead Session Detection
+
+Automatic alert when no tool calls arrive for 60 minutes. Single alert per downtime — no spam. Replaces annoying keep-alive pings.
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `start_session` | Begin or resume a session with optional memory bootstrap |
+| `remote_copilot_wait_for_instructions` | Block until operator message, scheduled task, or timeout |
+| `report_progress` | Send Markdown progress update to operator |
+| `send_file` | Send file or image to operator |
+| `send_voice` | Text-to-speech voice message via OpenAI TTS |
+| `schedule_wake_up` | Schedule a one-shot or idle task |
+| `memory_bootstrap` | Load memory briefing into context |
+| `memory_search` | Search episodic/semantic memory by query |
+| `memory_save` | Save a fact, preference, pattern, entity, or relationship |
+| `memory_save_procedure` | Save a multi-step procedure |
+| `memory_update` | Update or supersede an existing note |
+| `memory_consolidate` | Run intelligent consolidation (GPT-5 mini) |
+| `memory_status` | Check memory health and statistics |
+| `memory_forget` | Delete a specific memory note |
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `TELEGRAM_TOKEN` | Yes | — | Telegram Bot API token |
+| `TELEGRAM_CHAT_ID` | Yes | — | Forum supergroup chat ID |
+| `OPENAI_API_KEY` | No | — | For voice transcription (Whisper), TTS, and memory consolidation |
+| `VOICE_ANALYSIS_URL` | No | — | Voice emotion analysis microservice URL |
+| `WAIT_TIMEOUT_MINUTES` | No | `120` | Wait timeout in minutes |
+
+## Prerequisites
+
+- Node.js 18+ (uses native `fetch`)
+- A [Telegram bot token](https://core.telegram.org/bots#botfather)
+- A Telegram **forum supergroup** with the bot as admin (Manage Topics right)
+
+## How It Works
+
+1. `start_session` creates a Telegram topic (or resumes one by name). Memory bootstrap auto-loads your context.
+2. A shared **dispatcher** runs a single `getUpdates` poller (elected via lock file). Messages are written to per-thread JSONL files — each MCP instance reads its own.
+3. Incoming messages (text, photo, document, voice, video note) are processed, transcribed, and delivered as MCP content blocks. Every operator message is auto-saved as an episode.
+4. The agent works, calls `report_progress` / `send_file` / `send_voice`, and loops back to `wait_for_instructions`.
+5. During idle periods, the scheduler fires pending tasks and memory consolidation extracts durable knowledge from episodes.
+
+## Architecture
+
+```
+~/.sensorium-mcp/
   poller.lock                 ← PID + timestamp; first instance becomes the poller
   offset                      ← shared getUpdates offset
+  memory.db                   ← SQLite: episodes, semantic notes, procedures, voice signatures
   threads/
     <threadId>.jsonl           ← messages for each topic thread
     general.jsonl              ← messages with no thread ID
-~/.remote-copilot-mcp-sessions.json  ← name → threadId mapping
+~/.sensorium-mcp-sessions.json  ← name → threadId mapping
 ```
+
+## License
+
+[MIT](LICENSE)

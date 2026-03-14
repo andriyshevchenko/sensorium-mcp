@@ -37,27 +37,28 @@ import { createRequire } from "module";
 import { homedir } from "os";
 import { basename, join } from "path";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
-import { analyzeVoiceEmotion, analyzeVideoFrames, extractVideoFrames, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
-import { TelegramClient } from "./telegram.js";
-import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
 import {
-  initMemoryDb,
   assembleBootstrap,
+  forgetMemory,
+  getMemoryStatus,
   getRecentEpisodes,
-  searchSemanticNotes,
-  searchProcedures,
-  saveSemanticNote,
+  getTopicIndex,
+  initMemoryDb,
+  runIntelligentConsolidation,
+  saveEpisode,
   saveProcedure,
-  updateSemanticNote,
+  saveSemanticNote,
+  saveVoiceSignature,
+  searchProcedures,
+  searchSemanticNotes,
   supersedeNote,
   updateProcedure,
-  getMemoryStatus,
-  getTopicIndex,
-  forgetMemory,
-  saveEpisode,
-  saveVoiceSignature,
-  runIntelligentConsolidation,
+  updateSemanticNote,
 } from "./memory.js";
+import { analyzeVideoFrames, analyzeVoiceEmotion, extractVideoFrames, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
+import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
+import { TelegramClient } from "./telegram.js";
+import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
 
 /**
  * Build human-readable analysis tags from a VoiceAnalysisResult.
@@ -89,7 +90,6 @@ function buildAnalysisTags(analysis: VoiceAnalysisResult | null): string[] {
   }
   return tags;
 }
-import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
 
 const esmRequire = createRequire(import.meta.url);
 const { version: PKG_VERSION } = esmRequire("../package.json") as {
