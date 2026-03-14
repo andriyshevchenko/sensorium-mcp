@@ -40,6 +40,26 @@ import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispa
 import { analyzeVoiceEmotion, analyzeVideoFrames, extractVideoFrames, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
 import { TelegramClient } from "./telegram.js";
 import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
+import {
+  initMemoryDb,
+  assembleBootstrap,
+  getRecentEpisodes,
+  searchSemanticNotes,
+  searchProcedures,
+  saveSemanticNote,
+  saveProcedure,
+  updateSemanticNote,
+  supersedeNote,
+  updateProcedure,
+  getMemoryStatus,
+  getTopicIndex,
+  logConsolidation,
+  getUnconsolidatedEpisodes,
+  markConsolidated,
+  forgetMemory,
+  saveEpisode,
+  saveVoiceSignature,
+} from "./memory.js";
 
 /**
  * Build human-readable analysis tags from a VoiceAnalysisResult.
@@ -277,6 +297,13 @@ function removeSession(chatId: string, name: string): void {
     delete map[chatId][name.toLowerCase()];
     saveSessionMap(map);
   }
+}
+
+// Memory database — initialized lazily on first use
+let memoryDb: ReturnType<typeof initMemoryDb> | null = null;
+function getMemoryDb() {
+  if (!memoryDb) memoryDb = initMemoryDb();
+  return memoryDb;
 }
 
 // Thread ID of the active session's forum topic. Set by start_session.
@@ -523,6 +550,231 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
       },
     },
+    // ── Memory Tools ──────────────────────────────────────────────────
+    {
+      name: "memory_bootstrap",
+      description:
+        "Load memory briefing for session start. Call this ONCE after start_session. " +
+        "Returns operator profile, recent context, active procedures, and memory health. " +
+        "~2,500 tokens. Essential for crash recovery — restores knowledge from previous sessions.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          threadId: {
+            type: "number",
+            description: "Active thread ID.",
+          },
+        },
+      },
+    },
+    {
+      name: "memory_search",
+      description:
+        "Search across all memory layers for relevant information. " +
+        "Use BEFORE starting any task to recall facts, preferences, past events, or procedures. " +
+        "Returns ranked results with source layer. Do NOT use for info already in your bootstrap briefing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Natural language search query.",
+          },
+          layers: {
+            type: "array",
+            items: { type: "string" },
+            description: 'Filter layers: ["episodic", "semantic", "procedural"]. Default: all.',
+          },
+          types: {
+            type: "array",
+            items: { type: "string" },
+            description: 'Filter by type: ["fact", "preference", "pattern", "workflow", ...].',
+          },
+          maxTokens: {
+            type: "number",
+            description: "Token budget for results. Default: 1500.",
+          },
+          threadId: {
+            type: "number",
+            description: "Active thread ID.",
+          },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "memory_save",
+      description:
+        "Save a piece of knowledge to semantic memory (Layer 3). " +
+        "Use when you learn something important that should persist across sessions: " +
+        "operator preferences, corrections, facts, patterns. " +
+        "Do NOT use for routine conversation — episodic memory captures that automatically.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          content: {
+            type: "string",
+            description: "The fact/preference/pattern in one clear sentence.",
+          },
+          type: {
+            type: "string",
+            description: '"fact" | "preference" | "pattern" | "entity" | "relationship".',
+          },
+          keywords: {
+            type: "array",
+            items: { type: "string" },
+            description: "3-7 keywords for retrieval.",
+          },
+          confidence: {
+            type: "number",
+            description: "0.0-1.0. Default: 0.8.",
+          },
+          threadId: {
+            type: "number",
+            description: "Active thread ID.",
+          },
+        },
+        required: ["content", "type", "keywords"],
+      },
+    },
+    {
+      name: "memory_save_procedure",
+      description:
+        "Save or update a learned workflow/procedure to procedural memory (Layer 4). " +
+        "Use after completing a multi-step task the 2nd+ time, or when the operator teaches a process.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Short name for the procedure.",
+          },
+          type: {
+            type: "string",
+            description: '"workflow" | "habit" | "tool_pattern" | "template".',
+          },
+          description: {
+            type: "string",
+            description: "What this procedure accomplishes.",
+          },
+          steps: {
+            type: "array",
+            items: { type: "string" },
+            description: "Ordered steps (for workflows).",
+          },
+          triggerConditions: {
+            type: "array",
+            items: { type: "string" },
+            description: "When to use this procedure.",
+          },
+          procedureId: {
+            type: "string",
+            description: "Existing ID to update (omit to create new).",
+          },
+          threadId: {
+            type: "number",
+            description: "Active thread ID.",
+          },
+        },
+        required: ["name", "type", "description"],
+      },
+    },
+    {
+      name: "memory_update",
+      description:
+        "Update or supersede an existing semantic note or procedure. " +
+        "Use when operator corrects stored information or when facts have changed.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          memoryId: {
+            type: "string",
+            description: "note_id or procedure_id to update.",
+          },
+          action: {
+            type: "string",
+            description: '"update" (modify in place) | "supersede" (expire old, create new).',
+          },
+          newContent: {
+            type: "string",
+            description: "New content (required for supersede, optional for update).",
+          },
+          newConfidence: {
+            type: "number",
+            description: "Updated confidence score.",
+          },
+          reason: {
+            type: "string",
+            description: "Why this is being updated.",
+          },
+          threadId: {
+            type: "number",
+            description: "Active thread ID.",
+          },
+        },
+        required: ["memoryId", "action", "reason"],
+      },
+    },
+    {
+      name: "memory_consolidate",
+      description:
+        "Run memory consolidation cycle (sleep process). Normally triggered automatically during idle. " +
+        "Manually call if memory_status shows many unconsolidated episodes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          threadId: {
+            type: "number",
+            description: "Active thread ID.",
+          },
+          phases: {
+            type: "array",
+            items: { type: "string" },
+            description: 'Run specific phases: ["promote", "decay", "meta"]. Default: all.',
+          },
+        },
+      },
+    },
+    {
+      name: "memory_status",
+      description:
+        "Get memory system health and statistics. Lightweight (~300 tokens). " +
+        "Use when unsure if you have relevant memories, to check if consolidation is needed, " +
+        "or to report memory state to operator.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          threadId: {
+            type: "number",
+            description: "Active thread ID.",
+          },
+        },
+      },
+    },
+    {
+      name: "memory_forget",
+      description:
+        "Mark a memory as expired/forgotten. Use sparingly — most forgetting happens via decay. " +
+        "Use when operator explicitly asks to forget something or info is confirmed wrong.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          memoryId: {
+            type: "string",
+            description: "note_id, procedure_id, or episode_id to forget.",
+          },
+          reason: {
+            type: "string",
+            description: "Why this is being forgotten.",
+          },
+          threadId: {
+            type: "number",
+            description: "Active thread ID.",
+          },
+        },
+        required: ["memoryId", "reason"],
+      },
+    },
   ],
 }));
 
@@ -551,6 +803,7 @@ function getReminders(threadId?: number): string {
     "\n2. **Subagents**: Use subagents heavily — spin them up for code edits, searches, research, and reviews. Run them in parallel when tasks are independent. You plan and verify; subagents execute." +
     "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
     "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize or stop." +
+    "\n5. **Memory**: Use `memory_save` to persist important facts/preferences. Use `memory_search` before tasks to recall context." +
     threadHint +
     `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
   );
@@ -670,6 +923,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const threadNote = currentThreadId !== undefined
       ? ` Thread ID: ${currentThreadId} (pass this to start_session as threadId to resume this topic later).`
       : "";
+
+    // Auto-bootstrap memory
+    let memoryBriefing = "";
+    try {
+      const db = getMemoryDb();
+      if (currentThreadId !== undefined) {
+        memoryBriefing = "\n\n" + assembleBootstrap(db, currentThreadId);
+      }
+    } catch (e) {
+      memoryBriefing = "\n\n_Memory system unavailable._";
+    }
+
     return {
       content: [
         {
@@ -677,6 +942,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           text:
             `Session ${resolvedPreexisting ? "resumed" : "started"}.${threadNote}` +
             ` Call the remote_copilot_wait_for_instructions tool next.` +
+            memoryBriefing +
             getReminders(currentThreadId),
         },
       ],
@@ -727,6 +993,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         type ImageBlock = { type: "image"; data: string; mimeType: string };
         const contentBlocks: Array<TextBlock | ImageBlock> = [];
         let hasVoiceMessages = false;
+        let episodeAlreadySaved = false;
 
         for (const msg of stored) {
           // Photos: download the largest size, persist to disk, and embed as base64.
@@ -821,6 +1088,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     ? `[Voice message — ${msg.message.voice.duration}s${analysisTag}, transcribed]: ${transcript}`
                     : `[Voice message — ${msg.message.voice.duration}s${analysisTag}, transcribed]: (empty — no speech detected)`,
                 });
+
+                // Auto-save voice signature
+                if (analysis && effectiveThreadId !== undefined) {
+                  try {
+                    const db = getMemoryDb();
+                    const sessionId = `session_${sessionStartedAt}`;
+                    const epId = saveEpisode(db, {
+                      sessionId,
+                      threadId: effectiveThreadId,
+                      type: "operator_message",
+                      modality: "voice",
+                      content: { raw: transcript ?? "", duration: msg.message.voice.duration },
+                      importance: 0.6,
+                    });
+                    saveVoiceSignature(db, {
+                      episodeId: epId,
+                      emotion: analysis.emotion ?? undefined,
+                      arousal: analysis.arousal ?? undefined,
+                      dominance: analysis.dominance ?? undefined,
+                      valence: analysis.valence ?? undefined,
+                      speechRate: analysis.paralinguistics?.speech_rate ?? undefined,
+                      meanPitchHz: analysis.paralinguistics?.mean_pitch_hz ?? undefined,
+                      pitchStdHz: analysis.paralinguistics?.pitch_std_hz ?? undefined,
+                      jitter: analysis.paralinguistics?.jitter ?? undefined,
+                      shimmer: analysis.paralinguistics?.shimmer ?? undefined,
+                      hnrDb: analysis.paralinguistics?.hnr_db ?? undefined,
+                      audioEvents: analysis.audio_events?.map(e => ({ label: e.label, confidence: e.score })),
+                      durationSec: msg.message.voice.duration,
+                    });
+                    episodeAlreadySaved = true;
+                  } catch (_) { /* non-fatal */ }
+                }
               } catch (err) {
                 contentBlocks.push({
                   type: "text",
@@ -876,6 +1175,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 if (!sceneDescription && !transcript) parts.push("(no visual or audio content could be extracted)");
 
                 contentBlocks.push({ type: "text", text: parts.join("\n") });
+
+                // Auto-save voice signature for video notes
+                if (analysis && effectiveThreadId !== undefined) {
+                  try {
+                    const db = getMemoryDb();
+                    const sessionId = `session_${sessionStartedAt}`;
+                    const epId = saveEpisode(db, {
+                      sessionId,
+                      threadId: effectiveThreadId,
+                      type: "operator_message",
+                      modality: "video_note",
+                      content: { raw: transcript ?? "", scene: sceneDescription ?? "", duration: vn.duration },
+                      importance: 0.6,
+                    });
+                    saveVoiceSignature(db, {
+                      episodeId: epId,
+                      emotion: analysis.emotion ?? undefined,
+                      arousal: analysis.arousal ?? undefined,
+                      dominance: analysis.dominance ?? undefined,
+                      valence: analysis.valence ?? undefined,
+                      speechRate: analysis.paralinguistics?.speech_rate ?? undefined,
+                      meanPitchHz: analysis.paralinguistics?.mean_pitch_hz ?? undefined,
+                      pitchStdHz: analysis.paralinguistics?.pitch_std_hz ?? undefined,
+                      jitter: analysis.paralinguistics?.jitter ?? undefined,
+                      shimmer: analysis.paralinguistics?.shimmer ?? undefined,
+                      hnrDb: analysis.paralinguistics?.hnr_db ?? undefined,
+                      audioEvents: analysis.audio_events?.map(e => ({ label: e.label, confidence: e.score })),
+                      durationSec: vn.duration,
+                    });
+                    episodeAlreadySaved = true;
+                  } catch (_) { /* non-fatal */ }
+                }
               } catch (err) {
                 contentBlocks.push({
                   type: "text",
@@ -896,6 +1227,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           await new Promise<void>((r) => setTimeout(r, POLL_INTERVAL_MS));
           continue;
         }
+
+        // Auto-ingest episodes (skip if a modality-specific handler already saved)
+        if (!episodeAlreadySaved) {
+          try {
+            const db = getMemoryDb();
+            const sessionId = `session_${sessionStartedAt}`;
+            if (effectiveThreadId !== undefined) {
+              const textContent = contentBlocks
+                .filter((b): b is { type: "text"; text: string } => b.type === "text")
+                .map(b => b.text)
+                .join("\n")
+                .slice(0, 2000);
+              saveEpisode(db, {
+                sessionId,
+                threadId: effectiveThreadId,
+                type: "operator_message",
+                modality: hasVoiceMessages ? "voice" : "text",
+                content: { raw: textContent },
+                importance: 0.5,
+              });
+            }
+          } catch (_) { /* memory write failures should never break the main flow */ }
+        }
+
         return {
           content: [
             {
@@ -1343,6 +1698,288 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           getReminders(effectiveThreadId),
       }],
     };
+  }
+
+  // ── memory_bootstrap ────────────────────────────────────────────────────
+  if (name === "memory_bootstrap") {
+    const threadId = resolveThreadId(args as Record<string, unknown>);
+    if (threadId === undefined) {
+      return { content: [{ type: "text", text: "Error: No active thread. Call start_session first." + getReminders() }] };
+    }
+    try {
+      const db = getMemoryDb();
+      const briefing = assembleBootstrap(db, threadId);
+      return {
+        content: [{ type: "text", text: `## Memory Briefing\n\n${briefing}` + getReminders(threadId) }],
+      };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Memory bootstrap error: ${errorMessage(err)}` + getReminders(threadId) }] };
+    }
+  }
+
+  // ── memory_search ───────────────────────────────────────────────────────
+  if (name === "memory_search") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const threadId = resolveThreadId(typedArgs);
+    const query = String(typedArgs.query ?? "");
+    if (!query) {
+      return { content: [{ type: "text", text: "Error: query is required." + getReminders(threadId) }] };
+    }
+    try {
+      const db = getMemoryDb();
+      const layers = (typedArgs.layers as string[] | undefined) ?? ["episodic", "semantic", "procedural"];
+      const types = typedArgs.types as string[] | undefined;
+      const results: string[] = [];
+
+      if (layers.includes("semantic")) {
+        const notes = searchSemanticNotes(db, query, { types, maxResults: 10 });
+        if (notes.length > 0) {
+          results.push("### Semantic Memory");
+          for (const n of notes) {
+            results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}, id: ${n.noteId})_`);
+          }
+        }
+      }
+
+      if (layers.includes("procedural")) {
+        const procs = searchProcedures(db, query, 5);
+        if (procs.length > 0) {
+          results.push("### Procedural Memory");
+          for (const p of procs) {
+            results.push(`- **${p.name}** (${p.type}): ${p.description} _(success: ${Math.round(p.successRate * 100)}%, id: ${p.procedureId})_`);
+          }
+        }
+      }
+
+      if (layers.includes("episodic") && threadId !== undefined) {
+        const episodes = getRecentEpisodes(db, threadId, 10);
+        const filtered = episodes.filter(ep => {
+          const content = JSON.stringify(ep.content).toLowerCase();
+          return query.toLowerCase().split(/\s+/).some(word => content.includes(word));
+        });
+        if (filtered.length > 0) {
+          results.push("### Episodic Memory");
+          for (const ep of filtered.slice(0, 5)) {
+            const summary = typeof ep.content === "object" && ep.content !== null
+              ? (ep.content as Record<string, unknown>).text ?? JSON.stringify(ep.content).slice(0, 200)
+              : String(ep.content).slice(0, 200);
+            results.push(`- [${ep.modality}] ${summary} _(${ep.timestamp}, id: ${ep.episodeId})_`);
+          }
+        }
+      }
+
+      const text = results.length > 0
+        ? results.join("\n")
+        : `No memories found for "${query}".`;
+      return { content: [{ type: "text", text: text + getReminders(threadId) }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Memory search error: ${errorMessage(err)}` + getReminders(threadId) }] };
+    }
+  }
+
+  // ── memory_save ─────────────────────────────────────────────────────────
+  if (name === "memory_save") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const threadId = resolveThreadId(typedArgs);
+    try {
+      const db = getMemoryDb();
+      const noteId = saveSemanticNote(db, {
+        type: String(typedArgs.type ?? "fact") as "fact" | "preference" | "pattern" | "entity" | "relationship",
+        content: String(typedArgs.content ?? ""),
+        keywords: (typedArgs.keywords as string[]) ?? [],
+        confidence: typeof typedArgs.confidence === "number" ? typedArgs.confidence : 0.8,
+      });
+      return {
+        content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getReminders(threadId) }],
+      };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Memory save error: ${errorMessage(err)}` + getReminders(threadId) }] };
+    }
+  }
+
+  // ── memory_save_procedure ───────────────────────────────────────────────
+  if (name === "memory_save_procedure") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const threadId = resolveThreadId(typedArgs);
+    try {
+      const db = getMemoryDb();
+      const existingId = typedArgs.procedureId as string | undefined;
+      if (existingId) {
+        updateProcedure(db, existingId, {
+          description: typedArgs.description as string | undefined,
+          steps: typedArgs.steps as string[] | undefined,
+          triggerConditions: typedArgs.triggerConditions as string[] | undefined,
+        });
+        return {
+          content: [{ type: "text", text: `Updated procedure: ${existingId}` + getReminders(threadId) }],
+        };
+      }
+      const procId = saveProcedure(db, {
+        name: String(typedArgs.name ?? ""),
+        type: String(typedArgs.type ?? "workflow") as "workflow" | "habit" | "tool_pattern" | "template",
+        description: String(typedArgs.description ?? ""),
+        steps: typedArgs.steps as string[] | undefined,
+        triggerConditions: typedArgs.triggerConditions as string[] | undefined,
+      });
+      return {
+        content: [{ type: "text", text: `Saved procedure: ${procId}` + getReminders(threadId) }],
+      };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Procedure save error: ${errorMessage(err)}` + getReminders(threadId) }] };
+    }
+  }
+
+  // ── memory_update ───────────────────────────────────────────────────────
+  if (name === "memory_update") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const threadId = resolveThreadId(typedArgs);
+    try {
+      const db = getMemoryDb();
+      const memId = String(typedArgs.memoryId ?? "");
+      const action = String(typedArgs.action ?? "update");
+      const reason = String(typedArgs.reason ?? "");
+
+      if (action === "supersede" && memId.startsWith("sn_")) {
+        const origRow = db.prepare("SELECT type, keywords FROM semantic_notes WHERE note_id = ?").get(memId) as { type: string; keywords: string } | undefined;
+        const newId = supersedeNote(db, memId, {
+          type: (origRow?.type ?? "fact") as "fact" | "preference" | "pattern" | "entity" | "relationship",
+          content: String(typedArgs.newContent ?? ""),
+          keywords: origRow?.keywords ? JSON.parse(origRow.keywords) : [],
+          confidence: typeof typedArgs.newConfidence === "number" ? typedArgs.newConfidence : 0.8,
+        });
+        return {
+          content: [{ type: "text", text: `Superseded ${memId} → ${newId} (reason: ${reason})` + getReminders(threadId) }],
+        };
+      }
+
+      if (memId.startsWith("sn_")) {
+        const updates: Record<string, unknown> = {};
+        if (typedArgs.newContent) updates.content = String(typedArgs.newContent);
+        if (typeof typedArgs.newConfidence === "number") updates.confidence = typedArgs.newConfidence;
+        updateSemanticNote(db, memId, updates as Parameters<typeof updateSemanticNote>[2]);
+        return {
+          content: [{ type: "text", text: `Updated note ${memId} (reason: ${reason})` + getReminders(threadId) }],
+        };
+      }
+
+      if (memId.startsWith("pr_")) {
+        const updates: Record<string, unknown> = {};
+        if (typedArgs.newContent) updates.description = String(typedArgs.newContent);
+        if (typeof typedArgs.newConfidence === "number") updates.confidence = typedArgs.newConfidence;
+        updateProcedure(db, memId, updates as Parameters<typeof updateProcedure>[2]);
+        return {
+          content: [{ type: "text", text: `Updated procedure ${memId} (reason: ${reason})` + getReminders(threadId) }],
+        };
+      }
+
+      return { content: [{ type: "text", text: `Unknown memory ID format: ${memId}` + getReminders(threadId) }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Memory update error: ${errorMessage(err)}` + getReminders(threadId) }] };
+    }
+  }
+
+  // ── memory_consolidate ──────────────────────────────────────────────────
+  if (name === "memory_consolidate") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const threadId = resolveThreadId(typedArgs);
+    if (threadId === undefined) {
+      return { content: [{ type: "text", text: "Error: No active thread." + getReminders() }] };
+    }
+    try {
+      const db = getMemoryDb();
+      const startMs = Date.now();
+      const uncons = getUnconsolidatedEpisodes(db, threadId, 50);
+
+      if (uncons.length === 0) {
+        return {
+          content: [{ type: "text", text: "No unconsolidated episodes. Memory is up to date." + getReminders(threadId) }],
+        };
+      }
+
+      // Phase 1: Mark episodes as consolidated (decay phase — computational only)
+      const episodeIds = uncons.map(ep => ep.episodeId);
+      markConsolidated(db, episodeIds);
+
+      // Phase 2: Log the consolidation
+      logConsolidation(db, {
+        episodesProcessed: uncons.length,
+        notesCreated: 0,
+        notesMerged: 0,
+        notesSuperseded: 0,
+        proceduresUpdated: 0,
+        durationMs: Date.now() - startMs,
+      });
+
+      const report = [
+        "## Consolidation Report",
+        `- Episodes processed: ${uncons.length}`,
+        `- Duration: ${Date.now() - startMs}ms`,
+        "",
+        "**Note:** For intelligent consolidation (extracting patterns, creating semantic notes), " +
+        "review the unconsolidated episodes and use memory_save to create semantic notes.",
+      ].join("\n");
+
+      return { content: [{ type: "text", text: report + getReminders(threadId) }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Consolidation error: ${errorMessage(err)}` + getReminders(threadId) }] };
+    }
+  }
+
+  // ── memory_status ───────────────────────────────────────────────────────
+  if (name === "memory_status") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const threadId = resolveThreadId(typedArgs);
+    if (threadId === undefined) {
+      return { content: [{ type: "text", text: "Error: No active thread." + getReminders() }] };
+    }
+    try {
+      const db = getMemoryDb();
+      const status = getMemoryStatus(db, threadId);
+      const topics = getTopicIndex(db);
+
+      const lines = [
+        "## Memory Status",
+        `- Episodes: ${status.totalEpisodes} (${status.unconsolidatedEpisodes} unconsolidated)`,
+        `- Semantic notes: ${status.totalSemanticNotes}`,
+        `- Procedures: ${status.totalProcedures}`,
+        `- Voice signatures: ${status.totalVoiceSignatures}`,
+        `- Last consolidation: ${status.lastConsolidation ?? "never"}`,
+        `- DB size: ${(status.dbSizeBytes / 1024).toFixed(1)} KB`,
+      ];
+
+      if (topics.length > 0) {
+        lines.push("", "**Topics:**");
+        for (const t of topics.slice(0, 15)) {
+          lines.push(`- ${t.topic} (${t.semanticCount} notes, ${t.proceduralCount} procs, conf: ${t.avgConfidence.toFixed(2)})`);
+        }
+      }
+
+      return { content: [{ type: "text", text: lines.join("\n") + getReminders(threadId) }] };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Memory status error: ${errorMessage(err)}` + getReminders(threadId) }] };
+    }
+  }
+
+  // ── memory_forget ───────────────────────────────────────────────────────
+  if (name === "memory_forget") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const threadId = resolveThreadId(typedArgs);
+    try {
+      const db = getMemoryDb();
+      const memId = String(typedArgs.memoryId ?? "");
+      const reason = String(typedArgs.reason ?? "");
+      const result = forgetMemory(db, memId, reason);
+      if (!result.deleted) {
+        return {
+          content: [{ type: "text", text: `Memory ${memId} not found (layer: ${result.layer}). Nothing was deleted.` + getReminders(threadId) }],
+        };
+      }
+      return {
+        content: [{ type: "text", text: `Forgot ${result.layer} memory ${memId} (reason: ${reason})` + getReminders(threadId) }],
+      };
+    } catch (err) {
+      return { content: [{ type: "text", text: `Memory forget error: ${errorMessage(err)}` + getReminders(threadId) }] };
+    }
   }
 
   // Unknown tool
