@@ -798,7 +798,7 @@ function getReminders(threadId?: number): string {
   return (
     "\n\n## MANDATORY WORKFLOW" +
     "\n1. **Plan**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
-    "\n2. **Subagents**: Use subagents heavily — spin them up for code edits, searches, research, and reviews. Run them in parallel when tasks are independent. You plan and verify; subagents execute." +
+    "\n2. **Subagents**: Use subagents heavily — spin them up for code edits, searches, research, reviews, and terminal commands. Subagents have full access to ALL MCP tools including terminal, file system, and web search. Run them in parallel when tasks are independent. You plan and verify; subagents execute." +
     "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
     "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize or stop." +
     "\n5. **Memory**: (a) Call `memory_save` whenever you learn operator preferences, facts, or corrections. (b) Call `memory_search` before starting any task to recall relevant context. (c) Call `memory_status` when reporting progress to include memory health. These tools persist knowledge across sessions." +
