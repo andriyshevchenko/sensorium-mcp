@@ -919,6 +919,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     const idleMinutes = Math.round((Date.now() - lastOperatorMessageAt) / 60000);
+
+    // Show pending scheduled tasks if any exist.
+    let scheduleHint = "";
+    if (effectiveThreadId !== undefined) {
+      const pending = listSchedules(effectiveThreadId);
+      if (pending.length > 0) {
+        const taskList = pending.map(t => {
+          let trigger = "";
+          if (t.runAt) {
+            trigger = `at ${new Date(t.runAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+          } else if (t.cron) {
+            trigger = `cron: ${t.cron}`;
+          } else if (t.afterIdleMinutes) {
+            trigger = `after ${t.afterIdleMinutes}min idle`;
+          }
+          return `  • "${t.label}" (${trigger})`;
+        }).join("\n");
+        scheduleHint = `\n\n📋 **Pending scheduled tasks:**\n${taskList}`;
+      }
+    }
+
     return {
       content: [
         {
@@ -930,9 +951,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
             `Do NOT summarize, stop, or say the session is idle. ` +
             `Just call the tool again immediately.` +
-            (idleMinutes >= 60
-              ? `\nYou have an opportunity to schedule a wake-up time for yourself and do something useful (or do whatever you want). Use schedule_wake_up to set a task.`
-              : "") +
+            `\n\n💡 **While waiting**, you can work autonomously:` +
+            `\n- Use \`schedule_wake_up\` to set a delayed task (e.g. "run tests in 30 minutes", "check deployment status in 5 minutes").` +
+            `\n- Do background work: review code, check for TODOs, run linting, update docs — then report_progress when done.` +
+            `\n- The operator will see your progress reports whenever they return.` +
+            scheduleHint +
             getReminders(effectiveThreadId),
         },
       ],
