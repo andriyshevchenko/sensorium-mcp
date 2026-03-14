@@ -9,7 +9,7 @@
  * The wait_for_instructions polling loop checks for due tasks on each timeout.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
@@ -77,6 +77,20 @@ export function removeSchedule(threadId: number, taskId: string): boolean {
     tasks.splice(idx, 1);
     saveSchedules(threadId, tasks);
     return true;
+}
+
+/**
+ * Remove all scheduled tasks for a thread.
+ * Called when a Telegram topic is deleted.
+ */
+export function purgeSchedules(threadId: number): void {
+    ensureDir();
+    const file = schedulesFilePath(threadId);
+    try {
+        unlinkSync(file);
+    } catch {
+        // Already gone or never existed.
+    }
 }
 
 export function listSchedules(threadId: number): ScheduledTask[] {

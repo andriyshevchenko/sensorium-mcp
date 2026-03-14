@@ -40,7 +40,7 @@ import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispa
 import { analyzeVoiceEmotion, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
 import { TelegramClient } from "./telegram.js";
 import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
-import { addSchedule, checkDueTasks, generateTaskId, listSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
+import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
 
 const esmRequire = createRequire(import.meta.url);
 const { version: PKG_VERSION } = esmRequire("../package.json") as {
@@ -592,7 +592,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           process.stderr.write(
             `[start_session] Cached thread ${currentThreadId} is gone (${errMsg}). Creating new topic.\n`,
           );
-          // Drop the stale mapping.
+          // Drop the stale mapping and purge any scheduled tasks.
+          if (currentThreadId !== undefined) purgeSchedules(currentThreadId);
           if (customName) removeSession(TELEGRAM_CHAT_ID, customName);
           resolvedPreexisting = false;
           currentThreadId = undefined;
