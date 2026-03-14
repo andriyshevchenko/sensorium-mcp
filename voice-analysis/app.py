@@ -340,7 +340,15 @@ def _run_analysis(audio_bytes: bytes) -> dict:
     """Run all ML inference synchronously (called via asyncio.to_thread)."""
     waveform, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
     duration = float(librosa.get_duration(y=waveform, sr=sr))
-    result: dict[str, Any] = {"duration_seconds": round(duration, 3)}
+    result: dict[str, Any] = {
+        "duration_seconds": round(duration, 3),
+        "emotion": None,
+        "arousal": None,
+        "dominance": None,
+        "valence": None,
+        "gender": None,
+        "age_estimate": None,
+    }
 
     # --- Emotion (categorical, 9 classes) ---
     emotion_label: str | None = None

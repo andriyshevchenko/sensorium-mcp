@@ -668,6 +668,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Poll the dispatcher's per-thread file instead of calling getUpdates
     // directly. This avoids 409 conflicts between concurrent instances.
     const POLL_INTERVAL_MS = 2000;
+    let lastScheduleCheck = 0;
 
     while (Date.now() < deadline) {
       const stored = readThreadMessages(effectiveThreadId);
@@ -852,6 +853,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             { type: "text", text: getReminders(effectiveThreadId) },
           ],
         };
+      }
+
+      // Check scheduled tasks every ~60s during idle polling.
+      if (effectiveThreadId !== undefined && Date.now() - lastScheduleCheck >= 60_000) {
+        lastScheduleCheck = Date.now();
+        const dueTask = checkDueTasks(effectiveThreadId, lastOperatorMessageAt, false);
+        if (dueTask) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `⏰ **Scheduled task fired: "${dueTask.task.label}"**\n\n` +
+                  `This task was scheduled by you. Execute it now using subagents, then report progress and continue waiting.\n\n` +
+                  `Task prompt: ${dueTask.prompt}` +
+                  getReminders(effectiveThreadId),
+              },
+            ],
+          };
+        }
       }
 
       // No messages yet — sleep briefly and check again.
@@ -1195,6 +1215,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const runAt = typeof typedArgs.runAt === "string" ? typedArgs.runAt : undefined;
     const cron = typeof typedArgs.cron === "string" ? typedArgs.cron : undefined;
     const afterIdleMinutes = typeof typedArgs.afterIdleMinutes === "number" ? typedArgs.afterIdleMinutes : undefined;
+
+    if (cron && cron.trim().split(/\s+/).length !== 5) {
+      return errorResult(
+        "Error: Invalid cron expression. Must be exactly 5 space-separated fields: minute hour day-of-month month day-of-week. " +
+        "Example: '0 9 * * *' (daily at 9am). Only *, numbers, and comma-separated lists are supported.",
+      );
+    }
 
     if (!runAt && !cron && afterIdleMinutes == null) {
       return errorResult(

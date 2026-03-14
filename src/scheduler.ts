@@ -9,7 +9,7 @@
  * The wait_for_instructions polling loop checks for due tasks on each timeout.
  */
 
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
@@ -58,10 +58,12 @@ export function loadSchedules(threadId: number): ScheduledTask[] {
     }
 }
 
-export function saveSchedules(threadId: number, tasks: ScheduledTask[]): void {
+function saveSchedules(threadId: number, tasks: ScheduledTask[]): void {
     ensureDir();
     const file = schedulesFilePath(threadId);
-    writeFileSync(file, JSON.stringify(tasks, null, 2), "utf8");
+    const tmp = file + `.tmp.${process.pid}`;
+    writeFileSync(tmp, JSON.stringify(tasks, null, 2), "utf8");
+    renameSync(tmp, file);
 }
 
 export function addSchedule(task: ScheduledTask): void {
@@ -116,7 +118,7 @@ function matchesCronField(field: string, value: number): boolean {
     return parts.some(p => Number(p) === value);
 }
 
-export function matchesCron(cronExpr: string, date: Date): boolean {
+function matchesCron(cronExpr: string, date: Date): boolean {
     const fields = cronExpr.trim().split(/\s+/);
     if (fields.length !== 5) return false;
     const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
@@ -179,7 +181,9 @@ export function checkDueTasks(
                     if (
                         lastFired.getMinutes() === now.getMinutes() &&
                         lastFired.getHours() === now.getHours() &&
-                        lastFired.getDate() === now.getDate()
+                        lastFired.getDate() === now.getDate() &&
+                        lastFired.getMonth() === now.getMonth() &&
+                        lastFired.getFullYear() === now.getFullYear()
                     ) {
                         continue; // Already fired this minute
                     }
