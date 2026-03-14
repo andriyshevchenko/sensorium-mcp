@@ -1,8 +1,8 @@
 import BetterSqlite3 from "better-sqlite3";
 import { randomUUID } from "crypto";
-import { join } from "path";
-import { homedir } from "os";
 import { mkdirSync, statSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 
 // Use the Database type from better-sqlite3
 type Database = BetterSqlite3.Database;
