@@ -37,9 +37,40 @@ import { createRequire } from "module";
 import { homedir } from "os";
 import { basename, join } from "path";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
-import { analyzeVoiceEmotion, analyzeVideoFrames, extractVideoFrames, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
+import { analyzeVoiceEmotion, analyzeVideoFrames, extractVideoFrames, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
 import { TelegramClient } from "./telegram.js";
 import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
+
+/**
+ * Build human-readable analysis tags from a VoiceAnalysisResult.
+ * Fields that are null / undefined / empty are silently skipped.
+ */
+function buildAnalysisTags(analysis: VoiceAnalysisResult | null): string[] {
+  const tags: string[] = [];
+  if (!analysis) return tags;
+  if (analysis.emotion) {
+    let emotionStr = analysis.emotion;
+    if (analysis.arousal != null && analysis.dominance != null && analysis.valence != null) {
+      emotionStr += ` (${describeADV(analysis.arousal, analysis.dominance, analysis.valence)})`;
+    }
+    tags.push(`tone: ${emotionStr}`);
+  }
+  if (analysis.gender) tags.push(`gender: ${analysis.gender}`);
+  if (analysis.audio_events && analysis.audio_events.length > 0) {
+    const eventLabels = analysis.audio_events
+      .map(e => `${e.label} (${Math.round(e.score * 100)}%)`)
+      .join(", ");
+    tags.push(`sounds: ${eventLabels}`);
+  }
+  if (analysis.paralinguistics) {
+    const p = analysis.paralinguistics;
+    const paraItems: string[] = [];
+    if (p.speech_rate != null) paraItems.push(`${p.speech_rate} syl/s`);
+    if (p.mean_pitch_hz != null) paraItems.push(`pitch ${p.mean_pitch_hz}Hz`);
+    if (paraItems.length > 0) tags.push(`speech: ${paraItems.join(", ")}`);
+  }
+  return tags;
+}
 import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
 
 const esmRequire = createRequire(import.meta.url);
@@ -517,7 +548,7 @@ function getReminders(threadId?: number): string {
   return (
     "\n\n## MANDATORY WORKFLOW" +
     "\n1. **Plan**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
-    "\n2. **Subagents**: Use subagents to execute each item of your todo list, but YOU own the plan and all decisions. Spin up parallel subagents if the work can be done concurrently." +
+    "\n2. **Subagents**: Use subagents extensively — for every todo item, research task, code edit, and review. Spin up parallel subagents whenever possible. YOU own the plan and decisions." +
     "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
     "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize or stop." +
     threadHint +
@@ -781,30 +812,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 ]);
 
                 // Build rich voice analysis tag from VANPY results.
-                const tags: string[] = [];
-                if (analysis?.emotion) {
-                  let emotionStr = analysis.emotion;
-                  if (analysis.arousal != null && analysis.dominance != null && analysis.valence != null) {
-                    emotionStr += ` (${describeADV(analysis.arousal, analysis.dominance, analysis.valence)})`;
-                  }
-                  tags.push(`tone: ${emotionStr}`);
-                }
-                if (analysis?.gender) tags.push(`gender: ${analysis.gender}`);
-                // Audio events from PANNs (e.g. laughter, music, typing)
-                if (analysis?.audio_events && analysis.audio_events.length > 0) {
-                  const eventLabels = analysis.audio_events
-                    .map(e => `${e.label} (${Math.round(e.score * 100)}%)`)
-                    .join(", ");
-                  tags.push(`sounds: ${eventLabels}`);
-                }
-                // Paralinguistics (speech rate, pitch)
-                if (analysis?.paralinguistics) {
-                  const p = analysis.paralinguistics;
-                  const paraItems: string[] = [];
-                  if (p.speech_rate != null) paraItems.push(`${p.speech_rate} syl/s`);
-                  if (p.mean_pitch_hz != null) paraItems.push(`pitch ${p.mean_pitch_hz}Hz`);
-                  if (paraItems.length > 0) tags.push(`speech: ${paraItems.join(", ")}`);
-                }
+                const tags = buildAnalysisTags(analysis);
                 const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
 
                 contentBlocks.push({
@@ -826,7 +834,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               });
             }
           }
-          // Video notes (circle videos): extract frames, analyze with GPT-4o vision,
+          // Video notes (circle videos): extract frames, analyze with GPT-4.1 vision,
           // optionally transcribe the audio track.
           if (msg.message.video_note) {
             hasVoiceMessages = true; // Video notes often contain speech
@@ -843,35 +851,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     process.stderr.write(`[video-note] Frame extraction failed: ${errorMessage(err)}\n`);
                     return [] as Buffer[];
                   }),
-                  transcribeAudio(buffer, OPENAI_API_KEY).catch(() => ""),
+                  transcribeAudio(buffer, OPENAI_API_KEY, "video.mp4").catch(() => ""),
                   VOICE_ANALYSIS_URL
                     ? analyzeVoiceEmotion(buffer, VOICE_ANALYSIS_URL).catch(() => null)
                     : Promise.resolve(null),
                 ]);
 
-                // Analyze frames with GPT-4o vision.
+                // Analyze frames with GPT-4.1 vision.
                 let sceneDescription = "";
                 if (frames.length > 0) {
-                  process.stderr.write(`[video-note] Analyzing ${frames.length} frames with GPT-4o vision...\n`);
+                  process.stderr.write(`[video-note] Analyzing ${frames.length} frames with GPT-4.1 vision...\n`);
                   sceneDescription = await analyzeVideoFrames(frames, vn.duration, OPENAI_API_KEY);
                   process.stderr.write(`[video-note] Vision analysis complete.\n`);
                 }
 
                 // Build analysis tags (same as voice messages).
-                const tags: string[] = [];
-                if (analysis?.emotion) {
-                  let emotionStr = analysis.emotion;
-                  if (analysis.arousal != null && analysis.dominance != null && analysis.valence != null) {
-                    emotionStr += ` (${describeADV(analysis.arousal, analysis.dominance, analysis.valence)})`;
-                  }
-                  tags.push(`tone: ${emotionStr}`);
-                }
-                if (analysis?.audio_events && analysis.audio_events.length > 0) {
-                  const eventLabels = analysis.audio_events
-                    .map(e => `${e.label} (${Math.round(e.score * 100)}%)`)
-                    .join(", ");
-                  tags.push(`sounds: ${eventLabels}`);
-                }
+                const tags = buildAnalysisTags(analysis);
                 const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
 
                 const parts: string[] = [];
@@ -908,7 +903,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: "Follow the operator's instructions below.\n\n" +
                 "BEFORE doing anything: (1) Break the work into todo items. (2) Share your plan via report_progress. " +
                 "(3) For each todo: mark in-progress → do the work → call report_progress → mark completed. " +
-                "YOU own the plan and all decisions. Subagents are for mechanical tasks only (edits, searches, reviews) — never delegate the full prompt. " +
+                "YOU own the plan and all decisions. Use subagents extensively throughout your work — for research, code edits, reviews, searches, and implementation. " +
                 "The operator is REMOTE — they cannot see your screen. If you don't call report_progress, they see nothing.",
             },
             ...contentBlocks,
@@ -1110,6 +1105,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         } else if (msg.message.voice) {
           pendingMessages.push(
             `[Voice message — ${msg.message.voice.duration}s — will be transcribed on next wait]`,
+          );
+        } else if (msg.message.video_note) {
+          pendingMessages.push(
+            `[Video note — ${msg.message.video_note.duration}s — will be analyzed on next wait]`,
           );
         } else if (msg.message.text) {
           pendingMessages.push(msg.message.text);
