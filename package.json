@@ -1,10 +1,10 @@
 {
-  "name": "remote-copilot-mcp",
+  "name": "sensorium-mcp",
   "version": "2.6.5",
   "description": "MCP server for remote control of AI assistants via Telegram",
   "main": "dist/index.js",
   "bin": {
-    "remote-copilot-mcp": "dist/index.js"
+    "sensorium-mcp": "dist/index.js"
   },
   "files": [
     "dist"

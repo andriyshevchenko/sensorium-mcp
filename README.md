@@ -1,4 +1,4 @@
-# remote-copilot-mcp
+# sensorium-mcp
 
 An MCP (Model Context Protocol) server for remote control of AI assistants via Telegram.
 
@@ -8,7 +8,7 @@ This server exposes four tools that allow an AI assistant (e.g. GitHub Copilot) 
 
 | Tool | Description |
 |------|-------------|
-| `start_session` | Begin or resume a remote-copilot session. Creates a dedicated Telegram topic thread (or resumes an existing one by name or thread ID). |
+| `start_session` | Begin or resume a sensorium session. Creates a dedicated Telegram topic thread (or resumes an existing one by name or thread ID). |
 | `remote_copilot_wait_for_instructions` | Blocks until a new message (text, photo, document, or voice) arrives in the active topic or the timeout elapses. |
 | `report_progress` | Sends a progress update back to the operator using standard Markdown (auto-converted to Telegram MarkdownV2). |
 | `send_file` | Sends a file or image to the operator via Telegram (base64-encoded). Images are sent as photos; everything else as documents. |
@@ -66,10 +66,10 @@ Add to your MCP configuration:
 ```json
 {
   "mcpServers": {
-    "remote-copilot-mcp": {
+    "sensorium-mcp": {
       "command": "npx",
       "args": [
-        "remote-copilot-mcp@latest"
+        "sensorium-mcp@latest"
       ],
       "env": {
         "TELEGRAM_TOKEN": "${input:TELEGRAM_TOKEN}",
