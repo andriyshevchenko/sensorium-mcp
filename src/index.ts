@@ -319,7 +319,7 @@ let lastOperatorMessageAt = Date.now();
 // ---------------------------------------------------------------------------
 
 const server = new Server(
-  { name: "remote-copilot-mcp", version: PKG_VERSION },
+  { name: "sensorium-mcp", version: PKG_VERSION },
   { capabilities: { tools: {} } },
 );
 
