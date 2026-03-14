@@ -724,7 +724,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   tags.push(`tone: ${emotionStr}`);
                 }
                 if (analysis?.gender) tags.push(`gender: ${analysis.gender}`);
-                if (analysis?.age_estimate != null) tags.push(`age: ~${Math.round(analysis.age_estimate)}`);
                 const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
 
                 contentBlocks.push({
