@@ -66,7 +66,7 @@ EMOTION_ADV_FALLBACK: dict[str, dict[str, float]] = {
 # PANNs labels to suppress (too generic or always-present in voice messages)
 PANNS_SUPPRESS = {
     "Speech", "Narration, monologue", "Speech synthesizer",
-    "Conversation", "Music", "Inside, small room", "Inside, large room or hall",
+    "Conversation", "Inside, small room", "Inside, large room or hall",
 }
 
 # Minimum confidence threshold for PANNs detections
