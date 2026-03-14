@@ -351,7 +351,7 @@ function resolveThreadId(args: Record<string, unknown> | undefined): number | un
 // Dead session detection — tracks when the last tool call was made
 let lastToolCallAt = Date.now();
 let deadSessionAlerted = false;
-const DEAD_SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const DEAD_SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (2× wait_for_instructions timeout)
 
 // Timestamp of the last message received from the operator.
 // Used by the scheduler to detect idle periods.
