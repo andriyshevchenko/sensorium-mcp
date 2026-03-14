@@ -53,12 +53,10 @@ import {
   updateProcedure,
   getMemoryStatus,
   getTopicIndex,
-  logConsolidation,
-  getUnconsolidatedEpisodes,
-  markConsolidated,
   forgetMemory,
   saveEpisode,
   saveVoiceSignature,
+  runIntelligentConsolidation,
 } from "./memory.js";
 
 /**
@@ -1359,22 +1357,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // ── Auto-consolidation during idle ──────────────────────────────────────
-    // If operator has been idle for 30+ min, run lightweight consolidation
     try {
       const idleMs = Date.now() - lastOperatorMessageAt;
       if (idleMs > 30 * 60 * 1000 && effectiveThreadId !== undefined) {
         const db = getMemoryDb();
-        const uncons = getUnconsolidatedEpisodes(db, effectiveThreadId, 30);
-        if (uncons.length > 0) {
-          markConsolidated(db, uncons.map(ep => ep.episodeId));
-          logConsolidation(db, {
-            episodesProcessed: uncons.length,
-            notesCreated: 0,
-            notesMerged: 0,
-            notesSuperseded: 0,
-            proceduresUpdated: 0,
-            durationMs: 0,
-          });
+        const report = await runIntelligentConsolidation(db, effectiveThreadId);
+        if (report.episodesProcessed > 0) {
+          process.stderr.write(`[memory] Consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
         }
       }
     } catch (_) { /* consolidation failure is non-fatal */ }
@@ -1908,39 +1897,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
     try {
       const db = getMemoryDb();
-      const startMs = Date.now();
-      const uncons = getUnconsolidatedEpisodes(db, threadId, 50);
+      const report = await runIntelligentConsolidation(db, threadId);
 
-      if (uncons.length === 0) {
+      if (report.episodesProcessed === 0) {
         return {
           content: [{ type: "text", text: "No unconsolidated episodes. Memory is up to date." + getReminders(threadId) }],
         };
       }
 
-      // Phase 1: Mark episodes as consolidated (decay phase — computational only)
-      const episodeIds = uncons.map(ep => ep.episodeId);
-      markConsolidated(db, episodeIds);
-
-      // Phase 2: Log the consolidation
-      logConsolidation(db, {
-        episodesProcessed: uncons.length,
-        notesCreated: 0,
-        notesMerged: 0,
-        notesSuperseded: 0,
-        proceduresUpdated: 0,
-        durationMs: Date.now() - startMs,
-      });
-
-      const report = [
+      const reportLines = [
         "## Consolidation Report",
-        `- Episodes processed: ${uncons.length}`,
-        `- Duration: ${Date.now() - startMs}ms`,
-        "",
-        "**Note:** For intelligent consolidation (extracting patterns, creating semantic notes), " +
-        "review the unconsolidated episodes and use memory_save to create semantic notes.",
-      ].join("\n");
+        `- Episodes processed: ${report.episodesProcessed}`,
+        `- Notes created: ${report.notesCreated}`,
+        `- Duration: ${report.durationMs}ms`,
+      ];
+      if (report.details.length > 0) {
+        reportLines.push("", "### Extracted Knowledge");
+        for (const d of report.details) {
+          reportLines.push(`- ${d}`);
+        }
+      }
 
-      return { content: [{ type: "text", text: report + getReminders(threadId) }] };
+      return { content: [{ type: "text", text: reportLines.join("\n") + getReminders(threadId) }] };
     } catch (err) {
       return { content: [{ type: "text", text: `Consolidation error: ${errorMessage(err)}` + getReminders(threadId) }] };
     }
