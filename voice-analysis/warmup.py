@@ -35,6 +35,8 @@ logger.info("  ✓ audeering age-gender cached")
 # 4. PANNs CNN14 audio event detection
 # panns_inference reads class_labels_indices.csv at import time, so we must
 # download it BEFORE importing the package.
+# Also, the package uses os.system('wget ...') to fetch the checkpoint, but
+# wget is not available in python:3.11-slim. We download both files manually.
 logger.info("Downloading PANNs CNN14 model...")
 import os, urllib.request
 panns_dir = os.path.expanduser("~/panns_data")
@@ -46,8 +48,16 @@ if not os.path.exists(csv_path):
         csv_path,
     )
     logger.info("  ✓ AudioSet class_labels_indices.csv downloaded")
+ckpt_path = os.path.join(panns_dir, "Cnn14_mAP=0.431.pth")
+if not os.path.exists(ckpt_path) or os.path.getsize(ckpt_path) < 3e8:
+    logger.info("  Downloading Cnn14 checkpoint (~327MB)...")
+    urllib.request.urlretrieve(
+        "https://zenodo.org/record/3987831/files/Cnn14_mAP%3D0.431.pth?download=1",
+        ckpt_path,
+    )
+    logger.info(f"  ✓ Cnn14 checkpoint downloaded ({os.path.getsize(ckpt_path)} bytes)")
 from panns_inference import AudioTagging
-_at = AudioTagging(checkpoint_path=None, device="cpu")
+_at = AudioTagging(checkpoint_path=ckpt_path, device="cpu")
 del _at
 logger.info("  ✓ PANNs CNN14 cached")
 
