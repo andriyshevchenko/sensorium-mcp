@@ -1102,7 +1102,7 @@ Rules:
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "o4-mini",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: "Extract knowledge from the episodes above." },
