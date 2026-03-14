@@ -1,11 +1,12 @@
 """
-Voice Analysis v2 microservice — transformer-based models.
+Voice Analysis v3 microservice — transformer-based models + audio event detection.
 
-Upgrade from v1 (ECAPA-TDNN + SVM/SVR):
+Models:
   - Emotion:     emotion2vec+ base (FunASR, 9-class, 4788h training data)
   - ADV:         audeering wav2vec2-large-robust-12-ft-emotion-msp-dim (continuous 0-1)
   - Age+Gender:  audeering wav2vec2-large-robust-24-ft-age-gender (MAE ~7-11yr)
-  - Height:      REMOVED (scientifically unreliable in adult humans)
+  - Audio:       PANNs CNN14 (527-class AudioSet sound event detection)
+  - Speech:      parselmouth/Praat (paralinguistic features: pitch, rate, jitter)
 
 All ADV values on 0-1 scale. Age output is 0-1 normalized (×100 for years).
 """
@@ -20,11 +21,13 @@ from typing import Any
 
 import librosa
 import numpy as np
+import parselmouth
 import soundfile as sf
 import torch
 import torch.nn as nn
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
+from parselmouth.praat import call
 from transformers import Wav2Vec2Processor
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Model,
@@ -60,6 +63,15 @@ EMOTION_ADV_FALLBACK: dict[str, dict[str, float]] = {
     "unknown":   {"arousal": 0.375, "dominance": 0.375, "valence": 0.375},
 }
 
+# PANNs labels to suppress (too generic or always-present in voice messages)
+PANNS_SUPPRESS = {
+    "Speech", "Narration, monologue", "Speech synthesizer",
+    "Conversation", "Music", "Inside, small room", "Inside, large room or hall",
+}
+
+# Minimum confidence threshold for PANNs detections
+PANNS_MIN_CONFIDENCE = 0.15
+
 
 # ---------------------------------------------------------------------------
 # audeering wav2vec2 model classes (adapted from HuggingFace model cards).
@@ -86,17 +98,13 @@ class _RegressionHead(nn.Module):
 
 
 class EmotionDimModel(Wav2Vec2PreTrainedModel):
-    """Arousal/Dominance/Valence regression (audeering, 12-layer, MSP-Podcast).
-
-    Returns (hidden_states, logits) where logits is [arousal, dominance, valence]
-    each in approximately 0..1.
-    """
+    """Arousal/Dominance/Valence regression (audeering, 12-layer, MSP-Podcast)."""
 
     def __init__(self, config):
         super().__init__(config)
         self.config = config
         self.wav2vec2 = Wav2Vec2Model(config)
-        self.classifier = _RegressionHead(config)   # num_labels = 3
+        self.classifier = _RegressionHead(config)
         self.init_weights()
 
     def forward(self, input_values):
@@ -107,12 +115,7 @@ class EmotionDimModel(Wav2Vec2PreTrainedModel):
 
 
 class AgeGenderModel(Wav2Vec2PreTrainedModel):
-    """Age regression + gender classification (audeering, 24-layer).
-
-    Returns (hidden_states, logits_age, logits_gender):
-      - logits_age:    shape (batch, 1) in ~0..1, multiply by 100 for years
-      - logits_gender: shape (batch, 3) softmax [female, male, child]
-    """
+    """Age regression + gender classification (audeering, 24-layer)."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -138,6 +141,8 @@ emotion_dim_model: EmotionDimModel | None = None
 emotion_dim_processor: Wav2Vec2Processor | None = None
 age_gender_model: AgeGenderModel | None = None
 age_gender_processor: Wav2Vec2Processor | None = None
+panns_model: Any = None                              # PANNs AudioTagging
+panns_labels: list[str] = []                          # 527 AudioSet class labels
 
 # Limit concurrent inference to avoid OOM on small containers
 _inference_semaphore = asyncio.Semaphore(2)
@@ -148,8 +153,9 @@ async def lifespan(app: FastAPI):
     global emotion_model
     global emotion_dim_model, emotion_dim_processor
     global age_gender_model, age_gender_processor
+    global panns_model, panns_labels
 
-    logger.info("Loading voice analysis v2 models...")
+    logger.info("Loading voice analysis v3 models...")
 
     # 1. Emotion: emotion2vec+ base via FunASR
     try:
@@ -179,26 +185,39 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("  ✗ audeering age-gender model failed to load")
 
+    # 4. PANNs CNN14: audio event detection (527 AudioSet classes)
+    try:
+        from panns_inference import AudioTagging
+        from panns_inference import labels as _panns_labels
+        panns_model = AudioTagging(checkpoint_path=None, device="cpu")
+        panns_labels = list(_panns_labels)
+        logger.info(f"  ✓ PANNs CNN14 loaded ({len(panns_labels)} classes)")
+    except Exception:
+        logger.exception("  ✗ PANNs CNN14 failed to load")
+
     logger.info("Model loading complete.")
     yield
     emotion_model = None
     emotion_dim_model = emotion_dim_processor = None
     age_gender_model = age_gender_processor = None
+    panns_model = None
+    panns_labels = []
     logger.info("Models unloaded.")
 
 
-app = FastAPI(title="Voice Analysis v2", lifespan=lifespan)
+app = FastAPI(title="Voice Analysis v3", lifespan=lifespan)
 
 
 @app.get("/health")
 async def health():
     return {
         "status": "ok",
-        "version": 2,
+        "version": 3,
         "models": {
             "emotion": emotion_model is not None,
             "emotion_dim": emotion_dim_model is not None,
             "age_gender": age_gender_model is not None,
+            "panns": panns_model is not None,
         },
     }
 
@@ -222,14 +241,99 @@ def _process_audeering(
 
 
 def _normalize_emotion_label(label: str) -> str:
-    """Extract English part from emotion2vec bilingual labels.
-
-    emotion2vec returns labels like '中立/neutral', '生气/angry', etc.
-    This extracts the English part after '/'.
-    """
+    """Extract English part from emotion2vec bilingual labels."""
     if "/" in label:
         return label.split("/")[-1].strip()
     return label.strip()
+
+
+def _detect_audio_events(waveform_16k: np.ndarray) -> list[dict[str, Any]]:
+    """Detect audio events using PANNs CNN14.
+
+    Returns top detected sounds (excluding generic speech labels),
+    sorted by confidence descending.
+    """
+    if panns_model is None or not panns_labels:
+        return []
+
+    # PANNs expects 32kHz
+    waveform_32k = librosa.resample(waveform_16k, orig_sr=16000, target_sr=32000)
+    audio = waveform_32k[None, :]  # shape: (1, num_samples)
+
+    (clipwise_output, _embedding) = panns_model.inference(audio)
+    probs = clipwise_output[0]  # shape: (527,)
+
+    # Collect non-suppressed detections above threshold
+    events = []
+    for idx in np.argsort(probs)[::-1]:
+        label = panns_labels[idx] if idx < len(panns_labels) else f"class_{idx}"
+        score = float(probs[idx])
+        if score < PANNS_MIN_CONFIDENCE:
+            break
+        if label in PANNS_SUPPRESS:
+            continue
+        events.append({"label": label, "score": round(score, 4)})
+        if len(events) >= 5:
+            break
+
+    return events
+
+
+def _extract_paralinguistics(waveform_16k: np.ndarray) -> dict[str, Any]:
+    """Extract paralinguistic features using parselmouth/Praat.
+
+    Returns speech rate, pitch stats, jitter, shimmer, HNR.
+    """
+    try:
+        sound = parselmouth.Sound(waveform_16k, sampling_frequency=16000)
+        duration = sound.get_total_duration()
+
+        # Pitch
+        pitch = sound.to_pitch(time_step=0.01, pitch_floor=75.0, pitch_ceiling=500.0)
+        mean_pitch = call(pitch, "Get mean", 0, 0, "Hertz")
+        pitch_std = call(pitch, "Get standard deviation", 0, 0, "Hertz")
+
+        # Intensity → speech rate proxy (syllable nuclei detection)
+        intensity = sound.to_intensity()
+
+        # PointProcess for jitter/shimmer
+        point_process = call(sound, "To PointProcess (periodic, cc)", 75.0, 500.0)
+        jitter = call(point_process, "Get jitter (local)", 0, 0, 0.0001, 0.02, 1.3)
+        shimmer = call(
+            [sound, point_process], "Get shimmer (local)", 0, 0, 0.0001, 0.02, 1.3, 1.6,
+        )
+
+        # HNR
+        harmonicity = call(sound, "To Harmonicity (cc)", 0.01, 75.0, 0.1, 1.0)
+        hnr = call(harmonicity, "Get mean", 0, 0)
+
+        # Speech rate: count sounding intervals using intensity
+        try:
+            silences = call(intensity, "To TextGrid (silences)", -25, 0.1, 0.1, "silent", "sounding")
+            n_sounding = call(silences, "Count intervals where", 1, "is equal to", "sounding")
+            speech_rate = round(n_sounding / duration, 2) if duration > 0 else 0.0
+        except Exception:
+            speech_rate = None
+
+        result = {}
+        if speech_rate is not None:
+            result["speech_rate"] = speech_rate
+        if not np.isnan(mean_pitch):
+            result["mean_pitch_hz"] = round(float(mean_pitch), 1)
+        if not np.isnan(pitch_std):
+            result["pitch_std_hz"] = round(float(pitch_std), 1)
+        if not np.isnan(jitter):
+            result["jitter"] = round(float(jitter), 6)
+        if not np.isnan(shimmer):
+            result["shimmer"] = round(float(shimmer), 6)
+        if not np.isnan(hnr):
+            result["hnr_db"] = round(float(hnr), 1)
+
+        return result
+
+    except Exception:
+        logger.exception("Paralinguistics extraction failed")
+        return {}
 
 
 def _run_analysis(audio_bytes: bytes) -> dict:
@@ -242,10 +346,9 @@ def _run_analysis(audio_bytes: bytes) -> dict:
     emotion_label: str | None = None
     if emotion_model is not None:
         try:
-            # emotion2vec expects a file path — write temp WAV
             fd, tmp_path = tempfile.mkstemp(suffix=".wav")
             try:
-                os.close(fd)   # close fd before sf.write to avoid double-open
+                os.close(fd)
                 sf.write(tmp_path, waveform, 16000)
                 res = emotion_model.generate(
                     input=tmp_path,
@@ -279,7 +382,7 @@ def _run_analysis(audio_bytes: bytes) -> dict:
             _, logits = _process_audeering(
                 waveform, 16000, emotion_dim_processor, emotion_dim_model,
             )
-            adv = logits.squeeze().cpu().numpy()   # shape (3,)
+            adv = logits.squeeze().cpu().numpy()
             result["arousal"] = round(float(adv[0]), 4)
             result["dominance"] = round(float(adv[1]), 4)
             result["valence"] = round(float(adv[2]), 4)
@@ -301,10 +404,8 @@ def _run_analysis(audio_bytes: bytes) -> dict:
             _, logits_age, logits_gender = _process_audeering(
                 waveform, 16000, age_gender_processor, age_gender_model,
             )
-            # Age: output is normalized ~0..1, multiply by 100 for years
             age_float = logits_age.squeeze().item()
             result["age_estimate"] = round(age_float * 100, 1)
-            # Gender: softmax probabilities [female, male, child]
             gender_probs = logits_gender.squeeze().cpu().numpy()
             idx = int(np.argmax(gender_probs))
             result["gender"] = (
@@ -312,6 +413,22 @@ def _run_analysis(audio_bytes: bytes) -> dict:
             )
         except Exception:
             logger.exception("Age/gender estimation failed")
+
+    # --- Audio Event Detection (PANNs CNN14) ---
+    try:
+        audio_events = _detect_audio_events(waveform)
+        if audio_events:
+            result["audio_events"] = audio_events
+    except Exception:
+        logger.exception("Audio event detection failed")
+
+    # --- Paralinguistics (parselmouth/Praat) ---
+    try:
+        para = _extract_paralinguistics(waveform)
+        if para:
+            result["paralinguistics"] = para
+    except Exception:
+        logger.exception("Paralinguistics extraction failed")
 
     return _sanitize_for_json(result)
 
@@ -337,7 +454,6 @@ def _sanitize_for_json(obj: Any) -> Any:
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
-    # Validate content type
     ct = (file.content_type or "").lower()
     if ct and ct not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
@@ -345,7 +461,6 @@ async def analyze(file: UploadFile = File(...)):
             detail=f"Unsupported content type: {ct}. Expected audio/*.",
         )
 
-    # Read with streaming size limit to prevent OOM from oversized uploads
     try:
         chunks: list[bytes] = []
         total = 0
@@ -366,7 +481,6 @@ async def analyze(file: UploadFile = File(...)):
         logger.exception("Failed to read upload")
         raise HTTPException(status_code=400, detail="Failed to read uploaded file")
 
-    # Run all ML inference off the event loop to keep /health responsive
     try:
         async with _inference_semaphore:
             result = await asyncio.wait_for(
