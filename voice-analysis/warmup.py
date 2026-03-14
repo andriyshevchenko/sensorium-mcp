@@ -33,7 +33,19 @@ snapshot_download("audeering/wav2vec2-large-robust-24-ft-age-gender")
 logger.info("  ✓ audeering age-gender cached")
 
 # 4. PANNs CNN14 audio event detection
+# panns_inference reads class_labels_indices.csv at import time, so we must
+# download it BEFORE importing the package.
 logger.info("Downloading PANNs CNN14 model...")
+import os, urllib.request
+panns_dir = os.path.expanduser("~/panns_data")
+os.makedirs(panns_dir, exist_ok=True)
+csv_path = os.path.join(panns_dir, "class_labels_indices.csv")
+if not os.path.exists(csv_path):
+    urllib.request.urlretrieve(
+        "http://storage.googleapis.com/us_audioset/youtube_corpus/v1/csv/class_labels_indices.csv",
+        csv_path,
+    )
+    logger.info("  ✓ AudioSet class_labels_indices.csv downloaded")
 from panns_inference import AudioTagging
 _at = AudioTagging(checkpoint_path=None, device="cpu")
 del _at

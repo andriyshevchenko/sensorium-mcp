@@ -30,7 +30,11 @@ COPY warmup.py .
 # audeering age-gender (~1.2GB), PANNs CNN14 (~300MB). Total ~3.0GB of model weights.
 RUN python warmup.py
 
-RUN chown -R appuser:appuser /app
+# PANNs stores weights in ~/panns_data (i.e. /root/panns_data during build).
+# Copy to appuser home so the model is found at runtime.
+RUN cp -r /root/panns_data /home/appuser/panns_data
+
+RUN chown -R appuser:appuser /app /home/appuser/panns_data
 USER appuser
 
 EXPOSE 8000
