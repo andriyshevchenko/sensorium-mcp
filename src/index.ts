@@ -219,6 +219,25 @@ const telegram = new TelegramClient(TELEGRAM_TOKEN);
 
 await startDispatcher(telegram, TELEGRAM_CHAT_ID);
 
+// Dead session detector — runs every 2 minutes
+setInterval(async () => {
+  if (!currentThreadId) return;
+  const elapsed = Date.now() - lastToolCallAt;
+  if (elapsed > DEAD_SESSION_TIMEOUT_MS && !deadSessionAlerted) {
+    deadSessionAlerted = true;
+    try {
+      const tg = new TelegramClient(TELEGRAM_TOKEN);
+      const minutes = Math.round(elapsed / 60000);
+      await tg.sendMessage(
+        TELEGRAM_CHAT_ID,
+        `⚠️ *Session appears down* — no tool calls in ${minutes} minutes\\. The agent may have crashed or the VS Code window compacted the context\\. Please check and restart if needed\\.`,
+        "MarkdownV2",
+        currentThreadId,
+      );
+    } catch (_) { /* non-fatal */ }
+  }
+}, 2 * 60 * 1000);
+
 // Directory for persisting downloaded images and documents to disk.
 const FILES_DIR = join(homedir(), ".remote-copilot-mcp", "files");
 mkdirSync(FILES_DIR, { recursive: true });
@@ -329,11 +348,10 @@ function resolveThreadId(args: Record<string, unknown> | undefined): number | un
   return currentThreadId;
 }
 
-// Timestamp of the last keep-alive ping sent to Telegram.
-// Used to send periodic "session still alive" messages so the operator knows
-// the agent hasn't silently died.
-let lastKeepAliveSentAt = Date.now();
-const KEEP_ALIVE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+// Dead session detection — tracks when the last tool call was made
+let lastToolCallAt = Date.now();
+let deadSessionAlerted = false;
+const DEAD_SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 // Timestamp of the last message received from the operator.
 // Used by the scheduler to detect idle periods.
@@ -810,6 +828,10 @@ function getReminders(threadId?: number): string {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
+  // Dead session detection — reset on any tool call
+  lastToolCallAt = Date.now();
+  deadSessionAlerted = false;
+
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
     sessionStartedAt = Date.now();
@@ -861,7 +883,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Resume mode: verify the thread is still alive by sending a message.
       // If the topic was deleted, drop the cached mapping and fall through to
       // create a new topic.
-      lastKeepAliveSentAt = Date.now();
       try {
         const msg = convertMarkdown("🔄 **Session resumed.** Continuing in this thread.");
         await telegram.sendMessage(TELEGRAM_CHAT_ID, msg, "MarkdownV2", currentThreadId);
@@ -904,7 +925,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           "Ensure the Telegram chat is a forum supergroup with the bot as admin with can_manage_topics right.",
         );
       }
-      lastKeepAliveSentAt = Date.now();
       try {
         const greeting = convertMarkdown(
           "# 🤖 Remote Copilot Ready\n\n" +
@@ -1315,25 +1335,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    // Keep-alive ping: send a periodic heartbeat to Telegram so the operator
-    // knows the session is still alive even with no activity.
-    let keepAliveSent = false;
-    if (Date.now() - lastKeepAliveSentAt >= KEEP_ALIVE_INTERVAL_MS) {
-      lastKeepAliveSentAt = Date.now();
-      try {
-        const ping = convertMarkdown(
-          `🟢 **Session alive** — ${new Date().toLocaleString("en-GB", {
-            day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false,
-          })}` +
-          ` (thread ${effectiveThreadId})`,
-        );
-        await telegram.sendMessage(TELEGRAM_CHAT_ID, ping, "MarkdownV2", effectiveThreadId);
-        keepAliveSent = true;
-      } catch {
-        // Non-fatal.
-      }
-    }
-
     const idleMinutes = Math.round((Date.now() - lastOperatorMessageAt) / 60000);
 
     // Show pending scheduled tasks if any exist.
@@ -1374,7 +1375,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           type: "text",
           text:
             `[Poll #${callNumber} — timeout at ${now} — elapsed ${WAIT_TIMEOUT_MINUTES}m — session uptime ${Math.round((Date.now() - sessionStartedAt) / 60000)}m — operator idle ${idleMinutes}m]` +
-            (keepAliveSent ? ` Keep-alive ping sent.` : "") +
             ` No new instructions received. ` +
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
             `Do NOT summarize, stop, or say the session is idle. ` +
