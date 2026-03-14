@@ -90,6 +90,16 @@ export interface ConsolidationLog {
   durationMs: number;
 }
 
+export interface ConsolidationReport {
+  episodesProcessed: number;
+  notesCreated: number;
+  notesMerged: number;
+  notesSuperseded: number;
+  proceduresUpdated: number;
+  durationMs: number;
+  details: string[];
+}
+
 export interface VoiceBaseline {
   avgArousal: number | null;
   avgDominance: number | null;
@@ -1013,6 +1023,181 @@ export function assembleBootstrap(db: Database, threadId: number): string {
   }
 
   return lines.join("\n");
+}
+
+// ─── Intelligent Consolidation ───────────────────────────────────────────────
+
+export async function runIntelligentConsolidation(
+  db: Database,
+  threadId: number,
+  options?: { maxEpisodes?: number; dryRun?: boolean }
+): Promise<ConsolidationReport> {
+  const startMs = Date.now();
+  const maxEpisodes = options?.maxEpisodes ?? 30;
+  const dryRun = options?.dryRun ?? false;
+
+  const episodes = getUnconsolidatedEpisodes(db, threadId, maxEpisodes);
+
+  if (episodes.length === 0) {
+    return {
+      episodesProcessed: 0,
+      notesCreated: 0,
+      notesMerged: 0,
+      notesSuperseded: 0,
+      proceduresUpdated: 0,
+      durationMs: Date.now() - startMs,
+      details: ["Nothing to consolidate."],
+    };
+  }
+
+  // Format episodes for the prompt
+  const episodesText = episodes
+    .map((ep, i) => {
+      const content =
+        typeof ep.content === "object" && ep.content !== null
+          ? (ep.content.text as string) ?? (ep.content.caption as string) ?? JSON.stringify(ep.content)
+          : String(ep.content);
+      return `[${i + 1}] (${ep.type}/${ep.modality}, ${ep.timestamp}) ${content}`;
+    })
+    .join("\n");
+
+  const systemPrompt = `You are a memory consolidation agent. Analyze these conversation episodes and extract knowledge that should be remembered across sessions.
+
+Episodes:
+${episodesText}
+
+For each piece of knowledge, output a JSON object with a "notes" key containing an array of objects:
+{
+  "notes": [
+    {
+      "type": "fact" | "preference" | "pattern" | "entity" | "relationship",
+      "content": "One clear sentence describing the knowledge",
+      "keywords": ["keyword1", "keyword2", "keyword3"],
+      "confidence": 0.0-1.0
+    }
+  ]
+}
+
+Rules:
+- Only extract information that would be useful in future sessions
+- Preferences are stronger signals than facts (confidence: 0.9)
+- Do not extract trivial/transient information
+- If the operator corrected the agent, extract the correction as a preference
+- Focus on: operator name, preferences, communication style, technical choices, project context
+- Return {"notes": []} if nothing notable to remember`;
+
+  let notesCreated = 0;
+  const details: string[] = [];
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY not set");
+    }
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: "Extract knowledge from the episodes above." },
+        ],
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => response.statusText);
+      throw new Error(`OpenAI API error: ${response.status} ${errText}`);
+    }
+
+    const result = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const raw = result.choices?.[0]?.message?.content ?? "{}";
+    const parsed = JSON.parse(raw) as {
+      notes?: Array<{
+        type: string;
+        content: string;
+        keywords: string[];
+        confidence: number;
+      }>;
+    };
+
+    const extractedNotes = parsed.notes ?? [];
+    const episodeIds = episodes.map((ep) => ep.episodeId);
+
+    if (!dryRun) {
+      for (const note of extractedNotes) {
+        const validTypes = ["fact", "preference", "pattern", "entity", "relationship"];
+        const noteType = validTypes.includes(note.type)
+          ? (note.type as "fact" | "preference" | "pattern" | "entity" | "relationship")
+          : "fact";
+
+        saveSemanticNote(db, {
+          type: noteType,
+          content: note.content,
+          keywords: Array.isArray(note.keywords) ? note.keywords : [],
+          confidence: Math.max(0, Math.min(1, note.confidence ?? 0.5)),
+          sourceEpisodes: episodeIds,
+        });
+        notesCreated++;
+        details.push(`[${noteType}] ${note.content}`);
+      }
+
+      // Mark episodes as consolidated
+      markConsolidated(db, episodeIds);
+
+      // Log the consolidation
+      logConsolidation(db, {
+        episodesProcessed: episodes.length,
+        notesCreated,
+        notesMerged: 0,
+        notesSuperseded: 0,
+        proceduresUpdated: 0,
+        durationMs: Date.now() - startMs,
+      });
+    } else {
+      for (const note of extractedNotes) {
+        details.push(`[dry-run] [${note.type}] ${note.content}`);
+        notesCreated++;
+      }
+    }
+  } catch (err) {
+    // Fallback: lightweight consolidation (just mark as consolidated)
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[memory] Intelligent consolidation failed, falling back to lightweight: ${msg}\n`);
+    details.push(`Fallback to lightweight consolidation: ${msg}`);
+
+    if (!dryRun) {
+      const episodeIds = episodes.map((ep) => ep.episodeId);
+      markConsolidated(db, episodeIds);
+      logConsolidation(db, {
+        episodesProcessed: episodes.length,
+        notesCreated: 0,
+        notesMerged: 0,
+        notesSuperseded: 0,
+        proceduresUpdated: 0,
+        durationMs: Date.now() - startMs,
+      });
+    }
+  }
+
+  return {
+    episodesProcessed: episodes.length,
+    notesCreated,
+    notesMerged: 0,
+    notesSuperseded: 0,
+    proceduresUpdated: 0,
+    durationMs: Date.now() - startMs,
+    details,
+  };
 }
 
 // ─── Forget ──────────────────────────────────────────────────────────────────
