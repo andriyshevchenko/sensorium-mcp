@@ -548,7 +548,7 @@ function getReminders(threadId?: number): string {
   return (
     "\n\n## MANDATORY WORKFLOW" +
     "\n1. **Plan**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
-    "\n2. **Subagents**: ALL actual work (code edits, searches, research, reviews) MUST be done via subagents. You are the orchestrator — plan, delegate, verify. Never edit files or run searches directly yourself." +
+    "\n2. **Subagents**: Use subagents heavily — spin them up for code edits, searches, research, and reviews. Run them in parallel when tasks are independent. You plan and verify; subagents execute." +
     "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
     "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize or stop." +
     threadHint +
@@ -903,7 +903,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: "Follow the operator's instructions below.\n\n" +
                 "BEFORE doing anything: (1) Break the work into todo items. (2) Share your plan via report_progress. " +
                 "(3) For each todo: mark in-progress → do the work → call report_progress → mark completed. " +
-                "YOU are the orchestrator. ALL actual work (code edits, searches, research, implementation) MUST go through subagents. Never edit files or run searches yourself — delegate everything. " +
+                "Use subagents heavily for all substantial work — code edits, research, reviews, searches. Spin up parallel subagents when possible. " +
                 "The operator is REMOTE — they cannot see your screen. If you don't call report_progress, they see nothing.",
             },
             ...contentBlocks,
