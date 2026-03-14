@@ -204,12 +204,14 @@ export function checkDueTasks(
             const idleMs = now.getTime() - lastOperatorMessageAt;
             const thresholdMs = task.afterIdleMinutes * 60000;
             if (idleMs >= thresholdMs) {
-                // Dedup: don't fire again within the idle window
+                // Dedup: don't fire again while operator remains idle.
+                // Only re-fire if operator spoke AFTER the last fire (i.e.
+                // lastFiredAt is before lastOperatorMessageAt, meaning a new
+                // idle period has started).
                 if (task.lastFiredAt) {
-                    const lastFired = new Date(task.lastFiredAt);
-                    const sinceFired = now.getTime() - lastFired.getTime();
-                    if (sinceFired < thresholdMs) {
-                        continue; // Already fired within this idle period
+                    const lastFired = new Date(task.lastFiredAt).getTime();
+                    if (lastFired > lastOperatorMessageAt) {
+                        continue; // Already fired in this idle period
                     }
                 }
                 if (hasNewMessages) {
