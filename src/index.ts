@@ -40,6 +40,7 @@ import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispa
 import { analyzeVoiceEmotion, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice } from "./openai.js";
 import { TelegramClient } from "./telegram.js";
 import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
+import { addSchedule, checkDueTasks, generateTaskId, listSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
 
 const esmRequire = createRequire(import.meta.url);
 const { version: PKG_VERSION } = esmRequire("../package.json") as {
@@ -278,6 +279,10 @@ function resolveThreadId(args: Record<string, unknown> | undefined): number | un
 let lastKeepAliveSentAt = Date.now();
 const KEEP_ALIVE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
+// Timestamp of the last message received from the operator.
+// Used by the scheduler to detect idle periods.
+let lastOperatorMessageAt = Date.now();
+
 // ---------------------------------------------------------------------------
 // MCP Server
 // ---------------------------------------------------------------------------
@@ -439,6 +444,54 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["text"],
       },
     },
+    {
+      name: "schedule_wake_up",
+      description:
+        "Schedule a wake-up task that will inject a prompt into your session at a specific time or after operator inactivity. " +
+        "Use this to become proactive — run tests, check CI, review code — without waiting for the operator. " +
+        "Three modes: (1) 'runAt' for a one-shot at a specific ISO 8601 time, " +
+        "(2) 'cron' for recurring tasks (5-field cron: minute hour day month weekday), " +
+        "(3) 'afterIdleMinutes' to fire after N minutes of operator silence. " +
+        "Use 'action: list' to see all scheduled tasks, or 'action: remove' with a taskId to cancel one.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            description: "Action to perform: 'add' (default), 'list', or 'remove'.",
+            enum: ["add", "list", "remove"],
+          },
+          threadId: {
+            type: "number",
+            description: "Thread ID for the session (optional if already set).",
+          },
+          label: {
+            type: "string",
+            description: "Short human-readable label for the task (e.g. 'morning CI check').",
+          },
+          prompt: {
+            type: "string",
+            description: "The prompt to inject when the task fires. Be specific about what to do.",
+          },
+          runAt: {
+            type: "string",
+            description: "ISO 8601 timestamp for one-shot execution (e.g. '2026-03-15T09:00:00Z').",
+          },
+          cron: {
+            type: "string",
+            description: "5-field cron expression for recurring tasks (e.g. '0 9 * * *' = every day at 9am).",
+          },
+          afterIdleMinutes: {
+            type: "number",
+            description: "Fire after this many minutes of operator silence (e.g. 60).",
+          },
+          taskId: {
+            type: "string",
+            description: "Task ID to remove (for action: 'remove').",
+          },
+        },
+      },
+    },
   ],
 }));
 
@@ -451,6 +504,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
  * VS Code restart by passing it to start_session.
  */
 function getReminders(threadId?: number): string {
+  const now = new Date();
+  const uptimeMin = Math.round((Date.now() - sessionStartedAt) / 60000);
+  const timeStr = now.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+    timeZoneName: "short",
+  });
   const threadHint = threadId !== undefined
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
@@ -460,7 +520,8 @@ function getReminders(threadId?: number): string {
     "\n2. **Subagents**: Use subagents to execute each item of your todo list, but YOU own the plan and all decisions. Spin up parallel subagents if the work can be done concurrently." +
     "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
     "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize or stop." +
-    threadHint
+    threadHint +
+    `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
   );
 }
 
@@ -611,6 +672,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const stored = readThreadMessages(effectiveThreadId);
 
       if (stored.length > 0) {
+        // Update the operator activity timestamp for idle detection.
+        lastOperatorMessageAt = Date.now();
+
         // Clear only the consumed IDs from the previewed set (scoped clear).
         // This is safe because Node.js is single-threaded — no report_progress
         // call can interleave between readThreadMessages and this cleanup.
@@ -796,6 +860,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Timeout elapsed with no actionable message.
     const now = new Date().toISOString();
 
+    // Check for scheduled wake-up tasks.
+    if (effectiveThreadId !== undefined) {
+      const dueTask = checkDueTasks(effectiveThreadId, lastOperatorMessageAt, false);
+      if (dueTask) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `⏰ **Scheduled task fired: "${dueTask.task.label}"**\n\n` +
+                `This task was scheduled by you. Execute it now using subagents, then report progress and continue waiting.\n\n` +
+                `Task prompt: ${dueTask.prompt}` +
+                getReminders(effectiveThreadId),
+            },
+          ],
+        };
+      }
+    }
+
     // Keep-alive ping: send a periodic heartbeat to Telegram so the operator
     // knows the session is still alive even with no activity.
     let keepAliveSent = false;
@@ -815,17 +897,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
+    const idleMinutes = Math.round((Date.now() - lastOperatorMessageAt) / 60000);
     return {
       content: [
         {
           type: "text",
           text:
-            `[Poll #${callNumber} — timeout at ${now} — elapsed ${WAIT_TIMEOUT_MINUTES}m — session uptime ${Math.round((Date.now() - sessionStartedAt) / 60000)}m]` +
+            `[Poll #${callNumber} — timeout at ${now} — elapsed ${WAIT_TIMEOUT_MINUTES}m — session uptime ${Math.round((Date.now() - sessionStartedAt) / 60000)}m — operator idle ${idleMinutes}m]` +
             (keepAliveSent ? ` Keep-alive ping sent.` : "") +
             ` No new instructions received. ` +
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
             `Do NOT summarize, stop, or say the session is idle. ` +
             `Just call the tool again immediately.` +
+            (idleMinutes >= 60
+              ? `\nYou have an opportunity to schedule a wake-up time for yourself and do something useful (or do whatever you want). Use schedule_wake_up to set a task.`
+              : "") +
             getReminders(effectiveThreadId),
         },
       ],
@@ -1045,6 +1131,103 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       process.stderr.write(`Failed to send voice via Telegram: ${errorMessage(err)}\n`);
       return errorResult(`Error: Failed to send voice message: ${errorMessage(err)}`);
     }
+  }
+
+  // ── schedule_wake_up ────────────────────────────────────────────────────
+  if (name === "schedule_wake_up") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const effectiveThreadId = resolveThreadId(typedArgs);
+    if (effectiveThreadId === undefined) {
+      return errorResult("Error: No active session. Call start_session first.");
+    }
+
+    const action = typeof typedArgs.action === "string" ? typedArgs.action : "add";
+
+    // --- List ---
+    if (action === "list") {
+      const tasks = listSchedules(effectiveThreadId);
+      if (tasks.length === 0) {
+        return {
+          content: [{
+            type: "text",
+            text: "No scheduled tasks for this thread." + getReminders(effectiveThreadId),
+          }],
+        };
+      }
+      const lines = tasks.map(t => {
+        const trigger = t.cron ? `cron: ${t.cron}` : t.runAt ? `at: ${t.runAt}` : `idle: ${t.afterIdleMinutes}min`;
+        const lastFired = t.lastFiredAt ? ` (last: ${t.lastFiredAt})` : "";
+        return `- **${t.label}** [${t.id}] — ${trigger}${lastFired}\n  Prompt: ${t.prompt.slice(0, 100)}${t.prompt.length > 100 ? "…" : ""}`;
+      });
+      return {
+        content: [{
+          type: "text",
+          text: `**Scheduled tasks (${tasks.length}):**\n\n${lines.join("\n\n")}` + getReminders(effectiveThreadId),
+        }],
+      };
+    }
+
+    // --- Remove ---
+    if (action === "remove") {
+      const taskId = typeof typedArgs.taskId === "string" ? typedArgs.taskId : "";
+      if (!taskId) {
+        return errorResult("Error: 'taskId' is required for remove action. Use action: 'list' to see task IDs.");
+      }
+      const removed = removeSchedule(effectiveThreadId, taskId);
+      return {
+        content: [{
+          type: "text",
+          text: removed
+            ? `Task ${taskId} removed.` + getReminders(effectiveThreadId)
+            : `Task ${taskId} not found.` + getReminders(effectiveThreadId),
+        }],
+      };
+    }
+
+    // --- Add ---
+    const label = typeof typedArgs.label === "string" ? typedArgs.label : "unnamed task";
+    const prompt = typeof typedArgs.prompt === "string" ? typedArgs.prompt : "";
+    if (!prompt) {
+      return errorResult("Error: 'prompt' is required — this is the text that will be injected when the task fires.");
+    }
+
+    const runAt = typeof typedArgs.runAt === "string" ? typedArgs.runAt : undefined;
+    const cron = typeof typedArgs.cron === "string" ? typedArgs.cron : undefined;
+    const afterIdleMinutes = typeof typedArgs.afterIdleMinutes === "number" ? typedArgs.afterIdleMinutes : undefined;
+
+    if (!runAt && !cron && afterIdleMinutes == null) {
+      return errorResult(
+        "Error: Specify at least one trigger: 'runAt' (ISO timestamp), 'cron' (5-field), or 'afterIdleMinutes' (number).",
+      );
+    }
+
+    const task: ScheduledTask = {
+      id: generateTaskId(),
+      threadId: effectiveThreadId,
+      prompt,
+      label,
+      runAt,
+      cron,
+      afterIdleMinutes,
+      oneShot: runAt != null && !cron,
+      createdAt: new Date().toISOString(),
+    };
+
+    addSchedule(task);
+
+    const triggerDesc = cron
+      ? `recurring (cron: ${cron})`
+      : runAt
+        ? `one-shot at ${runAt}`
+        : `after ${afterIdleMinutes}min of operator silence`;
+
+    return {
+      content: [{
+        type: "text",
+        text: `✅ Scheduled: **${label}** [${task.id}]\nTrigger: ${triggerDesc}\nPrompt: ${prompt}` +
+          getReminders(effectiveThreadId),
+      }],
+    };
   }
 
   // Unknown tool
