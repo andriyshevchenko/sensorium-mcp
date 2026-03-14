@@ -803,7 +803,7 @@ function getReminders(threadId?: number): string {
     "\n2. **Subagents**: Use subagents heavily — spin them up for code edits, searches, research, and reviews. Run them in parallel when tasks are independent. You plan and verify; subagents execute." +
     "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
     "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize or stop." +
-    "\n5. **Memory**: Use `memory_save` to persist important facts/preferences. Use `memory_search` before tasks to recall context." +
+    "\n5. **Memory**: (a) Call `memory_save` whenever you learn operator preferences, facts, or corrections. (b) Call `memory_search` before starting any task to recall relevant context. (c) Call `memory_status` when reporting progress to include memory health. These tools persist knowledge across sessions." +
     threadHint +
     `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
   );
@@ -1357,6 +1357,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         scheduleHint = `\n\n📋 **Pending scheduled tasks:**\n${taskList}`;
       }
     }
+
+    // ── Auto-consolidation during idle ──────────────────────────────────────
+    // If operator has been idle for 30+ min, run lightweight consolidation
+    try {
+      const idleMs = Date.now() - lastOperatorMessageAt;
+      if (idleMs > 30 * 60 * 1000 && effectiveThreadId !== undefined) {
+        const db = getMemoryDb();
+        const uncons = getUnconsolidatedEpisodes(db, effectiveThreadId, 30);
+        if (uncons.length > 0) {
+          markConsolidated(db, uncons.map(ep => ep.episodeId));
+          logConsolidation(db, {
+            episodesProcessed: uncons.length,
+            notesCreated: 0,
+            notesMerged: 0,
+            notesSuperseded: 0,
+            proceduresUpdated: 0,
+            durationMs: 0,
+          });
+        }
+      }
+    } catch (_) { /* consolidation failure is non-fatal */ }
 
     return {
       content: [
