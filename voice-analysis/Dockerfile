@@ -26,8 +26,8 @@ COPY app.py .
 COPY warmup.py .
 
 # Pre-download all models during build to bake weights into the image layer.
-# v2 models: emotion2vec+ base (~350MB), audeering emotion-dim (~1.2GB),
-# audeering age-gender (~1.2GB). Total ~2.7GB of model weights.
+# v3 models: emotion2vec+ base (~350MB), audeering emotion-dim (~1.2GB),
+# audeering age-gender (~1.2GB), PANNs CNN14 (~300MB). Total ~3.0GB of model weights.
 RUN python warmup.py
 
 RUN chown -R appuser:appuser /app

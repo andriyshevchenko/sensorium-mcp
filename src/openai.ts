@@ -86,6 +86,20 @@ export async function transcribeAudio(
 // Voice Emotion Analysis (optional external microservice)
 // ---------------------------------------------------------------------------
 
+export interface AudioEvent {
+    label: string;
+    score: number;
+}
+
+export interface Paralinguistics {
+    speech_rate?: number;
+    mean_pitch_hz?: number;
+    pitch_std_hz?: number;
+    jitter?: number;
+    shimmer?: number;
+    hnr_db?: number;
+}
+
 export interface VoiceAnalysisResult {
     emotion: string | null;
     emotion_scores?: Record<string, number>;
@@ -95,6 +109,8 @@ export interface VoiceAnalysisResult {
     gender: string | null;
     age_estimate: number | null;
     duration_seconds: number;
+    audio_events?: AudioEvent[];
+    paralinguistics?: Paralinguistics;
 }
 
 /**

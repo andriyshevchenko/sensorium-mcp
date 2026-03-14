@@ -724,6 +724,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   tags.push(`tone: ${emotionStr}`);
                 }
                 if (analysis?.gender) tags.push(`gender: ${analysis.gender}`);
+                // Audio events from PANNs (e.g. laughter, music, typing)
+                if (analysis?.audio_events && analysis.audio_events.length > 0) {
+                  const eventLabels = analysis.audio_events
+                    .map(e => `${e.label} (${Math.round(e.score * 100)}%)`)
+                    .join(", ");
+                  tags.push(`sounds: ${eventLabels}`);
+                }
+                // Paralinguistics (speech rate, pitch)
+                if (analysis?.paralinguistics) {
+                  const p = analysis.paralinguistics;
+                  const paraItems: string[] = [];
+                  if (p.speech_rate != null) paraItems.push(`${p.speech_rate} syl/s`);
+                  if (p.mean_pitch_hz != null) paraItems.push(`pitch ${p.mean_pitch_hz}Hz`);
+                  if (paraItems.length > 0) tags.push(`speech: ${paraItems.join(", ")}`);
+                }
                 const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
 
                 contentBlocks.push({

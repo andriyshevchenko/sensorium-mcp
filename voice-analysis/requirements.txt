@@ -7,6 +7,8 @@ soundfile>=0.12.0
 huggingface-hub>=0.20.0,<1.0.0
 funasr>=1.1.0
 transformers>=4.36.0
+panns-inference>=0.1.0
+praat-parselmouth>=0.4.0
 # torch and torchaudio are installed as CPU-only in the Dockerfile
 # torch==2.5.1
 # torchaudio==2.5.1

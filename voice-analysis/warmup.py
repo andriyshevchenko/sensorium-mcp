@@ -32,4 +32,11 @@ Wav2Vec2Processor.from_pretrained(
 snapshot_download("audeering/wav2vec2-large-robust-24-ft-age-gender")
 logger.info("  ✓ audeering age-gender cached")
 
-logger.info("All v2 models pre-downloaded successfully.")
+# 4. PANNs CNN14 audio event detection
+logger.info("Downloading PANNs CNN14 model...")
+from panns_inference import AudioTagging
+_at = AudioTagging(checkpoint_path=None, device="cpu")
+del _at
+logger.info("  ✓ PANNs CNN14 cached")
+
+logger.info("All models pre-downloaded successfully.")
