@@ -169,7 +169,7 @@ export async function analyzeVoiceEmotion(
 }
 
 // ---------------------------------------------------------------------------
-// Video Frame Analysis (GPT-4.1 vision)
+// Video Frame Analysis (GPT-5-mini vision)
 // ---------------------------------------------------------------------------
 
 /** Maximum number of frames to extract from a video. */
@@ -256,7 +256,7 @@ export function extractVideoFrames(
 }
 
 /**
- * Analyze video frames using OpenAI GPT-4.1 vision.
+ * Analyze video frames using OpenAI GPT-5-mini vision.
  * @param frames     Array of JPEG frame buffers.
  * @param durationSec  Video duration for timestamp context.
  * @param apiKey     OpenAI API key.
@@ -302,7 +302,7 @@ export async function analyzeVideoFrames(
             Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-            model: "gpt-4.1",
+            model: "gpt-5-mini",
             messages: [{ role: "user", content }],
             max_tokens: 300,
         }),
