@@ -54,6 +54,7 @@ export async function textToSpeech(
 export async function transcribeAudio(
     audioBuffer: Buffer,
     apiKey: string,
+    filename: string = "voice.ogg",
 ): Promise<string> {
     // Telegram stores voice as .oga (OGG Opus). Whisper accepts .ogg but
     // not .oga, so we hardcode the extension.
@@ -61,7 +62,7 @@ export async function transcribeAudio(
     formData.append(
         "file",
         new Blob([new Uint8Array(audioBuffer)]),
-        "voice.ogg",
+        filename,
     );
     formData.append("model", "whisper-1");
 
@@ -168,7 +169,7 @@ export async function analyzeVoiceEmotion(
 }
 
 // ---------------------------------------------------------------------------
-// Video Frame Analysis (GPT-4o vision)
+// Video Frame Analysis (GPT-4.1 vision)
 // ---------------------------------------------------------------------------
 
 /** Maximum number of frames to extract from a video. */
@@ -224,11 +225,16 @@ export function extractVideoFrames(
         proc.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
         proc.stderr.on("data", (chunk: Buffer) => errChunks.push(chunk));
 
+        // Kill ffmpeg if it hangs for more than 30 seconds.
+        const killTimer = setTimeout(() => proc.kill("SIGKILL"), 30_000);
+
         proc.on("error", (err) => {
+            clearTimeout(killTimer);
             reject(new Error(`ffmpeg not found or failed to start: ${err.message}`));
         });
 
         proc.on("close", (code) => {
+            clearTimeout(killTimer);
             if (code !== 0) {
                 const stderr = Buffer.concat(errChunks).toString("utf8").slice(-500);
                 reject(new Error(`ffmpeg exited with code ${code}: ${stderr}`));
@@ -243,13 +249,14 @@ export function extractVideoFrames(
             resolve(frames);
         });
 
+        proc.stdin.on("error", () => { /* swallow — proc close handles exit */ });
         proc.stdin.write(videoBuffer);
         proc.stdin.end();
     });
 }
 
 /**
- * Analyze video frames using OpenAI GPT-4o vision.
+ * Analyze video frames using OpenAI GPT-4.1 vision.
  * @param frames     Array of JPEG frame buffers.
  * @param durationSec  Video duration for timestamp context.
  * @param apiKey     OpenAI API key.
@@ -295,7 +302,7 @@ export async function analyzeVideoFrames(
             Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-            model: "gpt-4o",
+            model: "gpt-4.1",
             messages: [{ role: "user", content }],
             max_tokens: 300,
         }),
