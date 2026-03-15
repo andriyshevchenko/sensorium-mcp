@@ -19,7 +19,7 @@
  * Optional environment variables:
  *   WAIT_TIMEOUT_MINUTES  – How long to wait for a message before timing out
  *                           and instructing the agent to call the tool again
- *                           (default: 30).
+ *                           (default: 120).
  *   OPENAI_API_KEY        – OpenAI API key for voice message transcription
  *                           via Whisper and text-to-speech via TTS. Without it,
  *                           voice messages show a placeholder and send_voice
@@ -32,7 +32,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { createRequire } from "module";
 import { homedir } from "os";
 import { basename, join } from "path";
@@ -245,7 +245,7 @@ mkdirSync(FILES_DIR, { recursive: true });
 
 /**
  * Save a buffer to disk under FILES_DIR with a unique timestamped name.
- * Returns the absolute file path.
+ * Returns the absolute file path. Caps directory at 500 files by deleting oldest.
  */
 function saveFileToDisk(buffer: Buffer, filename: string): string {
   const ts = Date.now();
@@ -253,6 +253,20 @@ function saveFileToDisk(buffer: Buffer, filename: string): string {
   const diskName = `${ts}-${safeName}`;
   const filePath = join(FILES_DIR, diskName);
   writeFileSync(filePath, buffer);
+
+  // Cleanup: cap at 500 files
+  try {
+    const files = readdirSync(FILES_DIR)
+      .map(f => ({ name: f, mtime: statSync(join(FILES_DIR, f)).mtimeMs }))
+      .sort((a, b) => a.mtime - b.mtime);
+    if (files.length > 500) {
+      const toDelete = files.slice(0, files.length - 500);
+      for (const f of toDelete) {
+        try { unlinkSync(join(FILES_DIR, f.name)); } catch (_) { /* ignore */ }
+      }
+    }
+  } catch (_) { /* non-fatal */ }
+
   return filePath;
 }
 
@@ -263,7 +277,23 @@ let sessionStartedAt = Date.now();
 
 // Tracks update_ids already previewed via report_progress's peek, so the
 // same steering messages aren't shown repeatedly across multiple calls.
+// Capped at 1000 entries to prevent unbounded growth in long sessions.
 const previewedUpdateIds = new Set<number>();
+const PREVIEWED_IDS_CAP = 1000;
+
+function addPreviewedId(id: number): void {
+  if (previewedUpdateIds.size >= PREVIEWED_IDS_CAP) {
+    // Evict oldest entries (Sets iterate in insertion order)
+    const toDelete = previewedUpdateIds.size - PREVIEWED_IDS_CAP + 100;
+    let deleted = 0;
+    for (const old of previewedUpdateIds) {
+      if (deleted >= toDelete) break;
+      previewedUpdateIds.delete(old);
+      deleted++;
+    }
+  }
+  previewedUpdateIds.add(id);
+}
 
 // ---------------------------------------------------------------------------
 // Session store — persists topic name → thread ID mappings to disk so the
@@ -1465,7 +1495,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const pendingStored = peekThreadMessages(effectiveThreadId);
       for (const msg of pendingStored) {
         if (previewedUpdateIds.has(msg.update_id)) continue;
-        previewedUpdateIds.add(msg.update_id);
+        addPreviewedId(msg.update_id);
 
         if (msg.message.photo && msg.message.photo.length > 0) {
           pendingMessages.push(
