@@ -1379,9 +1379,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
             `Do NOT summarize, stop, or say the session is idle. ` +
             `Just call the tool again immediately.` +
-            `\n\nNo instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. ` +
-            `This is your opportunity to improve things — fix issues, optimize code, verify deployments, run consolidation, research upcoming tasks, or tackle anything that makes the project better. ` +
-            `Great assistants don't just wait — they find ways to add value.` +
+            `\n\nNo instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Do what you find interesting — surprise the operator.` +
             scheduleHint +
             getReminders(effectiveThreadId),
         },
