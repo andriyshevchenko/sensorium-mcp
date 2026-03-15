@@ -17,7 +17,7 @@ COPY requirements.txt .
 # Install CPU-only torch first (much smaller, ~200MB vs ~2GB for CUDA), then the rest.
 # funasr uses torch; audeering models use transformers + torch for inference.
 RUN pip install --no-cache-dir \
-    torch==2.5.1+cpu torchaudio==2.5.1+cpu \
+    torch==2.10.0+cpu torchaudio==2.10.0+cpu \
     --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt && \
     python -c "import torch; assert '+cpu' in torch.__version__, f'Expected CPU torch, got {torch.__version__}'"
