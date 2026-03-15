@@ -1303,6 +1303,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           } catch (_) { /* memory write failures should never break the main flow */ }
         }
 
+        // Inject subagent/delegation hint right after the operator's message
+        // so the agent treats it as part of the operator's instructions.
+        const delegationHint: { type: "text"; text: string } = {
+          type: "text",
+          text:
+            "\n Read and incorporate the operator's new messages." +
+            "\n - Update or refine your plan as needed." +
+            "\n - Continue your work." +
+            "\n\n⚠️ HINT from operator: Use subagents (runSubagent) for ALL substantial work — code edits, research, reviews, searches, and terminal commands. " +
+            "Subagents have full access to ALL MCP tools including terminal, file system, and web search. " +
+            "Run them in parallel when tasks are independent. You plan and verify; subagents execute.",
+        };
+
         return {
           content: [
             {
@@ -1314,6 +1327,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 "The operator is REMOTE — they cannot see your screen. If you don't call report_progress, they see nothing.",
             },
             ...contentBlocks,
+            delegationHint,
             ...(hasVoiceMessages
               ? [{
                 type: "text" as const,
@@ -1538,11 +1552,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       pendingMessages.length > 0
         ? `${baseStatus}\n\n` +
         `While you were working, the operator sent additional message(s). ` +
-        `Use those messages to steer your active session: ${pendingMessages.join("\n\n")}. ` +
-        `You should:\n` +
-        ` - Read and incorporate the operator's new messages.\n` +
-        ` - Update or refine your plan as needed.\n` +
-        ` - Continue your work.`
+        `Use those messages to steer your active session: ${pendingMessages.join("\n\n")}` +
+        `\n\n⚠️ HINT from operator: Use subagents (runSubagent) for ALL substantial work. ` +
+        `Subagents have full access to ALL MCP tools. You plan and verify; subagents execute.`
         : baseStatus;
 
     return {
