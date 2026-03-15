@@ -610,11 +610,6 @@ export function supersedeNote(
   return newId;
 }
 
-export function expireNote(db: Database, noteId: string): void {
-  const now = nowISO();
-  db.prepare(`UPDATE semantic_notes SET valid_to = ?, updated_at = ? WHERE note_id = ?`).run(now, now, noteId);
-}
-
 // ─── Procedural Memory ──────────────────────────────────────────────────────
 
 export function saveProcedure(
@@ -729,25 +724,6 @@ export function updateProcedure(
 
   params.push(procedureId);
   db.prepare(`UPDATE procedures SET ${setClauses.join(", ")} WHERE procedure_id = ?`).run(...params);
-}
-
-export function recordProcedureExecution(db: Database, procedureId: string, success: boolean): void {
-  const now = nowISO();
-
-  // Get current stats
-  const row = db.prepare(`SELECT times_executed, success_rate FROM procedures WHERE procedure_id = ?`).get(procedureId) as
-    | { times_executed: number; success_rate: number }
-    | undefined;
-
-  if (!row) return;
-
-  const newCount = row.times_executed + 1;
-  // Weighted moving average for success rate
-  const newRate = (row.success_rate * row.times_executed + (success ? 1 : 0)) / newCount;
-
-  db.prepare(
-    `UPDATE procedures SET times_executed = ?, success_rate = ?, last_executed_at = ?, updated_at = ? WHERE procedure_id = ?`
-  ).run(newCount, newRate, now, now, procedureId);
 }
 
 // ─── Meta Memory ─────────────────────────────────────────────────────────────
