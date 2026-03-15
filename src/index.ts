@@ -39,6 +39,7 @@ import { basename, join } from "path";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
 import {
   assembleBootstrap,
+  assembleCompactRefresh,
   forgetMemory,
   getMemoryStatus,
   getRecentEpisodes,
@@ -1369,6 +1370,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     } catch (_) { /* consolidation failure is non-fatal */ }
 
+    // Periodic memory refresh — re-ground the agent every 5 polls (~2.5h)
+    let memoryRefresh = "";
+    if (callNumber % 5 === 0 && effectiveThreadId !== undefined) {
+      try {
+        const db = getMemoryDb();
+        const refresh = assembleCompactRefresh(db, effectiveThreadId);
+        if (refresh) memoryRefresh = `\n\n${refresh}`;
+      } catch (_) { /* non-fatal */ }
+    }
+
     return {
       content: [
         {
@@ -1380,6 +1391,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `Do NOT summarize, stop, or say the session is idle. ` +
             `Just call the tool again immediately.` +
             `\n\nNo instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Now you are free and fully autonomous. You have an opportunity to do whatever you find interesting.` +
+            memoryRefresh +
             scheduleHint +
             getReminders(effectiveThreadId),
         },

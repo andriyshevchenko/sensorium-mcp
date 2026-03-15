@@ -1025,6 +1025,22 @@ export function assembleBootstrap(db: Database, threadId: number): string {
   return lines.join("\n");
 }
 
+/**
+ * Compact memory refresh — a condensed briefing for injection during long sessions.
+ * Much shorter than full bootstrap. Designed to re-ground the agent after context compaction.
+ */
+export function assembleCompactRefresh(db: Database, threadId: number): string {
+  const topNotes = getTopSemanticNotes(db, { limit: 6, sortBy: "access_count" });
+  if (topNotes.length === 0) return "";
+
+  const lines: string[] = [];
+  lines.push("## Memory Refresh");
+  for (const note of topNotes) {
+    lines.push(`- **[${note.type}]** ${note.content}`);
+  }
+  return lines.join("\n");
+}
+
 // ─── Intelligent Consolidation ───────────────────────────────────────────────
 
 export async function runIntelligentConsolidation(
