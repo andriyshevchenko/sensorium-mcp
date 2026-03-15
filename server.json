@@ -1,0 +1,61 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.andriyshevchenko/sensorium-mcp",
+  "description": "MCP server with 5-layer persistent memory, voice analysis, Telegram remote control, and task scheduler for AI assistants",
+  "title": "Sensorium MCP",
+  "websiteUrl": "https://github.com/andriyshevchenko/sensorium-mcp",
+  "repository": {
+    "url": "https://github.com/andriyshevchenko/sensorium-mcp",
+    "source": "github"
+  },
+  "version": "2.8.3",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "sensorium-mcp",
+      "version": "2.8.3",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "TELEGRAM_TOKEN",
+          "description": "Telegram Bot API token",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "TELEGRAM_CHAT_ID",
+          "description": "Telegram forum supergroup chat ID",
+          "isRequired": true,
+          "isSecret": false
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "description": "OpenAI API key for voice transcription (Whisper), TTS, and memory consolidation",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "VOICE_ANALYSIS_URL",
+          "description": "Voice emotion analysis microservice URL",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CONSOLIDATION_MODEL",
+          "description": "OpenAI model for memory consolidation (default: gpt-4o-mini)",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "WAIT_TIMEOUT_MINUTES",
+          "description": "How long to wait for messages before timeout (default: 120)",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
