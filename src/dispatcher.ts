@@ -189,7 +189,9 @@ function readOffset(): number {
 
 function writeOffset(offset: number): void {
     try {
-        writeFileSync(OFFSET_FILE, String(offset), "utf8");
+        const tmp = OFFSET_FILE + `.tmp.${process.pid}`;
+        writeFileSync(tmp, String(offset), "utf8");
+        renameSync(tmp, OFFSET_FILE); // atomic replace
     } catch {
         // Non-fatal.
     }
@@ -276,11 +278,13 @@ export function readThreadMessages(threadId: number | undefined): StoredMessage[
     }
     try {
         const raw = readFileSync(tmp, "utf8").trim();
-        return parseJsonlLines(raw, `${key}.jsonl`);
-    } catch {
-        return [];
-    } finally {
+        const messages = parseJsonlLines(raw, `${key}.jsonl`);
         try { unlinkSync(tmp); } catch { /* already gone */ }
+        return messages;
+    } catch {
+        // Read failed — restore the original file to prevent message loss
+        try { renameSync(tmp, file); } catch { /* best effort */ }
+        return [];
     }
 }
 

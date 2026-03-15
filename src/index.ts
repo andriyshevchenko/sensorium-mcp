@@ -1067,7 +1067,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         type ImageBlock = { type: "image"; data: string; mimeType: string };
         const contentBlocks: Array<TextBlock | ImageBlock> = [];
         let hasVoiceMessages = false;
-        let episodeAlreadySaved = false;
+        // Track which messages already had episodes saved (voice/video handlers)
+        const savedEpisodeUpdateIds = new Set<number>();
 
         for (const msg of stored) {
           // Photos: download the largest size, persist to disk, and embed as base64.
@@ -1191,7 +1192,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                       audioEvents: analysis.audio_events?.map(e => ({ label: e.label, confidence: e.score })),
                       durationSec: msg.message.voice.duration,
                     });
-                    episodeAlreadySaved = true;
+                    savedEpisodeUpdateIds.add(msg.update_id);
                   } catch (_) { /* non-fatal */ }
                 }
               } catch (err) {
@@ -1278,7 +1279,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                       audioEvents: analysis.audio_events?.map(e => ({ label: e.label, confidence: e.score })),
                       durationSec: vn.duration,
                     });
-                    episodeAlreadySaved = true;
+                    savedEpisodeUpdateIds.add(msg.update_id);
                   } catch (_) { /* non-fatal */ }
                 }
               } catch (err) {
@@ -1302,28 +1303,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           continue;
         }
 
-        // Auto-ingest episodes (skip if a modality-specific handler already saved)
-        if (!episodeAlreadySaved) {
-          try {
-            const db = getMemoryDb();
-            const sessionId = `session_${sessionStartedAt}`;
-            if (effectiveThreadId !== undefined) {
-              const textContent = contentBlocks
-                .filter((b): b is { type: "text"; text: string } => b.type === "text")
-                .map(b => b.text)
+        // Auto-ingest episodes for messages not already saved by voice/video handlers
+        try {
+          const db = getMemoryDb();
+          const sessionId = `session_${sessionStartedAt}`;
+          if (effectiveThreadId !== undefined) {
+            // Collect text from messages that didn't already get an episode
+            const unsavedMsgs = stored.filter(m => !savedEpisodeUpdateIds.has(m.update_id));
+            if (unsavedMsgs.length > 0) {
+              const textContent = unsavedMsgs
+                .map(m => m.message.text ?? m.message.caption ?? "")
+                .filter(Boolean)
                 .join("\n")
                 .slice(0, 2000);
-              saveEpisode(db, {
-                sessionId,
-                threadId: effectiveThreadId,
-                type: "operator_message",
-                modality: hasVoiceMessages ? "voice" : "text",
-                content: { raw: textContent },
-                importance: 0.5,
-              });
+              if (textContent) {
+                saveEpisode(db, {
+                  sessionId,
+                  threadId: effectiveThreadId,
+                  type: "operator_message",
+                  modality: "text",
+                  content: { raw: textContent },
+                  importance: 0.5,
+                });
+              }
             }
-          } catch (_) { /* memory write failures should never break the main flow */ }
-        }
+          }
+        } catch (_) { /* memory write failures should never break the main flow */ }
 
         // Inject subagent/delegation hint right after the operator's message
         // so the agent treats it as part of the operator's instructions.
@@ -2074,10 +2079,22 @@ if (httpPort) {
   // ── HTTP/SSE transport ──────────────────────────────────────────────────
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
+  const MCP_HTTP_SECRET = process.env.MCP_HTTP_SECRET;
+  const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+
   async function parseBody(req: IncomingMessage): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
-      req.on("data", (c: Buffer) => chunks.push(c));
+      let totalSize = 0;
+      req.on("data", (c: Buffer) => {
+        totalSize += c.length;
+        if (totalSize > MAX_BODY_SIZE) {
+          req.destroy();
+          reject(new Error("Request body too large"));
+          return;
+        }
+        chunks.push(c);
+      });
       req.on("end", () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
         catch (e) { reject(e); }
@@ -2087,11 +2104,29 @@ if (httpPort) {
   }
 
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    // CORS for local dev
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // CORS for local dev (restrict to localhost)
+    const origin = req.headers.origin ?? "";
+    const allowedOrigin = origin.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/) ? origin : "";
+    res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id, Authorization");
     res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    // Auth check — if MCP_HTTP_SECRET is set, require Bearer token
+    if (MCP_HTTP_SECRET) {
+      const auth = req.headers.authorization;
+      if (auth !== `Bearer ${MCP_HTTP_SECRET}`) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
+      }
+    }
 
     if (req.method === "OPTIONS") {
       res.writeHead(204);
