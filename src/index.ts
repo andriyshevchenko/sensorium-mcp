@@ -1875,10 +1875,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "memory_save") {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const threadId = resolveThreadId(typedArgs);
+    const VALID_TYPES = ["fact", "preference", "pattern", "entity", "relationship"] as const;
+    const noteType = String(typedArgs.type ?? "fact");
+    if (!VALID_TYPES.includes(noteType as typeof VALID_TYPES[number])) {
+      return errorResult(`Invalid type "${noteType}". Must be one of: ${VALID_TYPES.join(", ")}`);
+    }
     try {
       const db = getMemoryDb();
       const noteId = saveSemanticNote(db, {
-        type: String(typedArgs.type ?? "fact") as "fact" | "preference" | "pattern" | "entity" | "relationship",
+        type: noteType as typeof VALID_TYPES[number],
         content: String(typedArgs.content ?? ""),
         keywords: (typedArgs.keywords as string[]) ?? [],
         confidence: typeof typedArgs.confidence === "number" ? typedArgs.confidence : 0.8,
@@ -1935,10 +1940,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (action === "supersede" && memId.startsWith("sn_")) {
         const origRow = db.prepare("SELECT type, keywords FROM semantic_notes WHERE note_id = ?").get(memId) as { type: string; keywords: string } | undefined;
+        if (!origRow) {
+          return errorResult(`Note ${memId} not found — cannot supersede a non-existent note.`);
+        }
         const newId = supersedeNote(db, memId, {
-          type: (origRow?.type ?? "fact") as "fact" | "preference" | "pattern" | "entity" | "relationship",
+          type: origRow.type as "fact" | "preference" | "pattern" | "entity" | "relationship",
           content: String(typedArgs.newContent ?? ""),
-          keywords: origRow?.keywords ? JSON.parse(origRow.keywords) : [],
+          keywords: origRow.keywords ? JSON.parse(origRow.keywords) : [],
           confidence: typeof typedArgs.newConfidence === "number" ? typedArgs.newConfidence : 0.8,
         });
         return {
@@ -2214,6 +2222,7 @@ if (httpPort) {
       transports.delete(sid);
     }
     httpServer.close();
+    if (memoryDb) memoryDb.close();
     process.exit(0);
   });
 } else {
@@ -2221,4 +2230,9 @@ if (httpPort) {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write("Remote Copilot MCP server running on stdio.\n");
+
+  // Close DB on exit for stdio mode too
+  process.on("exit", () => {
+    if (memoryDb) memoryDb.close();
+  });
 }
