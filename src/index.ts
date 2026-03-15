@@ -388,6 +388,20 @@ const DEAD_SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (2× wait_for_inst
 // Used by the scheduler to detect idle periods.
 let lastOperatorMessageAt = Date.now();
 
+// Subagent compliance tracker — counts tool calls since last operator message
+// delivery. After 8+ calls without wait_for_instructions, nudge the agent.
+let toolCallsSinceLastDelivery = 0;
+const SUBAGENT_NUDGE_THRESHOLD = 8;
+
+function getSubagentNudge(): string {
+  if (toolCallsSinceLastDelivery >= SUBAGENT_NUDGE_THRESHOLD) {
+    toolCallsSinceLastDelivery = 0; // reset after nudge
+    return "\n\n💡 Reminder: You've made many direct tool calls. Consider using subagents (runSubagent) " +
+      "for substantial work — they can run code edits, research, and terminal commands in parallel.";
+  }
+  return "";
+}
+
 // ---------------------------------------------------------------------------
 // MCP Server
 // ---------------------------------------------------------------------------
@@ -864,6 +878,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // as that's the primary health signal (agent is actively polling).
   lastToolCallAt = Date.now();
 
+  // Track tool calls for subagent compliance nudging
+  toolCallsSinceLastDelivery++;
+
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
     sessionStartedAt = Date.now();
@@ -1003,6 +1020,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "remote_copilot_wait_for_instructions") {
     // Agent is actively polling — this is the primary health signal
     deadSessionAlerted = false;
+    toolCallsSinceLastDelivery = 0; // reset on polling
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const effectiveThreadId = resolveThreadId(typedArgs);
     if (effectiveThreadId === undefined) {
@@ -1555,7 +1573,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `Use those messages to steer your active session: ${pendingMessages.join("\n\n")}` +
         `\n\n⚠️ HINT from operator: Use subagents (runSubagent) for ALL substantial work. ` +
         `Subagents have full access to ALL MCP tools. You plan and verify; subagents execute.`
-        : baseStatus;
+        : baseStatus + getSubagentNudge();
 
     return {
       content: [
@@ -1857,7 +1875,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         confidence: typeof typedArgs.confidence === "number" ? typedArgs.confidence : 0.8,
       });
       return {
-        content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getReminders(threadId) }],
+        content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getReminders(threadId) + getSubagentNudge() }],
       };
     } catch (err) {
       return { content: [{ type: "text", text: `Memory save error: ${errorMessage(err)}` + getReminders(threadId) }] };
