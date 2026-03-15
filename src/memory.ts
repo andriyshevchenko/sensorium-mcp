@@ -1118,7 +1118,7 @@ Rules:
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-5-mini",
+        model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: "Extract knowledge from the episodes above." },
