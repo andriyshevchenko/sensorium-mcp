@@ -1,14 +1,14 @@
-fastapi==0.115.0
-uvicorn==0.30.0
+fastapi==0.135.1
+uvicorn==0.34.1
 librosa==0.10.2
-python-multipart==0.0.20
+python-multipart==0.0.22
 numpy<2.0.0
 soundfile>=0.12.0
 huggingface-hub>=0.20.0,<1.0.0
 funasr>=1.1.0
-transformers>=4.36.0
+transformers>=4.46.0
 panns-inference>=0.1.0
 praat-parselmouth>=0.4.0
 # torch and torchaudio are installed as CPU-only in the Dockerfile
-# torch==2.5.1
-# torchaudio==2.5.1
+# torch==2.10.0
+# torchaudio==2.10.0
