@@ -50,7 +50,7 @@ Start remote copilot session
 
 ### 5-Layer Memory System
 
-Every operator message is automatically captured. Knowledge is extracted and consolidated during idle time using GPT-5 mini.
+Every operator message is automatically captured. Knowledge is extracted and consolidated during idle time using a configurable LLM (default: `gpt-4o-mini`).
 
 | Layer | What it stores |
 |-------|---------------|
@@ -66,7 +66,7 @@ Storage: SQLite at `~/.sensorium-mcp/memory.db`. No external database required.
 
 **Auto-ingest** — every operator message is saved as an episode automatically.
 
-**Intelligent consolidation** — GPT-5 mini analyzes accumulated episodes and extracts durable knowledge (facts, preferences, patterns) during idle periods.
+**Intelligent consolidation** — a configurable LLM analyzes accumulated episodes and extracts durable knowledge (facts, preferences, patterns) during idle periods.
 
 ### Remote Control via Telegram
 
@@ -112,7 +112,7 @@ Automatic alert when no tool calls arrive for 60 minutes. Single alert per downt
 | `memory_save` | Save a fact, preference, pattern, entity, or relationship |
 | `memory_save_procedure` | Save a multi-step procedure |
 | `memory_update` | Update or supersede an existing note |
-| `memory_consolidate` | Run intelligent consolidation (GPT-5 mini) |
+| `memory_consolidate` | Run intelligent consolidation |
 | `memory_status` | Check memory health and statistics |
 | `memory_forget` | Delete a specific memory note |
 
@@ -124,6 +124,7 @@ Automatic alert when no tool calls arrive for 60 minutes. Single alert per downt
 | `TELEGRAM_CHAT_ID` | Yes | — | Forum supergroup chat ID |
 | `OPENAI_API_KEY` | No | — | For voice transcription (Whisper), TTS, and memory consolidation |
 | `VOICE_ANALYSIS_URL` | No | — | Voice emotion analysis microservice URL |
+| `CONSOLIDATION_MODEL` | No | `gpt-4o-mini` | OpenAI model for memory consolidation |
 | `WAIT_TIMEOUT_MINUTES` | No | `120` | Wait timeout in minutes |
 
 ## Prerequisites
