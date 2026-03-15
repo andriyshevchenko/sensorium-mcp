@@ -28,10 +28,14 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
+  isInitializeRequest,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { createRequire } from "module";
 import { homedir } from "os";
@@ -2064,6 +2068,122 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // Start the server
 // ---------------------------------------------------------------------------
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
-process.stderr.write("Remote Copilot MCP server running on stdio.\n");
+const httpPort = process.env.MCP_HTTP_PORT ? parseInt(process.env.MCP_HTTP_PORT, 10) : undefined;
+
+if (httpPort) {
+  // ── HTTP/SSE transport ──────────────────────────────────────────────────
+  const transports = new Map<string, StreamableHTTPServerTransport>();
+
+  async function parseBody(req: IncomingMessage): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+        catch (e) { reject(e); }
+      });
+      req.on("error", reject);
+    });
+  }
+
+  const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    // CORS for local dev
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id");
+    res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.url !== "/mcp") {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not Found");
+      return;
+    }
+
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+    if (req.method === "POST") {
+      const body = await parseBody(req);
+
+      // Existing session
+      if (sessionId && transports.has(sessionId)) {
+        await transports.get(sessionId)!.handleRequest(req, res, body);
+        return;
+      }
+
+      // New session — must be initialize
+      if (!sessionId && isInitializeRequest(body)) {
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (sid) => {
+            transports.set(sid, transport);
+          },
+        });
+
+        transport.onclose = () => {
+          const sid = transport.sessionId;
+          if (sid) transports.delete(sid);
+        };
+
+        await server.connect(transport);
+        await transport.handleRequest(req, res, body);
+        return;
+      }
+
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Bad Request: No valid session ID or not an initialize request" },
+        id: null,
+      }));
+      return;
+    }
+
+    if (req.method === "GET") {
+      if (!sessionId || !transports.has(sessionId)) {
+        res.writeHead(400, { "Content-Type": "text/plain" });
+        res.end("Invalid or missing session ID");
+        return;
+      }
+      await transports.get(sessionId)!.handleRequest(req, res);
+      return;
+    }
+
+    if (req.method === "DELETE") {
+      if (!sessionId || !transports.has(sessionId)) {
+        res.writeHead(400, { "Content-Type": "text/plain" });
+        res.end("Invalid or missing session ID");
+        return;
+      }
+      await transports.get(sessionId)!.handleRequest(req, res);
+      return;
+    }
+
+    res.writeHead(405, { "Content-Type": "text/plain" });
+    res.end("Method Not Allowed");
+  });
+
+  httpServer.listen(httpPort, () => {
+    process.stderr.write(`Remote Copilot MCP server running on http://localhost:${httpPort}/mcp\n`);
+  });
+
+  // Graceful shutdown
+  process.on("SIGINT", async () => {
+    for (const [sid, t] of transports) {
+      await t.close();
+      transports.delete(sid);
+    }
+    httpServer.close();
+    process.exit(0);
+  });
+} else {
+  // ── stdio transport (default) ───────────────────────────────────────────
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write("Remote Copilot MCP server running on stdio.\n");
+}

@@ -50,6 +50,12 @@
           "isSecret": false
         },
         {
+          "name": "MCP_HTTP_PORT",
+          "description": "If set, starts HTTP/SSE transport on this port instead of stdio",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
           "name": "WAIT_TIMEOUT_MINUTES",
           "description": "How long to wait for messages before timeout (default: 120)",
           "isRequired": false,

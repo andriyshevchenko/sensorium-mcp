@@ -125,6 +125,7 @@ Automatic alert when no tool calls arrive for 60 minutes. Single alert per downt
 | `OPENAI_API_KEY` | No | — | For voice transcription (Whisper), TTS, and memory consolidation |
 | `VOICE_ANALYSIS_URL` | No | — | Voice emotion analysis microservice URL |
 | `CONSOLIDATION_MODEL` | No | `gpt-4o-mini` | OpenAI model for memory consolidation |
+| `MCP_HTTP_PORT` | No | — | If set, starts HTTP/SSE transport on this port instead of stdio |
 | `WAIT_TIMEOUT_MINUTES` | No | `120` | Wait timeout in minutes |
 
 ## Prerequisites
@@ -132,6 +133,28 @@ Automatic alert when no tool calls arrive for 60 minutes. Single alert per downt
 - Node.js 18+ (uses native `fetch`)
 - A [Telegram bot token](https://core.telegram.org/bots#botfather)
 - A Telegram **forum supergroup** with the bot as admin (Manage Topics right)
+
+## Transport Modes
+
+**stdio (default)** — standard MCP transport. Used with `npx sensorium-mcp@latest`.
+
+**HTTP/SSE** — set `MCP_HTTP_PORT` to start an HTTP server. Useful for development (restart server without restarting VS Code) or remote connections:
+
+```json
+{
+  "servers": {
+    "sensorium-mcp": {
+      "type": "streamableHttp",
+      "url": "http://localhost:3847/mcp"
+    }
+  }
+}
+```
+
+Start the server separately:
+```bash
+MCP_HTTP_PORT=3847 TELEGRAM_TOKEN=... TELEGRAM_CHAT_ID=... node dist/index.js
+```
 
 ## How It Works
 
