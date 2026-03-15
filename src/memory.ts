@@ -478,12 +478,14 @@ export function searchSemanticNotes(
   if (terms.length === 0) return [];
 
   // Build LIKE conditions: each term must match content OR keywords
+  // Escape SQL LIKE wildcards in search terms
   const conditions: string[] = [];
   const params: unknown[] = [];
 
   for (const term of terms) {
-    conditions.push(`(LOWER(content) LIKE ? OR LOWER(keywords) LIKE ?)`);
-    params.push(`%${term}%`, `%${term}%`);
+    const escaped = term.replace(/%/g, "\\%").replace(/_/g, "\\_");
+    conditions.push(`(LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(keywords) LIKE ? ESCAPE '\\')`);
+    params.push(`%${escaped}%`, `%${escaped}%`);
   }
 
   let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (${conditions.join(" OR ")})`;
