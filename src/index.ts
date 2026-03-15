@@ -859,9 +859,10 @@ function getReminders(threadId?: number): string {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
-  // Dead session detection — reset on any tool call
+  // Dead session detection — update timestamp on any tool call.
+  // Only reset the alert flag when wait_for_instructions is called,
+  // as that's the primary health signal (agent is actively polling).
   lastToolCallAt = Date.now();
-  deadSessionAlerted = false;
 
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
@@ -1000,6 +1001,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── remote_copilot_wait_for_instructions ──────────────────────────────────
   if (name === "remote_copilot_wait_for_instructions") {
+    // Agent is actively polling — this is the primary health signal
+    deadSessionAlerted = false;
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const effectiveThreadId = resolveThreadId(typedArgs);
     if (effectiveThreadId === undefined) {
