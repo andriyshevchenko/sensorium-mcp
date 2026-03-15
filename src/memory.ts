@@ -1102,7 +1102,6 @@ Rules:
           { role: "system", content: systemPrompt },
           { role: "user", content: "Extract knowledge from the episodes above." },
         ],
-        temperature: 0.3,
         response_format: { type: "json_object" },
       }),
     });
