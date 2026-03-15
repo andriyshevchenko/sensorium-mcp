@@ -211,6 +211,9 @@ CREATE TABLE IF NOT EXISTS procedures (
   updated_at         TEXT NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_proc_name ON procedures(name);
+CREATE INDEX IF NOT EXISTS idx_proc_type ON procedures(type);
+
 CREATE TABLE IF NOT EXISTS meta_topic_index (
   topic            TEXT PRIMARY KEY,
   semantic_count   INTEGER DEFAULT 0,
