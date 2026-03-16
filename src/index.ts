@@ -523,6 +523,7 @@ function createMcpServer(): Server {
   let lastToolCallAt = Date.now();
   let deadSessionAlerted = false;
   let lastOperatorMessageAt = Date.now();
+  let lastConsolidationAt = 0;
   let toolCallsSinceLastDelivery = 0;
   const previewedUpdateIds = new Set<number>();
   const PREVIEWED_IDS_CAP = 1000;
@@ -1290,7 +1291,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
               );
               const filename = doc.file_name ?? basename(telegramPath);
               const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-              const mimeType = doc.mime_type ?? (ext in { jpg: 1, jpeg: 1, png: 1, gif: 1, webp: 1 } ? `image/${ext === "jpg" ? "jpeg" : ext}` : "application/octet-stream");
+              const mimeType = doc.mime_type ?? (IMAGE_EXTENSIONS.has(ext) ? `image/${ext === "jpg" ? "jpeg" : ext}` : "application/octet-stream");
               const base64 = buffer.toString("base64");
               const diskPath = saveFileToDisk(buffer, filename);
               const isImage = mimeType.startsWith("image/");
@@ -1487,10 +1488,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
         if (contentBlocks.length === 0) {
-          // All messages were unsupported types (stickers, etc.);
-          // continue polling instead of returning empty instructions.
-          await new Promise<void>((r) => setTimeout(r, POLL_INTERVAL_MS));
-          continue;
+          contentBlocks.push({
+            type: "text",
+            text: "[Unsupported message type received — the operator sent a message type that cannot be processed (e.g., sticker, location, contact). Please ask them to resend as text, photo, document, or voice.]",
+          });
         }
 
         // Auto-ingest episodes for messages not already saved by voice/video handlers
@@ -1549,7 +1550,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (operatorText.length > 10) { // only search for substantial messages
             const MAX_AUTO_NOTES = 5;
             const MAX_AUTO_CHARS = 2000; // token budget for auto-injected memory
-            const relevant = searchSemanticNotes(db, operatorText, { maxResults: MAX_AUTO_NOTES });
+            const relevant = searchSemanticNotes(db, operatorText, { maxResults: MAX_AUTO_NOTES, skipAccessTracking: true });
             if (relevant.length > 0) {
               let budget = MAX_AUTO_CHARS;
               const lines: string[] = [];
@@ -1661,7 +1662,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
     // ── Auto-consolidation during idle ──────────────────────────────────────
     try {
       const idleMs = Date.now() - lastOperatorMessageAt;
-      if (idleMs > 30 * 60 * 1000 && effectiveThreadId !== undefined) {
+      if (idleMs > 30 * 60 * 1000 && effectiveThreadId !== undefined && Date.now() - lastConsolidationAt > 2 * 60 * 60 * 1000) {
+        lastConsolidationAt = Date.now();
         const db = getMemoryDb();
         const report = await runIntelligentConsolidation(db, effectiveThreadId);
         if (report.episodesProcessed > 0) {
@@ -1670,9 +1672,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     } catch (_) { /* consolidation failure is non-fatal */ }
 
-    // Periodic memory refresh — re-ground the agent every 5 polls (~2.5h)
+    // Periodic memory refresh — re-ground the agent every 10 polls (~5h)
+    // (reduced from 5 since auto-inject now handles per-message context)
     let memoryRefresh = "";
-    if (callNumber % 5 === 0 && effectiveThreadId !== undefined) {
+    if (callNumber % 10 === 0 && effectiveThreadId !== undefined) {
       try {
         const db = getMemoryDb();
         const refresh = assembleCompactRefresh(db, effectiveThreadId);
@@ -2349,6 +2352,7 @@ if (httpPort) {
   }
 
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+   try {
     // CORS for local dev (restrict to localhost)
     const origin = req.headers.origin ?? "";
     const allowedOrigin = origin.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/) ? origin : "";
@@ -2515,6 +2519,13 @@ if (httpPort) {
 
     res.writeHead(405, { "Content-Type": "text/plain" });
     res.end("Method Not Allowed");
+   } catch (err) {
+    process.stderr.write(`[http] Unhandled error: ${typeof err === 'object' && err !== null && 'message' in err ? (err as Error).message : String(err)}\n`);
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null }));
+    }
+   }
   });
 
   httpServer.listen(httpPort, () => {
@@ -2522,7 +2533,10 @@ if (httpPort) {
   });
 
   // Graceful shutdown — let in-flight requests complete before exiting
+  let shutdownStarted = false;
   const gracefulShutdown = async () => {
+    if (shutdownStarted) return;
+    shutdownStarted = true;
     process.stderr.write("[http] Shutting down gracefully...\n");
     shuttingDown = true;
 
