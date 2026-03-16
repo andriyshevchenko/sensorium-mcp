@@ -591,17 +591,21 @@ function formatAutonomousGoals(threadId: number | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
-// MCP Server
+// MCP Server factory — creates a fresh Server per transport connection.
+// This is required because a single Server instance can only connect to one
+// transport. In HTTP mode, each VS Code client gets its own Server instance.
+// All instances share the same tool handler logic and in-process state.
 // ---------------------------------------------------------------------------
 
-const server = new Server(
-  { name: "sensorium-mcp", version: PKG_VERSION },
-  { capabilities: { tools: {} } },
-);
+function createMcpServer(): Server {
+  const srv = new Server(
+    { name: "sensorium-mcp", version: PKG_VERSION },
+    { capabilities: { tools: {} } },
+  );
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
+srv.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "start_session",
@@ -1058,7 +1062,7 @@ function getReminders(threadId?: number): string {
   );
 }
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+srv.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   // Dead session detection — update timestamp on any tool call.
@@ -2272,6 +2276,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   return errorResult(`Unknown tool: ${name}`);
 });
 
+  return srv;
+}
+
 // ---------------------------------------------------------------------------
 // Start the server
 // ---------------------------------------------------------------------------
@@ -2368,7 +2375,10 @@ if (httpPort) {
           if (sid) transports.delete(sid);
         };
 
-        await server.connect(transport);
+        // Create a fresh Server per HTTP session — a single Server can only
+        // connect to one transport, so concurrent clients each need their own.
+        const sessionServer = createMcpServer();
+        await sessionServer.connect(transport);
         await transport.handleRequest(req, res, body);
         return;
       }
@@ -2423,6 +2433,7 @@ if (httpPort) {
 } else {
   // ── stdio transport (default) ───────────────────────────────────────────
   const transport = new StdioServerTransport();
+  const server = createMcpServer();
   await server.connect(transport);
   process.stderr.write("Remote Copilot MCP server running on stdio.\n");
 
