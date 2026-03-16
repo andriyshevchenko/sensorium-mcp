@@ -35,7 +35,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createServer, IncomingMessage } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { createRequire } from "module";
 import { homedir } from "os";
@@ -1694,16 +1694,21 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
-    // ── Auto-consolidation during idle ──────────────────────────────────────
+    // ── Auto-consolidation during idle (fire-and-forget) ────────────────────
+    // Don't await — consolidation can take 10-30s (OpenAI call) and would
+    // stall the agent's poll loop, silently delaying the timeout response.
     try {
       const idleMs = Date.now() - lastOperatorMessageAt;
       if (idleMs > 30 * 60 * 1000 && effectiveThreadId !== undefined && Date.now() - lastConsolidationAt > 2 * 60 * 60 * 1000) {
         lastConsolidationAt = Date.now();
         const db = getMemoryDb();
-        const report = await runIntelligentConsolidation(db, effectiveThreadId);
-        if (report.episodesProcessed > 0) {
-          process.stderr.write(`[memory] Consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
-        }
+        void runIntelligentConsolidation(db, effectiveThreadId).then(report => {
+          if (report.episodesProcessed > 0) {
+            process.stderr.write(`[memory] Consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
+          }
+        }).catch(err => {
+          process.stderr.write(`[memory] Consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
+        });
       }
     } catch (_) { /* consolidation failure is non-fatal */ }
 
@@ -1835,6 +1840,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
         } else if (msg.message.text) {
           pendingMessages.push(msg.message.text);
+        } else {
+          pendingMessages.push("[Unsupported message type — will be shown on next wait]");
         }
       }
     } catch {
@@ -2045,7 +2052,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
       runAt,
       cron,
       afterIdleMinutes,
-      oneShot: runAt != null && !cron,
+      oneShot: runAt != null && !cron && afterIdleMinutes == null,
       createdAt: new Date().toISOString(),
     };
 
@@ -2154,9 +2161,13 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
     try {
       const db = getMemoryDb();
+      const content = String(typedArgs.content ?? "").trim();
+      if (!content) {
+        return errorResult("Error: 'content' is required and cannot be empty.");
+      }
       const noteId = saveSemanticNote(db, {
         type: noteType as typeof VALID_TYPES[number],
-        content: String(typedArgs.content ?? ""),
+        content,
         keywords: (typedArgs.keywords as string[]) ?? [],
         confidence: typeof typedArgs.confidence === "number" ? typedArgs.confidence : 0.8,
       });
@@ -2185,9 +2196,14 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{ type: "text", text: `Updated procedure: ${existingId}` + getReminders(threadId) }],
         };
       }
+      const VALID_PROC_TYPES = ["workflow", "habit", "tool_pattern", "template"] as const;
+      const procType = String(typedArgs.type ?? "workflow");
+      if (!VALID_PROC_TYPES.includes(procType as typeof VALID_PROC_TYPES[number])) {
+        return errorResult(`Invalid procedure type "${procType}". Must be one of: ${VALID_PROC_TYPES.join(", ")}`);
+      }
       const procId = saveProcedure(db, {
         name: String(typedArgs.name ?? ""),
-        type: String(typedArgs.type ?? "workflow") as "workflow" | "habit" | "tool_pattern" | "template",
+        type: procType as typeof VALID_PROC_TYPES[number],
         description: String(typedArgs.description ?? ""),
         steps: typedArgs.steps as string[] | undefined,
         triggerConditions: typedArgs.triggerConditions as string[] | undefined,
@@ -2402,10 +2418,14 @@ if (httpPort) {
       return;
     }
 
-    // Auth check — if MCP_HTTP_SECRET is set, require Bearer token
+    // Auth check — if MCP_HTTP_SECRET is set, require Bearer token.
+    // Use constant-time comparison to prevent timing attacks.
     if (MCP_HTTP_SECRET) {
-      const auth = req.headers.authorization;
-      if (auth !== `Bearer ${MCP_HTTP_SECRET}`) {
+      const auth = req.headers.authorization ?? "";
+      const expected = `Bearer ${MCP_HTTP_SECRET}`;
+      const authBuf = Buffer.from(auth);
+      const expectedBuf = Buffer.from(expected);
+      if (authBuf.length !== expectedBuf.length || !timingSafeEqual(authBuf, expectedBuf)) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Unauthorized" }));
         return;
@@ -2508,13 +2528,16 @@ if (httpPort) {
   });
 
   // Simple shutdown — close transports, DB, and exit.
+  let memoryDbClosed = false;
   const shutdown = () => {
     for (const [sid, t] of transports) {
       try { t.close(); } catch (_) { /* best-effort */ }
       transports.delete(sid);
     }
     httpServer.close();
-    if (memoryDb) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
+    if (memoryDb && !memoryDbClosed) {
+      try { memoryDb.close(); memoryDbClosed = true; } catch (_) { /* best-effort */ }
+    }
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
@@ -2523,7 +2546,7 @@ if (httpPort) {
     process.on("SIGBREAK", shutdown);
   }
   process.on("exit", () => {
-    if (memoryDb) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
+    if (memoryDb && !memoryDbClosed) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
   });
 } else {
   // ── stdio transport (default) ───────────────────────────────────────────
@@ -2532,8 +2555,9 @@ if (httpPort) {
   await server.connect(transport);
   process.stderr.write("Remote Copilot MCP server running on stdio.\n");
 
+  let stdioDbClosed = false;
   const stdioShutdown = () => {
-    if (memoryDb) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
+    if (memoryDb && !stdioDbClosed) { try { memoryDb.close(); stdioDbClosed = true; } catch (_) { /* best-effort */ } }
     process.exit(0);
   };
   process.on("SIGINT", stdioShutdown);
@@ -2542,6 +2566,6 @@ if (httpPort) {
     process.on("SIGBREAK", stdioShutdown);
   }
   process.on("exit", () => {
-    if (memoryDb) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
+    if (memoryDb && !stdioDbClosed) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
   });
 }

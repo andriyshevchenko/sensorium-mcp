@@ -9,7 +9,7 @@ export function errorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
     if (typeof err === "string") return err;
     try {
-        return JSON.stringify(err);
+        return JSON.stringify(err) ?? String(err);
     } catch {
         return String(err);
     }
@@ -42,8 +42,12 @@ export function errorResult(text: string): {
  * Neutral calm speech typically outputs ~0.2 across all three dimensions.
  */
 export function describeADV(arousal: number, dominance: number, valence: number): string {
-    // Normalize 1-5 scale to 0-1 if needed (backward compat with v1 fallback)
-    const norm = (v: number) => v > 1 ? (v - 1) / 4 : v;
+    // Normalize 1-5 scale to 0-1 if needed (backward compat with v1 fallback).
+    // Values > 1.0 are on the 1-5 scale; values in [0, 1.0] are already normalized.
+    // Note: 1.0 exactly is ambiguous but treated as 0-1 scale (= maximum),
+    // which is correct since 1.0 on 1-5 would mean "minimum" and that score
+    // only appears from the v1 fallback which always returns > 1.
+    const norm = (v: number) => v > 1.0 ? (v - 1) / 4 : v;
     const a = norm(arousal);
     const d = norm(dominance);
     const v = norm(valence);
