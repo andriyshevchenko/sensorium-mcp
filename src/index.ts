@@ -1227,7 +1227,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   }),
                   transcribeAudio(buffer, OPENAI_API_KEY, "video.mp4").catch(() => ""),
                   VOICE_ANALYSIS_URL
-                    ? analyzeVoiceEmotion(buffer, VOICE_ANALYSIS_URL).catch(() => null)
+                    ? analyzeVoiceEmotion(buffer, VOICE_ANALYSIS_URL, {
+                        mimeType: "video/mp4",
+                        filename: "video.mp4",
+                      }).catch(() => null)
                     : Promise.resolve(null),
                 ]);
 
