@@ -226,25 +226,6 @@ const telegram = new TelegramClient(TELEGRAM_TOKEN);
 
 await startDispatcher(telegram, TELEGRAM_CHAT_ID);
 
-// Dead session detector — runs every 2 minutes
-setInterval(async () => {
-  if (!currentThreadId) return;
-  const elapsed = Date.now() - lastToolCallAt;
-  if (elapsed > DEAD_SESSION_TIMEOUT_MS && !deadSessionAlerted) {
-    deadSessionAlerted = true;
-    try {
-      const tg = new TelegramClient(TELEGRAM_TOKEN);
-      const minutes = Math.round(elapsed / 60000);
-      await tg.sendMessage(
-        TELEGRAM_CHAT_ID,
-        `⚠️ *Session appears down* — no tool calls in ${minutes} minutes\\. The agent may have crashed or the VS Code window compacted the context\\. Please check and restart if needed\\.`,
-        "MarkdownV2",
-        currentThreadId,
-      );
-    } catch (_) { /* non-fatal */ }
-  }
-}, 2 * 60 * 1000);
-
 // Directory for persisting downloaded images and documents to disk.
 const FILES_DIR = join(homedir(), ".remote-copilot-mcp", "files");
 mkdirSync(FILES_DIR, { recursive: true });
@@ -274,31 +255,6 @@ function saveFileToDisk(buffer: Buffer, filename: string): string {
   } catch (_) { /* non-fatal */ }
 
   return filePath;
-}
-
-// Monotonically increasing counter so every timeout response is unique,
-// preventing VS Code Copilot's loop-detection heuristic from killing the agent.
-let waitCallCount = 0;
-let sessionStartedAt = Date.now();
-
-// Tracks update_ids already previewed via report_progress's peek, so the
-// same steering messages aren't shown repeatedly across multiple calls.
-// Capped at 1000 entries to prevent unbounded growth in long sessions.
-const previewedUpdateIds = new Set<number>();
-const PREVIEWED_IDS_CAP = 1000;
-
-function addPreviewedId(id: number): void {
-  if (previewedUpdateIds.size >= PREVIEWED_IDS_CAP) {
-    // Evict oldest entries (Sets iterate in insertion order)
-    const toDelete = previewedUpdateIds.size - PREVIEWED_IDS_CAP + 100;
-    let deleted = 0;
-    for (const old of previewedUpdateIds) {
-      if (deleted >= toDelete) break;
-      previewedUpdateIds.delete(old);
-      deleted++;
-    }
-  }
-  previewedUpdateIds.add(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -360,53 +316,15 @@ function getMemoryDb() {
   return memoryDb;
 }
 
-// Thread ID of the active session's forum topic. Set by start_session.
-// All sends and receives are scoped to this thread so concurrent sessions
-// in different topics never interfere with each other.
-let currentThreadId: number | undefined;
-
-/**
- * Resolve the effective thread ID for a tool call.
- * Prefers an explicit threadId passed in the tool arguments (enabling
- * multiple concurrent sessions in the same MCP process), then falls
- * back to the module-level currentThreadId.
- *
- * Returns undefined only if no thread has ever been established.
- */
-function resolveThreadId(args: Record<string, unknown> | undefined): number | undefined {
-  const raw = args?.threadId;
-  const explicit = typeof raw === "number" ? raw
-    : typeof raw === "string" ? Number(raw)
-      : undefined;
-  if (explicit !== undefined && Number.isFinite(explicit)) {
-    currentThreadId = explicit;
-    return explicit;
-  }
-  return currentThreadId;
-}
-
-// Dead session detection — tracks when the last tool call was made
-let lastToolCallAt = Date.now();
-let deadSessionAlerted = false;
+// Dead session detection constant
 const DEAD_SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (2× wait_for_instructions timeout)
 
-// Timestamp of the last message received from the operator.
-// Used by the scheduler to detect idle periods.
-let lastOperatorMessageAt = Date.now();
-
-// Subagent compliance tracker — counts tool calls since last operator message
-// delivery. After 8+ calls without wait_for_instructions, nudge the agent.
-let toolCallsSinceLastDelivery = 0;
+// Subagent compliance constant
 const SUBAGENT_NUDGE_THRESHOLD = 8;
 
-function getSubagentNudge(): string {
-  if (toolCallsSinceLastDelivery >= SUBAGENT_NUDGE_THRESHOLD) {
-    toolCallsSinceLastDelivery = 0; // reset after nudge
-    return "\n\n💡 Reminder: You've made many direct tool calls. Consider using subagents (runSubagent) " +
-      "for substantial work — they can run code edits, research, and terminal commands in parallel.";
-  }
-  return "";
-}
+// Graceful shutdown flag — when set, wait_for_instructions returns immediately
+// so in-flight SSE requests complete cleanly before the process exits.
+let shuttingDown = false;
 
 // ---------------------------------------------------------------------------
 // Autonomous Goal Generation — curiosity-driven idle-time behavior
@@ -598,10 +516,79 @@ function formatAutonomousGoals(threadId: number | undefined): string {
 // ---------------------------------------------------------------------------
 
 function createMcpServer(): Server {
+  // ── Per-session state (isolated per HTTP session / stdio connection) ─────
+  let waitCallCount = 0;
+  let sessionStartedAt = Date.now();
+  let currentThreadId: number | undefined;
+  let lastToolCallAt = Date.now();
+  let deadSessionAlerted = false;
+  let lastOperatorMessageAt = Date.now();
+  let toolCallsSinceLastDelivery = 0;
+  const previewedUpdateIds = new Set<number>();
+  const PREVIEWED_IDS_CAP = 1000;
+
+  function addPreviewedId(id: number): void {
+    if (previewedUpdateIds.size >= PREVIEWED_IDS_CAP) {
+      const toDelete = previewedUpdateIds.size - PREVIEWED_IDS_CAP + 100;
+      let deleted = 0;
+      for (const old of previewedUpdateIds) {
+        if (deleted >= toDelete) break;
+        previewedUpdateIds.delete(old);
+        deleted++;
+      }
+    }
+    previewedUpdateIds.add(id);
+  }
+
+  function resolveThreadId(args: Record<string, unknown> | undefined): number | undefined {
+    const raw = args?.threadId;
+    const explicit = typeof raw === "number" ? raw
+      : typeof raw === "string" ? Number(raw)
+        : undefined;
+    if (explicit !== undefined && Number.isFinite(explicit)) {
+      currentThreadId = explicit;
+      return explicit;
+    }
+    return currentThreadId;
+  }
+
+  function getSubagentNudge(): string {
+    if (toolCallsSinceLastDelivery >= SUBAGENT_NUDGE_THRESHOLD) {
+      toolCallsSinceLastDelivery = 0;
+      return "\n\n💡 Reminder: You've made many direct tool calls. Consider using subagents (runSubagent) " +
+        "for substantial work — they can run code edits, research, and terminal commands in parallel.";
+    }
+    return "";
+  }
+
   const srv = new Server(
     { name: "sensorium-mcp", version: PKG_VERSION },
     { capabilities: { tools: {} } },
   );
+
+  // Dead session detector — per-session, runs every 2 minutes
+  const deadSessionInterval = setInterval(async () => {
+    if (!currentThreadId) return;
+    const elapsed = Date.now() - lastToolCallAt;
+    if (elapsed > DEAD_SESSION_TIMEOUT_MS && !deadSessionAlerted) {
+      deadSessionAlerted = true;
+      try {
+        const tg = new TelegramClient(TELEGRAM_TOKEN);
+        const minutes = Math.round(elapsed / 60000);
+        await tg.sendMessage(
+          TELEGRAM_CHAT_ID,
+          `⚠️ *Session appears down* — no tool calls in ${minutes} minutes\\. The agent may have crashed or the VS Code window compacted the context\\. Please check and restart if needed\\.`,
+          "MarkdownV2",
+          currentThreadId,
+        );
+      } catch (_) { /* non-fatal */ }
+    }
+  }, 2 * 60 * 1000);
+
+  // Clean up the interval when the server closes
+  srv.onclose = () => {
+    clearInterval(deadSessionInterval);
+  };
 
 // ── Tool definitions ────────────────────────────────────────────────────────
 
@@ -1230,6 +1217,17 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
     let lastScheduleCheck = 0;
 
     while (Date.now() < deadline) {
+      // Graceful shutdown: if the server is stopping, return immediately
+      // so the in-flight SSE request completes cleanly before process exit.
+      if (shuttingDown) {
+        return {
+          content: [{
+            type: "text",
+            text: "[Server restarting — call remote_copilot_wait_for_instructions again immediately to reconnect]",
+          }],
+        };
+      }
+
       const stored = readThreadMessages(effectiveThreadId);
 
       if (stored.length > 0) {
@@ -2485,8 +2483,15 @@ if (httpPort) {
     process.stderr.write(`Remote Copilot MCP server running on http://localhost:${httpPort}/mcp\n`);
   });
 
-  // Graceful shutdown
-  process.on("SIGINT", async () => {
+  // Graceful shutdown — let in-flight requests complete before exiting
+  const gracefulShutdown = async () => {
+    process.stderr.write("[http] Shutting down gracefully...\n");
+    shuttingDown = true;
+
+    // Wait up to 5s for in-flight wait_for_instructions to detect the flag
+    // and send their "server restarting" response.
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
     for (const [sid, t] of transports) {
       await t.close();
       transports.delete(sid);
@@ -2494,7 +2499,9 @@ if (httpPort) {
     httpServer.close();
     if (memoryDb) memoryDb.close();
     process.exit(0);
-  });
+  };
+  process.on("SIGINT", gracefulShutdown);
+  process.on("SIGTERM", gracefulShutdown);
 } else {
   // ── stdio transport (default) ───────────────────────────────────────────
   const transport = new StdioServerTransport();
