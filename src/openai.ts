@@ -65,7 +65,7 @@ export async function transcribeAudio(
     const formData = new FormData();
     formData.append(
         "file",
-        new Blob([new Uint8Array(audioBuffer)]),
+        new Blob([new Uint8Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength) as Uint8Array<ArrayBuffer>]),
         filename,
     );
     formData.append("model", "whisper-1");
@@ -144,7 +144,7 @@ export async function analyzeVoiceEmotion(
         const formData = new FormData();
         formData.append(
             "file",
-            new Blob([new Uint8Array(audioBuffer)], { type: mimeType }),
+            new Blob([new Uint8Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength) as Uint8Array<ArrayBuffer>], { type: mimeType }),
             filename,
         );
 

@@ -242,6 +242,7 @@ function parseJsonlLines(raw: string, label: string): StoredMessage[] {
     if (!raw) return [];
     const results: StoredMessage[] = [];
     for (const line of raw.split("\n")) {
+        if (!line.trim()) continue;
         try {
             results.push(JSON.parse(line) as StoredMessage);
         } catch {

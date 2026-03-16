@@ -1169,23 +1169,13 @@ Rules:
       }
     }
   } catch (err) {
-    // Fallback: lightweight consolidation (just mark as consolidated)
+    // Do NOT mark episodes as consolidated on failure — they should be
+    // retried on the next consolidation run.  Previously this was a silent
+    // data-loss bug: a transient OpenAI outage would permanently lose the
+    // episodes' knowledge without extracting anything.
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[memory] Intelligent consolidation failed, falling back to lightweight: ${msg}\n`);
-    details.push(`Fallback to lightweight consolidation: ${msg}`);
-
-    if (!dryRun) {
-      const episodeIds = episodes.map((ep) => ep.episodeId);
-      markConsolidated(db, episodeIds);
-      logConsolidation(db, {
-        episodesProcessed: episodes.length,
-        notesCreated: 0,
-        notesMerged: 0,
-        notesSuperseded: 0,
-        proceduresUpdated: 0,
-        durationMs: Date.now() - startMs,
-      });
-    }
+    process.stderr.write(`[memory] Intelligent consolidation failed (episodes NOT marked): ${msg}\n`);
+    details.push(`Consolidation failed (will retry): ${msg}`);
   }
 
   return {
