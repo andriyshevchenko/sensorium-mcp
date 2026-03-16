@@ -2372,7 +2372,16 @@ if (httpPort) {
     });
   }
 
+  // Track all active HTTP responses so we can drain them on shutdown.
+  // When the server is killed, any SSE streams with pending tool calls
+  // get a JSON-RPC error event before the connection is destroyed.
+  // Without this, the client SDK's pending promise hangs forever because
+  // onclose only fires on explicit transport.close(), not on stream break.
+  const activeResponses = new Set<ServerResponse>();
+
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+   activeResponses.add(res);
+   res.on("close", () => activeResponses.delete(res));
    try {
     // CORS for local dev (restrict to localhost)
     const origin = req.headers.origin ?? "";
@@ -2553,32 +2562,69 @@ if (httpPort) {
     process.stderr.write(`Remote Copilot MCP server running on http://localhost:${httpPort}/mcp\n`);
   });
 
-  // Graceful shutdown — let in-flight requests complete before exiting
+  // Graceful shutdown — drain in-flight requests then exit.
+  //
+  // The MCP SDK client (VS Code) does NOT call transport.onclose when an
+  // SSE stream breaks — it only fires onclose on explicit .close().
+  // This means pending tool-call promises hang forever if the server dies
+  // mid-request.  Our fix: forcefully write a JSON-RPC error SSE event
+  // into every still-open HTTP response before destroying the socket.
   let shutdownStarted = false;
-  const gracefulShutdown = async () => {
+  const gracefulShutdown = async (signal: string) => {
     if (shutdownStarted) return;
     shutdownStarted = true;
-    process.stderr.write("[http] Shutting down gracefully...\n");
+    process.stderr.write(`[http] Shutting down gracefully (${signal})...\n`);
+
+    // 1. Wake all sleeping poll loops so they can return "Server restarting".
     notifyShutdown();
 
-    // Wait up to 5s for in-flight wait_for_instructions to detect the flag
-    // and send their "server restarting" response.
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // 2. Give 500ms for the poll loops to return and the SDK to serialise
+    //    JSON-RPC responses into the SSE streams.  This is enough for
+    //    localhost I/O; 5s was too generous and risked the OS killing us first.
+    await new Promise(resolve => setTimeout(resolve, 500));
 
+    // 3. Force-drain any SSE streams that are STILL open.  This covers the
+    //    race where the handler didn't return in time, or VS Code has a
+    //    separate GET-based SSE notification channel open.
+    for (const res of activeResponses) {
+      try {
+        if (res.headersSent && res.writable) {
+          // SSE stream is open — inject a server-shutdown error event.
+          // The SDK client SSE parser will deliver this as a JSON-RPC error,
+          // which rejects the pending tool-call promise.
+          const errorEvent = JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32000, message: "Server shutting down" },
+            id: null,
+          });
+          res.write(`event: message\ndata: ${errorEvent}\n\n`);
+        }
+        res.end();
+      } catch (_) { /* socket may already be destroyed */ }
+    }
+    activeResponses.clear();
+
+    // 4. Close MCP transports, HTTP server, and memory DB.
     for (const [sid, t] of transports) {
-      await t.close();
+      try { await t.close(); } catch (_) { /* best-effort */ }
       transports.delete(sid);
     }
     httpServer.close();
     if (memoryDb) memoryDb.close();
+
+    process.stderr.write("[http] Shutdown complete.\n");
     process.exit(0);
   };
-  process.on("SIGINT", gracefulShutdown);
-  process.on("SIGTERM", gracefulShutdown);
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
   // Windows: "Terminate batch job (Y/N)?" sends SIGBREAK, not SIGINT/SIGTERM
   if (process.platform === "win32") {
-    process.on("SIGBREAK", gracefulShutdown);
+    process.on("SIGBREAK", () => gracefulShutdown("SIGBREAK"));
   }
+  // Last-resort: synchronously close DB even if async shutdown didn't complete
+  process.on("exit", () => {
+    if (memoryDb) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
+  });
 } else {
   // ── stdio transport (default) ───────────────────────────────────────────
   const transport = new StdioServerTransport();
