@@ -1223,7 +1223,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{
             type: "text",
-            text: "[Server restarting — call remote_copilot_wait_for_instructions again immediately to reconnect]",
+            text: "[Server restarting — WAIT 30 SECONDS, then call remote_copilot_wait_for_instructions to reconnect. The server needs time to restart. Do NOT call immediately.]",
           }],
         };
       }
