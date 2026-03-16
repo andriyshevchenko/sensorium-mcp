@@ -7,6 +7,10 @@
  */
 
 import { spawn } from "node:child_process";
+import { writeFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 
 /** Valid TTS voice names. */
 export const TTS_VOICES = [
@@ -127,11 +131,12 @@ export interface VoiceAnalysisResult {
 export async function analyzeVoiceEmotion(
     audioBuffer: Buffer,
     serviceUrl: string,
-    timeoutMs = 120_000,
+    options?: { mimeType?: string; filename?: string; timeoutMs?: number },
 ): Promise<VoiceAnalysisResult | null> {
+    const { mimeType = "audio/ogg", filename = "voice.ogg", timeoutMs = 120_000 } = options ?? {};
     const start = Date.now();
     const baseUrl = serviceUrl.replace(/\/+$/, "");
-    process.stderr.write(`[voice-analysis] Starting analysis (timeout: ${timeoutMs}ms)...\n`);
+    process.stderr.write(`[voice-analysis] Starting analysis (timeout: ${timeoutMs}ms, format: ${mimeType})...\n`);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -139,8 +144,8 @@ export async function analyzeVoiceEmotion(
         const formData = new FormData();
         formData.append(
             "file",
-            new Blob([new Uint8Array(audioBuffer)], { type: "audio/ogg" }),
-            "voice.ogg",
+            new Blob([new Uint8Array(audioBuffer)], { type: mimeType }),
+            filename,
         );
 
         const response = await fetch(`${baseUrl}/analyze`, {
@@ -193,7 +198,7 @@ function splitJpegs(buf: Buffer): Buffer[] {
 
 /**
  * Extract key frames from a video buffer using ffmpeg.
- * Pipes video via stdin and reads JPEG frames from stdout (no temp files).
+ * Writes video to a temp file and reads JPEG frames from stdout.
  * @param videoBuffer  Raw video file content (MP4).
  * @param durationSec  Video duration in seconds (used to calculate interval).
  * @returns Array of JPEG-encoded frame buffers.
@@ -202,12 +207,15 @@ export function extractVideoFrames(
     videoBuffer: Buffer,
     durationSec: number,
 ): Promise<Buffer[]> {
-    return new Promise((resolve, reject) => {
+    const tempPath = join(tmpdir(), `video-${randomUUID()}.mp4`);
+    writeFileSync(tempPath, videoBuffer);
+
+    return new Promise<Buffer[]>((resolve, reject) => {
         // Calculate frame interval: aim for ~1 frame every 5s, capped at MAX_FRAMES.
         const interval = Math.max(1, Math.ceil(durationSec / MAX_FRAMES));
 
         const args = [
-            "-i", "pipe:0",
+            "-i", tempPath,
             "-vf", `fps=1/${interval}`,
             "-c:v", "mjpeg",
             "-f", "image2pipe",
@@ -216,7 +224,7 @@ export function extractVideoFrames(
         ];
 
         const proc = spawn("ffmpeg", args, {
-            stdio: ["pipe", "pipe", "pipe"],
+            stdio: ["ignore", "pipe", "pipe"],
         });
 
         const chunks: Buffer[] = [];
@@ -248,10 +256,8 @@ export function extractVideoFrames(
             const frames = splitJpegs(combined).slice(0, MAX_FRAMES);
             resolve(frames);
         });
-
-        proc.stdin.on("error", () => { /* swallow — proc close handles exit */ });
-        proc.stdin.write(videoBuffer);
-        proc.stdin.end();
+    }).finally(() => {
+        try { unlinkSync(tempPath); } catch { /* ignore cleanup errors */ }
     });
 }
 
