@@ -559,7 +559,7 @@ export async function startDispatcher(
 /**
  * Stop the poller loop (if this instance is the poller).
  */
-export function stopDispatcher(): void {
+function stopDispatcher(): void {
     pollerRunning = false;
     removeLock();
 }

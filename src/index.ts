@@ -2,12 +2,12 @@
 /**
  * Remote Copilot MCP Server
  *
- * Exposes five tools for AI assistants:
- *   - start_session                          Begin a remote-copilot session.
- *   - remote_copilot_wait_for_instructions  Poll Telegram for new user messages.
- *   - report_progress                        Send a progress update to Telegram.
- *   - send_file                              Send a file/image to the operator.
- *   - send_voice                             Send a voice message to the operator.
+ * Exposes MCP tools for AI assistants:
+ *   - Session management (start_session)
+ *   - Bidirectional communication (wait_for_instructions, report_progress)
+ *   - Rich media (send_file, send_voice)
+ *   - Scheduling (schedule_wake_up)
+ *   - Persistent memory (memory_*)
  *
  * Required environment variables:
  *   TELEGRAM_TOKEN    – Telegram Bot API token.
@@ -573,9 +573,9 @@ function createMcpServer(): Server {
     if (elapsed > DEAD_SESSION_TIMEOUT_MS && !deadSessionAlerted) {
       deadSessionAlerted = true;
       try {
-        const tg = new TelegramClient(TELEGRAM_TOKEN);
+        // Use existing module-level telegram instance
         const minutes = Math.round(elapsed / 60000);
-        await tg.sendMessage(
+        await telegram.sendMessage(
           TELEGRAM_CHAT_ID,
           `⚠️ *Session appears down* — no tool calls in ${minutes} minutes\\. The agent may have crashed or the VS Code window compacted the context\\. Please check and restart if needed\\.`,
           "MarkdownV2",
@@ -1246,7 +1246,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
           void telegram.setMessageReaction(
             TELEGRAM_CHAT_ID,
             msg.message.message_id,
-          );
+          ).catch(() => {});
         }
 
         type TextBlock = { type: "text"; text: string };
@@ -1296,19 +1296,20 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
               const isImage = mimeType.startsWith("image/");
               if (isImage) {
                 contentBlocks.push({ type: "image", data: base64, mimeType });
+                contentBlocks.push({
+                  type: "text",
+                  text: `[File saved to: ${diskPath}]` +
+                    (msg.message.caption ? ` Caption: ${msg.message.caption}` : ""),
+                });
               } else {
                 // Non-image documents: provide the disk path instead of
                 // dumping potentially huge base64 into the LLM context.
                 contentBlocks.push({
                   type: "text",
-                  text: `[Document: ${filename} (${mimeType}) — saved to: ${diskPath}]`,
+                  text: `[Document: ${filename} (${mimeType}) — saved to: ${diskPath}]` +
+                    (msg.message.caption ? ` Caption: ${msg.message.caption}` : ""),
                 });
               }
-              contentBlocks.push({
-                type: "text",
-                text: `[File saved to: ${diskPath}]` +
-                  (msg.message.caption ? ` Caption: ${msg.message.caption}` : ""),
-              });
             } catch (err) {
               contentBlocks.push({
                 type: "text",
@@ -2336,12 +2337,6 @@ if (httpPort) {
       }
     }
 
-    if (req.method === "OPTIONS") {
-      res.writeHead(204);
-      res.end();
-      return;
-    }
-
     if (req.url !== "/mcp") {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not Found");
@@ -2351,7 +2346,14 @@ if (httpPort) {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
     if (req.method === "POST") {
-      const body = await parseBody(req);
+      let body: unknown;
+      try {
+        body = await parseBody(req);
+      } catch {
+        res.writeHead(413, { "Content-Type": "text/plain" });
+        res.end("Request body too large or malformed");
+        return;
+      }
 
       // Existing session
       if (sessionId && transports.has(sessionId)) {
