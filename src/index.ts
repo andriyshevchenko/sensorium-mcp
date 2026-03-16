@@ -34,7 +34,7 @@ import {
   isInitializeRequest,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { createServer, IncomingMessage } from "node:http";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { createRequire } from "module";
@@ -322,18 +322,41 @@ const DEAD_SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (2× wait_for_inst
 // Subagent compliance constant
 const SUBAGENT_NUDGE_THRESHOLD = 8;
 
-// Graceful shutdown flag — when set, wait_for_instructions returns immediately
-// so in-flight SSE requests complete cleanly before the process exits.
-let shuttingDown = false;
+// ---------------------------------------------------------------------------
+// Session registry — tracks which MCP sessions are using which thread.
+// When start_session is called with a threadId, we close stale sessions
+// for that thread so VS Code doesn't show duplicate connections.
+// ---------------------------------------------------------------------------
+interface SessionRegistryEntry {
+  mcpSessionId: string;
+  closeTransport: () => void;
+}
+const threadSessionRegistry = new Map<number, SessionRegistryEntry[]>();
 
-// Shutdown notifier — resolves all pending poll sleeps immediately
-// when the server is shutting down, so in-flight requests don't wait
-// the full 2-second poll interval before detecting the flag.
-let shutdownResolvers: Array<() => void> = [];
-function notifyShutdown() {
-  shuttingDown = true;
-  for (const resolve of shutdownResolvers) resolve();
-  shutdownResolvers = [];
+function registerMcpSession(threadId: number, mcpSessionId: string, closeTransport: () => void): void {
+  const entries = threadSessionRegistry.get(threadId) ?? [];
+  entries.push({ mcpSessionId, closeTransport });
+  threadSessionRegistry.set(threadId, entries);
+}
+
+/**
+ * Close all MCP sessions for a thread EXCEPT the current one.
+ * This purges orphaned sessions from before a server restart.
+ */
+function purgeOtherSessions(threadId: number, keepMcpSessionId?: string): number {
+  const entries = threadSessionRegistry.get(threadId) ?? [];
+  let purged = 0;
+  const kept: SessionRegistryEntry[] = [];
+  for (const entry of entries) {
+    if (entry.mcpSessionId === keepMcpSessionId) {
+      kept.push(entry);
+    } else {
+      try { entry.closeTransport(); } catch (_) { /* best-effort */ }
+      purged++;
+    }
+  }
+  threadSessionRegistry.set(threadId, kept);
+  return purged;
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +548,7 @@ function formatAutonomousGoals(threadId: number | undefined): string {
 // All instances share the same tool handler logic and in-process state.
 // ---------------------------------------------------------------------------
 
-function createMcpServer(): Server {
+function createMcpServer(getMcpSessionId?: () => string | undefined, closeTransport?: () => void): Server {
   // ── Per-session state (isolated per HTTP session / stdio connection) ─────
   let waitCallCount = 0;
   let sessionStartedAt = Date.now();
@@ -1192,6 +1215,19 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
       memoryBriefing = "\n\n_Memory system unavailable._";
     }
 
+    // Purge stale MCP sessions for this thread (from before a server restart)
+    // and register the current session.
+    if (currentThreadId !== undefined) {
+      const sid = getMcpSessionId?.();
+      const purged = purgeOtherSessions(currentThreadId, sid);
+      if (purged > 0) {
+        process.stderr.write(`[start_session] Purged ${purged} stale MCP session(s) for thread ${currentThreadId}.\n`);
+      }
+      if (sid && closeTransport) {
+        registerMcpSession(currentThreadId, sid, closeTransport);
+      }
+    }
+
     return {
       content: [
         {
@@ -1228,17 +1264,6 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
     let lastScheduleCheck = 0;
 
     while (Date.now() < deadline) {
-      // Graceful shutdown: if the server is stopping, return immediately
-      // so the in-flight SSE request completes cleanly before process exit.
-      if (shuttingDown) {
-        return {
-          content: [{
-            type: "text",
-            text: "[Server restarting — WAIT 30 SECONDS, then call remote_copilot_wait_for_instructions to reconnect. The server needs time to restart. Do NOT call immediately.]",
-          }],
-        };
-      }
-
       const stored = readThreadMessages(effectiveThreadId);
 
       if (stored.length > 0) {
@@ -1623,18 +1648,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // No messages yet — sleep briefly and check again.
-      // The sleep is interruptible: if the server is shutting down,
-      // notifyShutdown() resolves early so we can return promptly.
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          shutdownResolvers = shutdownResolvers.filter(r => r !== resolve);
-          resolve();
-        }, POLL_INTERVAL_MS);
-        shutdownResolvers.push(() => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
+      await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     }
 
     // Timeout elapsed with no actionable message.
@@ -2372,16 +2386,7 @@ if (httpPort) {
     });
   }
 
-  // Track all active HTTP responses so we can drain them on shutdown.
-  // When the server is killed, any SSE streams with pending tool calls
-  // get a JSON-RPC error event before the connection is destroyed.
-  // Without this, the client SDK's pending promise hangs forever because
-  // onclose only fires on explicit transport.close(), not on stream break.
-  const activeResponses = new Set<ServerResponse>();
-
-  const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-   activeResponses.add(res);
-   res.on("close", () => activeResponses.delete(res));
+  const httpServer = createServer(async (req: IncomingMessage, res) => {
    try {
     // CORS for local dev (restrict to localhost)
     const origin = req.headers.origin ?? "";
@@ -2433,9 +2438,11 @@ if (httpPort) {
 
       // New session — must be initialize
       if (!sessionId && isInitializeRequest(body)) {
+        let capturedSid: string | undefined;
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (sid) => {
+            capturedSid = sid;
             transports.set(sid, transport);
           },
         });
@@ -2447,51 +2454,12 @@ if (httpPort) {
 
         // Create a fresh Server per HTTP session — a single Server can only
         // connect to one transport, so concurrent clients each need their own.
-        const sessionServer = createMcpServer();
+        const sessionServer = createMcpServer(
+          () => capturedSid,
+          () => { try { transport.close(); } catch (_) { /* best-effort */ } },
+        );
         await sessionServer.connect(transport);
         await transport.handleRequest(req, res, body);
-        return;
-      }
-
-      // ── Session recovery ────────────────────────────────────────────────
-      // When the server restarts, old session IDs become invalid. Most MCP
-      // clients (VS Code, Claude, Codex) don't re-initialize on 404 despite
-      // the spec requiring it. Instead of breaking, we transparently adopt
-      // the unknown session: create a new transport+server with the same
-      // session ID, mark it as initialized, and handle the request normally.
-      // The client never knows the restart happened.
-      if (sessionId && !transports.has(sessionId)) {
-        process.stderr.write(`[http] Session recovery: adopting session ${sessionId.slice(0, 8)}...\n`);
-
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => sessionId,
-          onsessioninitialized: (sid) => {
-            transports.set(sid, transport);
-          },
-        });
-
-        transport.onclose = () => {
-          const sid = transport.sessionId;
-          if (sid) transports.delete(sid);
-        };
-
-        const sessionServer = createMcpServer();
-        await sessionServer.connect(transport);
-
-        if (isInitializeRequest(body)) {
-          // Client is properly re-initializing — let the normal flow handle it
-          await transport.handleRequest(req, res, body);
-        } else {
-          // Client sent a tool call with the old session ID.
-          // Force-adopt: set the session ID and mark as initialized so
-          // validateSession() passes without an initialize handshake.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const innerTransport = (transport as any)._webStandardTransport;
-          innerTransport.sessionId = sessionId;
-          innerTransport._initialized = true;
-          transports.set(sessionId, transport);
-          await transport.handleRequest(req, res, body);
-        }
         return;
       }
 
@@ -2505,29 +2473,6 @@ if (httpPort) {
     }
 
     if (req.method === "GET") {
-      // Session recovery for GET (SSE stream reconnection after server restart)
-      if (sessionId && !transports.has(sessionId)) {
-        process.stderr.write(`[http] SSE session recovery: adopting session ${sessionId.slice(0, 8)}...\n`);
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => sessionId,
-          onsessioninitialized: (sid) => {
-            transports.set(sid, transport);
-          },
-        });
-        transport.onclose = () => {
-          const sid = transport.sessionId;
-          if (sid) transports.delete(sid);
-        };
-        const sessionServer = createMcpServer();
-        await sessionServer.connect(transport);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const innerTransport = (transport as any)._webStandardTransport;
-        innerTransport.sessionId = sessionId;
-        innerTransport._initialized = true;
-        transports.set(sessionId, transport);
-        await transport.handleRequest(req, res);
-        return;
-      }
       if (!sessionId || !transports.has(sessionId)) {
         res.writeHead(400, { "Content-Type": "text/plain" });
         res.end("Invalid or missing session ID");
@@ -2562,66 +2507,21 @@ if (httpPort) {
     process.stderr.write(`Remote Copilot MCP server running on http://localhost:${httpPort}/mcp\n`);
   });
 
-  // Graceful shutdown — drain in-flight requests then exit.
-  //
-  // The MCP SDK client (VS Code) does NOT call transport.onclose when an
-  // SSE stream breaks — it only fires onclose on explicit .close().
-  // This means pending tool-call promises hang forever if the server dies
-  // mid-request.  Our fix: forcefully write a JSON-RPC error SSE event
-  // into every still-open HTTP response before destroying the socket.
-  let shutdownStarted = false;
-  const gracefulShutdown = async (signal: string) => {
-    if (shutdownStarted) return;
-    shutdownStarted = true;
-    process.stderr.write(`[http] Shutting down gracefully (${signal})...\n`);
-
-    // 1. Wake all sleeping poll loops so they can return "Server restarting".
-    notifyShutdown();
-
-    // 2. Give 500ms for the poll loops to return and the SDK to serialise
-    //    JSON-RPC responses into the SSE streams.  This is enough for
-    //    localhost I/O; 5s was too generous and risked the OS killing us first.
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // 3. Force-drain any SSE streams that are STILL open.  This covers the
-    //    race where the handler didn't return in time, or VS Code has a
-    //    separate GET-based SSE notification channel open.
-    for (const res of activeResponses) {
-      try {
-        if (res.headersSent && res.writable) {
-          // SSE stream is open — inject a server-shutdown error event.
-          // The SDK client SSE parser will deliver this as a JSON-RPC error,
-          // which rejects the pending tool-call promise.
-          const errorEvent = JSON.stringify({
-            jsonrpc: "2.0",
-            error: { code: -32000, message: "Server shutting down" },
-            id: null,
-          });
-          res.write(`event: message\ndata: ${errorEvent}\n\n`);
-        }
-        res.end();
-      } catch (_) { /* socket may already be destroyed */ }
-    }
-    activeResponses.clear();
-
-    // 4. Close MCP transports, HTTP server, and memory DB.
+  // Simple shutdown — close transports, DB, and exit.
+  const shutdown = () => {
     for (const [sid, t] of transports) {
-      try { await t.close(); } catch (_) { /* best-effort */ }
+      try { t.close(); } catch (_) { /* best-effort */ }
       transports.delete(sid);
     }
     httpServer.close();
-    if (memoryDb) memoryDb.close();
-
-    process.stderr.write("[http] Shutdown complete.\n");
+    if (memoryDb) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
     process.exit(0);
   };
-  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-  // Windows: "Terminate batch job (Y/N)?" sends SIGBREAK, not SIGINT/SIGTERM
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
   if (process.platform === "win32") {
-    process.on("SIGBREAK", () => gracefulShutdown("SIGBREAK"));
+    process.on("SIGBREAK", shutdown);
   }
-  // Last-resort: synchronously close DB even if async shutdown didn't complete
   process.on("exit", () => {
     if (memoryDb) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
   });
@@ -2632,10 +2532,8 @@ if (httpPort) {
   await server.connect(transport);
   process.stderr.write("Remote Copilot MCP server running on stdio.\n");
 
-  // Close DB on exit for stdio mode too
   const stdioShutdown = () => {
-    notifyShutdown();
-    if (memoryDb) memoryDb.close();
+    if (memoryDb) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
     process.exit(0);
   };
   process.on("SIGINT", stdioShutdown);
@@ -2644,6 +2542,6 @@ if (httpPort) {
     process.on("SIGBREAK", stdioShutdown);
   }
   process.on("exit", () => {
-    if (memoryDb) memoryDb.close();
+    if (memoryDb) { try { memoryDb.close(); } catch (_) { /* best-effort */ } }
   });
 }
