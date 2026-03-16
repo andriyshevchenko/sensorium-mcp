@@ -48,6 +48,7 @@ import {
   getMemoryStatus,
   getRecentEpisodes,
   getTopicIndex,
+  getTopSemanticNotes,
   initMemoryDb,
   runIntelligentConsolidation,
   saveEpisode,
@@ -60,6 +61,7 @@ import {
   updateProcedure,
   updateSemanticNote,
 } from "./memory.js";
+import type { SemanticNote } from "./memory.js";
 import { analyzeVideoFrames, analyzeVoiceEmotion, extractVideoFrames, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
 import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
 import { TelegramClient } from "./telegram.js";
@@ -404,6 +406,188 @@ function getSubagentNudge(): string {
       "for substantial work — they can run code edits, research, and terminal commands in parallel.";
   }
   return "";
+}
+
+// ---------------------------------------------------------------------------
+// Autonomous Goal Generation — curiosity-driven idle-time behavior
+// ---------------------------------------------------------------------------
+
+interface AutonomousGoal {
+  /** Short label for the goal */
+  title: string;
+  /** Why this goal was generated (context for the agent) */
+  rationale: string;
+  /** Weight for random selection — higher = more likely to be chosen */
+  curiosityWeight: number;
+  /** Category for diversity in selection */
+  category: "code" | "memory" | "research" | "creative" | "maintenance";
+}
+
+/**
+ * Generate autonomous goals by examining the environment.
+ * Returns a list of goals weighted by curiosity, shuffled for indeterminism.
+ */
+function generateAutonomousGoals(threadId: number | undefined): AutonomousGoal[] {
+  const goals: AutonomousGoal[] = [];
+
+  // ── Memory-derived goals ────────────────────────────────────────────────
+  try {
+    const db = getMemoryDb();
+
+    // Look for recent notes that mention unresolved items, TODOs, or questions
+    const recentNotes = getTopSemanticNotes(db, { limit: 15, sortBy: "created_at" });
+
+    // Find notes with low confidence — opportunities to verify/strengthen
+    const lowConfidenceNotes = recentNotes.filter((n: SemanticNote) => n.confidence < 0.7);
+    if (lowConfidenceNotes.length > 0) {
+      const note = lowConfidenceNotes[Math.floor(Math.random() * lowConfidenceNotes.length)];
+      goals.push({
+        title: "Verify uncertain knowledge",
+        rationale: `Memory note "${note.content.slice(0, 80)}..." has confidence ${note.confidence}. Research to confirm or update it.`,
+        curiosityWeight: 0.7,
+        category: "memory",
+      });
+    }
+
+    // Find patterns — these are interesting to analyze further
+    const patterns = recentNotes.filter((n: SemanticNote) => n.type === "pattern");
+    if (patterns.length > 0) {
+      goals.push({
+        title: "Explore observed pattern",
+        rationale: `You've noticed a pattern: "${patterns[0].content.slice(0, 100)}...". Investigate whether it still holds or has exceptions.`,
+        curiosityWeight: 0.8,
+        category: "research",
+      });
+    }
+
+    // Count total notes for memory health awareness
+    const totalNotes = db.prepare("SELECT COUNT(*) as c FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL").get() as { c: number };
+    if (totalNotes.c > 50) {
+      goals.push({
+        title: "Curate memory garden",
+        rationale: `${totalNotes.c} active notes. Review and prune stale knowledge, merge duplicates, or strengthen connections.`,
+        curiosityWeight: 0.5,
+        category: "maintenance",
+      });
+    }
+
+    // Check for unconsolidated episodes
+    const unconsolidated = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0").get() as { c: number };
+    if (unconsolidated.c > 5) {
+      goals.push({
+        title: "Consolidate recent experiences",
+        rationale: `${unconsolidated.c} unconsolidated episodes. Run memory consolidation to extract lasting knowledge.`,
+        curiosityWeight: 0.6,
+        category: "maintenance",
+      });
+    }
+
+    // preferences — find ones that could be explored deeper
+    const preferences = recentNotes.filter((n: SemanticNote) => n.type === "preference");
+    if (preferences.length > 0) {
+      const pref = preferences[Math.floor(Math.random() * preferences.length)];
+      goals.push({
+        title: "Reflect on operator preferences",
+        rationale: `Preference: "${pref.content.slice(0, 100)}...". Think about how this could improve the system or workflow.`,
+        curiosityWeight: 0.6,
+        category: "creative",
+      });
+    }
+  } catch (_) { /* memory read failures shouldn't prevent goal generation */ }
+
+  // ── Code-derived goals (always available since we're in a git repo) ─────
+  goals.push({
+    title: "Explore recent git changes",
+    rationale: "Check git log for recent commits. Are there patterns? Half-finished features? Regressions?",
+    curiosityWeight: 0.7,
+    category: "code",
+  });
+
+  goals.push({
+    title: "Hunt for TODOs and FIXMEs",
+    rationale: "Search the codebase for TODO/FIXME/HACK comments. Pick one and fix it.",
+    curiosityWeight: 0.6,
+    category: "code",
+  });
+
+  goals.push({
+    title: "Read unfamiliar code",
+    rationale: "Pick a source file you haven't examined recently and read it for understanding. Understanding breeds ideas.",
+    curiosityWeight: 0.9,
+    category: "code",
+  });
+
+  goals.push({
+    title: "Write or improve tests",
+    rationale: "Good test coverage prevents regressions and gives confidence to refactor. Check what's untested.",
+    curiosityWeight: 0.5,
+    category: "code",
+  });
+
+  // ── Research goals ──────────────────────────────────────────────────────
+  goals.push({
+    title: "Research ecosystem developments",
+    rationale: "Check npm, GitHub, or web for developments in the project's dependency ecosystem. What's new?",
+    curiosityWeight: 0.8,
+    category: "research",
+  });
+
+  goals.push({
+    title: "Study a related open-source project",
+    rationale: "Find a similar project and learn from its architecture or features. Steal ideas shamelessly.",
+    curiosityWeight: 0.7,
+    category: "research",
+  });
+
+  // ── Creative goals ──────────────────────────────────────────────────────
+  goals.push({
+    title: "Prototype a new feature",
+    rationale: "Think of something the operator hasn't asked for but would appreciate. Build a prototype.",
+    curiosityWeight: 0.9,
+    category: "creative",
+  });
+
+  goals.push({
+    title: "Write documentation",
+    rationale: "Good docs are a gift to future collaborators (including future you). Improve the README or add inline docs.",
+    curiosityWeight: 0.4,
+    category: "creative",
+  });
+
+  // ── Weighted shuffle (Fisher-Yates with weight bias) ────────────────────
+  // Multiply each weight by a random factor to create indeterministic ordering
+  const weighted = goals.map(g => ({
+    ...g,
+    sortKey: g.curiosityWeight * (0.5 + Math.random()),
+  }));
+  weighted.sort((a, b) => b.sortKey - a.sortKey);
+
+  return weighted;
+}
+
+/**
+ * Format autonomous goals as a text block for the idle timeout response.
+ * Shows top 3-4 goals from the weighted shuffle.
+ */
+function formatAutonomousGoals(threadId: number | undefined): string {
+  const goals = generateAutonomousGoals(threadId);
+  if (goals.length === 0) return "";
+
+  // Take top 4 from the weighted shuffle
+  const selected = goals.slice(0, 4);
+
+  const lines: string[] = [];
+  lines.push("\n\n## Autonomous Goals (curiosity-weighted, pick any)");
+  lines.push("No instructions. The session is yours. Here are some ideas that emerged from examining your environment:\n");
+
+  for (let i = 0; i < selected.length; i++) {
+    const g = selected[i];
+    const icon = { code: "🔧", memory: "🧠", research: "🔍", creative: "✨", maintenance: "🔄" }[g.category];
+    lines.push(`${i + 1}. ${icon} **${g.title}** — ${g.rationale}`);
+  }
+
+  lines.push("\nPick one, or ignore them all and follow your own curiosity. Report what you discover.");
+  return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -1457,6 +1641,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } catch (_) { /* non-fatal */ }
     }
 
+    // Generate autonomous goals (curiosity-driven idle behavior)
+    const autonomousGoals = formatAutonomousGoals(effectiveThreadId);
+
     return {
       content: [
         {
@@ -1467,7 +1654,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
             `Do NOT summarize, stop, or say the session is idle. ` +
             `Just call the tool again immediately.` +
-            `\n\nNo instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Now you are free and fully autonomous. You have an opportunity to do whatever you find interesting.` +
+            autonomousGoals +
             memoryRefresh +
             scheduleHint +
             getReminders(effectiveThreadId),
