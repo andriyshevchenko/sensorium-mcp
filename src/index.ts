@@ -1533,6 +1533,39 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
             "Run them in parallel when tasks are independent. You plan and verify; subagents execute.",
         };
 
+        // ── Auto-inject relevant memory context ───────────────────────────
+        // Architecture-enforced: the agent should NOT need to manually call
+        // memory_search. The server automatically searches memory for notes
+        // relevant to the operator's message and injects them.
+        let autoMemoryContext = "";
+        try {
+          const db = getMemoryDb();
+          // Extract the operator's text to use as a memory search query
+          const operatorText = stored
+            .map(m => m.message.text ?? m.message.caption ?? "")
+            .filter(Boolean)
+            .join(" ")
+            .slice(0, 500);
+          if (operatorText.length > 10) { // only search for substantial messages
+            const MAX_AUTO_NOTES = 5;
+            const MAX_AUTO_CHARS = 2000; // token budget for auto-injected memory
+            const relevant = searchSemanticNotes(db, operatorText, { maxResults: MAX_AUTO_NOTES });
+            if (relevant.length > 0) {
+              let budget = MAX_AUTO_CHARS;
+              const lines: string[] = [];
+              for (const n of relevant) {
+                const line = `- **[${n.type}]** ${n.content.slice(0, 300)} _(conf: ${n.confidence})_`;
+                if (budget - line.length < 0) break;
+                budget -= line.length;
+                lines.push(line);
+              }
+              if (lines.length > 0) {
+                autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
+              }
+            }
+          }
+        } catch (_) { /* memory search failures should never break message delivery */ }
+
         return {
           content: [
             {
@@ -1550,6 +1583,9 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
                 type: "text" as const,
                 text: "\n**Note:** The operator sent voice message(s). They prefer voice interaction — use `send_voice` for progress updates and responses when possible.",
               }]
+              : []),
+            ...(autoMemoryContext
+              ? [{ type: "text" as const, text: autoMemoryContext }]
               : []),
             { type: "text", text: getReminders(effectiveThreadId) },
           ],
