@@ -326,6 +326,16 @@ const SUBAGENT_NUDGE_THRESHOLD = 8;
 // so in-flight SSE requests complete cleanly before the process exits.
 let shuttingDown = false;
 
+// Shutdown notifier — resolves all pending poll sleeps immediately
+// when the server is shutting down, so in-flight requests don't wait
+// the full 2-second poll interval before detecting the flag.
+let shutdownResolvers: Array<() => void> = [];
+function notifyShutdown() {
+  shuttingDown = true;
+  for (const resolve of shutdownResolvers) resolve();
+  shutdownResolvers = [];
+}
+
 // ---------------------------------------------------------------------------
 // Autonomous Goal Generation — curiosity-driven idle-time behavior
 // ---------------------------------------------------------------------------
@@ -1613,7 +1623,18 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // No messages yet — sleep briefly and check again.
-      await new Promise<void>((r) => setTimeout(r, POLL_INTERVAL_MS));
+      // The sleep is interruptible: if the server is shutting down,
+      // notifyShutdown() resolves early so we can return promptly.
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          shutdownResolvers = shutdownResolvers.filter(r => r !== resolve);
+          resolve();
+        }, POLL_INTERVAL_MS);
+        shutdownResolvers.push(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
     }
 
     // Timeout elapsed with no actionable message.
@@ -2538,7 +2559,7 @@ if (httpPort) {
     if (shutdownStarted) return;
     shutdownStarted = true;
     process.stderr.write("[http] Shutting down gracefully...\n");
-    shuttingDown = true;
+    notifyShutdown();
 
     // Wait up to 5s for in-flight wait_for_instructions to detect the flag
     // and send their "server restarting" response.
@@ -2554,6 +2575,10 @@ if (httpPort) {
   };
   process.on("SIGINT", gracefulShutdown);
   process.on("SIGTERM", gracefulShutdown);
+  // Windows: "Terminate batch job (Y/N)?" sends SIGBREAK, not SIGINT/SIGTERM
+  if (process.platform === "win32") {
+    process.on("SIGBREAK", gracefulShutdown);
+  }
 } else {
   // ── stdio transport (default) ───────────────────────────────────────────
   const transport = new StdioServerTransport();
@@ -2562,6 +2587,16 @@ if (httpPort) {
   process.stderr.write("Remote Copilot MCP server running on stdio.\n");
 
   // Close DB on exit for stdio mode too
+  const stdioShutdown = () => {
+    notifyShutdown();
+    if (memoryDb) memoryDb.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", stdioShutdown);
+  process.on("SIGTERM", stdioShutdown);
+  if (process.platform === "win32") {
+    process.on("SIGBREAK", stdioShutdown);
+  }
   process.on("exit", () => {
     if (memoryDb) memoryDb.close();
   });
