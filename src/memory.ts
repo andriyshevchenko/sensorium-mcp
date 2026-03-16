@@ -467,7 +467,7 @@ export function saveSemanticNote(
 export function searchSemanticNotes(
   db: Database,
   query: string,
-  options?: { types?: string[]; maxResults?: number }
+  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean }
 ): SemanticNote[] {
   const maxResults = options?.maxResults ?? 10;
   const terms = query
@@ -502,16 +502,18 @@ export function searchSemanticNotes(
   const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
 
   // Update access counts
-  const now = nowISO();
-  const updateStmt = db.prepare(
-    `UPDATE semantic_notes SET access_count = access_count + 1, last_accessed = ? WHERE note_id = ?`
-  );
-  const txn = db.transaction(() => {
-    for (const row of rows) {
-      updateStmt.run(now, row.note_id);
-    }
-  });
-  txn();
+  if (!options?.skipAccessTracking) {
+    const now = nowISO();
+    const updateStmt = db.prepare(
+      `UPDATE semantic_notes SET access_count = access_count + 1, last_accessed = ? WHERE note_id = ?`
+    );
+    const txn = db.transaction(() => {
+      for (const row of rows) {
+        updateStmt.run(now, row.note_id);
+      }
+    });
+    txn();
+  }
 
   return rows.map(rowToSemanticNote);
 }
