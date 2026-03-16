@@ -61,7 +61,7 @@ export interface Procedure {
   updatedAt: string;
 }
 
-export interface TopicEntry {
+interface TopicEntry {
   topic: string;
   semanticCount: number;
   proceduralCount: number;
@@ -70,7 +70,7 @@ export interface TopicEntry {
   totalAccesses: number;
 }
 
-export interface MemoryStatus {
+interface MemoryStatus {
   totalEpisodes: number;
   unconsolidatedEpisodes: number;
   totalSemanticNotes: number;
@@ -81,7 +81,7 @@ export interface MemoryStatus {
   dbSizeBytes: number;
 }
 
-export interface ConsolidationLog {
+interface ConsolidationLog {
   episodesProcessed: number;
   notesCreated: number;
   notesMerged: number;
@@ -100,7 +100,7 @@ export interface ConsolidationReport {
   details: string[];
 }
 
-export interface VoiceBaseline {
+interface VoiceBaseline {
   avgArousal: number | null;
   avgDominance: number | null;
   avgValence: number | null;
@@ -405,7 +405,7 @@ export function getRecentEpisodes(db: Database, threadId: number, limit = 20): E
   return rows.map(rowToEpisode);
 }
 
-export function getUnconsolidatedEpisodes(db: Database, threadId: number, limit = 50): Episode[] {
+function getUnconsolidatedEpisodes(db: Database, threadId: number, limit = 50): Episode[] {
   const rows = db
     .prepare(
       `SELECT * FROM episodes WHERE thread_id = ? AND consolidated = 0 ORDER BY timestamp ASC LIMIT ?`
@@ -414,7 +414,7 @@ export function getUnconsolidatedEpisodes(db: Database, threadId: number, limit 
   return rows.map(rowToEpisode);
 }
 
-export function markConsolidated(db: Database, episodeIds: string[]): void {
+function markConsolidated(db: Database, episodeIds: string[]): void {
   if (episodeIds.length === 0) return;
   const stmt = db.prepare(`UPDATE episodes SET consolidated = 1 WHERE episode_id = ?`);
   const txn = db.transaction(() => {
@@ -670,8 +670,9 @@ export function searchProcedures(db: Database, query: string, maxResults = 10): 
   const params: unknown[] = [];
 
   for (const term of terms) {
-    conditions.push(`(LOWER(name) LIKE ? OR LOWER(description) LIKE ? OR LOWER(steps) LIKE ? OR LOWER(trigger_conditions) LIKE ?)`);
-    params.push(`%${term}%`, `%${term}%`, `%${term}%`, `%${term}%`);
+    const escaped = term.replace(/%/g, "\\%").replace(/_/g, "\\_");
+    conditions.push(`(LOWER(name) LIKE ? ESCAPE '\\' OR LOWER(description) LIKE ? ESCAPE '\\' OR LOWER(steps) LIKE ? ESCAPE '\\' OR LOWER(trigger_conditions) LIKE ? ESCAPE '\\')`);
+    params.push(`%${escaped}%`, `%${escaped}%`, `%${escaped}%`, `%${escaped}%`);
   }
 
   const sql = `SELECT * FROM procedures WHERE ${conditions.join(" OR ")} ORDER BY confidence DESC, success_rate DESC LIMIT ?`;
@@ -816,7 +817,7 @@ export function getTopicIndex(db: Database): TopicEntry[] {
   return rows.map(rowToTopicEntry);
 }
 
-export function logConsolidation(db: Database, log: ConsolidationLog): void {
+function logConsolidation(db: Database, log: ConsolidationLog): void {
   db.prepare(
     `INSERT INTO meta_consolidation_log
        (run_at, episodes_processed, notes_created, notes_merged, notes_superseded, procedures_updated, duration_ms)
@@ -874,7 +875,7 @@ export function saveVoiceSignature(
   );
 }
 
-export function getVoiceBaseline(db: Database, dayRange = 30): VoiceBaseline | null {
+function getVoiceBaseline(db: Database, dayRange = 30): VoiceBaseline | null {
   const cutoff = new Date(Date.now() - dayRange * 24 * 60 * 60 * 1000).toISOString();
 
   const row = db
