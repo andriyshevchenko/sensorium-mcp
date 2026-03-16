@@ -1641,8 +1641,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } catch (_) { /* non-fatal */ }
     }
 
-    // Generate autonomous goals (curiosity-driven idle behavior)
-    const autonomousGoals = formatAutonomousGoals(effectiveThreadId);
+    // Generate autonomous goals only after extended silence (4+ hours)
+    // Before that, the agent should just keep polling quietly
+    const GOAL_GENERATION_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours
+    const idleMs = Date.now() - lastOperatorMessageAt;
+    const autonomousGoals = idleMs >= GOAL_GENERATION_THRESHOLD_MS
+      ? formatAutonomousGoals(effectiveThreadId)
+      : "";
 
     return {
       content: [
