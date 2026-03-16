@@ -2383,6 +2383,48 @@ if (httpPort) {
         return;
       }
 
+      // ── Session recovery ────────────────────────────────────────────────
+      // When the server restarts, old session IDs become invalid. Most MCP
+      // clients (VS Code, Claude, Codex) don't re-initialize on 404 despite
+      // the spec requiring it. Instead of breaking, we transparently adopt
+      // the unknown session: create a new transport+server with the same
+      // session ID, mark it as initialized, and handle the request normally.
+      // The client never knows the restart happened.
+      if (sessionId && !transports.has(sessionId)) {
+        process.stderr.write(`[http] Session recovery: adopting session ${sessionId.slice(0, 8)}...\n`);
+
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => sessionId,
+          onsessioninitialized: (sid) => {
+            transports.set(sid, transport);
+          },
+        });
+
+        transport.onclose = () => {
+          const sid = transport.sessionId;
+          if (sid) transports.delete(sid);
+        };
+
+        const sessionServer = createMcpServer();
+        await sessionServer.connect(transport);
+
+        if (isInitializeRequest(body)) {
+          // Client is properly re-initializing — let the normal flow handle it
+          await transport.handleRequest(req, res, body);
+        } else {
+          // Client sent a tool call with the old session ID.
+          // Force-adopt: set the session ID and mark as initialized so
+          // validateSession() passes without an initialize handshake.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const innerTransport = (transport as any)._webStandardTransport;
+          innerTransport.sessionId = sessionId;
+          innerTransport._initialized = true;
+          transports.set(sessionId, transport);
+          await transport.handleRequest(req, res, body);
+        }
+        return;
+      }
+
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         jsonrpc: "2.0",
@@ -2393,6 +2435,29 @@ if (httpPort) {
     }
 
     if (req.method === "GET") {
+      // Session recovery for GET (SSE stream reconnection after server restart)
+      if (sessionId && !transports.has(sessionId)) {
+        process.stderr.write(`[http] SSE session recovery: adopting session ${sessionId.slice(0, 8)}...\n`);
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => sessionId,
+          onsessioninitialized: (sid) => {
+            transports.set(sid, transport);
+          },
+        });
+        transport.onclose = () => {
+          const sid = transport.sessionId;
+          if (sid) transports.delete(sid);
+        };
+        const sessionServer = createMcpServer();
+        await sessionServer.connect(transport);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const innerTransport = (transport as any)._webStandardTransport;
+        innerTransport.sessionId = sessionId;
+        innerTransport._initialized = true;
+        transports.set(sessionId, transport);
+        await transport.handleRequest(req, res);
+        return;
+      }
       if (!sessionId || !transports.has(sessionId)) {
         res.writeHead(400, { "Content-Type": "text/plain" });
         res.end("Invalid or missing session ID");
