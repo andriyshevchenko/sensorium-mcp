@@ -488,7 +488,7 @@ export function searchSemanticNotes(
     params.push(`%${escaped}%`, `%${escaped}%`);
   }
 
-  let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (${conditions.join(" OR ")})`;
+  let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (${conditions.join(" AND ")})`;
 
   if (options?.types && options.types.length > 0) {
     const placeholders = options.types.map(() => "?").join(",");
