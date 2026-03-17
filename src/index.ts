@@ -58,6 +58,7 @@ import {
   saveVoiceSignature,
   searchProcedures,
   searchSemanticNotes,
+  searchSemanticNotesRanked,
   supersedeNote,
   updateProcedure,
   updateSemanticNote,
@@ -1640,10 +1641,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             .join(" ")
             .slice(0, 500);
           const searchQuery = extractSearchKeywords(operatorText);
-          if (searchQuery.split(" ").length >= 2) { // only search when 2+ meaningful keywords remain
+          if (searchQuery.split(" ").length >= 1) { // only search when 1+ meaningful keywords remain
             const MAX_AUTO_NOTES = 5;
             const MAX_AUTO_CHARS = 2000; // token budget for auto-injected memory
-            const relevant = searchSemanticNotes(db, searchQuery, { maxResults: MAX_AUTO_NOTES, skipAccessTracking: true });
+            const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: MAX_AUTO_NOTES, skipAccessTracking: true });
             if (relevant.length > 0) {
               let budget = MAX_AUTO_CHARS;
               const lines: string[] = [];
