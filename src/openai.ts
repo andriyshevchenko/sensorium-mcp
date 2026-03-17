@@ -27,26 +27,33 @@ export async function textToSpeech(
     apiKey: string,
     voice: TTSVoice = "nova",
 ): Promise<Buffer> {
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model: "tts-1",
-            input: text,
-            voice,
-            response_format: "opus",
-        }),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+        const response = await fetch("https://api.openai.com/v1/audio/speech", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: "tts-1",
+                input: text,
+                voice,
+                response_format: "opus",
+            }),
+            signal: controller.signal,
+        });
 
-    if (!response.ok) {
-        const errText = await response.text().catch(() => response.statusText);
-        throw new Error(`OpenAI TTS failed: ${response.status} ${errText}`);
+        if (!response.ok) {
+            const errText = await response.text().catch(() => response.statusText);
+            throw new Error(`OpenAI TTS failed: ${response.status} ${errText}`);
+        }
+
+        return Buffer.from(await response.arrayBuffer());
+    } finally {
+        clearTimeout(timer);
     }
-
-    return Buffer.from(await response.arrayBuffer());
 }
 
 /**
@@ -70,24 +77,31 @@ export async function transcribeAudio(
     );
     formData.append("model", "whisper-1");
 
-    const response = await fetch(
-        "https://api.openai.com/v1/audio/transcriptions",
-        {
-            method: "POST",
-            headers: { Authorization: `Bearer ${apiKey}` },
-            body: formData,
-        },
-    );
-
-    if (!response.ok) {
-        const errText = await response.text().catch(() => response.statusText);
-        throw new Error(
-            `OpenAI Whisper transcription failed: ${response.status} ${errText}`,
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90_000);
+    try {
+        const response = await fetch(
+            "https://api.openai.com/v1/audio/transcriptions",
+            {
+                method: "POST",
+                headers: { Authorization: `Bearer ${apiKey}` },
+                body: formData,
+                signal: controller.signal,
+            },
         );
-    }
 
-    const result = (await response.json()) as { text?: string };
-    return result.text ?? "";
+        if (!response.ok) {
+            const errText = await response.text().catch(() => response.statusText);
+            throw new Error(
+                `OpenAI Whisper transcription failed: ${response.status} ${errText}`,
+            );
+        }
+
+        const result = (await response.json()) as { text?: string };
+        return result.text ?? "";
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -301,26 +315,33 @@ export async function analyzeVideoFrames(
         })),
     ];
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model: "gpt-5-mini",
-            messages: [{ role: "user", content }],
-            max_tokens: 300,
-        }),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000);
+    try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: "gpt-5-mini",
+                messages: [{ role: "user", content }],
+                max_tokens: 300,
+            }),
+            signal: controller.signal,
+        });
 
-    if (!response.ok) {
-        const errText = await response.text().catch(() => response.statusText);
-        throw new Error(`OpenAI vision analysis failed: ${response.status} ${errText}`);
+        if (!response.ok) {
+            const errText = await response.text().catch(() => response.statusText);
+            throw new Error(`OpenAI vision analysis failed: ${response.status} ${errText}`);
+        }
+
+        const result = (await response.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+        };
+        return result.choices?.[0]?.message?.content?.trim() ?? "(no description generated)";
+    } finally {
+        clearTimeout(timer);
     }
-
-    const result = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-    };
-    return result.choices?.[0]?.message?.content?.trim() ?? "(no description generated)";
 }
