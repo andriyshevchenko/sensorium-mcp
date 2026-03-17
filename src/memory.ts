@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { mkdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { cosineSimilarity } from "./openai.js";
 
 // Use the Database type from better-sqlite3
 type Database = BetterSqlite3.Database;
@@ -142,7 +143,7 @@ function parseJsonObject(val: string | null | undefined): Record<string, unknown
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -152,8 +153,17 @@ const SCHEMA_VERSION = 1;
  * Add new migrations here when SCHEMA_VERSION is bumped.
  */
 const MIGRATIONS: Record<number, (db: Database) => void> = {
-  // Example:
-  // 2: (db) => { db.exec("ALTER TABLE episodes ADD COLUMN embedding TEXT"); },
+  2: (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS note_embeddings (
+        note_id    TEXT PRIMARY KEY,
+        embedding  BLOB NOT NULL,
+        model      TEXT NOT NULL DEFAULT 'text-embedding-3-small',
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_emb_note ON note_embeddings(note_id);
+    `);
+  },
 };
 
 /**
@@ -293,6 +303,15 @@ CREATE TABLE IF NOT EXISTS voice_signatures (
 
 CREATE INDEX IF NOT EXISTS idx_voice_ep ON voice_signatures(episode_id);
 CREATE INDEX IF NOT EXISTS idx_voice_time ON voice_signatures(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS note_embeddings (
+  note_id    TEXT PRIMARY KEY,
+  embedding  BLOB NOT NULL,
+  model      TEXT NOT NULL DEFAULT 'text-embedding-3-small',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_emb_note ON note_embeddings(note_id);
 
 CREATE TABLE IF NOT EXISTS schema_version (
   version     INTEGER PRIMARY KEY,
@@ -1403,4 +1422,100 @@ export function forgetMemory(
   }
 
   return { layer: "unknown", deleted: false };
+}
+
+// ─── Embedding-based Semantic Search ─────────────────────────────────────────
+
+/** Store a pre-computed embedding vector for a semantic note. */
+export function saveNoteEmbedding(db: Database, noteId: string, embedding: Float32Array): void {
+    const buf = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
+    db.prepare(
+      `INSERT OR REPLACE INTO note_embeddings (note_id, embedding, model, created_at) VALUES (?, ?, ?, ?)`
+    ).run(noteId, buf, "text-embedding-3-small", nowISO());
+}
+
+/** Load all note embeddings into memory for cosine similarity search. */
+export function loadAllEmbeddings(db: Database): Map<string, Float32Array> {
+    const rows = db.prepare(
+      `SELECT ne.note_id, ne.embedding FROM note_embeddings ne
+       JOIN semantic_notes sn ON sn.note_id = ne.note_id
+       WHERE sn.valid_to IS NULL AND sn.superseded_by IS NULL`
+    ).all() as { note_id: string; embedding: Buffer }[];
+
+    const map = new Map<string, Float32Array>();
+    for (const row of rows) {
+        map.set(row.note_id, new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4));
+    }
+    return map;
+}
+
+/**
+ * Search semantic notes using embedding cosine similarity.
+ * Returns notes sorted by similarity score, filtered by minimum threshold.
+ */
+export function searchByEmbedding(
+    db: Database,
+    queryEmbedding: Float32Array,
+    options?: { maxResults?: number; minSimilarity?: number; skipAccessTracking?: boolean }
+): (SemanticNote & { similarity: number })[] {
+    const maxResults = options?.maxResults ?? 5;
+    const minSimilarity = options?.minSimilarity ?? 0.3;
+
+    // Load all embeddings (small dataset, fits in memory)
+    const embeddings = loadAllEmbeddings(db);
+
+    // Compute similarities
+    const scores: { noteId: string; similarity: number }[] = [];
+    for (const [noteId, emb] of embeddings) {
+        const sim = cosineSimilarity(queryEmbedding, emb);
+        if (sim >= minSimilarity) {
+            scores.push({ noteId, similarity: sim });
+        }
+    }
+
+    // Sort by similarity descending
+    scores.sort((a, b) => b.similarity - a.similarity);
+    const topIds = scores.slice(0, maxResults);
+
+    if (topIds.length === 0) return [];
+
+    // Fetch full notes
+    const placeholders = topIds.map(() => "?").join(",");
+    const rows = db.prepare(
+        `SELECT * FROM semantic_notes WHERE note_id IN (${placeholders})`
+    ).all(...topIds.map(s => s.noteId)) as Record<string, unknown>[];
+
+    const noteMap = new Map<string, SemanticNote>();
+    for (const row of rows) {
+        const note = rowToSemanticNote(row);
+        noteMap.set(note.noteId, note);
+    }
+
+    // Update access counts
+    if (!options?.skipAccessTracking) {
+        const now = nowISO();
+        const updateStmt = db.prepare(
+            `UPDATE semantic_notes SET access_count = access_count + 1, last_accessed = ? WHERE note_id = ?`
+        );
+        db.transaction(() => {
+            for (const s of topIds) updateStmt.run(now, s.noteId);
+        })();
+    }
+
+    // Return in similarity order
+    return topIds
+        .map(s => {
+            const note = noteMap.get(s.noteId);
+            return note ? { ...note, similarity: s.similarity } : null;
+        })
+        .filter((n): n is SemanticNote & { similarity: number } => n !== null);
+}
+
+/** Get note IDs that don't have embeddings yet (for backfill). */
+export function getNotesWithoutEmbeddings(db: Database): { noteId: string; content: string }[] {
+    return db.prepare(
+        `SELECT sn.note_id as noteId, sn.content FROM semantic_notes sn
+         LEFT JOIN note_embeddings ne ON ne.note_id = sn.note_id
+         WHERE ne.note_id IS NULL AND sn.valid_to IS NULL AND sn.superseded_by IS NULL`
+    ).all() as { noteId: string; content: string }[];
 }

@@ -367,3 +367,45 @@ export async function analyzeVideoFrames(
         clearTimeout(timer);
     }
 }
+
+/**
+ * Generate an embedding vector for text using OpenAI's text-embedding-3-small model.
+ * Returns a Float32Array of 1536 dimensions.
+ */
+export async function generateEmbedding(text: string, apiKey: string): Promise<Float32Array> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+        const response = await fetch("https://api.openai.com/v1/embeddings", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: "text-embedding-3-small",
+                input: text.slice(0, 8000), // model supports 8191 tokens
+            }),
+            signal: controller.signal,
+        });
+        if (!response.ok) {
+            throw new Error(`OpenAI embedding API error: ${response.status} ${response.statusText}`);
+        }
+        const json = await response.json() as { data: [{ embedding: number[] }] };
+        return new Float32Array(json.data[0].embedding);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+/** Compute cosine similarity between two embedding vectors. Returns value in [-1, 1]. */
+export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+        dot += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom === 0 ? 0 : dot / denom;
+}

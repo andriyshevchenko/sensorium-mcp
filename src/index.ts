@@ -47,15 +47,18 @@ import {
   assembleCompactRefresh,
   forgetMemory,
   getMemoryStatus,
+  getNotesWithoutEmbeddings,
   getRecentEpisodes,
   getTopicIndex,
   getTopSemanticNotes,
   initMemoryDb,
   runIntelligentConsolidation,
   saveEpisode,
+  saveNoteEmbedding,
   saveProcedure,
   saveSemanticNote,
   saveVoiceSignature,
+  searchByEmbedding,
   searchProcedures,
   searchSemanticNotes,
   searchSemanticNotesRanked,
@@ -64,7 +67,7 @@ import {
   updateSemanticNote,
 } from "./memory.js";
 import type { SemanticNote } from "./memory.js";
-import { analyzeVideoFrames, analyzeVoiceEmotion, extractVideoFrames, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
+import { analyzeVideoFrames, analyzeVoiceEmotion, extractVideoFrames, generateEmbedding, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
 import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
 import { TelegramClient } from "./telegram.js";
 import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
@@ -1634,28 +1637,70 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         let autoMemoryContext = "";
         try {
           const db = getMemoryDb();
+          const apiKey = process.env.OPENAI_API_KEY;
           // Extract the operator's text to use as a memory search query
           const operatorText = stored
             .map(m => m.message.text ?? m.message.caption ?? "")
             .filter(Boolean)
             .join(" ")
             .slice(0, 500);
-          const searchQuery = extractSearchKeywords(operatorText);
-          if (searchQuery.split(" ").length >= 1) { // only search when 1+ meaningful keywords remain
-            const MAX_AUTO_NOTES = 5;
-            const MAX_AUTO_CHARS = 2000; // token budget for auto-injected memory
-            const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: MAX_AUTO_NOTES, skipAccessTracking: true });
-            if (relevant.length > 0) {
-              let budget = MAX_AUTO_CHARS;
-              const lines: string[] = [];
-              for (const n of relevant) {
-                const line = `- **[${n.type}]** ${n.content.slice(0, 300)} _(conf: ${n.confidence})_`;
-                if (budget - line.length < 0) break;
-                budget -= line.length;
-                lines.push(line);
+
+          if (operatorText.length > 10 && apiKey) {
+            // Try embedding-based search first, fall back to keyword search
+            try {
+              const queryEmb = await generateEmbedding(operatorText, apiKey);
+              const relevant = searchByEmbedding(db, queryEmb, { maxResults: 5, minSimilarity: 0.3, skipAccessTracking: true });
+              if (relevant.length > 0) {
+                let budget = 2000;
+                const lines: string[] = [];
+                for (const n of relevant) {
+                  const line = `- **[${n.type}]** ${n.content.slice(0, 300)} _(conf: ${n.confidence}, sim: ${n.similarity.toFixed(2)})_`;
+                  if (budget - line.length < 0) break;
+                  budget -= line.length;
+                  lines.push(line);
+                }
+                if (lines.length > 0) {
+                  autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
+                }
               }
-              if (lines.length > 0) {
-                autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
+            } catch (embErr) {
+              // Fallback to keyword search if embedding fails
+              process.stderr.write(`[memory] Embedding search failed, falling back to keyword: ${embErr instanceof Error ? embErr.message : String(embErr)}\n`);
+              const searchQuery = extractSearchKeywords(operatorText);
+              if (searchQuery.split(" ").length >= 1) {
+                const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true });
+                if (relevant.length > 0) {
+                  let budget = 2000;
+                  const lines: string[] = [];
+                  for (const n of relevant) {
+                    const line = `- **[${n.type}]** ${n.content.slice(0, 300)} _(conf: ${n.confidence})_`;
+                    if (budget - line.length < 0) break;
+                    budget -= line.length;
+                    lines.push(line);
+                  }
+                  if (lines.length > 0) {
+                    autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
+                  }
+                }
+              }
+            }
+          } else {
+            // No API key or text too short — use keyword search
+            const searchQuery = extractSearchKeywords(operatorText);
+            if (searchQuery.split(" ").length >= 1) {
+              const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true });
+              if (relevant.length > 0) {
+                let budget = 2000;
+                const lines: string[] = [];
+                for (const n of relevant) {
+                  const line = `- **[${n.type}]** ${n.content.slice(0, 300)} _(conf: ${n.confidence})_`;
+                  if (budget - line.length < 0) break;
+                  budget -= line.length;
+                  lines.push(line);
+                }
+                if (lines.length > 0) {
+                  autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
+                }
               }
             }
           }
@@ -1789,9 +1834,23 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       if (idleMs > 30 * 60 * 1000 && effectiveThreadId !== undefined && Date.now() - lastConsolidationAt > 2 * 60 * 60 * 1000) {
         lastConsolidationAt = Date.now();
         const db = getMemoryDb();
-        void runIntelligentConsolidation(db, effectiveThreadId).then(report => {
+        void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
           if (report.episodesProcessed > 0) {
             process.stderr.write(`[memory] Consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
+          }
+          // Backfill embeddings for any notes without them
+          const apiKey = process.env.OPENAI_API_KEY;
+          if (apiKey) {
+            const missing = getNotesWithoutEmbeddings(db);
+            for (const { noteId, content } of missing) {
+              try {
+                const emb = await generateEmbedding(content, apiKey);
+                saveNoteEmbedding(db, noteId, emb);
+                process.stderr.write(`[memory] Embedded ${noteId}\n`);
+              } catch (err) {
+                process.stderr.write(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}\n`);
+              }
+            }
           }
         }).catch(err => {
           process.stderr.write(`[memory] Consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
@@ -2219,11 +2278,31 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const results: string[] = [];
 
       if (layers.includes("semantic")) {
-        const notes = searchSemanticNotes(db, query, { types, maxResults: 10 });
-        if (notes.length > 0) {
-          results.push("### Semantic Memory");
-          for (const n of notes) {
-            results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}, id: ${n.noteId})_`);
+        // Try embedding-based search first, fall back to keyword search
+        const apiKey = process.env.OPENAI_API_KEY;
+        let embeddingSearchDone = false;
+        if (apiKey) {
+          try {
+            const queryEmb = await generateEmbedding(query, apiKey);
+            const embNotes = searchByEmbedding(db, queryEmb, { maxResults: 10, minSimilarity: 0.25 });
+            if (embNotes.length > 0) {
+              results.push("### Semantic Memory (embedding search)");
+              for (const n of embNotes) {
+                results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}, sim: ${n.similarity.toFixed(2)}, id: ${n.noteId})_`);
+              }
+              embeddingSearchDone = true;
+            }
+          } catch (embErr) {
+            process.stderr.write(`[memory] Embedding search failed in memory_search, falling back to keyword: ${embErr instanceof Error ? embErr.message : String(embErr)}\n`);
+          }
+        }
+        if (!embeddingSearchDone) {
+          const notes = searchSemanticNotes(db, query, { types, maxResults: 10 });
+          if (notes.length > 0) {
+            results.push("### Semantic Memory");
+            for (const n of notes) {
+              results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}, id: ${n.noteId})_`);
+            }
           }
         }
       }
@@ -2285,6 +2364,15 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         keywords: Array.isArray(typedArgs.keywords) ? typedArgs.keywords.map(String) : typeof typedArgs.keywords === 'string' ? [typedArgs.keywords] : [],
         confidence: typeof typedArgs.confidence === "number" ? typedArgs.confidence : 0.8,
       });
+      // Fire-and-forget embedding generation
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (apiKey) {
+          void generateEmbedding(content, apiKey).then(emb => {
+              saveNoteEmbedding(getMemoryDb(), noteId, emb);
+          }).catch(err => {
+              process.stderr.write(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}\n`);
+          });
+      }
       return {
         content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getReminders(threadId) + getSubagentNudge() }],
       };
