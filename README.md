@@ -116,6 +116,18 @@ Automatic alert when no tool calls arrive for 60 minutes. Single alert per downt
 | `memory_status` | Check memory health and statistics |
 | `memory_forget` | Delete a specific memory note |
 
+## Data Privacy
+
+### Memory Consolidation
+The memory system periodically sends conversation excerpts to OpenAI's API for knowledge extraction and consolidation. This helps maintain useful context across sessions.
+
+To disable this behavior, set the environment variable:
+```
+CONSOLIDATION_ENABLED=false
+```
+
+When disabled, the memory system will still store episodes locally but will not send them to OpenAI for consolidation.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
@@ -124,6 +136,7 @@ Automatic alert when no tool calls arrive for 60 minutes. Single alert per downt
 | `TELEGRAM_CHAT_ID` | Yes | — | Forum supergroup chat ID |
 | `OPENAI_API_KEY` | No | — | For voice transcription (Whisper), TTS, and memory consolidation |
 | `VOICE_ANALYSIS_URL` | No | — | Voice emotion analysis microservice URL |
+| `CONSOLIDATION_ENABLED` | No | `true` | Set to `false` or `0` to disable sending episodes to OpenAI for consolidation |
 | `CONSOLIDATION_MODEL` | No | `gpt-4o-mini` | OpenAI model for memory consolidation |
 | `MCP_HTTP_PORT` | No | — | If set, starts HTTP/SSE transport on this port instead of stdio |
 | `WAIT_TIMEOUT_MINUTES` | No | `120` | Wait timeout in minutes |
