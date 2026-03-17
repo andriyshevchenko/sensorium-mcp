@@ -760,6 +760,26 @@ function updateTopicIndexForKeywords(db: Database, keywords: string[], layer: "s
   txn();
 }
 
+function decrementTopicIndexForKeywords(db: Database, keywords: string[], layer: "semantic" | "procedural"): void {
+  const col = layer === "semantic" ? "semantic_count" : "procedural_count";
+  const otherCol = layer === "semantic" ? "procedural_count" : "semantic_count";
+
+  const decrementStmt = db.prepare(
+    `UPDATE meta_topic_index SET ${col} = MAX(${col} - 1, 0) WHERE topic = ?`
+  );
+  const deleteStmt = db.prepare(
+    `DELETE FROM meta_topic_index WHERE topic = ? AND semantic_count <= 0 AND procedural_count <= 0`
+  );
+
+  for (const kw of keywords) {
+    const normalised = kw.toLowerCase().trim();
+    if (normalised.length > 1) {
+      decrementStmt.run(normalised);
+      deleteStmt.run(normalised);
+    }
+  }
+}
+
 export function getMemoryStatus(db: Database, threadId: number): MemoryStatus {
   const totalEpisodes = (
     db.prepare(`SELECT COUNT(*) as cnt FROM episodes WHERE thread_id = ?`).get(threadId) as { cnt: number }
@@ -1209,16 +1229,24 @@ export function forgetMemory(
   }
 
   if (memoryId.startsWith("sn_")) {
-    const existing = db.prepare(`SELECT note_id FROM semantic_notes WHERE note_id = ?`).get(memoryId);
+    const existing = db.prepare(`SELECT note_id, keywords FROM semantic_notes WHERE note_id = ?`).get(memoryId) as { note_id: string; keywords: string | null } | undefined;
     if (!existing) return { layer: "semantic", deleted: false };
-    db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
+    const kws = parseJsonArray(existing.keywords);
+    db.transaction(() => {
+      db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
+      decrementTopicIndexForKeywords(db, kws, "semantic");
+    })();
     return { layer: "semantic", deleted: true };
   }
 
   if (memoryId.startsWith("pr_")) {
-    const existing = db.prepare(`SELECT procedure_id FROM procedures WHERE procedure_id = ?`).get(memoryId);
+    const existing = db.prepare(`SELECT procedure_id, name FROM procedures WHERE procedure_id = ?`).get(memoryId) as { procedure_id: string; name: string } | undefined;
     if (!existing) return { layer: "procedural", deleted: false };
-    db.prepare(`DELETE FROM procedures WHERE procedure_id = ?`).run(memoryId);
+    const kws = existing.name.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+    db.transaction(() => {
+      db.prepare(`DELETE FROM procedures WHERE procedure_id = ?`).run(memoryId);
+      decrementTopicIndexForKeywords(db, kws, "procedural");
+    })();
     return { layer: "procedural", deleted: true };
   }
 
@@ -1232,15 +1260,23 @@ export function forgetMemory(
     return { layer: "episodic", deleted: true };
   }
 
-  row = db.prepare(`SELECT note_id FROM semantic_notes WHERE note_id = ?`).get(memoryId);
+  row = db.prepare(`SELECT note_id, keywords FROM semantic_notes WHERE note_id = ?`).get(memoryId) as { note_id: string; keywords: string | null } | undefined;
   if (row) {
-    db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
+    const kws = parseJsonArray((row as { keywords: string | null }).keywords);
+    db.transaction(() => {
+      db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
+      decrementTopicIndexForKeywords(db, kws, "semantic");
+    })();
     return { layer: "semantic", deleted: true };
   }
 
-  row = db.prepare(`SELECT procedure_id FROM procedures WHERE procedure_id = ?`).get(memoryId);
+  row = db.prepare(`SELECT procedure_id, name FROM procedures WHERE procedure_id = ?`).get(memoryId) as { procedure_id: string; name: string } | undefined;
   if (row) {
-    db.prepare(`DELETE FROM procedures WHERE procedure_id = ?`).run(memoryId);
+    const kws = ((row as { name: string }).name).toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+    db.transaction(() => {
+      db.prepare(`DELETE FROM procedures WHERE procedure_id = ?`).run(memoryId);
+      decrementTopicIndexForKeywords(db, kws, "procedural");
+    })();
     return { layer: "procedural", deleted: true };
   }
 
