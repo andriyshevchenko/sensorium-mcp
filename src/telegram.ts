@@ -18,6 +18,18 @@ export interface TelegramMessage {
   document?: TelegramDocument;
   voice?: TelegramVoice;
   video_note?: TelegramVideoNote;
+  audio?: {
+    file_id: string;
+    duration: number;
+    mime_type?: string;
+    title?: string;
+    performer?: string;
+  };
+  sticker?: {
+    file_id: string;
+    emoji?: string;
+    set_name?: string;
+  };
 }
 
 export interface PhotoSize {
