@@ -9,6 +9,7 @@
  * The wait_for_instructions polling loop checks for due tasks on each timeout.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
@@ -103,7 +104,7 @@ export function listSchedules(threadId: number): ScheduledTask[] {
  * Generate a unique task ID.
  */
 export function generateTaskId(): string {
-    return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return `task_${Date.now()}_${randomUUID().slice(0, 8)}`;
 }
 
 /**

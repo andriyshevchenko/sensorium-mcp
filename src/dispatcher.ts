@@ -566,11 +566,3 @@ export async function startDispatcher(
 
     return isPoller;
 }
-
-/**
- * Stop the poller loop (if this instance is the poller).
- */
-function stopDispatcher(): void {
-    pollerRunning = false;
-    removeLock();
-}

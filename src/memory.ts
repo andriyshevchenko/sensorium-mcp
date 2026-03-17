@@ -84,18 +84,12 @@ interface MemoryStatus {
 interface ConsolidationLog {
   episodesProcessed: number;
   notesCreated: number;
-  notesMerged: number;
-  notesSuperseded: number;
-  proceduresUpdated: number;
   durationMs: number;
 }
 
 export interface ConsolidationReport {
   episodesProcessed: number;
   notesCreated: number;
-  notesMerged: number;
-  notesSuperseded: number;
-  proceduresUpdated: number;
   durationMs: number;
   details: string[];
 }
@@ -228,9 +222,6 @@ CREATE TABLE IF NOT EXISTS meta_consolidation_log (
   run_at              TEXT NOT NULL,
   episodes_processed  INTEGER,
   notes_created       INTEGER,
-  notes_merged        INTEGER,
-  notes_superseded    INTEGER,
-  procedures_updated  INTEGER,
   duration_ms         INTEGER
 );
 
@@ -855,15 +846,12 @@ export function getTopicIndex(db: Database): TopicEntry[] {
 function logConsolidation(db: Database, log: ConsolidationLog): void {
   db.prepare(
     `INSERT INTO meta_consolidation_log
-       (run_at, episodes_processed, notes_created, notes_merged, notes_superseded, procedures_updated, duration_ms)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+       (run_at, episodes_processed, notes_created, duration_ms)
+     VALUES (?, ?, ?, ?)`
   ).run(
     nowISO(),
     log.episodesProcessed,
     log.notesCreated,
-    log.notesMerged,
-    log.notesSuperseded,
-    log.proceduresUpdated,
     log.durationMs
   );
 }
@@ -1075,9 +1063,6 @@ export async function runIntelligentConsolidation(
     return {
       episodesProcessed: 0,
       notesCreated: 0,
-      notesMerged: 0,
-      notesSuperseded: 0,
-      proceduresUpdated: 0,
       durationMs: Date.now() - startMs,
       details: ["Nothing to consolidate."],
     };
@@ -1190,9 +1175,6 @@ Rules:
       logConsolidation(db, {
         episodesProcessed: episodes.length,
         notesCreated,
-        notesMerged: 0,
-        notesSuperseded: 0,
-        proceduresUpdated: 0,
         durationMs: Date.now() - startMs,
       });
     } else {
@@ -1214,9 +1196,6 @@ Rules:
   return {
     episodesProcessed: episodes.length,
     notesCreated,
-    notesMerged: 0,
-    notesSuperseded: 0,
-    proceduresUpdated: 0,
     durationMs: Date.now() - startMs,
     details,
   };
