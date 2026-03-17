@@ -68,6 +68,31 @@ import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedul
 import { TelegramClient } from "./telegram.js";
 import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
 
+// ── Stop-word list for auto-memory keyword extraction ─────────────────
+const STOP_WORDS = new Set([
+  "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "do", "does", "did", "will", "would", "could",
+  "should", "may", "might", "shall", "can", "need", "must", "ought",
+  "i", "me", "my", "we", "us", "our", "you", "your", "he", "him",
+  "his", "she", "her", "it", "its", "they", "them", "their", "this",
+  "that", "these", "those", "what", "which", "who", "whom", "when",
+  "where", "why", "how", "not", "no", "nor", "so", "too", "very",
+  "just", "also", "than", "then", "now", "here", "there", "all",
+  "any", "each", "every", "both", "few", "more", "most", "some",
+  "such", "only", "own", "same", "but", "and", "or", "if", "at",
+  "by", "for", "from", "in", "into", "of", "on", "to", "up", "with",
+  "as", "about", "like", "hey", "hi", "hello", "ok", "okay", "please",
+  "thanks", "thank", "yes", "yeah", "no", "nah", "right", "got",
+  "get", "let", "go", "going", "gonna", "want", "know", "think",
+  "see", "look", "make", "take", "give", "tell", "say", "said",
+]);
+
+/** Tokenize text and strip stop words, returning up to 10 meaningful keywords. */
+function extractSearchKeywords(text: string): string {
+  const words = text.toLowerCase().split(/\W+/).filter(w => w.length > 1 && !STOP_WORDS.has(w));
+  return words.slice(0, 10).join(" ");
+}
+
 /**
  * Build human-readable analysis tags from a VoiceAnalysisResult.
  * Fields that are null / undefined / empty are silently skipped.
@@ -1613,10 +1638,11 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             .filter(Boolean)
             .join(" ")
             .slice(0, 500);
-          if (operatorText.length > 10) { // only search for substantial messages
+          const searchQuery = extractSearchKeywords(operatorText);
+          if (searchQuery.split(" ").length >= 2) { // only search when 2+ meaningful keywords remain
             const MAX_AUTO_NOTES = 5;
             const MAX_AUTO_CHARS = 2000; // token budget for auto-injected memory
-            const relevant = searchSemanticNotes(db, operatorText, { maxResults: MAX_AUTO_NOTES, skipAccessTracking: true });
+            const relevant = searchSemanticNotes(db, searchQuery, { maxResults: MAX_AUTO_NOTES, skipAccessTracking: true });
             if (relevant.length > 0) {
               let budget = MAX_AUTO_CHARS;
               const lines: string[] = [];
@@ -2466,6 +2492,8 @@ const httpBind = process.env.MCP_HTTP_BIND ?? "127.0.0.1";
 if (httpPort) {
   // ── HTTP/SSE transport ──────────────────────────────────────────────────
   const transports = new Map<string, StreamableHTTPServerTransport>();
+  /** Tracks the last time each HTTP session received any request (epoch ms). */
+  const sessionLastActivity = new Map<string, number>();
 
   const MCP_HTTP_SECRET = process.env.MCP_HTTP_SECRET;
   const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
@@ -2541,6 +2569,7 @@ if (httpPort) {
 
       // Existing session
       if (sessionId && transports.has(sessionId)) {
+        sessionLastActivity.set(sessionId, Date.now());
         await transports.get(sessionId)!.handleRequest(req, res, body);
         return;
       }
@@ -2553,12 +2582,13 @@ if (httpPort) {
           onsessioninitialized: (sid) => {
             capturedSid = sid;
             transports.set(sid, transport);
+            sessionLastActivity.set(sid, Date.now());
           },
         });
 
         transport.onclose = () => {
           const sid = transport.sessionId;
-          if (sid) transports.delete(sid);
+          if (sid) { transports.delete(sid); sessionLastActivity.delete(sid); }
         };
 
         // Create a fresh Server per HTTP session — a single Server can only
@@ -2587,6 +2617,7 @@ if (httpPort) {
         res.end("Invalid or missing session ID");
         return;
       }
+      sessionLastActivity.set(sessionId, Date.now());
       await transports.get(sessionId)!.handleRequest(req, res);
       return;
     }
@@ -2597,6 +2628,7 @@ if (httpPort) {
         res.end("Invalid or missing session ID");
         return;
       }
+      sessionLastActivity.set(sessionId, Date.now());
       await transports.get(sessionId)!.handleRequest(req, res);
       return;
     }
@@ -2616,9 +2648,25 @@ if (httpPort) {
     process.stderr.write(`Remote Copilot MCP server running on http://${httpBind}:${httpPort}/mcp\n`);
   });
 
+  // ── Session reaper — close abandoned SSE sessions every 10 minutes ──────
+  const STALE_SESSION_MS = 2 * WAIT_TIMEOUT_MINUTES * 60 * 1000;
+  const sessionReaperInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [sid, transport] of transports) {
+      const lastActive = sessionLastActivity.get(sid) ?? 0;
+      if (now - lastActive > STALE_SESSION_MS) {
+        process.stderr.write(`[session-reaper] Closing stale session ${sid} (idle ${Math.round((now - lastActive) / 60000)}m)\n`);
+        try { transport.close(); } catch (_) { /* best-effort */ }
+        transports.delete(sid);
+        sessionLastActivity.delete(sid);
+      }
+    }
+  }, 10 * 60 * 1000);
+
   // Simple shutdown — close transports, DB, and exit.
   let memoryDbClosed = false;
   const shutdown = () => {
+    clearInterval(sessionReaperInterval);
     for (const [sid, t] of transports) {
       try { t.close(); } catch (_) { /* best-effort */ }
       transports.delete(sid);
