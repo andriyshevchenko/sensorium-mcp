@@ -155,17 +155,11 @@ export class TelegramClient {
       formData.append("message_thread_id", String(options.threadId));
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-    try {
-      const response = await fetch(url, { method: "POST", body: formData, signal: controller.signal });
-      const data = await this.tryParseJson<SendMessageResult>(response);
-      if (!response.ok || data?.ok !== true) {
-        const description = data?.description ?? response.statusText;
-        throw new Error(`Telegram ${method} failed: ${response.status} ${description}`);
-      }
-    } finally {
-      clearTimeout(timer);
+    const response = await fetch(url, { method: "POST", body: formData });
+    const data = await this.tryParseJson<SendMessageResult>(response);
+    if (!response.ok || data?.ok !== true) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram ${method} failed: ${response.status} ${description}`);
     }
   }
 
@@ -243,24 +237,17 @@ export class TelegramClient {
    */
   async createForumTopic(chatId: string, name: string): Promise<ForumTopic> {
     const url = `${this.baseUrl}/createForumTopic`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, name }),
-        signal: controller.signal,
-      });
-      const data = await this.tryParseJson<CreateForumTopicResult>(response);
-      if (!response.ok || !data?.ok || !data.result) {
-        const description = data?.description ?? response.statusText;
-        throw new Error(`Telegram createForumTopic failed: ${description}`);
-      }
-      return data.result;
-    } finally {
-      clearTimeout(timer);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, name }),
+    });
+    const data = await this.tryParseJson<CreateForumTopicResult>(response);
+    if (!response.ok || !data?.ok || !data.result) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram createForumTopic failed: ${description}`);
     }
+    return data.result;
   }
 
   /**
@@ -277,32 +264,25 @@ export class TelegramClient {
     if (parseMode) body.parse_mode = parseMode;
     if (threadId !== undefined) body.message_thread_id = threadId;
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      const data = await this.tryParseJson<SendMessageResult>(response);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await this.tryParseJson<SendMessageResult>(response);
 
-      if (!response.ok) {
-        const description = data?.description ?? response.statusText;
-        throw new Error(
-          `Telegram sendMessage failed: ${response.status} ${description}`,
-        );
-      }
-      if (data === undefined) {
-        throw new Error("Telegram sendMessage failed: response body could not be parsed as JSON");
-      }
-      if (data.ok !== true) {
-        const description = data.description ?? "Unknown Telegram API error";
-        throw new Error(`Telegram API error in sendMessage: ${description}`);
-      }
-    } finally {
-      clearTimeout(timer);
+    if (!response.ok) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(
+        `Telegram sendMessage failed: ${response.status} ${description}`,
+      );
+    }
+    if (data === undefined) {
+      throw new Error("Telegram sendMessage failed: response body could not be parsed as JSON");
+    }
+    if (data.ok !== true) {
+      const description = data.description ?? "Unknown Telegram API error";
+      throw new Error(`Telegram API error in sendMessage: ${description}`);
     }
   }
 
@@ -311,24 +291,17 @@ export class TelegramClient {
    */
   async getFile(fileId: string): Promise<TelegramFile> {
     const url = `${this.baseUrl}/getFile`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_id: fileId }),
-        signal: controller.signal,
-      });
-      const data = await this.tryParseJson<GetFileResult>(response);
-      if (!response.ok || !data?.ok || !data.result) {
-        const description = data?.description ?? response.statusText;
-        throw new Error(`Telegram getFile failed: ${description}`);
-      }
-      return data.result;
-    } finally {
-      clearTimeout(timer);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_id: fileId }),
+    });
+    const data = await this.tryParseJson<GetFileResult>(response);
+    if (!response.ok || !data?.ok || !data.result) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram getFile failed: ${description}`);
     }
+    return data.result;
   }
 
   /**
@@ -339,20 +312,14 @@ export class TelegramClient {
   ): Promise<{ buffer: Buffer; filePath: string }> {
     const file = await this.getFile(fileId);
     const downloadUrl = `https://api.telegram.org/file/bot${this.token}/${file.file_path}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60_000);
-    try {
-      const response = await fetch(downloadUrl, { signal: controller.signal });
-      if (!response.ok) {
-        throw new Error(
-          `Failed to download Telegram file: ${response.status} ${response.statusText}`,
-        );
-      }
-      const buffer = Buffer.from(await response.arrayBuffer());
-      return { buffer, filePath: file.file_path };
-    } finally {
-      clearTimeout(timer);
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download Telegram file: ${response.status} ${response.statusText}`,
+      );
     }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return { buffer, filePath: file.file_path };
   }
 
   /**
@@ -417,23 +384,15 @@ export class TelegramClient {
   ): Promise<void> {
     try {
       const url = `${this.baseUrl}/setMessageReaction`;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30_000);
-      let response: Response;
-      try {
-        response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            message_id: messageId,
-            reaction: [{ type: "emoji", emoji }],
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timer);
-      }
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId,
+          reaction: [{ type: "emoji", emoji }],
+        }),
+      });
       if (!response.ok && !this.reactionWarned) {
         this.reactionWarned = true;
         const data = await this.tryParseJson<{ description?: string }>(response);
