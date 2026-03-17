@@ -1423,7 +1423,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
                       threadId: effectiveThreadId,
                       type: "operator_message",
                       modality: "voice",
-                      content: { raw: transcript ?? "", duration: msg.message.voice.duration },
+                      content: { text: transcript ?? "", duration: msg.message.voice.duration },
                       importance: 0.6,
                     });
                     saveVoiceSignature(db, {
@@ -1513,7 +1513,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
                       threadId: effectiveThreadId,
                       type: "operator_message",
                       modality: "video_note",
-                      content: { raw: transcript ?? "", scene: sceneDescription ?? "", duration: vn.duration },
+                      content: { text: transcript ?? "", scene: sceneDescription ?? "", duration: vn.duration },
                       importance: 0.6,
                     });
                     saveVoiceSignature(db, {
@@ -1577,7 +1577,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
                   threadId: effectiveThreadId,
                   type: "operator_message",
                   modality: "text",
-                  content: { raw: textContent },
+                  content: { text: textContent },
                   importance: 0.5,
                 });
               }
@@ -1810,6 +1810,27 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   }
 
   // ── report_progress ───────────────────────────────────────────────────────
+
+  /** Split text into chunks that fit Telegram's 4096-char message limit. */
+  function splitMessage(text: string, maxLen = 4000): string[] {
+    if (text.length <= maxLen) return [text];
+    const chunks: string[] = [];
+    let remaining = text;
+    while (remaining.length > 0) {
+      if (remaining.length <= maxLen) {
+        chunks.push(remaining);
+        break;
+      }
+      // Try to split at paragraph boundary
+      let splitIdx = remaining.lastIndexOf("\n\n", maxLen);
+      if (splitIdx <= 0) splitIdx = remaining.lastIndexOf("\n", maxLen);
+      if (splitIdx <= 0) splitIdx = maxLen; // Hard split
+      chunks.push(remaining.slice(0, splitIdx));
+      remaining = remaining.slice(splitIdx).replace(/^\n+/, "");
+    }
+    return chunks;
+  }
+
   if (name === "report_progress") {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const effectiveThreadId = resolveThreadId(typedArgs);
@@ -1835,8 +1856,11 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     }
 
     let sentAsPlainText = false;
+    const mdChunks = splitMessage(message);
     try {
-      await telegram.sendMessage(TELEGRAM_CHAT_ID, message, "MarkdownV2", effectiveThreadId);
+      for (const chunk of mdChunks) {
+        await telegram.sendMessage(TELEGRAM_CHAT_ID, chunk, "MarkdownV2", effectiveThreadId);
+      }
     } catch (error) {
       const errMsg = errorMessage(error);
       // If Telegram rejected the message due to a MarkdownV2 parse error,
@@ -1844,7 +1868,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const isParseError = errMsg.includes("can't parse entities");
       if (isParseError) {
         try {
-          await telegram.sendMessage(TELEGRAM_CHAT_ID, rawMessage, undefined, effectiveThreadId);
+          const plainChunks = splitMessage(rawMessage);
+          for (const chunk of plainChunks) {
+            await telegram.sendMessage(TELEGRAM_CHAT_ID, chunk, undefined, effectiveThreadId);
+          }
           sentAsPlainText = true;
         } catch (retryError) {
           process.stderr.write(
@@ -2434,6 +2461,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 // ---------------------------------------------------------------------------
 
 const httpPort = process.env.MCP_HTTP_PORT ? parseInt(process.env.MCP_HTTP_PORT, 10) : undefined;
+const httpBind = process.env.MCP_HTTP_BIND ?? "127.0.0.1";
 
 if (httpPort) {
   // ── HTTP/SSE transport ──────────────────────────────────────────────────
@@ -2584,8 +2612,8 @@ if (httpPort) {
    }
   });
 
-  httpServer.listen(httpPort, () => {
-    process.stderr.write(`Remote Copilot MCP server running on http://localhost:${httpPort}/mcp\n`);
+  httpServer.listen(httpPort, httpBind, () => {
+    process.stderr.write(`Remote Copilot MCP server running on http://${httpBind}:${httpPort}/mcp\n`);
   });
 
   // Simple shutdown — close transports, DB, and exit.
