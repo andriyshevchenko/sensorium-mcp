@@ -1200,9 +1200,11 @@ export function forgetMemory(
   if (memoryId.startsWith("ep_")) {
     const existing = db.prepare(`SELECT episode_id FROM episodes WHERE episode_id = ?`).get(memoryId);
     if (!existing) return { layer: "episodic", deleted: false };
-    db.prepare(`DELETE FROM episodes WHERE episode_id = ?`).run(memoryId);
-    // Also delete associated voice signature
-    db.prepare(`DELETE FROM voice_signatures WHERE episode_id = ?`).run(memoryId);
+    db.transaction(() => {
+      db.prepare(`DELETE FROM episodes WHERE episode_id = ?`).run(memoryId);
+      // Also delete associated voice signature
+      db.prepare(`DELETE FROM voice_signatures WHERE episode_id = ?`).run(memoryId);
+    })();
     return { layer: "episodic", deleted: true };
   }
 
@@ -1223,8 +1225,10 @@ export function forgetMemory(
   // Unknown prefix — try all layers
   let row = db.prepare(`SELECT episode_id FROM episodes WHERE episode_id = ?`).get(memoryId);
   if (row) {
-    db.prepare(`DELETE FROM episodes WHERE episode_id = ?`).run(memoryId);
-    db.prepare(`DELETE FROM voice_signatures WHERE episode_id = ?`).run(memoryId);
+    db.transaction(() => {
+      db.prepare(`DELETE FROM episodes WHERE episode_id = ?`).run(memoryId);
+      db.prepare(`DELETE FROM voice_signatures WHERE episode_id = ?`).run(memoryId);
+    })();
     return { layer: "episodic", deleted: true };
   }
 

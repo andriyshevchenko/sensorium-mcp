@@ -37,6 +37,7 @@ import {
 import { createServer, IncomingMessage } from "node:http";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { readFile } from "fs/promises";
 import { createRequire } from "module";
 import { homedir } from "os";
 import { basename, join } from "path";
@@ -356,6 +357,7 @@ function purgeOtherSessions(threadId: number, keepMcpSessionId?: string): number
     }
   }
   threadSessionRegistry.set(threadId, kept);
+  if (kept.length === 0) threadSessionRegistry.delete(threadId);
   return purged;
 }
 
@@ -1682,6 +1684,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       // Send SSE keepalive to prevent silent connection death during long polls.
       if (Date.now() - lastKeepalive >= SSE_KEEPALIVE_INTERVAL_MS) {
         lastKeepalive = Date.now();
+        lastToolCallAt = Date.now();
         try {
           await extra.sendNotification({
             method: "notifications/progress",
@@ -1694,7 +1697,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         } catch {
           // If notification fails, the SSE stream is already dead.
           // Return immediately so the agent can reconnect.
-          process.stderr.write(`[wait] SSE keepalive failed — connection dead. Returning early.\\n`);
+          process.stderr.write(`[wait] SSE keepalive failed — connection dead. Returning early.\n`);
+          lastToolCallAt = Date.now();
           return {
             content: [{
               type: "text",
@@ -1949,7 +1953,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
       if (filePath) {
         // Read directly from disk — fast, no LLM context overhead.
-        buffer = readFileSync(filePath);
+        buffer = await readFile(filePath);
         filename = typeof typedArgs.filename === "string" && typedArgs.filename.trim()
           ? typedArgs.filename.trim()
           : basename(filePath);
@@ -2155,8 +2159,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     }
     try {
       const db = getMemoryDb();
-      const layers = (typedArgs.layers as string[] | undefined) ?? ["episodic", "semantic", "procedural"];
-      const types = typedArgs.types as string[] | undefined;
+      const layers = Array.isArray(typedArgs.layers) ? typedArgs.layers.map(String) : typeof typedArgs.layers === 'string' ? [typedArgs.layers] : ["episodic", "semantic", "procedural"];
+      const types = Array.isArray(typedArgs.types) ? typedArgs.types.map(String) : typeof typedArgs.types === 'string' ? [typedArgs.types] : undefined;
       const results: string[] = [];
 
       if (layers.includes("semantic")) {
@@ -2223,7 +2227,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const noteId = saveSemanticNote(db, {
         type: noteType as typeof VALID_TYPES[number],
         content,
-        keywords: (typedArgs.keywords as string[]) ?? [],
+        keywords: Array.isArray(typedArgs.keywords) ? typedArgs.keywords.map(String) : typeof typedArgs.keywords === 'string' ? [typedArgs.keywords] : [],
         confidence: typeof typedArgs.confidence === "number" ? typedArgs.confidence : 0.8,
       });
       return {
@@ -2244,8 +2248,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       if (existingId) {
         updateProcedure(db, existingId, {
           description: typedArgs.description as string | undefined,
-          steps: typedArgs.steps as string[] | undefined,
-          triggerConditions: typedArgs.triggerConditions as string[] | undefined,
+          steps: Array.isArray(typedArgs.steps) ? typedArgs.steps.map(String) : typeof typedArgs.steps === 'string' ? [typedArgs.steps] : undefined,
+          triggerConditions: Array.isArray(typedArgs.triggerConditions) ? typedArgs.triggerConditions.map(String) : typeof typedArgs.triggerConditions === 'string' ? [typedArgs.triggerConditions] : undefined,
         });
         return {
           content: [{ type: "text", text: `Updated procedure: ${existingId}` + getReminders(threadId) }],
@@ -2260,8 +2264,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         name: String(typedArgs.name ?? ""),
         type: procType as typeof VALID_PROC_TYPES[number],
         description: String(typedArgs.description ?? ""),
-        steps: typedArgs.steps as string[] | undefined,
-        triggerConditions: typedArgs.triggerConditions as string[] | undefined,
+        steps: Array.isArray(typedArgs.steps) ? typedArgs.steps.map(String) : typeof typedArgs.steps === 'string' ? [typedArgs.steps] : undefined,
+        triggerConditions: Array.isArray(typedArgs.triggerConditions) ? typedArgs.triggerConditions.map(String) : typeof typedArgs.triggerConditions === 'string' ? [typedArgs.triggerConditions] : undefined,
       });
       return {
         content: [{ type: "text", text: `Saved procedure: ${procId}` + getReminders(threadId) }],
@@ -2286,9 +2290,11 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         if (!origRow) {
           return errorResult(`Note ${memId} not found — cannot supersede a non-existent note.`);
         }
+        const newContent = String(typedArgs.newContent ?? "");
+        if (!newContent.trim()) return errorResult("Error: 'newContent' is required when superseding a note. The original note would be destroyed with no replacement.");
         const newId = supersedeNote(db, memId, {
           type: origRow.type as "fact" | "preference" | "pattern" | "entity" | "relationship",
-          content: String(typedArgs.newContent ?? ""),
+          content: newContent,
           keywords: origRow.keywords ? JSON.parse(origRow.keywords) : [],
           confidence: typeof typedArgs.newConfidence === "number" ? typedArgs.newConfidence : 0.8,
         });
