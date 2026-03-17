@@ -614,6 +614,19 @@ export function supersedeNote(
     oldNoteId
   );
 
+  // Create bidirectional link: add old note to new note's linked_notes
+  const newRow = db.prepare(`SELECT linked_notes, link_reasons FROM semantic_notes WHERE note_id = ?`).get(newId) as Record<string, unknown> | undefined;
+  const currentLinked = parseJsonArray(newRow?.linked_notes as string | null);
+  const currentReasons = parseJsonObject(newRow?.link_reasons as string | null) as Record<string, string>;
+  if (!currentLinked.includes(oldNoteId)) {
+    currentLinked.push(oldNoteId);
+  }
+  currentReasons[oldNoteId] = "supersedes";
+  updateSemanticNote(db, newId, {
+    linkedNotes: currentLinked,
+    linkReasons: currentReasons,
+  });
+
   return newId;
 }
 

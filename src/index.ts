@@ -165,9 +165,9 @@ function convertMarkdown(markdown: string): string {
   const tables: string[] = [];
   const tablePlaceholder = (i: number) => `TABLEPLACEHOLDER${i}END`;
   preprocessed = preprocessed.replace(
-    /^(\|.+)\n((?:\|.*\n?)*)/gm,
-    (_match, firstRow: string, rest: string) => {
-      tables.push((firstRow + "\n" + rest).trimEnd());
+    /^(\|.+\|)\n(\|[-| :]+\|\n)((?:\|.*\n?)*)/gm,
+    (_match, firstRow: string, sepRow: string, rest: string) => {
+      tables.push((firstRow + "\n" + sepRow + rest).trimEnd());
       return tablePlaceholder(tables.length - 1) + "\n";
     },
   );
