@@ -1431,41 +1431,6 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
               });
             }
           }
-          // Audio file (forwarded voice, music, etc.) — treat like voice
-          if (msg.message.audio) {
-            const audio = msg.message.audio;
-            if (OPENAI_API_KEY) {
-              try {
-                const { buffer } = await telegram.downloadFileAsBuffer(audio.file_id);
-                process.stderr.write(`[audio] Downloaded ${buffer.length} bytes (${audio.mime_type ?? "unknown"}). Transcribing...\n`);
-
-                const transcript = await transcribeAudio(buffer, OPENAI_API_KEY, audio.title ?? "audio.ogg");
-                const label = audio.title ? ` "${audio.title}"` : "";
-                contentBlocks.push({
-                  type: "text",
-                  text: `[Audio${label} — ${audio.duration}s]: "${transcript}"`,
-                });
-              } catch (err) {
-                contentBlocks.push({
-                  type: "text",
-                  text: `[Audio file — ${audio.duration}s — transcription failed: ${errorMessage(err)}]`,
-                });
-              }
-            } else {
-              contentBlocks.push({
-                type: "text",
-                text: `[Audio file received — ${audio.duration}s — cannot transcribe: OPENAI_API_KEY not set]`,
-              });
-            }
-          }
-          // Sticker — just convert to text
-          if (msg.message.sticker) {
-            const emoji = msg.message.sticker.emoji ?? "?";
-            contentBlocks.push({
-              type: "text",
-              text: `[Sticker: ${emoji}]`,
-            });
-          }
           // Video notes (circle videos): extract frames, analyze with GPT-4.1 vision,
           // optionally transcribe the audio track.
           if (msg.message.video_note) {
@@ -1558,11 +1523,9 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
         if (contentBlocks.length === 0) {
-          const keys = stored.flatMap(m => Object.keys(m.message).filter(k => m.message[k as keyof typeof m.message] != null)).join(", ");
-          process.stderr.write(`[unsupported] Message had fields: ${keys}\n`);
           contentBlocks.push({
             type: "text",
-            text: `[Unsupported message type received (fields: ${keys}) — the operator sent a message type that cannot be processed. Please ask them to resend as text, photo, document, or voice.]`,
+            text: "[Unsupported message type received — the operator sent a message type that cannot be processed (e.g., sticker, location, contact). Please ask them to resend as text, photo, document, or voice.]",
           });
         }
 
@@ -1874,15 +1837,6 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
         } else if (msg.message.video_note) {
           pendingMessages.push(
             `[Video note — ${msg.message.video_note.duration}s — will be analyzed on next wait]`,
-          );
-        } else if (msg.message.audio) {
-          pendingMessages.push(
-            `[Audio file — will be transcribed on next wait]`,
-          );
-        } else if (msg.message.sticker) {
-          const emoji = msg.message.sticker.emoji ?? "?";
-          pendingMessages.push(
-            `[Sticker: ${emoji}]`,
           );
         } else if (msg.message.text) {
           pendingMessages.push(msg.message.text);
