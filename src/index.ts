@@ -1083,7 +1083,7 @@ function getReminders(threadId?: number): string {
   );
 }
 
-srv.setRequestHandler(CallToolRequestSchema, async (request) => {
+srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const { name, arguments: args } = request.params;
 
   // Dead session detection — update timestamp on any tool call.
@@ -1265,12 +1265,31 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Poll the dispatcher's per-thread file instead of calling getUpdates
     // directly. This avoids 409 conflicts between concurrent instances.
     const POLL_INTERVAL_MS = 2000;
+    const SSE_KEEPALIVE_INTERVAL_MS = 30_000;
     let lastScheduleCheck = 0;
+    let lastKeepalive = Date.now();
 
     while (Date.now() < deadline) {
-      const stored = readThreadMessages(effectiveThreadId);
+      // Peek first (non-destructive) to avoid consuming messages when the
+      // SSE connection may be dead.
+      const peeked = peekThreadMessages(effectiveThreadId);
 
-      if (stored.length > 0) {
+      if (peeked.length > 0) {
+        // Verify SSE connection is alive BEFORE consuming messages.
+        // This prevents the destructive readThreadMessages from eating
+        // messages that can never be delivered to a dead connection.
+        if (extra.signal.aborted) {
+          process.stderr.write(`[wait] SSE connection aborted before consuming ${peeked.length} messages — leaving in queue.\n`);
+          return {
+            content: [{
+              type: "text",
+              text: "The connection was interrupted. Messages are preserved for the next call.",
+            }],
+          };
+        }
+
+        // Connection alive — now consume messages for real.
+        const stored = readThreadMessages(effectiveThreadId);
         process.stderr.write(`[wait] Read ${stored.length} messages from thread ${effectiveThreadId}. Processing...\n`);
         // Update the operator activity timestamp for idle detection.
         lastOperatorMessageAt = Date.now();
@@ -1660,6 +1679,30 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // No messages yet — sleep briefly and check again.
+      // Send SSE keepalive to prevent silent connection death during long polls.
+      if (Date.now() - lastKeepalive >= SSE_KEEPALIVE_INTERVAL_MS) {
+        lastKeepalive = Date.now();
+        try {
+          await extra.sendNotification({
+            method: "notifications/progress",
+            params: {
+              progressToken: extra.requestId,
+              progress: 0,
+              total: 0,
+            },
+          });
+        } catch {
+          // If notification fails, the SSE stream is already dead.
+          // Return immediately so the agent can reconnect.
+          process.stderr.write(`[wait] SSE keepalive failed — connection dead. Returning early.\\n`);
+          return {
+            content: [{
+              type: "text",
+              text: "The connection was interrupted. Please call wait_for_instructions again immediately to resume polling.",
+            }],
+          };
+        }
+      }
       await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     }
 
