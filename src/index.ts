@@ -1267,6 +1267,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
       const stored = readThreadMessages(effectiveThreadId);
 
       if (stored.length > 0) {
+        process.stderr.write(`[wait] Read ${stored.length} messages from thread ${effectiveThreadId}. Processing...\n`);
         // Update the operator activity timestamp for idle detection.
         lastOperatorMessageAt = Date.now();
 
@@ -1523,11 +1524,14 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
         if (contentBlocks.length === 0) {
+          const msgKeys = stored.map(m => Object.keys(m.message).filter(k => (m.message as Record<string, unknown>)[k] != null).join(",")).join(" | ");
+          process.stderr.write(`[wait] No content blocks from ${stored.length} messages. Fields: ${msgKeys}\n`);
           contentBlocks.push({
             type: "text",
             text: "[Unsupported message type received — the operator sent a message type that cannot be processed (e.g., sticker, location, contact). Please ask them to resend as text, photo, document, or voice.]",
           });
         }
+        process.stderr.write(`[wait] ${contentBlocks.length} content blocks built. Saving episodes...\n`);
 
         // Auto-ingest episodes for messages not already saved by voice/video handlers
         try {
@@ -1555,6 +1559,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           }
         } catch (_) { /* memory write failures should never break the main flow */ }
+
+        process.stderr.write(`[wait] Episodes saved. Building auto-memory context...\n`);
 
         // Inject subagent/delegation hint right after the operator's message
         // so the agent treats it as part of the operator's instructions.
@@ -1601,6 +1607,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           }
         } catch (_) { /* memory search failures should never break message delivery */ }
+
+        process.stderr.write(`[wait] Returning response with ${contentBlocks.length} blocks to agent.\n`);
 
         return {
           content: [
