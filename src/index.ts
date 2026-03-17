@@ -811,6 +811,7 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Three modes: (1) 'runAt' for a one-shot at a specific ISO 8601 time, " +
         "(2) 'cron' for recurring tasks (5-field cron: minute hour day month weekday), " +
         "(3) 'afterIdleMinutes' to fire after N minutes of operator silence. " +
+        "Note: cron expressions are evaluated against server-local time (not UTC). " +
         "Use 'action: list' to see all scheduled tasks, or 'action: remove' with a taskId to cancel one.",
       inputSchema: {
         type: "object",
@@ -838,7 +839,7 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           cron: {
             type: "string",
-            description: "5-field cron expression for recurring tasks (e.g. '0 9 * * *' = every day at 9am).",
+            description: "5-field cron expression for recurring tasks (e.g. '0 9 * * *' = every day at 9am). Cron expressions are evaluated against server-local time (not UTC).",
           },
           afterIdleMinutes: {
             type: "number",
