@@ -229,15 +229,6 @@ export interface StoredMessage {
             length: number;
             duration: number;
         };
-        audio?: {
-            file_id: string;
-            duration: number;
-            mime_type?: string;
-            title?: string;
-        };
-        sticker?: {
-            emoji?: string;
-        };
         date: number;
     };
 }
@@ -402,15 +393,6 @@ async function pollOnce(
                         file_id: u.message.video_note.file_id,
                         length: u.message.video_note.length,
                         duration: u.message.video_note.duration,
-                    } : undefined,
-                    audio: u.message.audio ? {
-                        file_id: u.message.audio.file_id,
-                        duration: u.message.audio.duration,
-                        mime_type: u.message.audio.mime_type,
-                        title: u.message.audio.title,
-                    } : undefined,
-                    sticker: u.message.sticker ? {
-                        emoji: u.message.sticker.emoji,
                     } : undefined,
                     date: u.message.date,
                 },
