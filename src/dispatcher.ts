@@ -363,6 +363,16 @@ async function pollOnce(
                 continue;
             }
 
+            // Skip Telegram service messages (forum_topic_created, pinned_message,
+            // new_chat_members, etc.) — they have no user content and would be
+            // delivered as "unsupported message type" to the agent.
+            const m = u.message;
+            const hasContent = m.text || m.caption || m.photo || m.document || m.voice || m.video_note;
+            if (!hasContent) {
+                committedOffset = u.update_id + 1;
+                continue;
+            }
+
             const threadId: number | "general" =
                 u.message.message_thread_id ?? "general";
 
