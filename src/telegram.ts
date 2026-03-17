@@ -125,6 +125,44 @@ export class TelegramClient {
 
   // ── Private helpers ─────────────────────────────────────────────────────
 
+  /**
+   * Strip the bot token from an error message so it is never leaked in logs
+   * or propagated to callers.
+   */
+  private redactError(err: unknown): Error {
+    if (err instanceof Error) {
+      const redacted = new Error(err.message.replaceAll(this.token, "***REDACTED***"));
+      redacted.stack = err.stack?.replaceAll(this.token, "***REDACTED***");
+      return redacted;
+    }
+    return new Error(String(err).replaceAll(this.token, "***REDACTED***"));
+  }
+
+  /**
+   * Wrapper around global `fetch` that redacts the bot token from any
+   * network-level error (e.g. DNS failure, connection refused) before
+   * re-throwing.
+   */
+  private async safeFetch(
+    input: string | URL | Request,
+    init?: RequestInit,
+  ): Promise<Response> {
+    const timeoutMs = 30_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (!init?.signal) {
+      const controller = new AbortController();
+      timer = setTimeout(() => controller.abort(), timeoutMs);
+      init = { ...init, signal: controller.signal };
+    }
+    try {
+      return await fetch(input, init);
+    } catch (err) {
+      throw this.redactError(err);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   /** Safely parse a JSON response, returning undefined on failure. */
   private async tryParseJson<T>(response: Response): Promise<T | undefined> {
     try {
@@ -155,7 +193,7 @@ export class TelegramClient {
       formData.append("message_thread_id", String(options.threadId));
     }
 
-    const response = await fetch(url, { method: "POST", body: formData });
+    const response = await this.safeFetch(url, { method: "POST", body: formData });
     const data = await this.tryParseJson<SendMessageResult>(response);
     if (!response.ok || data?.ok !== true) {
       const description = data?.description ?? response.statusText;
@@ -184,7 +222,7 @@ export class TelegramClient {
     const RETRY_DELAY_MS = 5000;
 
     for (let attempt = 0; ; attempt++) {
-      const response = await fetch(url.toString(), signal ? { signal } : {});
+      const response = await this.safeFetch(url.toString(), signal ? { signal } : {});
       const data = await this.tryParseJson<GetUpdatesResult>(response);
 
       if (data === undefined) {
@@ -237,7 +275,7 @@ export class TelegramClient {
    */
   async createForumTopic(chatId: string, name: string): Promise<ForumTopic> {
     const url = `${this.baseUrl}/createForumTopic`;
-    const response = await fetch(url, {
+    const response = await this.safeFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, name }),
@@ -264,7 +302,7 @@ export class TelegramClient {
     if (parseMode) body.parse_mode = parseMode;
     if (threadId !== undefined) body.message_thread_id = threadId;
 
-    const response = await fetch(url, {
+    const response = await this.safeFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -291,7 +329,7 @@ export class TelegramClient {
    */
   async getFile(fileId: string): Promise<TelegramFile> {
     const url = `${this.baseUrl}/getFile`;
-    const response = await fetch(url, {
+    const response = await this.safeFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ file_id: fileId }),
@@ -312,7 +350,7 @@ export class TelegramClient {
   ): Promise<{ buffer: Buffer; filePath: string }> {
     const file = await this.getFile(fileId);
     const downloadUrl = `https://api.telegram.org/file/bot${this.token}/${file.file_path}`;
-    const response = await fetch(downloadUrl);
+    const response = await this.safeFetch(downloadUrl);
     if (!response.ok) {
       throw new Error(
         `Failed to download Telegram file: ${response.status} ${response.statusText}`,
@@ -384,7 +422,7 @@ export class TelegramClient {
   ): Promise<void> {
     try {
       const url = `${this.baseUrl}/setMessageReaction`;
-      const response = await fetch(url, {
+      const response = await this.safeFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
