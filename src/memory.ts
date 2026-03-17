@@ -144,6 +144,54 @@ function parseJsonObject(val: string | null | undefined): Record<string, unknown
 
 const SCHEMA_VERSION = 1;
 
+// ─── Migrations ──────────────────────────────────────────────────────────────
+
+/**
+ * Migration functions keyed by target schema version.
+ * Each migration upgrades from version (key - 1) to version (key).
+ * Add new migrations here when SCHEMA_VERSION is bumped.
+ */
+const MIGRATIONS: Record<number, (db: Database) => void> = {
+  // Example:
+  // 2: (db) => { db.exec("ALTER TABLE episodes ADD COLUMN embedding TEXT"); },
+};
+
+/**
+ * Read the current schema version from the database.
+ * Returns 1 if no version is recorded (initial schema).
+ */
+function getCurrentSchemaVersion(db: Database): number {
+  try {
+    const row = db
+      .prepare("SELECT MAX(version) as v FROM schema_version")
+      .get() as { v: number | null } | undefined;
+    return row?.v ?? 1;
+  } catch {
+    // Table may not exist yet on first run
+    return 0;
+  }
+}
+
+/**
+ * Run any pending migrations sequentially from the current stored version
+ * up to SCHEMA_VERSION.  Each migration runs inside a transaction.
+ */
+function runMigrations(db: Database): void {
+  const currentVersion = getCurrentSchemaVersion(db);
+  for (let v = currentVersion + 1; v <= SCHEMA_VERSION; v++) {
+    const migration = MIGRATIONS[v];
+    if (migration) {
+      db.transaction(() => {
+        migration(db);
+        db.prepare(
+          "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)"
+        ).run(v, nowISO());
+      })();
+      process.stderr.write(`[memory] Migrated schema to version ${v}\n`);
+    }
+  }
+}
+
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS episodes (
   episode_id     TEXT PRIMARY KEY,
@@ -275,6 +323,9 @@ export function initMemoryDb(): Database {
       nowISO()
     );
   }
+
+  // Run any pending migrations
+  runMigrations(db);
 
   return db;
 }
@@ -1048,11 +1099,26 @@ export function assembleCompactRefresh(db: Database, threadId: number): string {
 
 // ─── Intelligent Consolidation ───────────────────────────────────────────────
 
+// PRIVACY NOTE: This function sends conversation episode excerpts to OpenAI's
+// API for knowledge extraction and consolidation. Operators can disable this
+// by setting the environment variable CONSOLIDATION_ENABLED=false (or "0").
+
 export async function runIntelligentConsolidation(
   db: Database,
   threadId: number,
   options?: { maxEpisodes?: number; dryRun?: boolean }
 ): Promise<ConsolidationReport> {
+  // Opt-out: allow operators to disable consolidation for privacy reasons
+  const consolidationEnabled = process.env.CONSOLIDATION_ENABLED;
+  if (consolidationEnabled === "false" || consolidationEnabled === "0") {
+    return {
+      episodesProcessed: 0,
+      notesCreated: 0,
+      durationMs: 0,
+      details: ["Consolidation disabled via CONSOLIDATION_ENABLED env var."],
+    };
+  }
+
   const startMs = Date.now();
   const maxEpisodes = options?.maxEpisodes ?? 30;
   const dryRun = options?.dryRun ?? false;
