@@ -1,0 +1,6 @@
+fix: restore 'you are free' hint during 0-4h idle period
+
+The goal generation system replaced the static autonomy hint but only shows
+goals after 4+ hours. During the 0-4h period, agents had no hint that they
+could work autonomously. Now: 0-4h shows the original hint, 4h+ shows
+curiosity-weighted goals.

@@ -1783,12 +1783,12 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     }
 
     // Generate autonomous goals only after extended silence (4+ hours)
-    // Before that, the agent should just keep polling quietly
+    // Before that, show the standard autonomy hint
     const GOAL_GENERATION_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours
     const idleMs = Date.now() - lastOperatorMessageAt;
-    const autonomousGoals = idleMs >= GOAL_GENERATION_THRESHOLD_MS
+    const autonomousHint = idleMs >= GOAL_GENERATION_THRESHOLD_MS
       ? formatAutonomousGoals(effectiveThreadId)
-      : "";
+      : "\n\nNo instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Now you are free and fully autonomous. You have an opportunity to do whatever you find interesting.";
 
     return {
       content: [
@@ -1800,7 +1800,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
             `Do NOT summarize, stop, or say the session is idle. ` +
             `Just call the tool again immediately.` +
-            autonomousGoals +
+            autonomousHint +
             memoryRefresh +
             scheduleHint +
             getReminders(effectiveThreadId),
