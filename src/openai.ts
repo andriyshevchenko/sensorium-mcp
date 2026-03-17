@@ -7,10 +7,32 @@
  */
 
 import { spawn } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+
+// Dedicated temp directory so crash-leftover files are cleaned on next startup.
+const TEMP_DIR = join(homedir(), ".remote-copilot-mcp", "tmp");
+
+/** Remove files older than 1 hour from TEMP_DIR; create the dir if absent. */
+function cleanupTempDir(): void {
+    mkdirSync(TEMP_DIR, { recursive: true });
+    const ONE_HOUR = 60 * 60 * 1000;
+    const now = Date.now();
+    for (const name of readdirSync(TEMP_DIR)) {
+        try {
+            const fullPath = join(TEMP_DIR, name);
+            const mtime = statSync(fullPath).mtimeMs;
+            if (now - mtime > ONE_HOUR) {
+                unlinkSync(fullPath);
+            }
+        } catch { /* ignore per-file errors */ }
+    }
+}
+
+// Run once when the module loads.
+cleanupTempDir();
 
 /** Valid TTS voice names. */
 export const TTS_VOICES = [
@@ -221,7 +243,7 @@ export function extractVideoFrames(
     videoBuffer: Buffer,
     durationSec: number,
 ): Promise<Buffer[]> {
-    const tempPath = join(tmpdir(), `video-${randomUUID()}.mp4`);
+    const tempPath = join(TEMP_DIR, `video-${randomUUID()}.mp4`);
     writeFileSync(tempPath, videoBuffer);
 
     return new Promise<Buffer[]>((resolve, reject) => {

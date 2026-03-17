@@ -151,6 +151,8 @@ export function checkDueTasks(
     const now = new Date();
     let modified = false;
 
+    let result: { prompt: string; task: ScheduledTask } | null = null;
+
     for (const task of tasks) {
         // --- One-shot at specific time ---
         if (task.runAt) {
@@ -168,8 +170,8 @@ export function checkDueTasks(
                     tasks.splice(idx, 1);
                 }
                 modified = true;
-                saveSchedules(threadId, tasks);
-                return { prompt: task.prompt, task };
+                result = { prompt: task.prompt, task };
+                break;
             }
         }
 
@@ -195,8 +197,8 @@ export function checkDueTasks(
                 }
                 task.lastFiredAt = now.toISOString();
                 modified = true;
-                saveSchedules(threadId, tasks);
-                return { prompt: task.prompt, task };
+                result = { prompt: task.prompt, task };
+                break;
             }
         }
 
@@ -221,8 +223,8 @@ export function checkDueTasks(
                 }
                 task.lastFiredAt = now.toISOString();
                 modified = true;
-                saveSchedules(threadId, tasks);
-                return { prompt: task.prompt, task };
+                result = { prompt: task.prompt, task };
+                break;
             }
         }
     }
@@ -230,5 +232,5 @@ export function checkDueTasks(
     if (modified) {
         saveSchedules(threadId, tasks);
     }
-    return null;
+    return result;
 }
