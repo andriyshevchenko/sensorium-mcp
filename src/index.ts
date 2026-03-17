@@ -1617,18 +1617,23 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
         process.stderr.write(`[wait] Episodes saved. Building auto-memory context...\n`);
 
-        // Inject subagent/delegation hint right after the operator's message
-        // so the agent treats it as part of the operator's instructions.
-        const delegationHint: { type: "text"; text: string } = {
-          type: "text",
-          text:
-            "\n Read and incorporate the operator's new messages." +
-            "\n - Update or refine your plan as needed." +
-            "\n - Continue your work." +
+        // Subagent instruction — embedded directly in operator message flow
+        // so agents treat it as a direct instruction, not ignorable metadata.
+        const subagentInstruction =
             "\n\n⚠️ HINT from operator: Use subagents (runSubagent) for ALL substantial work — code edits, research, reviews, searches, and terminal commands. " +
             "Subagents have full access to ALL MCP tools including terminal, file system, and web search. " +
-            "Run them in parallel when tasks are independent. You plan and verify; subagents execute.",
-        };
+            "Run them in parallel when tasks are independent. You plan and verify; subagents execute.";
+
+        // Append the subagent instruction to the LAST operator content block
+        // so it reads as part of the operator's message stream
+        if (contentBlocks.length > 0) {
+          const last = contentBlocks[contentBlocks.length - 1];
+          if (last.type === "text") {
+            last.text += subagentInstruction;
+          } else {
+            contentBlocks.push({ type: "text", text: subagentInstruction });
+          }
+        }
 
         // ── Auto-inject relevant memory context ───────────────────────────
         // Architecture-enforced: the agent should NOT need to manually call
@@ -1719,7 +1724,6 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
                 "The operator is REMOTE — they cannot see your screen. If you don't call report_progress, they see nothing.",
             },
             ...contentBlocks,
-            delegationHint,
             ...(hasVoiceMessages
               ? [{
                 type: "text" as const,
