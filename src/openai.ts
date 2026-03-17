@@ -27,6 +27,9 @@ export async function textToSpeech(
     apiKey: string,
     voice: TTSVoice = "nova",
 ): Promise<Buffer> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60_000);
+    try {
     const response = await fetch("https://api.openai.com/v1/audio/speech", {
         method: "POST",
         headers: {
@@ -39,6 +42,7 @@ export async function textToSpeech(
             voice,
             response_format: "opus",
         }),
+        signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -47,6 +51,9 @@ export async function textToSpeech(
     }
 
     return Buffer.from(await response.arrayBuffer());
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 /**
@@ -62,6 +69,9 @@ export async function transcribeAudio(
 ): Promise<string> {
     // Telegram stores voice as .oga (OGG Opus). Whisper accepts .ogg but
     // not .oga, so we hardcode the extension.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60_000);
+    try {
     const formData = new FormData();
     formData.append(
         "file",
@@ -76,6 +86,7 @@ export async function transcribeAudio(
             method: "POST",
             headers: { Authorization: `Bearer ${apiKey}` },
             body: formData,
+            signal: controller.signal,
         },
     );
 
@@ -88,6 +99,9 @@ export async function transcribeAudio(
 
     const result = (await response.json()) as { text?: string };
     return result.text ?? "";
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -301,6 +315,9 @@ export async function analyzeVideoFrames(
         })),
     ];
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60_000);
+    try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -312,6 +329,7 @@ export async function analyzeVideoFrames(
             messages: [{ role: "user", content }],
             max_tokens: 300,
         }),
+        signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -323,4 +341,7 @@ export async function analyzeVideoFrames(
         choices?: Array<{ message?: { content?: string } }>;
     };
     return result.choices?.[0]?.message?.content?.trim() ?? "(no description generated)";
+    } finally {
+        clearTimeout(timer);
+    }
 }
