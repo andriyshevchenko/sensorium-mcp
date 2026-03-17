@@ -1098,8 +1098,9 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "start_session") {
     sessionStartedAt = Date.now();
     const typedArgs = (args ?? {}) as Record<string, unknown>;
-    const explicitThreadId = typeof typedArgs.threadId === "number"
-      ? typedArgs.threadId as number
+    const rawThreadId = typedArgs.threadId;
+    const explicitThreadId = typeof rawThreadId === "number" ? rawThreadId
+      : typeof rawThreadId === "string" ? (Number.isFinite(Number(rawThreadId)) ? Number(rawThreadId) : undefined)
       : undefined;
     const customName = typeof typedArgs.name === "string" && typedArgs.name.trim()
       ? typedArgs.name.trim()
@@ -1146,10 +1147,13 @@ srv.setRequestHandler(CallToolRequestSchema, async (request) => {
       // If the topic was deleted, drop the cached mapping and fall through to
       // create a new topic.
       try {
-        const msg = convertMarkdown("🔄 **Session resumed.** Continuing in this thread.");
-        await telegram.sendMessage(TELEGRAM_CHAT_ID, msg, "MarkdownV2", currentThreadId);
+        // Use plain text for probe — avoids MarkdownV2 parsing failures being mistaken for dead threads
+        await telegram.sendMessage(TELEGRAM_CHAT_ID, "\u{1F504} Session resumed. Continuing in this thread.", undefined, currentThreadId);
       } catch (err) {
         const errMsg = errorMessage(err);
+        process.stderr.write(
+          `[start_session] Probe failed for thread ${currentThreadId} in chat ${TELEGRAM_CHAT_ID}: ${errMsg}\n`,
+        );
         // Telegram returns "Bad Request: message thread not found" or
         // "Bad Request: the topic was closed" for deleted/closed topics.
         const isThreadGone = /thread not found|topic.*(closed|deleted|not found)/i.test(errMsg);
