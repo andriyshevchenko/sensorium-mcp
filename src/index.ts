@@ -318,7 +318,7 @@ function getMemoryDb() {
 }
 
 // Dead session detection constant
-const DEAD_SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (2× wait_for_instructions timeout)
+const DEAD_SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (0.5× wait_for_instructions timeout, chosen to alert before the next poll could return)
 
 // Subagent compliance constant
 const SUBAGENT_NUDGE_THRESHOLD = 8;
@@ -2163,7 +2163,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   if (name === "memory_bootstrap") {
     const threadId = resolveThreadId(args as Record<string, unknown>);
     if (threadId === undefined) {
-      return { content: [{ type: "text", text: "Error: No active thread. Call start_session first." + getReminders() }] };
+      return errorResult("Error: No active thread. Call start_session first." + getReminders());
     }
     try {
       const db = getMemoryDb();
@@ -2172,7 +2172,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content: [{ type: "text", text: `## Memory Briefing\n\n${briefing}` + getReminders(threadId) }],
       };
     } catch (err) {
-      return { content: [{ type: "text", text: `Memory bootstrap error: ${errorMessage(err)}` + getReminders(threadId) }] };
+      return errorResult(`Memory bootstrap error: ${errorMessage(err)}` + getReminders(threadId));
     }
   }
 
@@ -2182,7 +2182,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const threadId = resolveThreadId(typedArgs);
     const query = String(typedArgs.query ?? "");
     if (!query) {
-      return { content: [{ type: "text", text: "Error: query is required." + getReminders(threadId) }] };
+      return errorResult("Error: query is required." + getReminders(threadId));
     }
     try {
       const db = getMemoryDb();
@@ -2232,7 +2232,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         : `No memories found for "${query}".`;
       return { content: [{ type: "text", text: text + getReminders(threadId) }] };
     } catch (err) {
-      return { content: [{ type: "text", text: `Memory search error: ${errorMessage(err)}` + getReminders(threadId) }] };
+      return errorResult(`Memory search error: ${errorMessage(err)}` + getReminders(threadId));
     }
   }
 
@@ -2261,7 +2261,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getReminders(threadId) + getSubagentNudge() }],
       };
     } catch (err) {
-      return { content: [{ type: "text", text: `Memory save error: ${errorMessage(err)}` + getReminders(threadId) }] };
+      return errorResult(`Memory save error: ${errorMessage(err)}` + getReminders(threadId));
     }
   }
 
@@ -2298,7 +2298,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content: [{ type: "text", text: `Saved procedure: ${procId}` + getReminders(threadId) }],
       };
     } catch (err) {
-      return { content: [{ type: "text", text: `Procedure save error: ${errorMessage(err)}` + getReminders(threadId) }] };
+      return errorResult(`Procedure save error: ${errorMessage(err)}` + getReminders(threadId));
     }
   }
 
@@ -2350,9 +2350,9 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         };
       }
 
-      return { content: [{ type: "text", text: `Unknown memory ID format: ${memId}` + getReminders(threadId) }] };
+      return errorResult(`Unknown memory ID format: ${memId}` + getReminders(threadId));
     } catch (err) {
-      return { content: [{ type: "text", text: `Memory update error: ${errorMessage(err)}` + getReminders(threadId) }] };
+      return errorResult(`Memory update error: ${errorMessage(err)}` + getReminders(threadId));
     }
   }
 
@@ -2361,7 +2361,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const threadId = resolveThreadId(typedArgs);
     if (threadId === undefined) {
-      return { content: [{ type: "text", text: "Error: No active thread." + getReminders() }] };
+      return errorResult("Error: No active thread." + getReminders());
     }
     try {
       const db = getMemoryDb();
@@ -2388,7 +2388,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
       return { content: [{ type: "text", text: reportLines.join("\n") + getReminders(threadId) }] };
     } catch (err) {
-      return { content: [{ type: "text", text: `Consolidation error: ${errorMessage(err)}` + getReminders(threadId) }] };
+      return errorResult(`Consolidation error: ${errorMessage(err)}` + getReminders(threadId));
     }
   }
 
@@ -2397,7 +2397,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const threadId = resolveThreadId(typedArgs);
     if (threadId === undefined) {
-      return { content: [{ type: "text", text: "Error: No active thread." + getReminders() }] };
+      return errorResult("Error: No active thread." + getReminders());
     }
     try {
       const db = getMemoryDb();
@@ -2423,7 +2423,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
       return { content: [{ type: "text", text: lines.join("\n") + getReminders(threadId) }] };
     } catch (err) {
-      return { content: [{ type: "text", text: `Memory status error: ${errorMessage(err)}` + getReminders(threadId) }] };
+      return errorResult(`Memory status error: ${errorMessage(err)}` + getReminders(threadId));
     }
   }
 
@@ -2445,7 +2445,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content: [{ type: "text", text: `Forgot ${result.layer} memory ${memId} (reason: ${reason})` + getReminders(threadId) }],
       };
     } catch (err) {
-      return { content: [{ type: "text", text: `Memory forget error: ${errorMessage(err)}` + getReminders(threadId) }] };
+      return errorResult(`Memory forget error: ${errorMessage(err)}` + getReminders(threadId));
     }
   }
 
