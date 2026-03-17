@@ -560,6 +560,70 @@ export function searchSemanticNotes(
   return rows.map(rowToSemanticNote);
 }
 
+export function searchSemanticNotesRanked(
+  db: Database,
+  query: string,
+  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean; minMatchRatio?: number }
+): SemanticNote[] {
+  const maxResults = options?.maxResults ?? 10;
+  const minMatchRatio = options?.minMatchRatio ?? 0.4; // require at least 40% of terms to match
+  const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+  if (terms.length === 0) return [];
+
+  // Use OR to get broad recall
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  for (const term of terms) {
+    const escaped = term.replace(/%/g, "\\%").replace(/_/g, "\\_");
+    conditions.push(`(LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(keywords) LIKE ? ESCAPE '\\')`);
+    params.push(`%${escaped}%`, `%${escaped}%`);
+  }
+
+  let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (${conditions.join(" OR ")})`;
+  if (options?.types && options.types.length > 0) {
+    const placeholders = options.types.map(() => "?").join(",");
+    sql += ` AND type IN (${placeholders})`;
+    params.push(...options.types);
+  }
+  sql += ` ORDER BY confidence DESC, access_count DESC LIMIT ?`;
+  params.push(maxResults * 3); // fetch more to allow scoring/filtering
+
+  const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
+  let notes = rows.map(rowToSemanticNote);
+
+  // Score by how many terms match
+  const minMatches = Math.max(2, Math.ceil(terms.length * minMatchRatio));
+  notes = notes.map(n => {
+    const text = (n.content + " " + n.keywords.join(" ")).toLowerCase();
+    let matchCount = 0;
+    for (const term of terms) {
+      if (text.includes(term)) matchCount++;
+    }
+    return { ...n, _matchCount: matchCount };
+  })
+  .filter(n => (n as any)._matchCount >= minMatches)
+  .sort((a, b) => {
+    const scoreA = (a as any)._matchCount;
+    const scoreB = (b as any)._matchCount;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return b.confidence - a.confidence;
+  })
+  .slice(0, maxResults);
+
+  // Update access counts
+  if (!options?.skipAccessTracking) {
+    const now = nowISO();
+    const updateStmt = db.prepare(
+      `UPDATE semantic_notes SET access_count = access_count + 1, last_accessed = ? WHERE note_id = ?`
+    );
+    db.transaction(() => {
+      for (const note of notes) updateStmt.run(now, note.noteId);
+    })();
+  }
+
+  return notes;
+}
+
 export function getTopSemanticNotes(
   db: Database,
   options?: { type?: string; limit?: number; sortBy?: "confidence" | "access_count" | "created_at" }
