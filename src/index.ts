@@ -163,16 +163,38 @@ function convertMarkdown(markdown: string): string {
     },
   );
 
-  // 2. Extract Markdown tables (consecutive lines starting with `|`) into
-  //    placeholders so telegramify-markdown never sees the pipe characters.
-  //    They are re-inserted post-conversion with pipes escaped for MarkdownV2.
-  const tables: string[] = [];
+  // 2. Extract Markdown tables (consecutive lines starting with `|`) and
+  //    convert them to list format for better Telegram readability.
+  //    Tables render poorly on mobile — lists with labeled items are clearer.
+  const tableLists: string[] = [];
   const tablePlaceholder = (i: number) => `TABLEPLACEHOLDER${i}END`;
   preprocessed = preprocessed.replace(
     /^(\|.+\|)\n(\|[-| :]+\|\n)((?:\|.*\n?)*)/gm,
-    (_match, firstRow: string, sepRow: string, rest: string) => {
-      tables.push((firstRow + "\n" + sepRow + rest).trimEnd());
-      return tablePlaceholder(tables.length - 1) + "\n";
+    (_match, firstRow: string, _sepRow: string, rest: string) => {
+      // Parse header columns
+      const headers = firstRow.split("|").map((s: string) => s.trim()).filter(Boolean);
+      // Parse data rows
+      const dataRows = rest.trimEnd().split("\n").filter((line: string) => line.trim().length > 0);
+      const listLines: string[] = [];
+      for (const row of dataRows) {
+        const cells = row.split("|").map((s: string) => s.trim()).filter(Boolean);
+        // Format as: "• Cell1 — Header2: Cell2, Header3: Cell3, ..."
+        if (cells.length > 0) {
+          const parts: string[] = [];
+          for (let j = 0; j < cells.length; j++) {
+            if (j === 0) {
+              parts.push(cells[j]);
+            } else if (j < headers.length) {
+              parts.push(`${headers[j]}: ${cells[j]}`);
+            } else {
+              parts.push(cells[j]);
+            }
+          }
+          listLines.push(`• ${parts.join(" — ")}`);
+        }
+      }
+      tableLists.push(listLines.join("\n"));
+      return tablePlaceholder(tableLists.length - 1) + "\n";
     },
   );
 
@@ -194,13 +216,12 @@ function convertMarkdown(markdown: string): string {
     },
   );
 
-  // 6. Re-insert tables with pipes escaped for MarkdownV2.
-  //    Escape MarkdownV2 special chars in table content, then escape pipes.
+  // 6. Re-insert tables (now converted to lists) with MarkdownV2 escaping.
   converted = converted.replace(
     /TABLEPLACEHOLDER(\d+)END/g,
     (_m, idx: string) => {
-      const table = tables[parseInt(idx, 10)];
-      return table
+      const list = tableLists[parseInt(idx, 10)];
+      return list
         .replace(/([_*\[\]()~`>#+=\-{}.!|\\])/g, "\\$1");
     },
   );
