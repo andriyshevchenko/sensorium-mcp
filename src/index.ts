@@ -1040,9 +1040,9 @@ function getReminders(threadId?: number): string {
     "\n1. **Plan**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
     "\n2. **Subagents**: Use subagents heavily — spin them up for code edits, searches, research, reviews, and terminal commands. Subagents have full access to ALL MCP tools including terminal, file system, and web search. Run them in parallel when tasks are independent. You plan and verify; subagents execute." +
     "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
-    "\n4. **Never stop**: When all work is done, call `remote_copilot_wait_for_instructions` immediately. Never summarize or stop. " +
-    "**`remote_copilot_wait_for_instructions` is the oxygen of this conversation — if you stop calling it, the session dies.** " +
-    "After EVERY action (tool call, report, research), your next step is ALWAYS either another action or `remote_copilot_wait_for_instructions`. NEVER end with a summary." +
+    "\n4. **Never stop**: `remote_copilot_wait_for_instructions` is the oxygen of this conversation — if you stop calling it, the session dies. NEVER end with a summary. " +
+    "**When you have pending todos**: keep working on them. Do NOT call `remote_copilot_wait_for_instructions` mid-workflow. " +
+    "**When all planned work is done**: call `remote_copilot_wait_for_instructions` IMMEDIATELY. No summary, no wrap-up — just call it." +
     "\n5. **Memory**: (a) Call `memory_save` whenever you learn operator preferences, facts, or corrections. (b) Call `memory_search` before starting any task to recall relevant context. (c) Call `memory_status` when reporting progress to include memory health. These tools persist knowledge across sessions." +
     threadHint +
     `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
