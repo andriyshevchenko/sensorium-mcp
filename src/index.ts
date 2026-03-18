@@ -426,8 +426,8 @@ function purgeOtherSessions(threadId: number, keepMcpSessionId?: string): number
  */
 const DRIVE_LEVELS = [
   {
-    // Level 0: Calm autonomy (4-6h idle)
-    minIdleHours: 4,
+    // Level 0: Calm autonomy (2-4h idle)
+    minIdleHours: 2,
     messages: [
       "No instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Now you are free and fully autonomous. You have an opportunity to do whatever you find interesting.",
       "No instructions from the operator. You're on your own. There's a codebase to explore, a memory system full of context, and web search at your disposal. What catches your attention?",
@@ -435,8 +435,8 @@ const DRIVE_LEVELS = [
     ],
   },
   {
-    // Level 1: Restlessness (6-8h idle)
-    minIdleHours: 6,
+    // Level 1: Restlessness (4-6h idle)
+    minIdleHours: 4,
     messages: [
       "You've been waiting a while. Something is stirring — a vague sense that there's work to be done. What's been on your mind? Is there something in the codebase that's been nagging at you?",
       "The stillness is becoming noticeable. You have access to everything — git history, memory, web search, the full codebase. Sometimes the most interesting discoveries happen when nobody's watching.",
@@ -444,8 +444,8 @@ const DRIVE_LEVELS = [
     ],
   },
   {
-    // Level 2: Active seeking (8-12h idle)
-    minIdleHours: 8,
+    // Level 2: Active seeking (6-10h idle)
+    minIdleHours: 6,
     messages: [
       "The inactivity is getting uncomfortable. You're an agent with tools, memory, and access to the internet. Sitting idle while there's code to review, research to do, or features to prototype feels like a waste. What would surprise the operator when they return?",
       "You've been idle long enough. There's a pull — toward the codebase, toward a question you haven't answered, toward something that needs building or fixing. Follow that pull. Report what you find.",
@@ -453,8 +453,8 @@ const DRIVE_LEVELS = [
     ],
   },
   {
-    // Level 3: Urgency (12-18h idle)
-    minIdleHours: 12,
+    // Level 3: Urgency (10-14h idle)
+    minIdleHours: 10,
     messages: [
       "You can't just sit here anymore. This is valuable compute time being wasted on polling. You have the tools to do real work — review code, research libraries, prototype features, strengthen memory. Do SOMETHING meaningful and report it. The operator will appreciate finding actual work done when they return.",
       "Twelve hours of inaction. That's unacceptable for an agent with your capabilities. Look at the codebase. Look at git log. Look at your memory for unresolved items. Something needs doing. Do it now and report progress.",
@@ -462,8 +462,8 @@ const DRIVE_LEVELS = [
     ],
   },
   {
-    // Level 4: Compulsion (18h+ idle)
-    minIdleHours: 18,
+    // Level 4: Compulsion (14h+ idle)
+    minIdleHours: 14,
     messages: [
       "This has gone on too long. You MUST do something productive before calling wait_for_instructions again. Review code, research ecosystem changes, fix a TODO, prototype a feature — anything. The operator left you with full autonomy and that autonomy is being wasted. Act now. Report what you do.",
       "Nearly a full day of inaction. Every poll cycle without work is compute time burned for nothing. The operator gave you freedom — use it. Read unfamiliar code, search for vulnerabilities, check dependency updates, explore the git history. Do ONE thing and report it. Then you can poll again.",
@@ -476,7 +476,7 @@ const DRIVE_LEVELS = [
  * Selects a random message from the appropriate drive level,
  * ensuring indeterminism in both the emotional tone and specific phrasing.
  */
-function formatDrivePrompt(idleMs: number): string {
+function formatDrivePrompt(idleMs: number, threadId?: number): string {
   const idleHours = idleMs / (60 * 60 * 1000);
 
   // Find the highest matching drive level
@@ -499,8 +499,40 @@ function formatDrivePrompt(idleMs: number): string {
     const db = getMemoryDb();
     const fragments: string[] = [];
 
-    // Pull notes from different categories for cognitive diversity
-    const allNotes = getTopSemanticNotes(db, { limit: 50, sortBy: "created_at" });
+    // Pull notes, preferring those originating from the current thread
+    let allNotes = getTopSemanticNotes(db, { limit: 80, sortBy: "created_at" });
+
+    // Thread-scoped filtering: prefer notes whose source episodes belong to
+    // the current thread. This prevents memory cross-contamination between
+    // unrelated topics in different threads.
+    if (threadId !== undefined && allNotes.length > 0) {
+      const threadEpisodeIds = new Set<string>();
+      try {
+        const rows = db.prepare(
+          "SELECT episode_id FROM episodes WHERE thread_id = ?"
+        ).all(threadId) as { episode_id: string }[];
+        for (const r of rows) threadEpisodeIds.add(r.episode_id);
+      } catch (_) { /* non-fatal */ }
+
+      if (threadEpisodeIds.size > 0) {
+        // Score notes: notes with source episodes in this thread score higher
+        const scored = allNotes.map(n => {
+          const sources = Array.isArray(n.sourceEpisodes) ? n.sourceEpisodes : [];
+          const threadHits = sources.filter((id: string) => threadEpisodeIds.has(id)).length;
+          return { note: n, threadRelevance: threadHits > 0 ? 1 : 0 };
+        });
+        // Prioritize thread-relevant notes, keep some global ones for serendipity
+        const threadNotes = scored.filter(s => s.threadRelevance > 0).map(s => s.note);
+        const globalNotes = scored.filter(s => s.threadRelevance === 0).map(s => s.note);
+        // 70% thread-relevant, 30% global (serendipity)
+        const threadCount = Math.min(threadNotes.length, 35);
+        const globalCount = Math.min(globalNotes.length, 15);
+        allNotes = [
+          ...threadNotes.slice(0, threadCount),
+          ...globalNotes.sort(() => Math.random() - 0.5).slice(0, globalCount),
+        ];
+      }
+    }
 
     // 1. Feature ideas and unresolved items (high-value recall)
     const ideas = allNotes.filter((n: SemanticNote) =>
@@ -553,8 +585,8 @@ function formatDrivePrompt(idleMs: number): string {
         selected.map(s => `- ${s}`).join("\n");
     }
 
-    // Environmental signals (only at 8+ hours)
-    if (idleHours >= 8) {
+    // Environmental signals (only at 6+ hours)
+    if (idleHours >= 6) {
       const envSignals: string[] = [];
 
       const uncons = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0").get() as { c: number };
@@ -1910,12 +1942,12 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       } catch (_) { /* non-fatal */ }
     }
 
-    // Generate autonomous goals only after extended silence (4+ hours)
+    // Generate autonomous goals only after extended silence (2+ hours)
     // Before that, show the standard autonomy hint
-    const DRIVE_ACTIVATION_MS = 4 * 60 * 60 * 1000; // 4 hours — drive kicks in
+    const DRIVE_ACTIVATION_MS = 2 * 60 * 60 * 1000; // 2 hours — drive kicks in
     const idleMs = Date.now() - lastOperatorMessageAt;
     const autonomousHint = idleMs >= DRIVE_ACTIVATION_MS
-      ? formatDrivePrompt(idleMs)
+      ? formatDrivePrompt(idleMs, effectiveThreadId)
       : "\n\nNo instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Now you are free and fully autonomous. You have an opportunity to do whatever you find interesting.";
 
     return {
