@@ -1228,12 +1228,43 @@ export async function runIntelligentConsolidation(
     })
     .join("\n");
 
+  // ── Contradiction detection: find existing notes related to these episodes ──
+  // Extract keywords from episodes to search for potentially conflicting notes
+  const episodeWords = episodesText.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(w => w.length > 3);
+  const wordFreq = new Map<string, number>();
+  const stopWords = new Set(["this", "that", "with", "from", "have", "been", "will", "would", "could", "should", "about", "there", "their", "which", "when", "what", "were", "they", "than", "then", "also", "just", "more", "some", "into", "over", "after", "before", "other", "very", "your", "here"]);
+  for (const w of episodeWords) {
+    if (!stopWords.has(w)) wordFreq.set(w, (wordFreq.get(w) ?? 0) + 1);
+  }
+  const topKeywords = [...wordFreq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([w]) => w);
+
+  let existingNotesSection = "";
+  if (topKeywords.length > 0) {
+    try {
+      const related = searchSemanticNotesRanked(db, topKeywords.join(" "), {
+        maxResults: 15,
+        skipAccessTracking: true,
+        minMatchRatio: 0.2, // broader recall for contradiction scan
+      });
+      if (related.length > 0) {
+        existingNotesSection = `\n\nExisting memory notes (potentially related):
+${related.map(n => `[${n.noteId}] (${n.type}, conf: ${n.confidence}) ${n.content}`).join("\n")}`;
+      }
+    } catch (_) { /* non-fatal — proceed without existing notes */ }
+  }
+
   const systemPrompt = `You are a memory consolidation agent. Analyze these conversation episodes and extract knowledge that should be remembered across sessions.
 
 Episodes:
-${episodesText}
+${episodesText}${existingNotesSection}
 
-For each piece of knowledge, output a JSON object with a "notes" key containing an array of objects:
+Output a JSON object with:
 {
   "notes": [
     {
@@ -1241,6 +1272,16 @@ For each piece of knowledge, output a JSON object with a "notes" key containing 
       "content": "One clear sentence describing the knowledge",
       "keywords": ["keyword1", "keyword2", "keyword3"],
       "confidence": 0.0-1.0
+    }
+  ],
+  "supersede": [
+    {
+      "oldNoteId": "sn_xxx",
+      "reason": "Why the old note is outdated/contradicted",
+      "newContent": "Updated version of the knowledge",
+      "type": "fact",
+      "keywords": ["keyword1", "keyword2"],
+      "confidence": 0.8
     }
   ]
 }
@@ -1251,7 +1292,9 @@ Rules:
 - Do not extract trivial/transient information
 - If the operator corrected the agent, extract the correction as a preference
 - Focus on: operator name, preferences, communication style, technical choices, project context
-- Return {"notes": []} if nothing notable to remember`;
+- CRITICAL: Check existing notes for CONTRADICTIONS. If a new episode contradicts or updates an existing note, add a "supersede" entry. The new episodes represent MORE RECENT information.
+- Common contradictions: decisions changed, projects completed/abandoned, preferences updated, tools/tech switched
+- Return {"notes": [], "supersede": []} if nothing notable`;
 
   let notesCreated = 0;
   const details: string[] = [];
@@ -1294,9 +1337,18 @@ Rules:
         keywords: string[];
         confidence: number;
       }>;
+      supersede?: Array<{
+        oldNoteId: string;
+        reason: string;
+        newContent: string;
+        type: string;
+        keywords: string[];
+        confidence: number;
+      }>;
     };
 
     const extractedNotes = parsed.notes ?? [];
+    const supersedeActions = parsed.supersede ?? [];
     const episodeIds = episodes.map((ep) => ep.episodeId);
 
     if (!dryRun) {
@@ -1317,19 +1369,54 @@ Rules:
         details.push(`[${noteType}] ${note.content}`);
       }
 
+      // Execute supersede actions — resolve contradictions with existing notes
+      let supersededCount = 0;
+      for (const action of supersedeActions) {
+        if (!action.oldNoteId || !action.newContent) continue;
+        // Verify old note exists and is still active
+        const oldNote = db.prepare(
+          `SELECT note_id FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL AND superseded_by IS NULL`
+        ).get(action.oldNoteId) as { note_id: string } | undefined;
+        if (!oldNote) {
+          details.push(`[skip-supersede] ${action.oldNoteId} not found or already superseded`);
+          continue;
+        }
+        try {
+          const validTypes = ["fact", "preference", "pattern", "entity", "relationship"];
+          const noteType = validTypes.includes(action.type) ? action.type : "fact";
+          const newId = supersedeNote(db, action.oldNoteId, {
+            type: noteType,
+            content: action.newContent,
+            keywords: Array.isArray(action.keywords) ? action.keywords : [],
+            confidence: Math.max(0, Math.min(1, action.confidence ?? 0.8)),
+            sourceEpisodes: episodeIds,
+          });
+          supersededCount++;
+          details.push(`[supersede] ${action.oldNoteId} → ${newId}: ${action.reason}`);
+        } catch (err) {
+          details.push(`[supersede-error] ${action.oldNoteId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (supersededCount > 0) {
+        process.stderr.write(`[memory] Contradiction resolution: superseded ${supersededCount} outdated note(s)\n`);
+      }
+
       // Mark episodes as consolidated
       markConsolidated(db, episodeIds);
 
       // Log the consolidation
       logConsolidation(db, {
         episodesProcessed: episodes.length,
-        notesCreated,
+        notesCreated: notesCreated + supersededCount,
         durationMs: Date.now() - startMs,
       });
     } else {
       for (const note of extractedNotes) {
         details.push(`[dry-run] [${note.type}] ${note.content}`);
         notesCreated++;
+      }
+      for (const action of supersedeActions) {
+        details.push(`[dry-run] [supersede] ${action.oldNoteId} → ${action.reason}`);
       }
     }
   } catch (err) {

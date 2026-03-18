@@ -1821,7 +1821,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     // stall the agent's poll loop, silently delaying the timeout response.
     try {
       const idleMs = Date.now() - lastOperatorMessageAt;
-      if (idleMs > 30 * 60 * 1000 && effectiveThreadId !== undefined && Date.now() - lastConsolidationAt > 2 * 60 * 60 * 1000) {
+      if (idleMs > 15 * 60 * 1000 && effectiveThreadId !== undefined && Date.now() - lastConsolidationAt > 30 * 60 * 1000) {
         lastConsolidationAt = Date.now();
         const db = getMemoryDb();
         void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
@@ -1847,6 +1847,36 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         });
       }
     } catch (_) { /* consolidation failure is non-fatal */ }
+
+    // ── Episode-count consolidation — don't wait for idle ──────────────────
+    // If many episodes accumulated during active use, consolidate now.
+    // This prevents stale/contradictory knowledge from persisting.
+    try {
+      if (effectiveThreadId !== undefined && Date.now() - lastConsolidationAt > 30 * 60 * 1000) {
+        const db = getMemoryDb();
+        const uncons = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0 AND thread_id = ?").get(effectiveThreadId) as { c: number };
+        if (uncons.c >= 15) {
+          lastConsolidationAt = Date.now();
+          void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
+            if (report.episodesProcessed > 0) {
+              process.stderr.write(`[memory] Episode-count consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
+            }
+            const apiKey = process.env.OPENAI_API_KEY;
+            if (apiKey) {
+              const missing = getNotesWithoutEmbeddings(db);
+              for (const { noteId, content } of missing) {
+                try {
+                  const emb = await generateEmbedding(content, apiKey);
+                  saveNoteEmbedding(db, noteId, emb);
+                } catch (_) { /* non-fatal */ }
+              }
+            }
+          }).catch(err => {
+            process.stderr.write(`[memory] Episode-count consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
+          });
+        }
+      }
+    } catch (_) { /* non-fatal */ }
 
     // Periodic memory refresh — re-ground the agent every 10 polls (~5h)
     // (reduced from 5 since auto-inject now handles per-message context)
