@@ -1462,6 +1462,7 @@ export function forgetMemory(
     const kws = parseJsonArray(existing.keywords);
     db.transaction(() => {
       db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
+      db.prepare(`DELETE FROM note_embeddings WHERE note_id = ?`).run(memoryId);
       decrementTopicIndexForKeywords(db, kws, "semantic");
     })();
     return { layer: "semantic", deleted: true };
@@ -1493,6 +1494,7 @@ export function forgetMemory(
     const kws = parseJsonArray((row as { keywords: string | null }).keywords);
     db.transaction(() => {
       db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
+      db.prepare(`DELETE FROM note_embeddings WHERE note_id = ?`).run(memoryId);
       decrementTopicIndexForKeywords(db, kws, "semantic");
     })();
     return { layer: "semantic", deleted: true };
