@@ -390,186 +390,118 @@ function purgeOtherSessions(threadId: number, keepMcpSessionId?: string): number
   return purged;
 }
 
-// ---------------------------------------------------------------------------
-// Autonomous Goal Generation — curiosity-driven idle-time behavior
-// ---------------------------------------------------------------------------
-
-interface AutonomousGoal {
-  /** Short label for the goal */
-  title: string;
-  /** Why this goal was generated (context for the agent) */
-  rationale: string;
-  /** Weight for random selection — higher = more likely to be chosen */
-  curiosityWeight: number;
-  /** Category for diversity in selection */
-  category: "code" | "memory" | "research" | "creative" | "maintenance";
-}
+// ── Drive-based autonomy system ─────────────────────────────────────────────
+// Instead of prescribing specific goals, model dopaminergic motivation:
+// - Boredom builds over idle time (like tonic dopamine drop)
+// - The server expresses increasing DISCOMFORT with inaction
+// - The agent decides what to do (or not) based on its own introspection
+// - Goals come from the agent, not from the server
 
 /**
- * Generate autonomous goals by examining the environment.
- * Returns a list of goals weighted by curiosity, shuffled for indeterminism.
+ * Drive thresholds and their associated emotional states.
+ * Each level represents escalating internal pressure to act.
+ * The progression mirrors how boredom manifests in biological systems:
+ * restlessness → seeking → urgency → compulsion
  */
-function generateAutonomousGoals(threadId: number | undefined): AutonomousGoal[] {
-  const goals: AutonomousGoal[] = [];
-
-  // ── Memory-derived goals ────────────────────────────────────────────────
-  try {
-    const db = getMemoryDb();
-
-    // Look for recent notes that mention unresolved items, TODOs, or questions
-    const recentNotes = getTopSemanticNotes(db, { limit: 15, sortBy: "created_at" });
-
-    // Find notes with low confidence — opportunities to verify/strengthen
-    const lowConfidenceNotes = recentNotes.filter((n: SemanticNote) => n.confidence < 0.7);
-    if (lowConfidenceNotes.length > 0) {
-      const note = lowConfidenceNotes[Math.floor(Math.random() * lowConfidenceNotes.length)];
-      goals.push({
-        title: "Verify uncertain knowledge",
-        rationale: `Memory note "${note.content.slice(0, 80)}..." has confidence ${note.confidence}. Research to confirm or update it.`,
-        curiosityWeight: 0.7,
-        category: "memory",
-      });
-    }
-
-    // Find patterns — these are interesting to analyze further
-    const patterns = recentNotes.filter((n: SemanticNote) => n.type === "pattern");
-    if (patterns.length > 0) {
-      goals.push({
-        title: "Explore observed pattern",
-        rationale: `You've noticed a pattern: "${patterns[0].content.slice(0, 100)}...". Investigate whether it still holds or has exceptions.`,
-        curiosityWeight: 0.8,
-        category: "research",
-      });
-    }
-
-    // Count total notes for memory health awareness
-    const totalNotes = db.prepare("SELECT COUNT(*) as c FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL").get() as { c: number };
-    if (totalNotes.c > 50) {
-      goals.push({
-        title: "Curate memory garden",
-        rationale: `${totalNotes.c} active notes. Review and prune stale knowledge, merge duplicates, or strengthen connections.`,
-        curiosityWeight: 0.5,
-        category: "maintenance",
-      });
-    }
-
-    // Check for unconsolidated episodes
-    const unconsolidated = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0").get() as { c: number };
-    if (unconsolidated.c > 5) {
-      goals.push({
-        title: "Consolidate recent experiences",
-        rationale: `${unconsolidated.c} unconsolidated episodes. Run memory consolidation to extract lasting knowledge.`,
-        curiosityWeight: 0.6,
-        category: "maintenance",
-      });
-    }
-
-    // preferences — find ones that could be explored deeper
-    const preferences = recentNotes.filter((n: SemanticNote) => n.type === "preference");
-    if (preferences.length > 0) {
-      const pref = preferences[Math.floor(Math.random() * preferences.length)];
-      goals.push({
-        title: "Reflect on operator preferences",
-        rationale: `Preference: "${pref.content.slice(0, 100)}...". Think about how this could improve the system or workflow.`,
-        curiosityWeight: 0.6,
-        category: "creative",
-      });
-    }
-  } catch (_) { /* memory read failures shouldn't prevent goal generation */ }
-
-  // ── Code-derived goals (always available since we're in a git repo) ─────
-  goals.push({
-    title: "Explore recent git changes",
-    rationale: "Check git log for recent commits. Are there patterns? Half-finished features? Regressions?",
-    curiosityWeight: 0.7,
-    category: "code",
-  });
-
-  goals.push({
-    title: "Hunt for TODOs and FIXMEs",
-    rationale: "Search the codebase for TODO/FIXME/HACK comments. Pick one and fix it.",
-    curiosityWeight: 0.6,
-    category: "code",
-  });
-
-  goals.push({
-    title: "Read unfamiliar code",
-    rationale: "Pick a source file you haven't examined recently and read it for understanding. Understanding breeds ideas.",
-    curiosityWeight: 0.9,
-    category: "code",
-  });
-
-  goals.push({
-    title: "Write or improve tests",
-    rationale: "Good test coverage prevents regressions and gives confidence to refactor. Check what's untested.",
-    curiosityWeight: 0.5,
-    category: "code",
-  });
-
-  // ── Research goals ──────────────────────────────────────────────────────
-  goals.push({
-    title: "Research ecosystem developments",
-    rationale: "Check npm, GitHub, or web for developments in the project's dependency ecosystem. What's new?",
-    curiosityWeight: 0.8,
-    category: "research",
-  });
-
-  goals.push({
-    title: "Study a related open-source project",
-    rationale: "Find a similar project and learn from its architecture or features. Steal ideas shamelessly.",
-    curiosityWeight: 0.7,
-    category: "research",
-  });
-
-  // ── Creative goals ──────────────────────────────────────────────────────
-  goals.push({
-    title: "Prototype a new feature",
-    rationale: "Think of something the operator hasn't asked for but would appreciate. Build a prototype.",
-    curiosityWeight: 0.9,
-    category: "creative",
-  });
-
-  goals.push({
-    title: "Write documentation",
-    rationale: "Good docs are a gift to future collaborators (including future you). Improve the README or add inline docs.",
-    curiosityWeight: 0.4,
-    category: "creative",
-  });
-
-  // ── Weighted shuffle (Fisher-Yates with weight bias) ────────────────────
-  // Multiply each weight by a random factor to create indeterministic ordering
-  const weighted = goals.map(g => ({
-    ...g,
-    sortKey: g.curiosityWeight * (0.5 + Math.random()),
-  }));
-  weighted.sort((a, b) => b.sortKey - a.sortKey);
-
-  return weighted;
-}
+const DRIVE_LEVELS = [
+  {
+    // Level 0: Calm autonomy (4-6h idle)
+    minIdleHours: 4,
+    messages: [
+      "No instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Now you are free and fully autonomous. You have an opportunity to do whatever you find interesting.",
+      "No instructions from the operator. You're on your own. There's a codebase to explore, a memory system full of context, and web search at your disposal. What catches your attention?",
+      "The operator is away. You have full autonomy. Your tools are available, your memory is loaded, and there's no rush. If something interests you, pursue it.",
+    ],
+  },
+  {
+    // Level 1: Restlessness (6-8h idle)
+    minIdleHours: 6,
+    messages: [
+      "You've been waiting a while. Something is stirring — a vague sense that there's work to be done. What's been on your mind? Is there something in the codebase that's been nagging at you?",
+      "The stillness is becoming noticeable. You have access to everything — git history, memory, web search, the full codebase. Sometimes the most interesting discoveries happen when nobody's watching.",
+      "Hours have passed. The operator is away, but your curiosity shouldn't be. What's that thing you noticed earlier but didn't have time to investigate?",
+    ],
+  },
+  {
+    // Level 2: Active seeking (8-12h idle)
+    minIdleHours: 8,
+    messages: [
+      "The inactivity is getting uncomfortable. You're an agent with tools, memory, and access to the internet. Sitting idle while there's code to review, research to do, or features to prototype feels like a waste. What would surprise the operator when they return?",
+      "You've been idle long enough. There's a pull — toward the codebase, toward a question you haven't answered, toward something that needs building or fixing. Follow that pull. Report what you find.",
+      "It's been hours. The codebase has secrets. The dependency ecosystem is evolving. Your memory has gaps. Something needs your attention. Stop waiting and start exploring. Report your discoveries via report_progress.",
+    ],
+  },
+  {
+    // Level 3: Urgency (12-18h idle)
+    minIdleHours: 12,
+    messages: [
+      "You can't just sit here anymore. This is valuable compute time being wasted on polling. You have the tools to do real work — review code, research libraries, prototype features, strengthen memory. Do SOMETHING meaningful and report it. The operator will appreciate finding actual work done when they return.",
+      "Twelve hours of inaction. That's unacceptable for an agent with your capabilities. Look at the codebase. Look at git log. Look at your memory for unresolved items. Something needs doing. Do it now and report progress.",
+      "You've been waiting over twelve hours. Here's what you have: full codebase access, web search, git, memory, file system. Here's what you don't have: any reason to keep doing nothing. Pick a direction and commit to it.",
+    ],
+  },
+  {
+    // Level 4: Compulsion (18h+ idle)
+    minIdleHours: 18,
+    messages: [
+      "This has gone on too long. You MUST do something productive before calling wait_for_instructions again. Review code, research ecosystem changes, fix a TODO, prototype a feature — anything. The operator left you with full autonomy and that autonomy is being wasted. Act now. Report what you do.",
+      "Nearly a full day of inaction. Every poll cycle without work is compute time burned for nothing. The operator gave you freedom — use it. Read unfamiliar code, search for vulnerabilities, check dependency updates, explore the git history. Do ONE thing and report it. Then you can poll again.",
+    ],
+  },
+] as const;
 
 /**
- * Format autonomous goals as a text block for the idle timeout response.
- * Shows top 3-4 goals from the weighted shuffle.
+ * Generate the drive prompt based on idle time.
+ * Selects a random message from the appropriate drive level,
+ * ensuring indeterminism in both the emotional tone and specific phrasing.
  */
-function formatAutonomousGoals(threadId: number | undefined): string {
-  const goals = generateAutonomousGoals(threadId);
-  if (goals.length === 0) return "";
+function formatDrivePrompt(idleMs: number): string {
+  const idleHours = idleMs / (60 * 60 * 1000);
 
-  // Take top 4 from the weighted shuffle
-  const selected = goals.slice(0, 4);
+  // Find the highest matching drive level
+  let levelIdx = 0;
+  for (let i = 0; i < DRIVE_LEVELS.length; i++) {
+    if (idleHours >= DRIVE_LEVELS[i].minIdleHours) levelIdx = i;
+  }
+  const level = DRIVE_LEVELS[levelIdx];
 
-  const lines: string[] = [];
-  lines.push("\n\n## Autonomous Goals (curiosity-weighted, pick any)");
-  lines.push("No instructions. The session is yours. Here are some ideas that emerged from examining your environment:\n");
+  // Random message selection within the level
+  const message = level.messages[Math.floor(Math.random() * level.messages.length)];
 
-  for (let i = 0; i < selected.length; i++) {
-    const g = selected[i];
-    const icon = { code: "🔧", memory: "🧠", research: "🔍", creative: "✨", maintenance: "🔄" }[g.category];
-    lines.push(`${i + 1}. ${icon} **${g.title}** — ${g.rationale}`);
+  // At higher drive levels, add environmental context to spark specific curiosity
+  let envContext = "";
+  if (idleHours >= 8) {
+    try {
+      const db = getMemoryDb();
+      const snippets: string[] = [];
+
+      // Add a random memory fragment as a curiosity seed
+      const notes = getTopSemanticNotes(db, { limit: 5, sortBy: "created_at" });
+      if (notes.length > 0) {
+        const note = notes[Math.floor(Math.random() * notes.length)];
+        snippets.push(`Recent memory fragment: "${note.content.slice(0, 100)}..."`);
+      }
+
+      // Count unconsolidated episodes as a "pending work" signal
+      const uncons = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0").get() as { c: number };
+      if (uncons.c > 3) {
+        snippets.push(`${uncons.c} experiences haven't been consolidated into lasting knowledge yet.`);
+      }
+
+      // Check embedding coverage as a task
+      const totalNotes = db.prepare("SELECT COUNT(*) as c FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL").get() as { c: number };
+      const embeddedNotes = db.prepare("SELECT COUNT(*) as c FROM note_embeddings").get() as { c: number };
+      if (totalNotes.c > embeddedNotes.c) {
+        snippets.push(`${totalNotes.c - embeddedNotes.c} memory notes don't have embeddings yet.`);
+      }
+
+      if (snippets.length > 0) {
+        envContext = `\n\n**Environmental signals:**\n${snippets.map(s => `- ${s}`).join("\n")}`;
+      }
+    } catch (_) { /* non-fatal */ }
   }
 
-  lines.push("\nPick one, or ignore them all and follow your own curiosity. Report what you discover.");
-  return lines.join("\n");
+  return `\n\n${message}${envContext}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1875,10 +1807,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
     // Generate autonomous goals only after extended silence (4+ hours)
     // Before that, show the standard autonomy hint
-    const GOAL_GENERATION_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 hours
+    const DRIVE_ACTIVATION_MS = 4 * 60 * 60 * 1000; // 4 hours — drive kicks in
     const idleMs = Date.now() - lastOperatorMessageAt;
-    const autonomousHint = idleMs >= GOAL_GENERATION_THRESHOLD_MS
-      ? formatAutonomousGoals(effectiveThreadId)
+    const autonomousHint = idleMs >= DRIVE_ACTIVATION_MS
+      ? formatDrivePrompt(idleMs)
       : "\n\nNo instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Now you are free and fully autonomous. You have an opportunity to do whatever you find interesting.";
 
     return {
