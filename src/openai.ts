@@ -15,20 +15,41 @@ import { join } from "node:path";
 // Dedicated temp directory so crash-leftover files are cleaned on next startup.
 const TEMP_DIR = join(homedir(), ".remote-copilot-mcp", "tmp");
 
-/** Remove files older than 1 hour from TEMP_DIR; create the dir if absent. */
+/** Remove stale files from TEMP_DIR; create the dir if absent. */
 function cleanupTempDir(): void {
     mkdirSync(TEMP_DIR, { recursive: true });
-    const ONE_HOUR = 60 * 60 * 1000;
+    const STALE_AGE = 5 * 60 * 1000; // 5 minutes — any temp file this old is a crash leftover
     const now = Date.now();
     for (const name of readdirSync(TEMP_DIR)) {
         try {
             const fullPath = join(TEMP_DIR, name);
             const mtime = statSync(fullPath).mtimeMs;
-            if (now - mtime > ONE_HOUR) {
+            if (now - mtime > STALE_AGE) {
                 unlinkSync(fullPath);
             }
         } catch { /* ignore per-file errors */ }
     }
+}
+
+// Track in-flight temp files for cleanup on unexpected exit.
+const activeTempFiles = new Set<string>();
+
+function registerTempFile(path: string): void {
+    activeTempFiles.add(path);
+}
+
+function unregisterTempFile(path: string): void {
+    activeTempFiles.delete(path);
+    try { unlinkSync(path); } catch { /* ignore */ }
+}
+
+// Clean up in-flight temp files on graceful/forced shutdown.
+for (const sig of ["exit", "SIGINT", "SIGTERM"] as const) {
+    process.on(sig, () => {
+        for (const f of activeTempFiles) {
+            try { unlinkSync(f); } catch { /* ignore */ }
+        }
+    });
 }
 
 // Run once when the module loads.
@@ -245,6 +266,7 @@ export function extractVideoFrames(
 ): Promise<Buffer[]> {
     const tempPath = join(TEMP_DIR, `video-${randomUUID()}.mp4`);
     writeFileSync(tempPath, videoBuffer);
+    registerTempFile(tempPath);
 
     return new Promise<Buffer[]>((resolve, reject) => {
         // Calculate frame interval: aim for ~1 frame every 5s, capped at MAX_FRAMES.
@@ -293,7 +315,7 @@ export function extractVideoFrames(
             resolve(frames);
         });
     }).finally(() => {
-        try { unlinkSync(tempPath); } catch { /* ignore cleanup errors */ }
+        unregisterTempFile(tempPath);
     });
 }
 
