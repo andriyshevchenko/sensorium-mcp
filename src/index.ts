@@ -468,40 +468,92 @@ function formatDrivePrompt(idleMs: number): string {
   // Random message selection within the level
   const message = level.messages[Math.floor(Math.random() * level.messages.length)];
 
-  // At higher drive levels, add environmental context to spark specific curiosity
-  let envContext = "";
-  if (idleHours >= 8) {
-    try {
-      const db = getMemoryDb();
-      const snippets: string[] = [];
+  // ── Default Mode Network: spontaneous memory recall ───────────────────
+  // Models the human DMN — when idle, the brain replays memories, surfaces
+  // unfinished thoughts, and connects disparate ideas. This provides the
+  // CONTENT for the agent to introspect on. The drive creates pressure,
+  // the DMN provides material.
+  let dmnRecall = "";
+  try {
+    const db = getMemoryDb();
+    const fragments: string[] = [];
 
-      // Add a random memory fragment as a curiosity seed
-      const notes = getTopSemanticNotes(db, { limit: 5, sortBy: "created_at" });
-      if (notes.length > 0) {
-        const note = notes[Math.floor(Math.random() * notes.length)];
-        snippets.push(`Recent memory fragment: "${note.content.slice(0, 100)}..."`);
-      }
+    // Pull notes from different categories for cognitive diversity
+    const allNotes = getTopSemanticNotes(db, { limit: 50, sortBy: "created_at" });
 
-      // Count unconsolidated episodes as a "pending work" signal
+    // 1. Feature ideas and unresolved items (high-value recall)
+    const ideas = allNotes.filter((n: SemanticNote) =>
+      n.content.toLowerCase().includes("feature idea") ||
+      n.content.toLowerCase().includes("TODO") ||
+      n.content.toLowerCase().includes("unresolved") ||
+      n.content.toLowerCase().includes("could be") ||
+      n.content.toLowerCase().includes("should we") ||
+      (n.keywords ?? []).some((k: string) => k.includes("idea") || k.includes("feature") || k.includes("todo"))
+    );
+    if (ideas.length > 0) {
+      const idea = ideas[Math.floor(Math.random() * ideas.length)];
+      fragments.push(`💡 An idea you heard about: "${idea.content.slice(0, 150)}..."`);
+    }
+
+    // 2. Random memory from a while ago (temporal distance = novelty)
+    const olderNotes = allNotes.slice(Math.floor(allNotes.length * 0.5)); // older half
+    if (olderNotes.length > 0) {
+      const old = olderNotes[Math.floor(Math.random() * olderNotes.length)];
+      fragments.push(`🔙 Something from a while back: "${old.content.slice(0, 120)}..."`);
+    }
+
+    // 3. Low-confidence knowledge (uncertainty creates curiosity)
+    const uncertain = allNotes.filter((n: SemanticNote) => n.confidence < 0.7);
+    if (uncertain.length > 0) {
+      const u = uncertain[Math.floor(Math.random() * uncertain.length)];
+      fragments.push(`❓ Something you're not sure about (confidence ${u.confidence}): "${u.content.slice(0, 120)}..."`);
+    }
+
+    // 4. Operator preferences (what matters to the person you work with)
+    const prefs = allNotes.filter((n: SemanticNote) => n.type === "preference");
+    if (prefs.length > 0) {
+      const pref = prefs[Math.floor(Math.random() * prefs.length)];
+      fragments.push(`👤 The operator once said: "${pref.content.slice(0, 120)}..."`);
+    }
+
+    // 5. Patterns that could be explored
+    const patterns = allNotes.filter((n: SemanticNote) => n.type === "pattern");
+    if (patterns.length > 0) {
+      const pat = patterns[Math.floor(Math.random() * patterns.length)];
+      fragments.push(`🔄 A pattern you noticed: "${pat.content.slice(0, 120)}..."`);
+    }
+
+    // Select 2-4 fragments randomly (not all — mimic selective recall)
+    const shuffled = fragments.sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, 2 + Math.floor(Math.random() * 3));
+
+    if (selected.length > 0) {
+      dmnRecall = "\n\n**While idle, these thoughts surfaced from your memory:**\n" +
+        selected.map(s => `- ${s}`).join("\n");
+    }
+
+    // Environmental signals (only at 8+ hours)
+    if (idleHours >= 8) {
+      const envSignals: string[] = [];
+
       const uncons = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0").get() as { c: number };
       if (uncons.c > 3) {
-        snippets.push(`${uncons.c} experiences haven't been consolidated into lasting knowledge yet.`);
+        envSignals.push(`${uncons.c} experiences haven't been consolidated into lasting knowledge yet.`);
       }
 
-      // Check embedding coverage as a task
       const totalNotes = db.prepare("SELECT COUNT(*) as c FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL").get() as { c: number };
       const embeddedNotes = db.prepare("SELECT COUNT(*) as c FROM note_embeddings").get() as { c: number };
       if (totalNotes.c > embeddedNotes.c) {
-        snippets.push(`${totalNotes.c - embeddedNotes.c} memory notes don't have embeddings yet.`);
+        envSignals.push(`${totalNotes.c - embeddedNotes.c} memory notes lack embeddings.`);
       }
 
-      if (snippets.length > 0) {
-        envContext = `\n\n**Environmental signals:**\n${snippets.map(s => `- ${s}`).join("\n")}`;
+      if (envSignals.length > 0) {
+        dmnRecall += `\n\n**Environmental signals:**\n${envSignals.map(s => `- ${s}`).join("\n")}`;
       }
-    } catch (_) { /* non-fatal */ }
-  }
+    }
+  } catch (_) { /* non-fatal */ }
 
-  return `\n\n${message}${envContext}`;
+  return `\n\n${message}${dmnRecall}`;
 }
 
 // ---------------------------------------------------------------------------
