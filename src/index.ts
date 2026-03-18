@@ -2006,13 +2006,18 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       return errorResult("Error: 'message' argument is required for report_progress.");
     }
 
+    // Normalize literal \n sequences to actual newlines.
+    // Some MCP clients pass escape sequences as literal text (e.g. "foo\\nbar"
+    // instead of "foo\nbar"). Convert them so Telegram renders line breaks.
+    const normalizedMessage = rawMessage.replace(/\\n/g, "\n");
+
     // Convert standard Markdown to Telegram MarkdownV2.
     let message: string;
     try {
-      message = convertMarkdown(rawMessage);
+      message = convertMarkdown(normalizedMessage);
     } catch {
       // Fall back to raw text if Markdown conversion throws.
-      message = rawMessage;
+      message = normalizedMessage;
     }
 
     let sentAsPlainText = false;
