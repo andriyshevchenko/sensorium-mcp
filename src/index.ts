@@ -534,6 +534,23 @@ function formatDrivePrompt(idleMs: number, threadId?: number): string {
       }
     }
 
+    // Helper: weighted random selection — priority notes are 3x/5x more likely
+    function weightedPick<T extends SemanticNote>(notes: T[]): T {
+      const weighted = notes.flatMap(n =>
+        n.priority === 2 ? [n, n, n, n, n] :
+        n.priority === 1 ? [n, n, n] : [n]
+      );
+      return weighted[Math.floor(Math.random() * weighted.length)];
+    }
+
+    // 0. Priority notes get a guaranteed slot (if any exist)
+    const priorityNotes = allNotes.filter((n: SemanticNote) => n.priority >= 1);
+    if (priorityNotes.length > 0) {
+      const p = weightedPick(priorityNotes);
+      const label = p.priority === 2 ? "Something the operator emphasized as critical" : "Something important to the operator";
+      fragments.push(`${label}: "${p.content.slice(0, 200)}"`);
+    }
+
     // 1. Feature ideas and unresolved items (high-value recall)
     const ideas = allNotes.filter((n: SemanticNote) =>
       n.content.toLowerCase().includes("feature idea") ||
@@ -544,41 +561,41 @@ function formatDrivePrompt(idleMs: number, threadId?: number): string {
       (n.keywords ?? []).some((k: string) => k.includes("idea") || k.includes("feature") || k.includes("todo"))
     );
     if (ideas.length > 0) {
-      const idea = ideas[Math.floor(Math.random() * ideas.length)];
+      const idea = weightedPick(ideas);
       fragments.push(`Something unfinished: "${idea.content.slice(0, 200)}"`);
     }
 
     // 2. Random memory from a while ago (temporal distance = novelty)
     const olderNotes = allNotes.slice(Math.floor(allNotes.length * 0.5)); // older half
     if (olderNotes.length > 0) {
-      const old = olderNotes[Math.floor(Math.random() * olderNotes.length)];
+      const old = weightedPick(olderNotes);
       fragments.push(`From a while back: "${old.content.slice(0, 200)}"`);
     }
 
     // 3. Low-confidence knowledge (uncertainty creates curiosity)
     const uncertain = allNotes.filter((n: SemanticNote) => n.confidence < 0.7);
     if (uncertain.length > 0) {
-      const u = uncertain[Math.floor(Math.random() * uncertain.length)];
+      const u = weightedPick(uncertain);
       fragments.push(`Something uncertain (confidence ${u.confidence}): "${u.content.slice(0, 200)}"`);
     }
 
     // 4. Operator preferences (what matters to the person you work with)
     const prefs = allNotes.filter((n: SemanticNote) => n.type === "preference");
     if (prefs.length > 0) {
-      const pref = prefs[Math.floor(Math.random() * prefs.length)];
+      const pref = weightedPick(prefs);
       fragments.push(`The operator cares about this: "${pref.content.slice(0, 200)}"`);
     }
 
     // 5. Patterns that could be explored
     const patterns = allNotes.filter((n: SemanticNote) => n.type === "pattern");
     if (patterns.length > 0) {
-      const pat = patterns[Math.floor(Math.random() * patterns.length)];
+      const pat = weightedPick(patterns);
       fragments.push(`A pattern you noticed: "${pat.content.slice(0, 200)}"`);
     }
 
-    // Select 2-3 fragments randomly (not all — mimic selective recall)
+    // Select 2-4 fragments randomly (not all — mimic selective recall)
     const shuffled = fragments.sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, 2 + Math.floor(Math.random() * 2));
+    const selected = shuffled.slice(0, 2 + Math.floor(Math.random() * 3));
 
     if (selected.length > 0) {
       // DMN header/footer escalate with drive level — organic, self-directed tone
@@ -995,6 +1012,10 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "number",
             description: "0.0-1.0. Default: 0.8.",
           },
+          priority: {
+            type: "number",
+            description: "0=normal, 1=elevated, 2=critical. Infer from operator language: 'important'/'crucial'/'must' → 2, 'would be nice'/'should' → 1, else 0.",
+          },
           threadId: {
             type: "number",
             description: "Active thread ID.",
@@ -1068,6 +1089,10 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
           newConfidence: {
             type: "number",
             description: "Updated confidence score.",
+          },
+          newPriority: {
+            type: "number",
+            description: "Updated priority: 0=normal, 1=elevated, 2=critical.",
           },
           reason: {
             type: "string",
@@ -2498,6 +2523,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content,
         keywords: Array.isArray(typedArgs.keywords) ? typedArgs.keywords.map(String) : typeof typedArgs.keywords === 'string' ? [typedArgs.keywords] : [],
         confidence: typeof typedArgs.confidence === "number" ? typedArgs.confidence : 0.8,
+        priority: typeof typedArgs.priority === "number" ? typedArgs.priority : 0,
       });
       // Fire-and-forget embedding generation
       const apiKey = process.env.OPENAI_API_KEY;
@@ -2575,6 +2601,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           content: newContent,
           keywords: origRow.keywords ? JSON.parse(origRow.keywords) : [],
           confidence: typeof typedArgs.newConfidence === "number" ? typedArgs.newConfidence : 0.8,
+          priority: typeof typedArgs.newPriority === "number" ? typedArgs.newPriority : undefined,
         });
         return {
           content: [{ type: "text", text: `Superseded ${memId} → ${newId} (reason: ${reason})` + getReminders(threadId) }],
@@ -2585,6 +2612,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         const updates: Record<string, unknown> = {};
         if (typedArgs.newContent) updates.content = String(typedArgs.newContent);
         if (typeof typedArgs.newConfidence === "number") updates.confidence = typedArgs.newConfidence;
+        if (typeof typedArgs.newPriority === "number") updates.priority = typedArgs.newPriority;
         updateSemanticNote(db, memId, updates as Parameters<typeof updateSemanticNote>[2]);
         return {
           content: [{ type: "text", text: `Updated note ${memId} (reason: ${reason})` + getReminders(threadId) }],
