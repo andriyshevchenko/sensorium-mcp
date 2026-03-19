@@ -900,7 +900,6 @@ function updateTopicIndexForKeywords(db: Database, keywords: string[], layer: "s
 
 function decrementTopicIndexForKeywords(db: Database, keywords: string[], layer: "semantic" | "procedural"): void {
   const col = layer === "semantic" ? "semantic_count" : "procedural_count";
-  const otherCol = layer === "semantic" ? "procedural_count" : "semantic_count";
 
   const decrementStmt = db.prepare(
     `UPDATE meta_topic_index SET ${col} = MAX(${col} - 1, 0) WHERE topic = ?`
@@ -909,13 +908,16 @@ function decrementTopicIndexForKeywords(db: Database, keywords: string[], layer:
     `DELETE FROM meta_topic_index WHERE topic = ? AND semantic_count <= 0 AND procedural_count <= 0`
   );
 
-  for (const kw of keywords) {
-    const normalised = kw.toLowerCase().trim();
-    if (normalised.length > 1) {
-      decrementStmt.run(normalised);
-      deleteStmt.run(normalised);
+  const txn = db.transaction(() => {
+    for (const kw of keywords) {
+      const normalised = kw.toLowerCase().trim();
+      if (normalised.length > 1) {
+        decrementStmt.run(normalised);
+        deleteStmt.run(normalised);
+      }
     }
-  }
+  });
+  txn();
 }
 
 export function getMemoryStatus(db: Database, threadId: number): MemoryStatus {
@@ -1305,6 +1307,9 @@ Rules:
       throw new Error("OPENAI_API_KEY not set");
     }
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60_000);
+    try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1319,7 +1324,9 @@ Rules:
         ],
         response_format: { type: "json_object" },
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
 
     if (!response.ok) {
       const errText = await response.text().catch(() => response.statusText);
@@ -1419,6 +1426,7 @@ Rules:
         details.push(`[dry-run] [supersede] ${action.oldNoteId} → ${action.reason}`);
       }
     }
+    } finally { clearTimeout(timer); }
   } catch (err) {
     // Do NOT mark episodes as consolidated on failure — they should be
     // retried on the next consolidation run.  Previously this was a silent
