@@ -7,9 +7,9 @@
  */
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 // Dedicated temp directory so crash-leftover files are cleaned on next startup.
@@ -73,27 +73,27 @@ export async function textToSpeech(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60_000);
     try {
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model: "tts-1",
-            input: text,
-            voice,
-            response_format: "opus",
-        }),
-        signal: controller.signal,
-    });
+        const response = await fetch("https://api.openai.com/v1/audio/speech", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: "tts-1",
+                input: text,
+                voice,
+                response_format: "opus",
+            }),
+            signal: controller.signal,
+        });
 
-    if (!response.ok) {
-        const errText = await response.text().catch(() => response.statusText);
-        throw new Error(`OpenAI TTS failed: ${response.status} ${errText}`);
-    }
+        if (!response.ok) {
+            const errText = await response.text().catch(() => response.statusText);
+            throw new Error(`OpenAI TTS failed: ${response.status} ${errText}`);
+        }
 
-    return Buffer.from(await response.arrayBuffer());
+        return Buffer.from(await response.arrayBuffer());
     } finally {
         clearTimeout(timer);
     }
@@ -115,33 +115,33 @@ export async function transcribeAudio(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60_000);
     try {
-    const formData = new FormData();
-    formData.append(
-        "file",
-        new Blob([new Uint8Array(audioBuffer)]),
-        filename,
-    );
-    formData.append("model", "whisper-1");
-
-    const response = await fetch(
-        "https://api.openai.com/v1/audio/transcriptions",
-        {
-            method: "POST",
-            headers: { Authorization: `Bearer ${apiKey}` },
-            body: formData,
-            signal: controller.signal,
-        },
-    );
-
-    if (!response.ok) {
-        const errText = await response.text().catch(() => response.statusText);
-        throw new Error(
-            `OpenAI Whisper transcription failed: ${response.status} ${errText}`,
+        const formData = new FormData();
+        formData.append(
+            "file",
+            new Blob([new Uint8Array(audioBuffer)]),
+            filename,
         );
-    }
+        formData.append("model", "whisper-1");
 
-    const result = (await response.json()) as { text?: string };
-    return result.text ?? "";
+        const response = await fetch(
+            "https://api.openai.com/v1/audio/transcriptions",
+            {
+                method: "POST",
+                headers: { Authorization: `Bearer ${apiKey}` },
+                body: formData,
+                signal: controller.signal,
+            },
+        );
+
+        if (!response.ok) {
+            const errText = await response.text().catch(() => response.statusText);
+            throw new Error(
+                `OpenAI Whisper transcription failed: ${response.status} ${errText}`,
+            );
+        }
+
+        const result = (await response.json()) as { text?: string };
+        return result.text ?? "";
     } finally {
         clearTimeout(timer);
     }
@@ -362,29 +362,29 @@ export async function analyzeVideoFrames(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60_000);
     try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model: "gpt-5-mini",
-            messages: [{ role: "user", content }],
-            max_tokens: 300,
-        }),
-        signal: controller.signal,
-    });
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: "gpt-5-mini",
+                messages: [{ role: "user", content }],
+                max_tokens: 300,
+            }),
+            signal: controller.signal,
+        });
 
-    if (!response.ok) {
-        const errText = await response.text().catch(() => response.statusText);
-        throw new Error(`OpenAI vision analysis failed: ${response.status} ${errText}`);
-    }
+        if (!response.ok) {
+            const errText = await response.text().catch(() => response.statusText);
+            throw new Error(`OpenAI vision analysis failed: ${response.status} ${errText}`);
+        }
 
-    const result = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-    };
-    return result.choices?.[0]?.message?.content?.trim() ?? "(no description generated)";
+        const result = (await response.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+        };
+        return result.choices?.[0]?.message?.content?.trim() ?? "(no description generated)";
     } finally {
         clearTimeout(timer);
     }
