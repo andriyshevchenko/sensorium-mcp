@@ -262,7 +262,8 @@ function getReminders(threadId?: number, driveActive = false): string {
 
   const workflow = driveActive
     ? "\n\nComplete the dispatcher's tasks. Report progress. Then call `remote_copilot_wait_for_instructions`."
-    : "\n\nCreate plan. Use subagents heavily. Spin up parallel subagents when possible. Report frequently.";
+    : "\n\nCreate plan. Use subagents heavily. Spin up parallel subagents when possible. Report frequently." +
+      "\n- After completing work, call `remote_copilot_wait_for_instructions` to check for new operator messages.";
 
   return (
     workflow +
