@@ -1711,7 +1711,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
               // Fallback to keyword search if embedding fails
               process.stderr.write(`[memory] Embedding search failed, falling back to keyword: ${embErr instanceof Error ? embErr.message : String(embErr)}\n`);
               const searchQuery = extractSearchKeywords(operatorText);
-              if (searchQuery.split(" ").length >= 1) {
+              if (searchQuery.trim().length > 0) {
                 const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true });
                 if (relevant.length > 0) {
                   let budget = 2000;
@@ -1731,7 +1731,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           } else {
             // No API key or text too short — use keyword search
             const searchQuery = extractSearchKeywords(operatorText);
-            if (searchQuery.split(" ").length >= 1) {
+            if (searchQuery.trim().length > 0) {
               const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true });
               if (relevant.length > 0) {
                 let budget = 2000;
