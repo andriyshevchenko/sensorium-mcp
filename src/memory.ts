@@ -1316,9 +1316,9 @@ Rules:
 - Focus on: operator name, preferences, communication style, technical choices, project context
 - CRITICAL: Check existing notes for CONTRADICTIONS. If a new episode contradicts or updates an existing note, add a "supersede" entry. The new episodes represent MORE RECENT information.
 - Common contradictions: decisions changed, projects completed/abandoned, preferences updated, tools/tech switched
-- PRIORITY DETECTION: Infer priority from the operator's language:
-  - priority 2 (critical): operator says "important", "crucial", "critical", "must", "I really need", "don't forget", strong emphasis
-  - priority 1 (elevated): operator says "would be nice", "I'd like", "should", repeated mentions, emotional investment
+- PRIORITY DETECTION: Infer priority from the operator's language and emotional investment:
+  - priority 2 (high importance): operator says "important", "crucial", "I really need", "don't forget", shows strong emotional investment, repeated emphasis
+  - priority 1 (notable): operator says "would be nice", "I'd like", "should", mentions something multiple times across conversations
   - priority 0 (normal): default for routine facts, observations, patterns
 - Return {"notes": [], "supersede": []} if nothing notable`;
 
