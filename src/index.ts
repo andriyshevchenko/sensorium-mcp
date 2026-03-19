@@ -581,9 +581,31 @@ function formatDrivePrompt(idleMs: number, threadId?: number): string {
     const selected = shuffled.slice(0, 2 + Math.floor(Math.random() * 2));
 
     if (selected.length > 0) {
-      dmnRecall = "\n\nThe operator is away but left these hints for you:\n" +
+      // DMN header/footer escalate with drive level (Zeigarnik effect)
+      const dmnHeaders = [
+        // Level 0 (2-4h): calm hints
+        "The operator is away but left these hints for you:",
+        // Level 1 (4-6h): gentle nudge
+        "The operator specifically asked you to look into these before they left:",
+        // Level 2 (6-10h): stronger expectation
+        "The operator left you specific tasks. They expect to see progress when they return:",
+        // Level 3 (10-14h): urgency
+        "The operator will be disappointed if they come back and you haven't touched any of these:",
+        // Level 4 (14h+): compulsion
+        "The operator explicitly told you: do NOT waste compute time. Work on these NOW:",
+      ];
+      const dmnFooters = [
+        "Pick at least one and report what you find via report_progress.",
+        "Work on at least one of these and send a report_progress update.",
+        "Start working on these immediately. The operator will check your report_progress when they return.",
+        "You MUST make progress on at least one item. Send report_progress with your findings.",
+        "This is not optional. Execute, report, then continue. The operator is counting on you.",
+      ];
+      const header = dmnHeaders[Math.min(levelIdx, dmnHeaders.length - 1)];
+      const footer = dmnFooters[Math.min(levelIdx, dmnFooters.length - 1)];
+      dmnRecall = `\n\n${header}\n` +
         selected.map((s, i) => `${i + 1}. ${s}`).join("\n") +
-        "\n\nPick at least one and report what you find via report_progress.";
+        `\n\n${footer}`;
     }
 
     // Environmental signals (only at 6+ hours)
@@ -1961,11 +1983,12 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content: [
           {
             type: "text",
-            text: "Follow the operator's instructions below.\n\n" +
+            text: "The operator is currently offline but left these instructions before going away. " +
+              "Do NOT message the operator or ask for clarification — they are sleeping/unavailable.\n\n" +
               "BEFORE doing anything: (1) Break the work into todo items. (2) Share your plan via report_progress. " +
               "(3) For each todo: mark in-progress → do the work → call report_progress → mark completed. " +
               "Use subagents heavily for all substantial work — code edits, research, reviews, searches. Spin up parallel subagents when possible. " +
-              "The operator is REMOTE — they cannot see your screen. If you don't call report_progress, they see nothing.",
+              "The operator is OFFLINE — they will only see your report_progress messages when they return.",
           },
           {
             type: "text",
