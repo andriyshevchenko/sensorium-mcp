@@ -547,7 +547,7 @@ function formatDrivePrompt(idleMs: number, threadId?: number): string {
     const priorityNotes = allNotes.filter((n: SemanticNote) => n.priority >= 1);
     if (priorityNotes.length > 0) {
       const p = weightedPick(priorityNotes);
-      const label = p.priority === 2 ? "Something the operator emphasized as critical" : "Something important to the operator";
+      const label = p.priority === 2 ? "Something that matters deeply to the operator" : "Something the operator cares about";
       fragments.push(`${label}: "${p.content.slice(0, 200)}"`);
     }
 
@@ -1014,7 +1014,7 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           priority: {
             type: "number",
-            description: "0=normal, 1=elevated, 2=critical. Infer from operator language: 'important'/'crucial'/'must' → 2, 'would be nice'/'should' → 1, else 0.",
+            description: "0=normal, 1=notable, 2=high importance. Infer from operator's emotional investment: 'important'/'I really need' → 2, 'would be nice'/'should' → 1, else 0.",
           },
           threadId: {
             type: "number",
@@ -1092,7 +1092,7 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           newPriority: {
             type: "number",
-            description: "Updated priority: 0=normal, 1=elevated, 2=critical.",
+            description: "Updated priority: 0=normal, 1=notable, 2=high importance.",
           },
           reason: {
             type: "string",
