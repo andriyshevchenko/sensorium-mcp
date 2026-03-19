@@ -1184,6 +1184,7 @@ function getReminders(threadId?: number, driveActive = false): string {
 
   return (
     workflow +
+    "\n- **Voice mode**: Use `send_voice` for progress reports and responses. Only use text if the operator explicitly asks for it." +
     threadHint +
     `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
   );
