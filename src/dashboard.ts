@@ -24,6 +24,7 @@ import {
     searchSemanticNotesRanked,
     type SemanticNote
 } from "./memory.js";
+import { rateLimiter } from "./rate-limiter.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,11 @@ function handleApiRoute(
             const q = url.searchParams.get("q")?.trim();
             if (!q) { json({ error: "Missing ?q= parameter" }, 400); return true; }
             json(searchSemanticNotesRanked(db, q, { maxResults: parseInt(url.searchParams.get("limit") ?? "20", 10) }));
+            return true;
+        }
+
+        if (path === "/api/rate-limits") {
+            json(rateLimiter.getStats());
             return true;
         }
 
@@ -306,6 +312,7 @@ function getDashboardHTML(): string {
         <button onclick="switchTab('notes')" id="tab-notes" class="pb-3 text-sm font-medium tab-inactive transition">Memory Notes</button>
         <button onclick="switchTab('episodes')" id="tab-episodes" class="pb-3 text-sm font-medium tab-inactive transition">Episodes</button>
         <button onclick="switchTab('topics')" id="tab-topics" class="pb-3 text-sm font-medium tab-inactive transition">Topics</button>
+        <button onclick="switchTab('ratelimits')" id="tab-ratelimits" class="pb-3 text-sm font-medium tab-inactive transition">Rate Limits</button>
       </nav>
     </div>
 
@@ -354,6 +361,12 @@ function getDashboardHTML(): string {
       <!-- Topics -->
       <div id="panel-topics" class="hidden animate-fade-in">
         <div id="topics-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+      </div>
+
+      <!-- Rate Limits -->
+      <div id="panel-ratelimits" class="hidden animate-fade-in">
+        <div id="ratelimits-summary" class="mb-4 glass rounded-xl p-4"></div>
+        <div id="ratelimits-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
       </div>
     </div>
   </div>
@@ -574,9 +587,64 @@ function getDashboardHTML(): string {
       }).join('');
     }
 
+    function renderRateLimits(data) {
+      const summary = document.getElementById('ratelimits-summary');
+      const grid = document.getElementById('ratelimits-grid');
+      summary.innerHTML =
+        '<div class="flex items-center justify-between">' +
+          '<div>' +
+            '<div class="text-sm text-textSecondary">Active Agents Sharing Resources</div>' +
+            '<div class="text-3xl font-bold font-mono text-accent">' + data.activeSessions + '</div>' +
+          '</div>' +
+          '<div class="text-right">' +
+            '<div class="text-sm text-textSecondary">Total Calls (Last Hour)</div>' +
+            '<div class="text-3xl font-bold font-mono">' + data.totalCallsLastHour + '</div>' +
+          '</div>' +
+        '</div>';
+      if (!data.services || !data.services.length) {
+        grid.innerHTML = '<p class="text-textSecondary col-span-full text-center py-8">No services tracked yet</p>';
+        return;
+      }
+      grid.innerHTML = data.services.map(function(svc) {
+        var pct = svc.usagePercent;
+        var barColor = pct > 80 ? 'danger' : pct > 50 ? 'warn' : 'success';
+        var breakdown = '';
+        if (svc.sessionBreakdown && svc.sessionBreakdown.length > 0) {
+          breakdown = '<div class="mt-3 space-y-1">' +
+            '<div class="text-xs text-textSecondary font-medium uppercase tracking-wider">Per-Session Breakdown</div>' +
+            svc.sessionBreakdown.map(function(s) {
+              return '<div class="flex items-center justify-between text-xs">' +
+                '<span class="text-textSecondary font-mono">Thread ' + (s.threadId || '?') + '</span>' +
+                '<span class="font-mono text-textPrimary">' + s.calls + ' calls</span>' +
+              '</div>';
+            }).join('') +
+          '</div>';
+        }
+        return '<div class="glass rounded-xl p-4 animate-slide-up">' +
+          '<div class="flex items-center justify-between mb-3">' +
+            '<div>' +
+              '<div class="font-medium text-sm">' + escapeHtml(svc.description) + '</div>' +
+              '<div class=\"text-xs text-muted font-mono\">' + escapeHtml(svc.service) + '</div>' +
+            '</div>' +
+            '<div class="text-right">' +
+              '<div class="text-lg font-bold font-mono text-' + barColor + '">' + pct + '%</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="w-full h-2 bg-surface rounded-full overflow-hidden mb-3">' +
+            '<div class="h-full bg-' + barColor + ' rounded-full transition-all" style="width:' + Math.min(pct, 100) + '%"></div>' +
+          '</div>' +
+          '<div class="grid grid-cols-2 gap-2 text-xs">' +
+            '<div><span class="text-textSecondary">Window:</span> <span class="font-mono">' + svc.callsInWindow + '/' + svc.maxPerWindow + '</span></div>' +
+            '<div><span class="text-textSecondary">Burst:</span> <span class="font-mono">' + svc.availableTokens + '/' + svc.burstCapacity + '</span></div>' +
+          '</div>' +
+          breakdown +
+        '</div>';
+      }).join('');
+    }
+
     // ─── Tab switching ──────────────────────────────────────────────────
     function switchTab(tab) {
-      const tabs = ['sessions', 'notes', 'episodes', 'topics'];
+      const tabs = ['sessions', 'notes', 'episodes', 'topics', 'ratelimits'];
       tabs.forEach(t => {
         document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
         document.getElementById('tab-' + t).className = 'pb-3 text-sm font-medium transition ' + (t === tab ? 'tab-active' : 'tab-inactive');
@@ -624,6 +692,13 @@ function getDashboardHTML(): string {
       } catch (e) { console.error('Topics load error:', e); }
     }
 
+    async function loadRateLimits() {
+      try {
+        const data = await api('/api/rate-limits');
+        renderRateLimits(data);
+      } catch (e) { console.error('Rate limits load error:', e); }
+    }
+
     async function refreshCurrentTab() {
       const data = await api('/api/status').catch(() => null);
       if (data) {
@@ -633,6 +708,7 @@ function getDashboardHTML(): string {
       if (currentTab === 'notes') loadNotes();
       if (currentTab === 'episodes') loadEpisodes();
       if (currentTab === 'topics') loadTopics();
+      if (currentTab === 'ratelimits') loadRateLimits();
     }
 
     function startRefresh() {

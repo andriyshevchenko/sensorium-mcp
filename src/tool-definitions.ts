@@ -447,5 +447,23 @@ export function getToolDefinitions(): ToolDefinition[] {
         required: ["memoryId", "reason"],
       },
     },
+    // ── Rate Limiting Tools ─────────────────────────────────────────────
+    {
+      name: "get_usage_stats",
+      description:
+        "Get API usage statistics and rate limit status across all services (GitHub, OpenAI, etc.). " +
+        "Shows per-service usage, available capacity, and how many agents are sharing resources. " +
+        "Use this before making heavy API calls to check if you should throttle. " +
+        "Also useful to report resource usage to the operator.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          threadId: {
+            type: "number",
+            description: "Active thread ID.",
+          },
+        },
+      },
+    },
   ];
 }
