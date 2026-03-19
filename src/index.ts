@@ -79,6 +79,7 @@ import {
 } from "./sessions.js";
 import { TelegramClient } from "./telegram.js";
 import { getToolDefinitions } from "./tool-definitions.js";
+import { rateLimiter } from "./rate-limiter.js";
 import { describeADV, errorMessage, errorResult, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "./utils.js";
 
 // ── Stop-word list for auto-memory keyword extraction ─────────────────
@@ -281,6 +282,23 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
   // Track tool calls for activity monitoring
   toolCallsSinceLastDelivery++;
+
+  // ── Rate limiter: track API usage per tool ────────────────────────────────
+  const sessionId = getMcpSessionId?.() ?? "stdio";
+  const TOOL_SERVICE_MAP: Record<string, string> = {
+    report_progress: "telegram",
+    send_file: "telegram",
+    send_voice: "telegram",
+    start_session: "telegram",
+    wait_for_instructions: "telegram",
+    memory_search: "openai",   // embedding generation
+    memory_save: "openai",     // embedding generation
+    memory_save_procedure: "openai",
+  };
+  const trackedService = TOOL_SERVICE_MAP[name];
+  if (trackedService) {
+    rateLimiter.record(trackedService, sessionId, currentThreadId);
+  }
 
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
@@ -1761,6 +1779,35 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     }
   }
 
+  // ── get_usage_stats ─────────────────────────────────────────────────────
+  if (name === "get_usage_stats") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const threadId = resolveThreadId(typedArgs);
+    const stats = rateLimiter.getStats();
+    const lines: string[] = [
+      `## API Usage Stats`,
+      `Active sessions sharing resources: ${stats.activeSessions}`,
+      `Total API calls (last hour): ${stats.totalCallsLastHour}`,
+      ``,
+    ];
+    for (const svc of stats.services) {
+      const bar = svc.usagePercent > 80 ? "🔴" : svc.usagePercent > 50 ? "🟡" : "🟢";
+      lines.push(`### ${bar} ${svc.description} (${svc.service})`);
+      lines.push(`- Window usage: ${svc.callsInWindow}/${svc.maxPerWindow} (${svc.usagePercent}%)`);
+      lines.push(`- Burst tokens: ${svc.availableTokens}/${svc.burstCapacity}`);
+      if (svc.sessionBreakdown.length > 0) {
+        lines.push(`- Per-session:`);
+        for (const s of svc.sessionBreakdown) {
+          lines.push(`  - Thread ${s.threadId ?? "?"}: ${s.calls} calls`);
+        }
+      }
+      lines.push(``);
+    }
+    return {
+      content: [{ type: "text", text: lines.join("\n") + getReminders(threadId) }],
+    };
+  }
+
   // Unknown tool
   return errorResult(`Unknown tool: ${name}`);
 });
@@ -1907,7 +1954,7 @@ if (httpPort) {
 
         transport.onclose = () => {
           const sid = transport.sessionId;
-          if (sid) { transports.delete(sid); sessionLastActivity.delete(sid); }
+          if (sid) { transports.delete(sid); sessionLastActivity.delete(sid); rateLimiter.removeSession(sid); }
         };
 
         // Create a fresh Server per HTTP session — a single Server can only
@@ -1978,6 +2025,7 @@ if (httpPort) {
         try { transport.close(); } catch (_) { /* best-effort */ }
         transports.delete(sid);
         sessionLastActivity.delete(sid);
+        rateLimiter.removeSession(sid);
       }
     }
   }, 10 * 60 * 1000);
