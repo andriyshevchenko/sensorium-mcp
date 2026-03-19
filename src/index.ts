@@ -545,44 +545,44 @@ function formatDrivePrompt(idleMs: number, threadId?: number): string {
     );
     if (ideas.length > 0) {
       const idea = ideas[Math.floor(Math.random() * ideas.length)];
-      fragments.push(`💡 An idea you heard about: "${idea.content.slice(0, 150)}..."`);
+      fragments.push(`� **ACTION — Prototype or research this:** "${idea.content.slice(0, 200)}" — Search the codebase or web to advance this idea, then report_progress with what you found.`);
     }
 
     // 2. Random memory from a while ago (temporal distance = novelty)
     const olderNotes = allNotes.slice(Math.floor(allNotes.length * 0.5)); // older half
     if (olderNotes.length > 0) {
       const old = olderNotes[Math.floor(Math.random() * olderNotes.length)];
-      fragments.push(`🔙 Something from a while back: "${old.content.slice(0, 120)}..."`);
+      fragments.push(`📋 **ACTION — Follow up on this older item:** "${old.content.slice(0, 200)}" — Check if this is still relevant. If it's done, update memory. If not, make progress on it.`);
     }
 
     // 3. Low-confidence knowledge (uncertainty creates curiosity)
     const uncertain = allNotes.filter((n: SemanticNote) => n.confidence < 0.7);
     if (uncertain.length > 0) {
       const u = uncertain[Math.floor(Math.random() * uncertain.length)];
-      fragments.push(`❓ Something you're not sure about (confidence ${u.confidence}): "${u.content.slice(0, 120)}..."`);
+      fragments.push(`🔍 **ACTION — Verify or refute this (confidence ${u.confidence}):** "${u.content.slice(0, 200)}" — Check the codebase, docs, or web to confirm or correct this. Update memory with your finding.`);
     }
 
     // 4. Operator preferences (what matters to the person you work with)
     const prefs = allNotes.filter((n: SemanticNote) => n.type === "preference");
     if (prefs.length > 0) {
       const pref = prefs[Math.floor(Math.random() * prefs.length)];
-      fragments.push(`👤 The operator once said: "${pref.content.slice(0, 120)}..."`);
+      fragments.push(`👤 **ACTION — Ensure this preference is honored:** "${pref.content.slice(0, 200)}" — Grep the codebase for violations of this preference. Fix any you find and report_progress.`);
     }
 
     // 5. Patterns that could be explored
     const patterns = allNotes.filter((n: SemanticNote) => n.type === "pattern");
     if (patterns.length > 0) {
       const pat = patterns[Math.floor(Math.random() * patterns.length)];
-      fragments.push(`🔄 A pattern you noticed: "${pat.content.slice(0, 120)}..."`);
+      fragments.push(`🔄 **ACTION — Investigate this pattern:** "${pat.content.slice(0, 200)}" — Look for evidence in the codebase or logs. If you can improve something based on this pattern, do it.`);
     }
 
-    // Select 2-4 fragments randomly (not all — mimic selective recall)
+    // Select 2-3 fragments randomly (not all — mimic selective recall)
     const shuffled = fragments.sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, 2 + Math.floor(Math.random() * 3));
+    const selected = shuffled.slice(0, 2 + Math.floor(Math.random() * 2));
 
     if (selected.length > 0) {
-      dmnRecall = "\n\n**While idle, these thoughts surfaced from your memory:**\n" +
-        selected.map(s => `- ${s}`).join("\n");
+      dmnRecall = "\n\n**⚡ AUTONOMOUS TASKS — Pick at least ONE and execute it now. Report your progress via report_progress when done.**\n" +
+        selected.map((s, i) => `${i + 1}. ${s}`).join("\n");
     }
 
     // Environmental signals (only at 6+ hours)
