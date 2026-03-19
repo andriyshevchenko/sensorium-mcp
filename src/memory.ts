@@ -32,6 +32,7 @@ export interface SemanticNote {
   content: string;
   keywords: string[];
   confidence: number;
+  priority: number; // 0=normal, 1=elevated, 2=critical
   sourceEpisodes: string[];
   linkedNotes: string[];
   linkReasons: Record<string, string>;
@@ -143,7 +144,7 @@ function parseJsonObject(val: string | null | undefined): Record<string, unknown
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -163,6 +164,11 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       );
       CREATE INDEX IF NOT EXISTS idx_emb_note ON note_embeddings(note_id);
     `);
+  },
+  3: (db) => {
+    // Add priority column: 0=normal, 1=elevated, 2=critical
+    db.exec(`ALTER TABLE semantic_notes ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL`);
   },
 };
 
@@ -237,6 +243,7 @@ CREATE TABLE IF NOT EXISTS semantic_notes (
   superseded_by   TEXT,
   access_count    INTEGER DEFAULT 0,
   last_accessed   TEXT,
+  priority        INTEGER NOT NULL DEFAULT 0,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
@@ -244,6 +251,7 @@ CREATE TABLE IF NOT EXISTS semantic_notes (
 CREATE INDEX IF NOT EXISTS idx_sem_type ON semantic_notes(type);
 CREATE INDEX IF NOT EXISTS idx_sem_conf ON semantic_notes(confidence DESC);
 CREATE INDEX IF NOT EXISTS idx_sem_valid ON semantic_notes(valid_to) WHERE valid_to IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL;
 
 CREATE TABLE IF NOT EXISTS procedures (
   procedure_id       TEXT PRIMARY KEY,
@@ -376,6 +384,7 @@ function rowToSemanticNote(row: Record<string, unknown>): SemanticNote {
     content: row.content as string,
     keywords: parseJsonArray(row.keywords as string | null),
     confidence: row.confidence as number,
+    priority: (row.priority as number) ?? 0,
     sourceEpisodes: parseJsonArray(row.source_episodes as string | null),
     linkedNotes: parseJsonArray(row.linked_notes as string | null),
     linkReasons: parseJsonObject(row.link_reasons as string | null) as Record<string, string>,
@@ -495,6 +504,7 @@ export function saveSemanticNote(
     content: string;
     keywords: string[];
     confidence?: number;
+    priority?: number;
     sourceEpisodes?: string[];
   }
 ): string {
@@ -503,14 +513,15 @@ export function saveSemanticNote(
 
   db.prepare(
     `INSERT INTO semantic_notes
-       (note_id, type, content, keywords, confidence, source_episodes, linked_notes, link_reasons, valid_from, access_count, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+       (note_id, type, content, keywords, confidence, priority, source_episodes, linked_notes, link_reasons, valid_from, access_count, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
   ).run(
     id,
     note.type,
     note.content,
     JSON.stringify(note.keywords),
     Math.max(0, Math.min(1, note.confidence ?? 0.5)),
+    Math.max(0, Math.min(2, note.priority ?? 0)),
     jsonOrNull(note.sourceEpisodes),
     null,
     null,
@@ -678,6 +689,7 @@ export function updateSemanticNote(
   updates: Partial<{
     content: string;
     confidence: number;
+    priority: number;
     keywords: string[];
     linkedNotes: string[];
     linkReasons: Record<string, string>;
@@ -694,6 +706,10 @@ export function updateSemanticNote(
   if (updates.confidence !== undefined) {
     setClauses.push("confidence = ?");
     params.push(updates.confidence);
+  }
+  if (updates.priority !== undefined) {
+    setClauses.push("priority = ?");
+    params.push(Math.max(0, Math.min(2, updates.priority)));
   }
   if (updates.keywords !== undefined) {
     setClauses.push("keywords = ?");
@@ -720,6 +736,7 @@ export function supersedeNote(
     content: string;
     keywords: string[];
     confidence?: number;
+    priority?: number;
     sourceEpisodes?: string[];
   }
 ): string {
@@ -728,6 +745,7 @@ export function supersedeNote(
     content: newNote.content,
     keywords: newNote.keywords,
     confidence: newNote.confidence,
+    priority: newNote.priority,
     sourceEpisodes: newNote.sourceEpisodes,
   });
 
@@ -1273,7 +1291,8 @@ Output a JSON object with:
       "type": "fact" | "preference" | "pattern" | "entity" | "relationship",
       "content": "One clear sentence describing the knowledge",
       "keywords": ["keyword1", "keyword2", "keyword3"],
-      "confidence": 0.0-1.0
+      "confidence": 0.0-1.0,
+      "priority": 0 | 1 | 2
     }
   ],
   "supersede": [
@@ -1283,7 +1302,8 @@ Output a JSON object with:
       "newContent": "Updated version of the knowledge",
       "type": "fact",
       "keywords": ["keyword1", "keyword2"],
-      "confidence": 0.8
+      "confidence": 0.8,
+      "priority": 0 | 1 | 2
     }
   ]
 }
@@ -1296,6 +1316,10 @@ Rules:
 - Focus on: operator name, preferences, communication style, technical choices, project context
 - CRITICAL: Check existing notes for CONTRADICTIONS. If a new episode contradicts or updates an existing note, add a "supersede" entry. The new episodes represent MORE RECENT information.
 - Common contradictions: decisions changed, projects completed/abandoned, preferences updated, tools/tech switched
+- PRIORITY DETECTION: Infer priority from the operator's language:
+  - priority 2 (critical): operator says "important", "crucial", "critical", "must", "I really need", "don't forget", strong emphasis
+  - priority 1 (elevated): operator says "would be nice", "I'd like", "should", repeated mentions, emotional investment
+  - priority 0 (normal): default for routine facts, observations, patterns
 - Return {"notes": [], "supersede": []} if nothing notable`;
 
   let notesCreated = 0;
@@ -1343,6 +1367,7 @@ Rules:
         content: string;
         keywords: string[];
         confidence: number;
+        priority?: number;
       }>;
       supersede?: Array<{
         oldNoteId: string;
@@ -1351,6 +1376,7 @@ Rules:
         type: string;
         keywords: string[];
         confidence: number;
+        priority?: number;
       }>;
     };
 
@@ -1370,6 +1396,7 @@ Rules:
           content: note.content,
           keywords: Array.isArray(note.keywords) ? note.keywords : [],
           confidence: Math.max(0, Math.min(1, note.confidence ?? 0.5)),
+          priority: Math.max(0, Math.min(2, note.priority ?? 0)),
           sourceEpisodes: episodeIds,
         });
         notesCreated++;
@@ -1396,6 +1423,7 @@ Rules:
             content: action.newContent,
             keywords: Array.isArray(action.keywords) ? action.keywords : [],
             confidence: Math.max(0, Math.min(1, action.confidence ?? 0.8)),
+            priority: Math.max(0, Math.min(2, action.priority ?? 0)),
             sourceEpisodes: episodeIds,
           });
           supersededCount++;
