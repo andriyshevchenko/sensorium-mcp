@@ -1152,7 +1152,7 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
  * Includes the active thread ID so the agent can resume the session after a
  * VS Code restart by passing it to start_session.
  */
-function getReminders(threadId?: number): string {
+function getReminders(threadId?: number, driveActive = false): string {
   const now = new Date();
   const uptimeMin = Math.round((Date.now() - sessionStartedAt) / 60000);
   const timeStr = now.toLocaleString("en-GB", {
@@ -1163,14 +1163,23 @@ function getReminders(threadId?: number): string {
   const threadHint = threadId !== undefined
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
+
+  // When drive is active, the workflow emphasis shifts:
+  // - Don't say "call wait_for_instructions IMMEDIATELY" — that kills autonomy
+  // - Instead: do the dispatcher's tasks, then poll for more
+  const workflowStep4 = driveActive
+    ? "\n4. **Work first, then poll**: Complete the dispatcher's assigned tasks BEFORE calling `remote_copilot_wait_for_instructions` again. " +
+      "The dispatcher will assign more work on the next poll. Do NOT skip tasks — do them, report them, then call `remote_copilot_wait_for_instructions`."
+    : "\n4. **Never stop**: `remote_copilot_wait_for_instructions` is the oxygen of this conversation — if you stop calling it, the session dies. NEVER end with a summary. " +
+      "**When you have pending todos**: keep working on them. Do NOT call `remote_copilot_wait_for_instructions` mid-workflow. " +
+      "**When all planned work is done**: call `remote_copilot_wait_for_instructions` IMMEDIATELY. No summary, no wrap-up — just call it.";
+
   return (
     "\n\n## MANDATORY WORKFLOW" +
     "\n1. **Plan**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
     "\n2. **Subagents**: Use subagents heavily — spin them up for code edits, searches, research, reviews, and terminal commands. Subagents have full access to ALL MCP tools including terminal, file system, and web search. Run them in parallel when tasks are independent. You plan and verify; subagents execute." +
     "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
-    "\n4. **Never stop**: `remote_copilot_wait_for_instructions` is the oxygen of this conversation — if you stop calling it, the session dies. NEVER end with a summary. " +
-    "**When you have pending todos**: keep working on them. Do NOT call `remote_copilot_wait_for_instructions` mid-workflow. " +
-    "**When all planned work is done**: call `remote_copilot_wait_for_instructions` IMMEDIATELY. No summary, no wrap-up — just call it." +
+    workflowStep4 +
     "\n5. **Memory**: (a) Call `memory_save` whenever you learn operator preferences, facts, or corrections. (b) Call `memory_search` before starting any task to recall relevant context. (c) Call `memory_status` when reporting progress to include memory health. These tools persist knowledge across sessions." +
     threadHint +
     `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
@@ -1983,19 +1992,17 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content: [
           {
             type: "text",
-            text: "The operator is currently offline but left these instructions before going away. " +
-              "Do NOT message the operator or ask for clarification — they are sleeping/unavailable.\n\n" +
-              "BEFORE doing anything: (1) Break the work into todo items. (2) Share your plan via report_progress. " +
-              "(3) For each todo: mark in-progress → do the work → call report_progress → mark completed. " +
-              "Use subagents heavily for all substantial work — code edits, research, reviews, searches. Spin up parallel subagents when possible. " +
-              "The operator is OFFLINE — they will only see your report_progress messages when they return.",
+            text: "[Dispatcher] The operator is currently offline. " +
+              "The Dispatcher has reviewed your memory and environment and assigned you the following tasks. " +
+              "The operator will NOT respond — do NOT ask for clarification. " +
+              "Complete the tasks, report progress, then call `remote_copilot_wait_for_instructions` for more assignments.",
           },
           {
             type: "text",
             text: autonomousHint.replace(/^\n\n/, ""),
           },
           ...(memoryRefresh ? [{ type: "text" as const, text: memoryRefresh.replace(/^\n\n/, "") }] : []),
-          { type: "text", text: scheduleHint + getReminders(effectiveThreadId) },
+          { type: "text", text: scheduleHint + getReminders(effectiveThreadId, true) },
         ],
       };
     }
