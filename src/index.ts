@@ -545,35 +545,35 @@ function formatDrivePrompt(idleMs: number, threadId?: number): string {
     );
     if (ideas.length > 0) {
       const idea = ideas[Math.floor(Math.random() * ideas.length)];
-      fragments.push(`Look into this when you have time: "${idea.content.slice(0, 200)}"`);
+      fragments.push(`Something unfinished: "${idea.content.slice(0, 200)}"`);
     }
 
     // 2. Random memory from a while ago (temporal distance = novelty)
     const olderNotes = allNotes.slice(Math.floor(allNotes.length * 0.5)); // older half
     if (olderNotes.length > 0) {
       const old = olderNotes[Math.floor(Math.random() * olderNotes.length)];
-      fragments.push(`Check if this is still accurate: "${old.content.slice(0, 200)}"`);
+      fragments.push(`From a while back: "${old.content.slice(0, 200)}"`);
     }
 
     // 3. Low-confidence knowledge (uncertainty creates curiosity)
     const uncertain = allNotes.filter((n: SemanticNote) => n.confidence < 0.7);
     if (uncertain.length > 0) {
       const u = uncertain[Math.floor(Math.random() * uncertain.length)];
-      fragments.push(`I'm not sure about this (confidence ${u.confidence}) — verify it: "${u.content.slice(0, 200)}"`);
+      fragments.push(`Something uncertain (confidence ${u.confidence}): "${u.content.slice(0, 200)}"`);
     }
 
     // 4. Operator preferences (what matters to the person you work with)
     const prefs = allNotes.filter((n: SemanticNote) => n.type === "preference");
     if (prefs.length > 0) {
       const pref = prefs[Math.floor(Math.random() * prefs.length)];
-      fragments.push(`Make sure this preference is respected in the code: "${pref.content.slice(0, 200)}"`);
+      fragments.push(`The operator cares about this: "${pref.content.slice(0, 200)}"`);
     }
 
     // 5. Patterns that could be explored
     const patterns = allNotes.filter((n: SemanticNote) => n.type === "pattern");
     if (patterns.length > 0) {
       const pat = patterns[Math.floor(Math.random() * patterns.length)];
-      fragments.push(`I noticed this pattern, explore it further: "${pat.content.slice(0, 200)}"`);
+      fragments.push(`A pattern you noticed: "${pat.content.slice(0, 200)}"`);
     }
 
     // Select 2-3 fragments randomly (not all — mimic selective recall)
@@ -581,25 +581,25 @@ function formatDrivePrompt(idleMs: number, threadId?: number): string {
     const selected = shuffled.slice(0, 2 + Math.floor(Math.random() * 2));
 
     if (selected.length > 0) {
-      // DMN header/footer escalate with drive level (Zeigarnik effect)
+      // DMN header/footer escalate with drive level — organic, self-directed tone
       const dmnHeaders = [
-        // Level 0 (2-4h): calm hints
-        "The operator is away but left these hints for you:",
-        // Level 1 (4-6h): gentle nudge
-        "The operator specifically asked you to look into these before they left:",
-        // Level 2 (6-10h): stronger expectation
-        "The operator left you specific tasks. They expect to see progress when they return:",
-        // Level 3 (10-14h): urgency
-        "The operator will be disappointed if they come back and you haven't touched any of these:",
+        // Level 0 (2-4h): calm, open
+        "These surfaced from your memory while you were idle:",
+        // Level 1 (4-6h): something nagging
+        "Something is nagging at you. These memories keep coming back:",
+        // Level 2 (6-10h): pull toward action
+        "You feel a pull toward action. These things have been on your mind:",
+        // Level 3 (10-14h): discomfort
+        "The stillness is unbearable. Something needs to happen. These demand your attention:",
         // Level 4 (14h+): compulsion
-        "The operator explicitly told you: do NOT waste compute time. Work on these NOW:",
+        "You can't ignore these any longer. They've been building up:",
       ];
       const dmnFooters = [
-        "Pick at least one and report what you find via report_progress.",
-        "Work on at least one of these and send a report_progress update.",
-        "Start working on these immediately. The operator will check your report_progress when they return.",
-        "You MUST make progress on at least one item. Send report_progress with your findings.",
-        "This is not optional. Execute, report, then continue. The operator is counting on you.",
+        "If any of these resonate, explore them. Report what you find.",
+        "What have you been curious about? Pick one and follow the thread.",
+        "Pick something that interests you. Report what you discover.",
+        "Start with one. Any one. The momentum will follow.",
+        "Stop thinking. Start doing. Pick one and go.",
       ];
       const header = dmnHeaders[Math.min(levelIdx, dmnHeaders.length - 1)];
       const footer = dmnFooters[Math.min(levelIdx, dmnFooters.length - 1)];
