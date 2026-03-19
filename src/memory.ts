@@ -368,6 +368,18 @@ export function initMemoryDb(): Database {
   // Run any pending migrations (will upgrade from stored version to SCHEMA_VERSION)
   runMigrations(db);
 
+  // Direct repair: ensure priority column exists regardless of migration state.
+  // This handles edge cases where migrations fail silently or the migration system
+  // recorded a version without actually applying the schema change.
+  {
+    const cols = db.prepare("PRAGMA table_info(semantic_notes)").all() as Array<{ name: string }>;
+    if (!cols.some(c => c.name === "priority")) {
+      process.stderr.write("[memory] Direct repair: adding missing priority column\n");
+      db.exec(`ALTER TABLE semantic_notes ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL`);
+    }
+  }
+
   return db;
 }
 
