@@ -89,32 +89,66 @@ export function formatDrivePrompt(idleMs: number, db: Database, threadId?: numbe
 
     let allNotes = getTopSemanticNotes(db, { limit: 80, sortBy: "created_at" });
 
-    // Thread-scoped filtering: prefer notes from current thread
+    // Thread-scoped filtering: prefer notes from current thread,
+    // exclude notes definitively from other threads (prevents cross-thread leaks),
+    // and include truly global notes (no thread association) as serendipity.
     if (threadId !== undefined && allNotes.length > 0) {
-      const threadEpisodeIds = new Set<string>();
+      // Build a map: episode_id → thread_id for all referenced episodes
+      const episodeThreadMap = new Map<string, number>();
       try {
-        const rows = db.prepare(
-          "SELECT episode_id FROM episodes WHERE thread_id = ?"
-        ).all(threadId) as { episode_id: string }[];
-        for (const r of rows) threadEpisodeIds.add(r.episode_id);
+        // Collect all episode IDs referenced by notes
+        const allEpisodeIds = new Set<string>();
+        for (const n of allNotes) {
+          const sources = Array.isArray(n.sourceEpisodes) ? n.sourceEpisodes : [];
+          for (const id of sources) allEpisodeIds.add(id);
+        }
+        if (allEpisodeIds.size > 0) {
+          // Batch query for thread assignments
+          const placeholders = [...allEpisodeIds].map(() => "?").join(",");
+          const rows = db.prepare(
+            `SELECT episode_id, thread_id FROM episodes WHERE episode_id IN (${placeholders})`
+          ).all(...allEpisodeIds) as { episode_id: string; thread_id: number }[];
+          for (const r of rows) episodeThreadMap.set(r.episode_id, r.thread_id);
+        }
       } catch (_) { /* non-fatal */ }
 
-      if (threadEpisodeIds.size > 0) {
-        const scored = allNotes.map(n => {
-          const sources = Array.isArray(n.sourceEpisodes) ? n.sourceEpisodes : [];
-          const threadHits = sources.filter((id: string) => threadEpisodeIds.has(id)).length;
-          return { note: n, threadRelevance: threadHits > 0 ? 1 : 0 };
-        });
-        const threadNotes = scored.filter(s => s.threadRelevance > 0).map(s => s.note);
-        const globalNotes = scored.filter(s => s.threadRelevance === 0).map(s => s.note);
-        // 70% thread-relevant, 30% global (serendipity)
-        const threadCount = Math.min(threadNotes.length, 35);
-        const globalCount = Math.min(globalNotes.length, 15);
-        allNotes = [
-          ...threadNotes.slice(0, threadCount),
-          ...globalNotes.sort(() => Math.random() - 0.5).slice(0, globalCount),
-        ];
+      const threadNotes: SemanticNote[] = [];
+      const globalNotes: SemanticNote[] = [];
+
+      for (const n of allNotes) {
+        const sources = Array.isArray(n.sourceEpisodes) ? n.sourceEpisodes : [];
+
+        if (sources.length === 0) {
+          // No episode links — truly global (e.g., operator preferences, bootstrapped knowledge)
+          globalNotes.push(n);
+          continue;
+        }
+
+        // Check which threads this note's episodes belong to
+        let belongsToCurrentThread = false;
+        let belongsToOtherThread = false;
+        for (const epId of sources) {
+          const epThread = episodeThreadMap.get(epId);
+          if (epThread === threadId) belongsToCurrentThread = true;
+          else if (epThread !== undefined) belongsToOtherThread = true;
+        }
+
+        if (belongsToCurrentThread) {
+          threadNotes.push(n);
+        } else if (!belongsToOtherThread) {
+          // Episodes not found in DB (orphaned) — treat as global
+          globalNotes.push(n);
+        }
+        // Notes definitively from OTHER threads are excluded entirely
       }
+
+      // 70% thread-relevant, 30% global (serendipity from truly global pool only)
+      const threadCount = Math.min(threadNotes.length, 35);
+      const globalCount = Math.min(globalNotes.length, 15);
+      allNotes = [
+        ...threadNotes.slice(0, threadCount),
+        ...globalNotes.sort(() => Math.random() - 0.5).slice(0, globalCount),
+      ];
     }
 
     // Weighted random selection — priority notes are 3x/5x more likely
