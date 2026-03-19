@@ -199,16 +199,22 @@ function getCurrentSchemaVersion(db: Database): number {
  */
 function runMigrations(db: Database): void {
   const currentVersion = getCurrentSchemaVersion(db);
+  process.stderr.write(`[memory] Current schema version: ${currentVersion}, target: ${SCHEMA_VERSION}\n`);
   for (let v = currentVersion + 1; v <= SCHEMA_VERSION; v++) {
     const migration = MIGRATIONS[v];
     if (migration) {
-      db.transaction(() => {
+      try {
+        // Run DDL migrations outside transactions — SQLite DDL + transactions
+        // can have subtle issues in WAL mode with better-sqlite3.
         migration(db);
         db.prepare(
           "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)"
         ).run(v, nowISO());
-      })();
-      process.stderr.write(`[memory] Migrated schema to version ${v}\n`);
+        process.stderr.write(`[memory] Migrated schema to version ${v}\n`);
+      } catch (err) {
+        process.stderr.write(`[memory] Migration ${v} FAILED: ${err instanceof Error ? err.message : String(err)}\n`);
+        throw err;
+      }
     }
   }
 }
