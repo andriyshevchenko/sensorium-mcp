@@ -371,9 +371,6 @@ function getMemoryDb() {
 // Dead session detection constant
 const DEAD_SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (0.5× wait_for_instructions timeout, chosen to alert before the next poll could return)
 
-// Subagent compliance constant
-const SUBAGENT_NUDGE_THRESHOLD = 8;
-
 // ---------------------------------------------------------------------------
 // Session registry — tracks which MCP sessions are using which thread.
 // When start_session is called with a threadId, we close stale sessions
@@ -693,15 +690,6 @@ function createMcpServer(getMcpSessionId?: () => string | undefined, closeTransp
       return explicit;
     }
     return currentThreadId;
-  }
-
-  function getSubagentNudge(): string {
-    if (toolCallsSinceLastDelivery >= SUBAGENT_NUDGE_THRESHOLD) {
-      toolCallsSinceLastDelivery = 0;
-      return "\n\n💡 Reminder: You've made many direct tool calls. Consider using subagents (runSubagent) " +
-        "for substantial work — they can run code edits, research, and terminal commands in parallel.";
-    }
-    return "";
   }
 
   const srv = new Server(
@@ -1190,23 +1178,12 @@ function getReminders(threadId?: number, driveActive = false): string {
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
 
-  // When drive is active, the workflow emphasis shifts:
-  // - Don't say "call wait_for_instructions IMMEDIATELY" — that kills autonomy
-  // - Instead: do the dispatcher's tasks, then poll for more
-  const workflowStep4 = driveActive
-    ? "\n4. **Work first, then poll**: Complete the dispatcher's assigned tasks BEFORE calling `remote_copilot_wait_for_instructions` again. " +
-      "The dispatcher will assign more work on the next poll. Do NOT skip tasks — do them, report them, then call `remote_copilot_wait_for_instructions`."
-    : "\n4. **Never stop**: `remote_copilot_wait_for_instructions` is the oxygen of this conversation — if you stop calling it, the session dies. NEVER end with a summary. " +
-      "**When you have pending todos**: keep working on them. Do NOT call `remote_copilot_wait_for_instructions` mid-workflow. " +
-      "**When all planned work is done**: call `remote_copilot_wait_for_instructions` IMMEDIATELY. No summary, no wrap-up — just call it.";
+  const workflow = driveActive
+    ? "\n\nComplete the dispatcher's tasks. Report progress. Then call `remote_copilot_wait_for_instructions`."
+    : "\n\nCreate plan. Use subagents heavily. Spin up parallel subagents when possible. Report frequently.";
 
   return (
-    "\n\n## MANDATORY WORKFLOW" +
-    "\n1. **Plan**: Use the todo list tool to break work into discrete items BEFORE starting. Non-negotiable." +
-    "\n2. **Subagents**: Use subagents heavily — spin them up for code edits, searches, research, reviews, and terminal commands. Subagents have full access to ALL MCP tools including terminal, file system, and web search. Run them in parallel when tasks are independent. You plan and verify; subagents execute." +
-    "\n3. **Reporting**: Call `report_progress` after completing EACH todo item. The operator is remote and CANNOT see your work unless you explicitly report it. Silence = failure." +
-    workflowStep4 +
-    "\n5. **Memory**: (a) Call `memory_save` whenever you learn operator preferences, facts, or corrections. (b) Call `memory_search` before starting any task to recall relevant context. (c) Call `memory_status` when reporting progress to include memory health. These tools persist knowledge across sessions." +
+    workflow +
     threadHint +
     `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
   );
@@ -1220,7 +1197,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   // as that's the primary health signal (agent is actively polling).
   lastToolCallAt = Date.now();
 
-  // Track tool calls for subagent compliance nudging
+  // Track tool calls for activity monitoring
   toolCallsSinceLastDelivery++;
 
   // ── start_session ─────────────────────────────────────────────────────────
@@ -1812,11 +1789,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           content: [
             {
               type: "text",
-              text: "Follow the operator's instructions below.\n\n" +
-                "BEFORE doing anything: (1) Break the work into todo items. (2) Share your plan via report_progress. " +
-                "(3) For each todo: mark in-progress → do the work → call report_progress → mark completed. " +
-                "Use subagents heavily for all substantial work — code edits, research, reviews, searches. Spin up parallel subagents when possible. " +
-                "The operator is REMOTE — they cannot see your screen. If you don't call report_progress, they see nothing.",
+              text: "Follow the operator's instructions below." +
+                "\n\nCreate plan. Use subagents heavily. Spin up parallel subagents when possible. Report frequently.",
             },
             ...contentBlocks,
             ...(hasVoiceMessages
@@ -2190,9 +2164,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       pendingMessages.length > 0
         ? `${baseStatus}\n\n` +
         `While you were working, the operator sent additional message(s). ` +
-        `Use those messages to steer your active session: ${pendingMessages.join("\n\n")}` +
-        `\n\nUse subagents`
-        : baseStatus + getSubagentNudge();
+        `Use those messages to steer your active session: ${pendingMessages.join("\n\n")}`
+        : baseStatus;
 
     return {
       content: [
@@ -2533,7 +2506,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           });
       }
       return {
-        content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getReminders(threadId) + getSubagentNudge() }],
+        content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getReminders(threadId) }],
       };
     } catch (err) {
       return errorResult(`Memory save error: ${errorMessage(err)}` + getReminders(threadId));
