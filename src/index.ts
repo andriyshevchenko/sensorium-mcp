@@ -34,14 +34,16 @@ import {
   isInitializeRequest,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createServer, IncomingMessage } from "node:http";
-import { randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { readFile } from "fs/promises";
 import { createRequire } from "module";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createServer, IncomingMessage } from "node:http";
 import { homedir } from "os";
 import { basename, join } from "path";
+import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
+import type { SemanticNote } from "./memory.js";
 import {
   assembleBootstrap,
   assembleCompactRefresh,
@@ -66,7 +68,6 @@ import {
   updateProcedure,
   updateSemanticNote,
 } from "./memory.js";
-import type { SemanticNote } from "./memory.js";
 import { analyzeVideoFrames, analyzeVoiceEmotion, extractVideoFrames, generateEmbedding, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
 import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
 import { TelegramClient } from "./telegram.js";
@@ -1716,9 +1717,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         // Subagent instruction — embedded directly in operator message flow
         // so agents treat it as a direct instruction, not ignorable metadata.
         const subagentInstruction =
-            "\n\n⚠️ HINT from operator: Use subagents (runSubagent) for ALL substantial work — code edits, research, reviews, searches, and terminal commands. " +
-            "Subagents have full access to ALL MCP tools including terminal, file system, and web search. " +
-            "Run them in parallel when tasks are independent. You plan and verify; subagents execute.";
+            "\n\n Use subagents.";
 
         // Append the subagent instruction to the LAST operator content block
         // so it reads as part of the operator's message stream
@@ -2192,8 +2191,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         ? `${baseStatus}\n\n` +
         `While you were working, the operator sent additional message(s). ` +
         `Use those messages to steer your active session: ${pendingMessages.join("\n\n")}` +
-        `\n\n⚠️ HINT from operator: Use subagents (runSubagent) for ALL substantial work. ` +
-        `Subagents have full access to ALL MCP tools. You plan and verify; subagents execute.`
+        `\n\nUse subagents`
         : baseStatus + getSubagentNudge();
 
     return {
@@ -2750,6 +2748,7 @@ if (httpPort) {
 
   const MCP_HTTP_SECRET = process.env.MCP_HTTP_SECRET;
   const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+  const serverStartTime = Date.now();
 
   async function parseBody(req: IncomingMessage): Promise<unknown> {
     return new Promise((resolve, reject) => {
@@ -2786,6 +2785,38 @@ if (httpPort) {
       res.writeHead(204);
       res.end();
       return;
+    }
+
+    // ── Dashboard routes (served before MCP auth) ─────────────────────
+    const dashCtx: DashboardContext = {
+      getDb: getMemoryDb,
+      getActiveSessions: () => {
+        const sessions: Array<{ threadId: number; mcpSessionId: string; lastActivity: number; transportType: string }> = [];
+        for (const [sid, _transport] of transports) {
+          // Find which thread this session belongs to
+          let threadId = 0;
+          for (const [tid, entries] of threadSessionRegistry) {
+            if (entries.some(e => e.mcpSessionId === sid)) { threadId = tid; break; }
+          }
+          sessions.push({
+            threadId,
+            mcpSessionId: sid,
+            lastActivity: sessionLastActivity.get(sid) ?? 0,
+            transportType: "http",
+          });
+        }
+        return sessions;
+      },
+      serverStartTime,
+    };
+    // Dashboard HTML pages: no auth needed (SPA handles auth in browser)
+    // Dashboard API routes: auth handled by handleDashboardRequest internally
+    const dashUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const isDashboardPage = dashUrl.pathname === "/" || dashUrl.pathname === "/dashboard";
+    const isDashboardApi = dashUrl.pathname.startsWith("/api/");
+    if (isDashboardPage || isDashboardApi) {
+      const handled = handleDashboardRequest(req, res, dashCtx, MCP_HTTP_SECRET);
+      if (handled) return;
     }
 
     // Auth check — if MCP_HTTP_SECRET is set, require Bearer token.
