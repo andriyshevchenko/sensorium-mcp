@@ -166,8 +166,13 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     `);
   },
   3: (db) => {
-    // Add priority column: 0=normal, 1=elevated, 2=critical
-    db.exec(`ALTER TABLE semantic_notes ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`);
+    // Add priority column: 0=normal, 1=notable, 2=high importance
+    // Use try/catch because new databases already have the column in SCHEMA_SQL
+    try {
+      db.exec(`ALTER TABLE semantic_notes ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      // Column already exists — safe to ignore
+    }
     db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL`);
   },
 };
@@ -340,18 +345,27 @@ export function initMemoryDb(): Database {
   // Create all tables
   db.exec(SCHEMA_SQL);
 
-  // Record schema version if not yet recorded
-  const existing = db.prepare("SELECT version FROM schema_version WHERE version = ?").get(SCHEMA_VERSION) as
-    | { version: number }
-    | undefined;
-  if (!existing) {
-    db.prepare("INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (?, ?)").run(
-      SCHEMA_VERSION,
-      nowISO()
-    );
+  // Record base schema version for brand-new databases only
+  const versionCount = (db.prepare("SELECT COUNT(*) as cnt FROM schema_version").get() as { cnt: number }).cnt;
+  if (versionCount === 0) {
+    // New database — record version 1 as the base, then run all migrations up to SCHEMA_VERSION
+    db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (1, ?)").run(nowISO());
+  } else {
+    // Repair: older code may have recorded SCHEMA_VERSION prematurely without running migrations.
+    // Detect by checking if version 3 was recorded but the priority column is missing.
+    const hasV3 = db.prepare("SELECT version FROM schema_version WHERE version = 3").get();
+    if (hasV3) {
+      const cols = db.prepare("PRAGMA table_info(semantic_notes)").all() as Array<{ name: string }>;
+      const hasPriority = cols.some(c => c.name === "priority");
+      if (!hasPriority) {
+        // Version 3 was recorded but migration never ran — reset to version 2
+        db.prepare("DELETE FROM schema_version WHERE version >= 3").run();
+        process.stderr.write("[memory] Repaired: schema_version was ahead of actual migrations, reset to v2\n");
+      }
+    }
   }
 
-  // Run any pending migrations
+  // Run any pending migrations (will upgrade from stored version to SCHEMA_VERSION)
   runMigrations(db);
 
   return db;
