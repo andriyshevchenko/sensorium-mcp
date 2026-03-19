@@ -260,13 +260,17 @@ function getReminders(threadId?: number, driveActive = false): string {
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
 
-  const workflow = driveActive
-    ? "\n\nComplete the dispatcher's tasks. Report progress. Then call `remote_copilot_wait_for_instructions`."
-    : "\n\nCreate plan. Use subagents heavily. Spin up parallel subagents when possible. Report frequently." +
-      "\n- After completing work, call `remote_copilot_wait_for_instructions` to check for new operator messages.";
+  if (driveActive) {
+    return (
+      "\n\nComplete the dispatcher's tasks. Report progress. Then call `remote_copilot_wait_for_instructions`." +
+      "\n- **Voice mode**: Use `send_voice` for progress reports and responses. Only use text if the operator explicitly asks for it." +
+      threadHint +
+      `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
+    );
+  }
 
   return (
-    workflow +
+    "\n\nCreate plan. Use subagents. You own decision making and planning, subagents own execution. Report frequently." +
     "\n- **Voice mode**: Use `send_voice` for progress reports and responses. Only use text if the operator explicitly asks for it." +
     threadHint +
     `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
@@ -890,8 +894,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           content: [
             {
               type: "text",
-              text: "Follow the operator's instructions below." +
-                "\n\nCreate plan. Use subagents heavily. Spin up parallel subagents when possible. Report frequently.",
+              text: "Follow the operator's instructions below.",
             },
             ...contentBlocks,
             ...(hasVoiceMessages
@@ -903,7 +906,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             ...(autoMemoryContext
               ? [{ type: "text" as const, text: autoMemoryContext }]
               : []),
-            { type: "text", text: getReminders(effectiveThreadId) },
+            { type: "text", text: " Use subagents." + getReminders(effectiveThreadId) },
           ],
         };
       }
@@ -1111,11 +1114,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         {
           type: "text",
           text:
-            `[Poll #${callNumber} — timeout at ${now} — elapsed ${WAIT_TIMEOUT_MINUTES}m — session uptime ${Math.round((Date.now() - sessionStartedAt) / 60000)}m — operator idle ${idleMinutes}m]` +
-            ` No new instructions received. ` +
-            `YOU MUST call remote_copilot_wait_for_instructions again RIGHT NOW to continue listening. ` +
-            `Do NOT summarize, stop, or say the session is idle. ` +
-            `Just call the tool again immediately.` +
+            `No new instructions. Call \`remote_copilot_wait_for_instructions\` again to keep listening.` +
             autonomousHint +
             memoryRefresh +
             scheduleHint +
