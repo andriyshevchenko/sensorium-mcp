@@ -184,6 +184,29 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       // Column already exists — safe to ignore
     }
     db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL`);
+
+    // Backfill thread_id from source episodes
+    const notes = db.prepare(
+      `SELECT note_id, source_episodes FROM semantic_notes WHERE thread_id IS NULL`
+    ).all() as { note_id: string; source_episodes: string | null }[];
+    const update = db.prepare(`UPDATE semantic_notes SET thread_id = ? WHERE note_id = ?`);
+    let backfilled = 0;
+    for (const note of notes) {
+      let episodeIds: string[] = [];
+      try { episodeIds = JSON.parse(note.source_episodes ?? "[]"); } catch { /* ignore */ }
+      if (episodeIds.length === 0) continue;
+      const placeholders = episodeIds.map(() => "?").join(",");
+      const rows = db.prepare(
+        `SELECT thread_id, COUNT(*) as cnt FROM episodes WHERE episode_id IN (${placeholders}) GROUP BY thread_id ORDER BY cnt DESC LIMIT 1`
+      ).all(...episodeIds) as { thread_id: number; cnt: number }[];
+      if (rows.length > 0 && rows[0].thread_id != null) {
+        update.run(rows[0].thread_id, note.note_id);
+        backfilled++;
+      }
+    }
+    if (backfilled > 0) {
+      process.stderr.write(`[migration-4] Backfilled thread_id on ${backfilled}/${notes.length} existing notes.\n`);
+    }
   },
 };
 
@@ -1706,4 +1729,41 @@ export function getNotesWithoutEmbeddings(db: Database): { noteId: string; conte
          LEFT JOIN note_embeddings ne ON ne.note_id = sn.note_id
          WHERE ne.note_id IS NULL AND sn.valid_to IS NULL AND sn.superseded_by IS NULL`
     ).all() as { noteId: string; content: string }[];
+}
+
+/**
+ * Backfill thread_id on existing semantic notes that lack it.
+ * Infers thread from source episodes. Notes with no episode links remain global (NULL).
+ * Returns the number of notes updated.
+ */
+export function backfillNoteThreadIds(db: Database): number {
+  const notes = db.prepare(
+    `SELECT note_id, source_episodes FROM semantic_notes WHERE thread_id IS NULL AND valid_to IS NULL AND superseded_by IS NULL`
+  ).all() as { note_id: string; source_episodes: string | null }[];
+
+  if (notes.length === 0) return 0;
+
+  const update = db.prepare(`UPDATE semantic_notes SET thread_id = ? WHERE note_id = ?`);
+  let updated = 0;
+
+  const txn = db.transaction(() => {
+    for (const note of notes) {
+      const episodeIds = parseJsonArray(note.source_episodes);
+      if (episodeIds.length === 0) continue;
+
+      // Find the most common thread_id among source episodes
+      const placeholders = episodeIds.map(() => "?").join(",");
+      const rows = db.prepare(
+        `SELECT thread_id, COUNT(*) as cnt FROM episodes WHERE episode_id IN (${placeholders}) GROUP BY thread_id ORDER BY cnt DESC LIMIT 1`
+      ).all(...episodeIds) as { thread_id: number; cnt: number }[];
+
+      if (rows.length > 0 && rows[0].thread_id != null) {
+        update.run(rows[0].thread_id, note.note_id);
+        updated++;
+      }
+    }
+  });
+  txn();
+
+  return updated;
 }
