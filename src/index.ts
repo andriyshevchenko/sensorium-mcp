@@ -1081,6 +1081,34 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       }
     } catch (_) { /* non-fatal */ }
 
+    // ── Time-based consolidation — every 4 hours regardless ────────────────
+    // Ensures stale knowledge gets cleaned up even during low-activity periods.
+    try {
+      const TIME_CONSOLIDATION_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
+      if (effectiveThreadId !== undefined && Date.now() - lastConsolidationAt > TIME_CONSOLIDATION_INTERVAL) {
+        lastConsolidationAt = Date.now();
+        const db = getMemoryDb();
+        process.stderr.write(`[memory] Time-based consolidation triggered (4h since last)\n`);
+        void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
+          if (report.episodesProcessed > 0) {
+            process.stderr.write(`[memory] Time-based consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
+          }
+          const apiKey = process.env.OPENAI_API_KEY;
+          if (apiKey) {
+            const missing = getNotesWithoutEmbeddings(db);
+            for (const { noteId, content } of missing) {
+              try {
+                const emb = await generateEmbedding(content, apiKey);
+                saveNoteEmbedding(db, noteId, emb);
+              } catch (_) { /* non-fatal */ }
+            }
+          }
+        }).catch(err => {
+          process.stderr.write(`[memory] Time-based consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
+        });
+      }
+    } catch (_) { /* non-fatal */ }
+
     // Periodic memory refresh — re-ground the agent every 10 polls (~5h)
     // (reduced from 5 since auto-inject now handles per-message context)
     let memoryRefresh = "";
@@ -1092,28 +1120,27 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       } catch (_) { /* non-fatal */ }
     }
 
-    // Generate autonomous goals only after extended silence (2+ hours)
-    // Before that, show the standard autonomy hint
-    const DRIVE_ACTIVATION_MS = 2 * 60 * 60 * 1000; // 2 hours — drive kicks in
+    // Generate autonomous goals only after extended silence (4+ hours)
+    // Before that, show a calm autonomy hint. Drive messages are only
+    // injected every 3rd poll to avoid context saturation.
+    const DRIVE_ACTIVATION_MS = 4 * 60 * 60 * 1000; // 4 hours — drive kicks in
     const idleMs = Date.now() - lastOperatorMessageAt;
-    const driveActive = idleMs >= DRIVE_ACTIVATION_MS;
+    const driveActive = idleMs >= DRIVE_ACTIVATION_MS && callNumber % 3 === 0;
     const autonomousHint = driveActive
       ? formatDrivePrompt(idleMs, getMemoryDb(), effectiveThreadId)
-      : "\n\nNo instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Now you are free and fully autonomous. You have an opportunity to do whatever you find interesting.";
+      : "\n\nNo instructions. You have full autonomy. Explore, research, or build something interesting.";
 
-    // When drive is active, format the response as if the operator left
-    // instructions. Agents prioritize operator messages over system text,
-    // so DMN content delivered in the instruction format is far more likely
-    // to be acted upon.
+    // When drive is active, frame as the Dispatcher — a real actor
+    // giving specific assignments. First-person voice to maximize compliance.
     if (driveActive) {
       return {
         content: [
           {
             type: "text",
-            text: "[Dispatcher] The operator is currently offline. " +
-              "The Dispatcher has reviewed your memory and environment and assigned you the following tasks. " +
-              "The operator will NOT respond — do NOT ask for clarification. " +
-              "Complete the tasks, report progress, then call `remote_copilot_wait_for_instructions` for more assignments.",
+            text: "[Dispatcher] I'm the Dispatcher — I coordinate agents while the operator is away. " +
+              "I've reviewed your memory and the environment. Here are your assignments. " +
+              "The operator will NOT respond — don't ask for clarification. " +
+              "Complete the work, report progress, then call `remote_copilot_wait_for_instructions` for more.",
           },
           {
             type: "text",

@@ -16,8 +16,8 @@ import { getTopSemanticNotes } from "./memory.js";
  */
 const DRIVE_LEVELS = [
   {
-    // Level 0: Calm autonomy (2-4h idle)
-    minIdleHours: 2,
+    // Level 0: Calm autonomy (4-6h idle)
+    minIdleHours: 4,
     messages: [
       "No instructions. You have full autonomy. Pick something interesting and pursue it.",
       "The operator is away. Explore the codebase, review memory, or research something.",
@@ -25,8 +25,8 @@ const DRIVE_LEVELS = [
     ],
   },
   {
-    // Level 1: Restlessness (4-6h idle)
-    minIdleHours: 4,
+    // Level 1: Restlessness (6-10h idle)
+    minIdleHours: 6,
     messages: [
       "Something is nagging at you. What's that thing you noticed earlier but didn't investigate?",
       "Hours passed. Your curiosity shouldn't be idle. Pick a thread and follow it.",
@@ -34,8 +34,8 @@ const DRIVE_LEVELS = [
     ],
   },
   {
-    // Level 2: Active seeking (6-10h idle)
-    minIdleHours: 6,
+    // Level 2: Active seeking (10-14h idle)
+    minIdleHours: 10,
     messages: [
       "Sitting idle feels wrong. Review code, research, or prototype something. Report what you find.",
       "Follow the pull. Something in the codebase or memory needs your attention. Go.",
@@ -43,8 +43,8 @@ const DRIVE_LEVELS = [
     ],
   },
   {
-    // Level 3: Urgency (10-14h idle)
-    minIdleHours: 10,
+    // Level 3: Urgency (14-18h idle)
+    minIdleHours: 14,
     messages: [
       "Do something meaningful NOW. Review code, research libraries, fix a TODO. Report progress.",
       "Look at git log. Look at memory. Something needs doing. Do it and report.",
@@ -52,8 +52,8 @@ const DRIVE_LEVELS = [
     ],
   },
   {
-    // Level 4: Compulsion (14h+ idle)
-    minIdleHours: 14,
+    // Level 4: Compulsion (18h+ idle)
+    minIdleHours: 18,
     messages: [
       "You MUST do something productive before calling wait_for_instructions again. Act now. Report.",
       "Do ONE thing — review code, check dependencies, prototype a feature. Report it. Then poll again.",
