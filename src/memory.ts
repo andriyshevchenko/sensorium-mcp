@@ -33,6 +33,7 @@ export interface SemanticNote {
   keywords: string[];
   confidence: number;
   priority: number; // 0=normal, 1=elevated, 2=critical
+  threadId: number | null; // null = global, number = thread-scoped
   sourceEpisodes: string[];
   linkedNotes: string[];
   linkReasons: Record<string, string>;
@@ -144,7 +145,7 @@ function parseJsonObject(val: string | null | undefined): Record<string, unknown
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -174,6 +175,15 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       // Column already exists — safe to ignore
     }
     db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL`);
+  },
+  4: (db) => {
+    // Add thread_id column: NULL = global, number = thread-scoped
+    try {
+      db.exec(`ALTER TABLE semantic_notes ADD COLUMN thread_id INTEGER`);
+    } catch {
+      // Column already exists — safe to ignore
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL`);
   },
 };
 
@@ -255,6 +265,7 @@ CREATE TABLE IF NOT EXISTS semantic_notes (
   access_count    INTEGER DEFAULT 0,
   last_accessed   TEXT,
   priority        INTEGER NOT NULL DEFAULT 0,
+  thread_id       INTEGER,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
@@ -263,6 +274,7 @@ CREATE INDEX IF NOT EXISTS idx_sem_type ON semantic_notes(type);
 CREATE INDEX IF NOT EXISTS idx_sem_conf ON semantic_notes(confidence DESC);
 CREATE INDEX IF NOT EXISTS idx_sem_valid ON semantic_notes(valid_to) WHERE valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL;
 
 CREATE TABLE IF NOT EXISTS procedures (
   procedure_id       TEXT PRIMARY KEY,
@@ -417,6 +429,7 @@ function rowToSemanticNote(row: Record<string, unknown>): SemanticNote {
     keywords: parseJsonArray(row.keywords as string | null),
     confidence: row.confidence as number,
     priority: (row.priority as number) ?? 0,
+    threadId: (row.thread_id as number) ?? null,
     sourceEpisodes: parseJsonArray(row.source_episodes as string | null),
     linkedNotes: parseJsonArray(row.linked_notes as string | null),
     linkReasons: parseJsonObject(row.link_reasons as string | null) as Record<string, string>,
@@ -537,6 +550,7 @@ export function saveSemanticNote(
     keywords: string[];
     confidence?: number;
     priority?: number;
+    threadId?: number | null;
     sourceEpisodes?: string[];
   }
 ): string {
@@ -545,8 +559,8 @@ export function saveSemanticNote(
 
   db.prepare(
     `INSERT INTO semantic_notes
-       (note_id, type, content, keywords, confidence, priority, source_episodes, linked_notes, link_reasons, valid_from, access_count, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+       (note_id, type, content, keywords, confidence, priority, thread_id, source_episodes, linked_notes, link_reasons, valid_from, access_count, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
   ).run(
     id,
     note.type,
@@ -554,6 +568,7 @@ export function saveSemanticNote(
     JSON.stringify(note.keywords),
     Math.max(0, Math.min(1, note.confidence ?? 0.5)),
     Math.max(0, Math.min(2, note.priority ?? 0)),
+    note.threadId ?? null,
     jsonOrNull(note.sourceEpisodes),
     null,
     null,
@@ -625,23 +640,30 @@ export function searchSemanticNotes(
 export function searchSemanticNotesRanked(
   db: Database,
   query: string,
-  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean; minMatchRatio?: number }
+  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean; minMatchRatio?: number; threadId?: number }
 ): SemanticNote[] {
   const maxResults = options?.maxResults ?? 10;
   const minMatchRatio = options?.minMatchRatio ?? 0.4; // require at least 40% of terms to match
-  const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+  const terms = query.toLowerCase().split(/\\s+/).filter(t => t.length > 1);
   if (terms.length === 0) return [];
 
   // Use OR to get broad recall
   const conditions: string[] = [];
   const params: unknown[] = [];
   for (const term of terms) {
-    const escaped = term.replace(/%/g, "\\%").replace(/_/g, "\\_");
-    conditions.push(`(LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(keywords) LIKE ? ESCAPE '\\')`);
+    const escaped = term.replace(/%/g, "\\\\%").replace(/_/g, "\\\\_");
+    conditions.push(`(LOWER(content) LIKE ? ESCAPE '\\\\' OR LOWER(keywords) LIKE ? ESCAPE '\\\\')`);
     params.push(`%${escaped}%`, `%${escaped}%`);
   }
 
   let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (${conditions.join(" OR ")})`;
+
+  // Thread filtering: show notes from this thread + global notes
+  if (options?.threadId !== undefined) {
+    sql += ` AND (thread_id IS NULL OR thread_id = ?)`;
+    params.push(options.threadId);
+  }
+
   if (options?.types && options.types.length > 0) {
     const placeholders = options.types.map(() => "?").join(",");
     sql += ` AND type IN (${placeholders})`;
@@ -772,12 +794,15 @@ export function supersedeNote(
     sourceEpisodes?: string[];
   }
 ): string {
+  // Inherit thread_id from the old note being superseded
+  const oldRow = db.prepare(`SELECT thread_id FROM semantic_notes WHERE note_id = ?`).get(oldNoteId) as { thread_id: number | null } | undefined;
   const newId = saveSemanticNote(db, {
     type: newNote.type as SemanticNote["type"],
     content: newNote.content,
     keywords: newNote.keywords,
     confidence: newNote.confidence,
     priority: newNote.priority,
+    threadId: oldRow?.thread_id ?? null,
     sourceEpisodes: newNote.sourceEpisodes,
   });
 
@@ -1429,6 +1454,7 @@ Rules:
           keywords: Array.isArray(note.keywords) ? note.keywords : [],
           confidence: Math.max(0, Math.min(1, note.confidence ?? 0.5)),
           priority: Math.max(0, Math.min(2, note.priority ?? 0)),
+          threadId: threadId,
           sourceEpisodes: episodeIds,
         });
         notesCreated++;
@@ -1592,12 +1618,17 @@ export function saveNoteEmbedding(db: Database, noteId: string, embedding: Float
 }
 
 /** Load all note embeddings into memory for cosine similarity search. */
-export function loadAllEmbeddings(db: Database): Map<string, Float32Array> {
-    const rows = db.prepare(
-      `SELECT ne.note_id, ne.embedding FROM note_embeddings ne
+export function loadAllEmbeddings(db: Database, threadId?: number): Map<string, Float32Array> {
+    // When threadId is provided, return embeddings for notes in that thread OR global notes (thread_id IS NULL)
+    let sql = `SELECT ne.note_id, ne.embedding FROM note_embeddings ne
        JOIN semantic_notes sn ON sn.note_id = ne.note_id
-       WHERE sn.valid_to IS NULL AND sn.superseded_by IS NULL`
-    ).all() as { note_id: string; embedding: Buffer }[];
+       WHERE sn.valid_to IS NULL AND sn.superseded_by IS NULL`;
+    const params: unknown[] = [];
+    if (threadId !== undefined) {
+      sql += ` AND (sn.thread_id IS NULL OR sn.thread_id = ?)`;
+      params.push(threadId);
+    }
+    const rows = db.prepare(sql).all(...params) as { note_id: string; embedding: Buffer }[];
 
     const map = new Map<string, Float32Array>();
     for (const row of rows) {
@@ -1613,13 +1644,13 @@ export function loadAllEmbeddings(db: Database): Map<string, Float32Array> {
 export function searchByEmbedding(
     db: Database,
     queryEmbedding: Float32Array,
-    options?: { maxResults?: number; minSimilarity?: number; skipAccessTracking?: boolean }
+    options?: { maxResults?: number; minSimilarity?: number; skipAccessTracking?: boolean; threadId?: number }
 ): (SemanticNote & { similarity: number })[] {
     const maxResults = options?.maxResults ?? 5;
     const minSimilarity = options?.minSimilarity ?? 0.3;
 
-    // Load all embeddings (small dataset, fits in memory)
-    const embeddings = loadAllEmbeddings(db);
+    // Load embeddings — filtered by thread when provided
+    const embeddings = loadAllEmbeddings(db, options?.threadId);
 
     // Compute similarities
     const scores: { noteId: string; similarity: number }[] = [];
