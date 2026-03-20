@@ -4,7 +4,7 @@
  */
 
 import { createRequire } from "node:module";
-import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AppConfig } from "./types.js";
@@ -66,6 +66,25 @@ export function saveFileToDisk(buffer: Buffer, filename: string): string {
   } catch (_) { /* non-fatal */ }
 
   return filePath;
+}
+
+// ─── Maintenance flag ───────────────────────────────────────────────────────
+
+const DATA_DIR = join(homedir(), ".remote-copilot-mcp");
+const MAINTENANCE_FLAG_PATH = join(DATA_DIR, "maintenance.flag");
+
+/**
+ * Check if a maintenance/update is pending.
+ * The update watcher writes this file before restarting the server.
+ * Returns the flag file content (version info) or null if no maintenance pending.
+ */
+export function checkMaintenanceFlag(): string | null {
+  try {
+    if (existsSync(MAINTENANCE_FLAG_PATH)) {
+      return readFileSync(MAINTENANCE_FLAG_PATH, "utf-8").trim();
+    }
+  } catch { /* ignore read errors */ }
+  return null;
 }
 
 // ─── Exported config object ─────────────────────────────────────────────────

@@ -469,6 +469,16 @@ export function getToolDefinitions(): ToolDefinition[] {
         required: ["memoryId", "reason"],
       },
     },
+    // ── Server Info Tools ─────────────────────────────────────────────
+    {
+      name: "get_version",
+      description:
+        "Get the current server version. Also reports if an update is pending.",
+      inputSchema: {
+        type: "object",
+        properties: {},
+      },
+    },
     // ── Rate Limiting Tools ─────────────────────────────────────────────
     {
       name: "get_usage_stats",
