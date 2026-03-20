@@ -243,6 +243,25 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
 // ── Tool implementations ────────────────────────────────────────────────────
 
 /**
+ * Backfill embeddings for any semantic notes that don't have them yet.
+ * Used after consolidation to ensure all notes are searchable by embedding.
+ */
+async function backfillEmbeddings(db: ReturnType<typeof getMemoryDb>): Promise<void> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return;
+  const missing = getNotesWithoutEmbeddings(db);
+  for (const { noteId, content } of missing) {
+    try {
+      const emb = await generateEmbedding(content, apiKey);
+      saveNoteEmbedding(db, noteId, emb);
+      process.stderr.write(`[memory] Embedded ${noteId}\n`);
+    } catch (err) {
+      process.stderr.write(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+  }
+}
+
+/**
  * Full reminders — only used for wait_for_instructions and start_session
  * responses where the agent needs the complete context for decision-making.
  */
@@ -1031,20 +1050,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           if (report.episodesProcessed > 0) {
             process.stderr.write(`[memory] Consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
           }
-          // Backfill embeddings for any notes without them
-          const apiKey = process.env.OPENAI_API_KEY;
-          if (apiKey) {
-            const missing = getNotesWithoutEmbeddings(db);
-            for (const { noteId, content } of missing) {
-              try {
-                const emb = await generateEmbedding(content, apiKey);
-                saveNoteEmbedding(db, noteId, emb);
-                process.stderr.write(`[memory] Embedded ${noteId}\n`);
-              } catch (err) {
-                process.stderr.write(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}\n`);
-              }
-            }
-          }
+          await backfillEmbeddings(db);
         }).catch(err => {
           process.stderr.write(`[memory] Consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
         });
@@ -1064,16 +1070,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             if (report.episodesProcessed > 0) {
               process.stderr.write(`[memory] Episode-count consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
             }
-            const apiKey = process.env.OPENAI_API_KEY;
-            if (apiKey) {
-              const missing = getNotesWithoutEmbeddings(db);
-              for (const { noteId, content } of missing) {
-                try {
-                  const emb = await generateEmbedding(content, apiKey);
-                  saveNoteEmbedding(db, noteId, emb);
-                } catch (_) { /* non-fatal */ }
-              }
-            }
+            await backfillEmbeddings(db);
           }).catch(err => {
             process.stderr.write(`[memory] Episode-count consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
           });
@@ -1093,16 +1090,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           if (report.episodesProcessed > 0) {
             process.stderr.write(`[memory] Time-based consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
           }
-          const apiKey = process.env.OPENAI_API_KEY;
-          if (apiKey) {
-            const missing = getNotesWithoutEmbeddings(db);
-            for (const { noteId, content } of missing) {
-              try {
-                const emb = await generateEmbedding(content, apiKey);
-                saveNoteEmbedding(db, noteId, emb);
-              } catch (_) { /* non-fatal */ }
-            }
-          }
+          await backfillEmbeddings(db);
         }).catch(err => {
           process.stderr.write(`[memory] Time-based consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
         });
@@ -1759,7 +1747,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     try {
       const db = getMemoryDb();
       const report = await runIntelligentConsolidation(db, threadId);
-
+      lastConsolidationAt = Date.now(); // Prevent redundant auto-consolidation
       if (report.episodesProcessed === 0) {
         return {
           content: [{ type: "text", text: "No unconsolidated episodes. Memory is up to date." + getShortReminder(threadId) }],

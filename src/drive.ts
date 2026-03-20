@@ -171,7 +171,7 @@ export function formatDrivePrompt(idleMs: number, db: Database, threadId?: numbe
     // 1. Feature ideas and unresolved items
     const ideas = allNotes.filter((n: SemanticNote) =>
       n.content.toLowerCase().includes("feature idea") ||
-      n.content.toLowerCase().includes("TODO") ||
+      n.content.toLowerCase().includes("todo") ||
       n.content.toLowerCase().includes("unresolved") ||
       n.content.toLowerCase().includes("could be") ||
       n.content.toLowerCase().includes("should we") ||
