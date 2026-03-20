@@ -566,7 +566,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     let lastKeepalive = Date.now();
 
     while (Date.now() < deadline) {
-      // Check for pending update — tell agent to call sleep
+      // Check for pending update — tell agent to pause via external sleep
       const maintenanceInfo = checkMaintenanceFlag();
       if (maintenanceInfo) {
         process.stderr.write(`[wait] Maintenance flag detected: ${maintenanceInfo}\n`);
@@ -574,7 +574,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           content: [{
             type: "text",
             text: `⚠️ **Server update pending** (${maintenanceInfo}). ` +
-              `Call \`sleep\` now to allow a safe restart. Your session will resume after the update.` +
+              `The MCP server will restart shortly. Use Desktop Commander to run: ` +
+              `Start-Sleep -Seconds 120 — then call start_session to reconnect.` +
               getShortReminder(effectiveThreadId),
           }],
         };
