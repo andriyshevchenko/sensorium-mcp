@@ -28,7 +28,7 @@
 # Configuration
 # ============================================================================
 
-$MCP_START_COMMAND    = "securevault run npx -- sensorium-mcp@latest --profile SENSORIUM"
+$MCP_START_COMMAND    = "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM"
 $POLL_INTERVAL_SECONDS = 60
 $GRACE_PERIOD_SECONDS  = 45
 $DATA_DIR              = "$env:USERPROFILE\.remote-copilot-mcp"
