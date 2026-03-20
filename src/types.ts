@@ -19,6 +19,7 @@ export interface AppConfig {
   WAIT_TIMEOUT_MINUTES: number;
   FILES_DIR: string;
   PKG_VERSION: string;
+  AUTONOMOUS_MODE: boolean;
 }
 
 // ─── Per-session mutable state ──────────────────────────────────────────────

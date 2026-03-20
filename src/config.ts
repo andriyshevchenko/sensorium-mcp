@@ -18,6 +18,7 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
 const VOICE_ANALYSIS_URL = process.env.VOICE_ANALYSIS_URL ?? "";
+const AUTONOMOUS_MODE = process.env.AUTONOMOUS_MODE === "true";
 
 const rawWaitTimeoutMinutes = parseInt(process.env.WAIT_TIMEOUT_MINUTES ?? "", 10);
 const WAIT_TIMEOUT_MINUTES = Math.max(1, Number.isFinite(rawWaitTimeoutMinutes) ? rawWaitTimeoutMinutes : 120);
@@ -97,4 +98,5 @@ export const config: AppConfig = {
   WAIT_TIMEOUT_MINUTES,
   FILES_DIR,
   PKG_VERSION,
+  AUTONOMOUS_MODE,
 };
