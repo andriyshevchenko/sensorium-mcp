@@ -1,6 +1,6 @@
 {
   "name": "sensorium-mcp",
-  "version": "2.14.4",
+  "version": "2.14.5",
   "description": "MCP server for remote control of AI assistants via Telegram",
   "main": "dist/index.js",
   "bin": {
