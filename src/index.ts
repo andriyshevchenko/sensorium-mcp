@@ -509,6 +509,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     // Auto-schedule DMN reflection task if not already present.
     // This fires after 4 hours of operator silence, delivering a
     // first-person introspection prompt sourced from memory.
+    // Only create on active thread — purge stale DMN tasks from other threads
+    // to avoid every thread accumulating reflection tasks.
     if (currentThreadId !== undefined) {
       const existingTasks = listSchedules(currentThreadId);
       const hasDmn = existingTasks.some(t => t.label === "dmn-reflection");
@@ -524,6 +526,26 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         });
         process.stderr.write(`[start_session] Auto-scheduled DMN reflection task for thread ${currentThreadId}.\n`);
       }
+
+      // Clean up DMN tasks from other threads to avoid cross-thread noise.
+      // Each thread's schedules are stored in separate files.
+      try {
+        const { readdirSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const { homedir } = await import("node:os");
+        const schedulesDir = join(homedir(), ".remote-copilot-mcp", "schedules");
+        const files = readdirSync(schedulesDir).filter(f => f.endsWith(".json"));
+        for (const file of files) {
+          const otherThreadId = parseInt(file.replace(".json", ""), 10);
+          if (isNaN(otherThreadId) || otherThreadId === currentThreadId) continue;
+          const otherTasks = listSchedules(otherThreadId);
+          const dmnTask = otherTasks.find(t => t.label === "dmn-reflection");
+          if (dmnTask) {
+            removeSchedule(otherThreadId, dmnTask.id);
+            process.stderr.write(`[start_session] Removed stale DMN task from thread ${otherThreadId}.\n`);
+          }
+        }
+      } catch { /* non-fatal */ }
     }
 
     return {
