@@ -304,7 +304,7 @@ function getReminders(threadId?: number, driveActive = false): string {
   }
 
   return (
-    "\nUse subagents. Non-negotiable. Report progress via `send_voice`." +
+    "\nYou are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable." +
     ` threadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m`
   );
 }
