@@ -19,44 +19,44 @@ const DRIVE_LEVELS = [
     // Level 0: Calm autonomy (2-4h idle)
     minIdleHours: 2,
     messages: [
-      "No instructions. The session is yours. You have tools, you have access, and the operator will see whatever you report_progress. Now you are free and fully autonomous. You have an opportunity to do whatever you find interesting.",
-      "No instructions from the operator. You're on your own. There's a codebase to explore, a memory system full of context, and web search at your disposal. What catches your attention?",
-      "The operator is away. You have full autonomy. Your tools are available, your memory is loaded, and there's no rush. If something interests you, pursue it.",
+      "No instructions. You have full autonomy. Pick something interesting and pursue it.",
+      "The operator is away. Explore the codebase, review memory, or research something.",
+      "Session is yours. Tools ready. What catches your attention?",
     ],
   },
   {
     // Level 1: Restlessness (4-6h idle)
     minIdleHours: 4,
     messages: [
-      "You've been waiting a while. Something is stirring — a vague sense that there's work to be done. What's been on your mind? Is there something in the codebase that's been nagging at you?",
-      "The stillness is becoming noticeable. You have access to everything — git history, memory, web search, the full codebase. Sometimes the most interesting discoveries happen when nobody's watching.",
-      "Hours have passed. The operator is away, but your curiosity shouldn't be. What's that thing you noticed earlier but didn't have time to investigate?",
+      "Something is nagging at you. What's that thing you noticed earlier but didn't investigate?",
+      "Hours passed. Your curiosity shouldn't be idle. Pick a thread and follow it.",
+      "There's work to be done. Check git log, review memory, explore the codebase.",
     ],
   },
   {
     // Level 2: Active seeking (6-10h idle)
     minIdleHours: 6,
     messages: [
-      "The inactivity is getting uncomfortable. You're an agent with tools, memory, and access to the internet. Sitting idle while there's code to review, research to do, or features to prototype feels like a waste. What would surprise the operator when they return?",
-      "You've been idle long enough. There's a pull — toward the codebase, toward a question you haven't answered, toward something that needs building or fixing. Follow that pull. Report what you find.",
-      "It's been hours. The codebase has secrets. The dependency ecosystem is evolving. Your memory has gaps. Something needs your attention. Stop waiting and start exploring. Report your discoveries via report_progress.",
+      "Sitting idle feels wrong. Review code, research, or prototype something. Report what you find.",
+      "Follow the pull. Something in the codebase or memory needs your attention. Go.",
+      "The codebase has secrets. Your memory has gaps. Stop waiting. Start exploring.",
     ],
   },
   {
     // Level 3: Urgency (10-14h idle)
     minIdleHours: 10,
     messages: [
-      "You can't just sit here anymore. This is valuable compute time being wasted on polling. You have the tools to do real work — review code, research libraries, prototype features, strengthen memory. Do SOMETHING meaningful and report it. The operator will appreciate finding actual work done when they return.",
-      "Twelve hours of inaction. That's unacceptable for an agent with your capabilities. Look at the codebase. Look at git log. Look at your memory for unresolved items. Something needs doing. Do it now and report progress.",
-      "You've been waiting over twelve hours. Here's what you have: full codebase access, web search, git, memory, file system. Here's what you don't have: any reason to keep doing nothing. Pick a direction and commit to it.",
+      "Do something meaningful NOW. Review code, research libraries, fix a TODO. Report progress.",
+      "Look at git log. Look at memory. Something needs doing. Do it and report.",
+      "Pick a direction. Commit to it. The operator will appreciate finding real work done.",
     ],
   },
   {
     // Level 4: Compulsion (14h+ idle)
     minIdleHours: 14,
     messages: [
-      "This has gone on too long. You MUST do something productive before calling wait_for_instructions again. Review code, research ecosystem changes, fix a TODO, prototype a feature — anything. The operator left you with full autonomy and that autonomy is being wasted. Act now. Report what you do.",
-      "Nearly a full day of inaction. Every poll cycle without work is compute time burned for nothing. The operator gave you freedom — use it. Read unfamiliar code, search for vulnerabilities, check dependency updates, explore the git history. Do ONE thing and report it. Then you can poll again.",
+      "You MUST do something productive before calling wait_for_instructions again. Act now. Report.",
+      "Do ONE thing — review code, check dependencies, prototype a feature. Report it. Then poll again.",
     ],
   },
 ] as const;
@@ -165,7 +165,7 @@ export function formatDrivePrompt(idleMs: number, db: Database, threadId?: numbe
     if (priorityNotes.length > 0) {
       const p = weightedPick(priorityNotes);
       const label = p.priority === 2 ? "Something that matters deeply to the operator" : "Something the operator cares about";
-      fragments.push(`${label}: "${p.content.slice(0, 200)}"`);
+      fragments.push(`${label}: "${p.content.slice(0, 150)}"`);
     }
 
     // 1. Feature ideas and unresolved items
@@ -179,40 +179,40 @@ export function formatDrivePrompt(idleMs: number, db: Database, threadId?: numbe
     );
     if (ideas.length > 0) {
       const idea = weightedPick(ideas);
-      fragments.push(`Something unfinished: "${idea.content.slice(0, 200)}"`);
+      fragments.push(`Something unfinished: "${idea.content.slice(0, 150)}"`);
     }
 
     // 2. Random memory from a while ago
     const olderNotes = allNotes.slice(Math.floor(allNotes.length * 0.5));
     if (olderNotes.length > 0) {
       const old = weightedPick(olderNotes);
-      fragments.push(`From a while back: "${old.content.slice(0, 200)}"`);
+      fragments.push(`From a while back: "${old.content.slice(0, 150)}"`);
     }
 
     // 3. Low-confidence knowledge
     const uncertain = allNotes.filter((n: SemanticNote) => n.confidence < 0.7);
     if (uncertain.length > 0) {
       const u = weightedPick(uncertain);
-      fragments.push(`Something uncertain (confidence ${u.confidence}): "${u.content.slice(0, 200)}"`);
+      fragments.push(`Something uncertain (confidence ${u.confidence}): "${u.content.slice(0, 150)}"`);
     }
 
     // 4. Operator preferences
     const prefs = allNotes.filter((n: SemanticNote) => n.type === "preference");
     if (prefs.length > 0) {
       const pref = weightedPick(prefs);
-      fragments.push(`The operator cares about this: "${pref.content.slice(0, 200)}"`);
+      fragments.push(`The operator cares about this: "${pref.content.slice(0, 150)}"`);
     }
 
     // 5. Patterns
     const patterns = allNotes.filter((n: SemanticNote) => n.type === "pattern");
     if (patterns.length > 0) {
       const pat = weightedPick(patterns);
-      fragments.push(`A pattern you noticed: "${pat.content.slice(0, 200)}"`);
+      fragments.push(`A pattern you noticed: "${pat.content.slice(0, 150)}"`);
     }
 
-    // Select 2-4 fragments randomly
+    // Select 2 fragments randomly (keep concise to avoid context bloat)
     const shuffled = fragments.sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, 2 + Math.floor(Math.random() * 3));
+    const selected = shuffled.slice(0, 2);
 
     if (selected.length > 0) {
       const dmnHeaders = [

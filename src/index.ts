@@ -243,10 +243,8 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
 // ── Tool implementations ────────────────────────────────────────────────────
 
 /**
- * Appended to every tool response so the agent is reminded of its
- * obligations on every single tool call, not just at the start of a session.
- * Includes the active thread ID so the agent can resume the session after a
- * VS Code restart by passing it to start_session.
+ * Full reminders — only used for wait_for_instructions and start_session
+ * responses where the agent needs the complete context for decision-making.
  */
 function getReminders(threadId?: number, driveActive = false): string {
   const now = new Date();
@@ -275,6 +273,24 @@ function getReminders(threadId?: number, driveActive = false): string {
     threadHint +
     `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
   );
+}
+
+/**
+ * Minimal context — appended to regular tool responses to avoid bloating
+ * the conversation context. Only includes thread ID and timestamp.
+ */
+function getShortReminder(threadId?: number): string {
+  const now = new Date();
+  const uptimeMin = Math.round((Date.now() - sessionStartedAt) / 60000);
+  const timeStr = now.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+    timeZoneName: "short",
+  });
+  const threadHint = threadId !== undefined
+    ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
+    : "";
+  return threadHint + `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`;
 }
 
 srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
@@ -833,10 +849,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
               const queryEmb = await generateEmbedding(operatorText, apiKey);
               const relevant = searchByEmbedding(db, queryEmb, { maxResults: 5, minSimilarity: 0.3, skipAccessTracking: true });
               if (relevant.length > 0) {
-                let budget = 2000;
+                let budget = 800;
                 const lines: string[] = [];
                 for (const n of relevant) {
-                  const line = `- **[${n.type}]** ${n.content.slice(0, 300)} _(conf: ${n.confidence}, sim: ${n.similarity.toFixed(2)})_`;
+                  const line = `- **[${n.type}]** ${n.content.slice(0, 200)} _(conf: ${n.confidence}, sim: ${n.similarity.toFixed(2)})_`;
                   if (budget - line.length < 0) break;
                   budget -= line.length;
                   lines.push(line);
@@ -852,10 +868,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
               if (searchQuery.trim().length > 0) {
                 const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true });
                 if (relevant.length > 0) {
-                  let budget = 2000;
+                  let budget = 800;
                   const lines: string[] = [];
                   for (const n of relevant) {
-                    const line = `- **[${n.type}]** ${n.content.slice(0, 300)} _(conf: ${n.confidence})_`;
+                    const line = `- **[${n.type}]** ${n.content.slice(0, 200)} _(conf: ${n.confidence})_`;
                     if (budget - line.length < 0) break;
                     budget -= line.length;
                     lines.push(line);
@@ -872,10 +888,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             if (searchQuery.trim().length > 0) {
               const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true });
               if (relevant.length > 0) {
-                let budget = 2000;
+                let budget = 800;
                 const lines: string[] = [];
                 for (const n of relevant) {
-                  const line = `- **[${n.type}]** ${n.content.slice(0, 300)} _(conf: ${n.confidence})_`;
+                  const line = `- **[${n.type}]** ${n.content.slice(0, 200)} _(conf: ${n.confidence})_`;
                   if (budget - line.length < 0) break;
                   budget -= line.length;
                   lines.push(line);
@@ -1238,7 +1254,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const baseStatus =
       (sentAsPlainText
         ? "Progress reported successfully (as plain text — formatting could not be applied)."
-        : "Progress reported successfully.") + getReminders(effectiveThreadId);
+        : "Progress reported successfully.") + getShortReminder(effectiveThreadId);
 
     const responseText =
       pendingMessages.length > 0
@@ -1301,7 +1317,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content: [
           {
             type: "text",
-            text: `File "${filename}" sent to Telegram successfully.` + getReminders(effectiveThreadId),
+            text: `File "${filename}" sent to Telegram successfully.` + getShortReminder(effectiveThreadId),
           },
         ],
       };
@@ -1343,7 +1359,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content: [
           {
             type: "text",
-            text: `Voice message sent to Telegram successfully.` + getReminders(effectiveThreadId),
+            text: `Voice message sent to Telegram successfully.` + getShortReminder(effectiveThreadId),
           },
         ],
       };
@@ -1370,7 +1386,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         return {
           content: [{
             type: "text",
-            text: "No scheduled tasks for this thread." + getReminders(effectiveThreadId),
+            text: "No scheduled tasks for this thread." + getShortReminder(effectiveThreadId),
           }],
         };
       }
@@ -1382,7 +1398,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       return {
         content: [{
           type: "text",
-          text: `**Scheduled tasks (${tasks.length}):**\n\n${lines.join("\n\n")}` + getReminders(effectiveThreadId),
+          text: `**Scheduled tasks (${tasks.length}):**\n\n${lines.join("\n\n")}` + getShortReminder(effectiveThreadId),
         }],
       };
     }
@@ -1398,8 +1414,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         content: [{
           type: "text",
           text: removed
-            ? `Task ${taskId} removed.` + getReminders(effectiveThreadId)
-            : `Task ${taskId} not found.` + getReminders(effectiveThreadId),
+            ? `Task ${taskId} removed.` + getShortReminder(effectiveThreadId)
+            : `Task ${taskId} not found.` + getShortReminder(effectiveThreadId),
         }],
       };
     }
@@ -1452,7 +1468,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       content: [{
         type: "text",
         text: `✅ Scheduled: **${label}** [${task.id}]\nTrigger: ${triggerDesc}\nPrompt: ${prompt}` +
-          getReminders(effectiveThreadId),
+          getShortReminder(effectiveThreadId),
       }],
     };
   }
@@ -1461,16 +1477,16 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   if (name === "memory_bootstrap") {
     const threadId = resolveThreadId(args as Record<string, unknown>);
     if (threadId === undefined) {
-      return errorResult("Error: No active thread. Call start_session first." + getReminders());
+      return errorResult("Error: No active thread. Call start_session first." + getShortReminder());
     }
     try {
       const db = getMemoryDb();
       const briefing = assembleBootstrap(db, threadId);
       return {
-        content: [{ type: "text", text: `## Memory Briefing\n\n${briefing}` + getReminders(threadId) }],
+        content: [{ type: "text", text: `## Memory Briefing\n\n${briefing}` + getShortReminder(threadId) }],
       };
     } catch (err) {
-      return errorResult(`Memory bootstrap error: ${errorMessage(err)}` + getReminders(threadId));
+      return errorResult(`Memory bootstrap error: ${errorMessage(err)}` + getShortReminder(threadId));
     }
   }
 
@@ -1480,7 +1496,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const threadId = resolveThreadId(typedArgs);
     const query = String(typedArgs.query ?? "");
     if (!query) {
-      return errorResult("Error: query is required." + getReminders(threadId));
+      return errorResult("Error: query is required." + getShortReminder(threadId));
     }
     try {
       const db = getMemoryDb();
@@ -1548,9 +1564,9 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const text = results.length > 0
         ? results.join("\n")
         : `No memories found for "${query}".`;
-      return { content: [{ type: "text", text: text + getReminders(threadId) }] };
+      return { content: [{ type: "text", text: text + getShortReminder(threadId) }] };
     } catch (err) {
-      return errorResult(`Memory search error: ${errorMessage(err)}` + getReminders(threadId));
+      return errorResult(`Memory search error: ${errorMessage(err)}` + getShortReminder(threadId));
     }
   }
 
@@ -1586,10 +1602,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           });
       }
       return {
-        content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getReminders(threadId) }],
+        content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getShortReminder(threadId) }],
       };
     } catch (err) {
-      return errorResult(`Memory save error: ${errorMessage(err)}` + getReminders(threadId));
+      return errorResult(`Memory save error: ${errorMessage(err)}` + getShortReminder(threadId));
     }
   }
 
@@ -1607,7 +1623,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           triggerConditions: Array.isArray(typedArgs.triggerConditions) ? typedArgs.triggerConditions.map(String) : typeof typedArgs.triggerConditions === 'string' ? [typedArgs.triggerConditions] : undefined,
         });
         return {
-          content: [{ type: "text", text: `Updated procedure: ${existingId}` + getReminders(threadId) }],
+          content: [{ type: "text", text: `Updated procedure: ${existingId}` + getShortReminder(threadId) }],
         };
       }
       const VALID_PROC_TYPES = ["workflow", "habit", "tool_pattern", "template"] as const;
@@ -1623,10 +1639,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         triggerConditions: Array.isArray(typedArgs.triggerConditions) ? typedArgs.triggerConditions.map(String) : typeof typedArgs.triggerConditions === 'string' ? [typedArgs.triggerConditions] : undefined,
       });
       return {
-        content: [{ type: "text", text: `Saved procedure: ${procId}` + getReminders(threadId) }],
+        content: [{ type: "text", text: `Saved procedure: ${procId}` + getShortReminder(threadId) }],
       };
     } catch (err) {
-      return errorResult(`Procedure save error: ${errorMessage(err)}` + getReminders(threadId));
+      return errorResult(`Procedure save error: ${errorMessage(err)}` + getShortReminder(threadId));
     }
   }
 
@@ -1655,7 +1671,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           priority: typeof typedArgs.newPriority === "number" ? typedArgs.newPriority : undefined,
         });
         return {
-          content: [{ type: "text", text: `Superseded ${memId} → ${newId} (reason: ${reason})` + getReminders(threadId) }],
+          content: [{ type: "text", text: `Superseded ${memId} → ${newId} (reason: ${reason})` + getShortReminder(threadId) }],
         };
       }
 
@@ -1666,7 +1682,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         if (typeof typedArgs.newPriority === "number") updates.priority = typedArgs.newPriority;
         updateSemanticNote(db, memId, updates as Parameters<typeof updateSemanticNote>[2]);
         return {
-          content: [{ type: "text", text: `Updated note ${memId} (reason: ${reason})` + getReminders(threadId) }],
+          content: [{ type: "text", text: `Updated note ${memId} (reason: ${reason})` + getShortReminder(threadId) }],
         };
       }
 
@@ -1676,13 +1692,13 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         if (typeof typedArgs.newConfidence === "number") updates.confidence = typedArgs.newConfidence;
         updateProcedure(db, memId, updates as Parameters<typeof updateProcedure>[2]);
         return {
-          content: [{ type: "text", text: `Updated procedure ${memId} (reason: ${reason})` + getReminders(threadId) }],
+          content: [{ type: "text", text: `Updated procedure ${memId} (reason: ${reason})` + getShortReminder(threadId) }],
         };
       }
 
-      return errorResult(`Unknown memory ID format: ${memId}` + getReminders(threadId));
+      return errorResult(`Unknown memory ID format: ${memId}` + getShortReminder(threadId));
     } catch (err) {
-      return errorResult(`Memory update error: ${errorMessage(err)}` + getReminders(threadId));
+      return errorResult(`Memory update error: ${errorMessage(err)}` + getShortReminder(threadId));
     }
   }
 
@@ -1691,7 +1707,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const threadId = resolveThreadId(typedArgs);
     if (threadId === undefined) {
-      return errorResult("Error: No active thread." + getReminders());
+      return errorResult("Error: No active thread." + getShortReminder());
     }
     try {
       const db = getMemoryDb();
@@ -1699,7 +1715,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
       if (report.episodesProcessed === 0) {
         return {
-          content: [{ type: "text", text: "No unconsolidated episodes. Memory is up to date." + getReminders(threadId) }],
+          content: [{ type: "text", text: "No unconsolidated episodes. Memory is up to date." + getShortReminder(threadId) }],
         };
       }
 
@@ -1716,9 +1732,9 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         }
       }
 
-      return { content: [{ type: "text", text: reportLines.join("\n") + getReminders(threadId) }] };
+      return { content: [{ type: "text", text: reportLines.join("\n") + getShortReminder(threadId) }] };
     } catch (err) {
-      return errorResult(`Consolidation error: ${errorMessage(err)}` + getReminders(threadId));
+      return errorResult(`Consolidation error: ${errorMessage(err)}` + getShortReminder(threadId));
     }
   }
 
@@ -1727,7 +1743,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const threadId = resolveThreadId(typedArgs);
     if (threadId === undefined) {
-      return errorResult("Error: No active thread." + getReminders());
+      return errorResult("Error: No active thread." + getShortReminder());
     }
     try {
       const db = getMemoryDb();
@@ -1751,9 +1767,9 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         }
       }
 
-      return { content: [{ type: "text", text: lines.join("\n") + getReminders(threadId) }] };
+      return { content: [{ type: "text", text: lines.join("\n") + getShortReminder(threadId) }] };
     } catch (err) {
-      return errorResult(`Memory status error: ${errorMessage(err)}` + getReminders(threadId));
+      return errorResult(`Memory status error: ${errorMessage(err)}` + getShortReminder(threadId));
     }
   }
 
@@ -1768,14 +1784,14 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const result = forgetMemory(db, memId, reason);
       if (!result.deleted) {
         return {
-          content: [{ type: "text", text: `Memory ${memId} not found (layer: ${result.layer}). Nothing was deleted.` + getReminders(threadId) }],
+          content: [{ type: "text", text: `Memory ${memId} not found (layer: ${result.layer}). Nothing was deleted.` + getShortReminder(threadId) }],
         };
       }
       return {
-        content: [{ type: "text", text: `Forgot ${result.layer} memory ${memId} (reason: ${reason})` + getReminders(threadId) }],
+        content: [{ type: "text", text: `Forgot ${result.layer} memory ${memId} (reason: ${reason})` + getShortReminder(threadId) }],
       };
     } catch (err) {
-      return errorResult(`Memory forget error: ${errorMessage(err)}` + getReminders(threadId));
+      return errorResult(`Memory forget error: ${errorMessage(err)}` + getShortReminder(threadId));
     }
   }
 
@@ -1804,7 +1820,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       lines.push(``);
     }
     return {
-      content: [{ type: "text", text: lines.join("\n") + getReminders(threadId) }],
+      content: [{ type: "text", text: lines.join("\n") + getShortReminder(threadId) }],
     };
   }
 
