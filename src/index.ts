@@ -193,6 +193,28 @@ function createMcpServer(getMcpSessionId?: () => string | undefined, closeTransp
     previewedUpdateIds.add(id);
   }
 
+  /**
+   * Generate a first-person DMN (Default Mode Network) reflection prompt.
+   * Called when the __DMN__ sentinel fires as a scheduled task.
+   */
+  function generateDmnReflection(threadId: number): string {
+    try {
+      const db = getMemoryDb();
+      const idleMs = Date.now() - lastOperatorMessageAt;
+      const driveContent = formatDrivePrompt(idleMs, db, threadId);
+
+      // Reframe in first person
+      return (
+        `I've been thinking while the operator is away.\n\n` +
+        `${driveContent}\n\n` +
+        `If something here resonates, I should explore it — use subagents, search the codebase, review memory. ` +
+        `Report what I find, then go back to sleep or continue waiting.`
+      );
+    } catch {
+      return "I should review memory and the codebase for anything interesting while the operator is away.";
+    }
+  }
+
   function resolveThreadId(args: Record<string, unknown> | undefined): number | undefined {
     const raw = args?.threadId;
     const explicit = typeof raw === "number" ? raw
@@ -475,6 +497,26 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       }
       if (sid && closeTransport) {
         registerMcpSession(currentThreadId, sid, closeTransport);
+      }
+    }
+
+    // Auto-schedule DMN reflection task if not already present.
+    // This fires after 4 hours of operator silence, delivering a
+    // first-person introspection prompt sourced from memory.
+    if (currentThreadId !== undefined) {
+      const existingTasks = listSchedules(currentThreadId);
+      const hasDmn = existingTasks.some(t => t.label === "dmn-reflection");
+      if (!hasDmn) {
+        addSchedule({
+          id: generateTaskId(),
+          threadId: currentThreadId,
+          prompt: "__DMN__", // Sentinel — handler generates dynamic content
+          label: "dmn-reflection",
+          afterIdleMinutes: 240, // 4 hours
+          oneShot: false,
+          createdAt: new Date().toISOString(),
+        });
+        process.stderr.write(`[start_session] Auto-scheduled DMN reflection task for thread ${currentThreadId}.\n`);
       }
     }
 
@@ -951,14 +993,17 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         lastScheduleCheck = Date.now();
         const dueTask = checkDueTasks(effectiveThreadId, lastOperatorMessageAt, false);
         if (dueTask) {
+          // DMN sentinel: generate dynamic first-person reflection
+          const taskPrompt = dueTask.prompt === "__DMN__"
+            ? generateDmnReflection(effectiveThreadId)
+            : `⏰ **Scheduled task fired: "${dueTask.task.label}"**\n\n` +
+              `This task was scheduled by you. Execute it now using subagents, then report progress and continue waiting.\n\n` +
+              `Task prompt: ${dueTask.prompt}`;
           return {
             content: [
               {
                 type: "text",
-                text: `⏰ **Scheduled task fired: "${dueTask.task.label}"**\n\n` +
-                  `This task was scheduled by you. Execute it now using subagents, then report progress and continue waiting.\n\n` +
-                  `Task prompt: ${dueTask.prompt}` +
-                  getReminders(effectiveThreadId),
+                text: taskPrompt + getReminders(effectiveThreadId),
               },
             ],
           };
@@ -1002,14 +1047,17 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     if (effectiveThreadId !== undefined) {
       const dueTask = checkDueTasks(effectiveThreadId, lastOperatorMessageAt, false);
       if (dueTask) {
+        // DMN sentinel: generate dynamic first-person reflection
+        const taskPrompt = dueTask.prompt === "__DMN__"
+          ? generateDmnReflection(effectiveThreadId)
+          : `⏰ **Scheduled task fired: "${dueTask.task.label}"**\n\n` +
+            `This task was scheduled by you. Execute it now using subagents, then report progress and continue waiting.\n\n` +
+            `Task prompt: ${dueTask.prompt}`;
         return {
           content: [
             {
               type: "text",
-              text: `⏰ **Scheduled task fired: "${dueTask.task.label}"**\n\n` +
-                `This task was scheduled by you. Execute it now using subagents, then report progress and continue waiting.\n\n` +
-                `Task prompt: ${dueTask.prompt}` +
-                getReminders(effectiveThreadId),
+              text: taskPrompt + getReminders(effectiveThreadId),
             },
           ],
         };
@@ -1503,6 +1551,118 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       content: [{
         type: "text",
         text: `✅ Scheduled: **${label}** [${task.id}]\nTrigger: ${triggerDesc}\nPrompt: ${prompt}` +
+          getShortReminder(effectiveThreadId),
+      }],
+    };
+  }
+
+  // ── sleep ────────────────────────────────────────────────────────────────
+  if (name === "sleep") {
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const effectiveThreadId = resolveThreadId(typedArgs);
+    if (effectiveThreadId === undefined) {
+      return errorResult("Error: No active session. Call start_session first.");
+    }
+
+    const wakeAt = typeof typedArgs.wakeAt === "string" ? new Date(typedArgs.wakeAt).getTime() : undefined;
+    if (wakeAt !== undefined && isNaN(wakeAt)) {
+      return errorResult("Error: Invalid wakeAt timestamp. Use ISO 8601 format.");
+    }
+
+    // Max sleep: 8 hours
+    const MAX_SLEEP_MS = 8 * 60 * 60 * 1000;
+    const SLEEP_POLL_INTERVAL_MS = 30_000; // 30s
+    const SSE_KEEPALIVE_INTERVAL_MS = 30_000;
+    const deadline = Date.now() + MAX_SLEEP_MS;
+    let lastKeepalive = Date.now();
+
+    process.stderr.write(`[sleep] Entering sleep mode. threadId=${effectiveThreadId}, wakeAt=${wakeAt ? new Date(wakeAt).toISOString() : "indefinite"}\n`);
+
+    while (Date.now() < deadline) {
+      // Check for operator messages (non-destructive peek)
+      const peeked = peekThreadMessages(effectiveThreadId);
+      if (peeked.length > 0) {
+        process.stderr.write(`[sleep] Waking up — ${peeked.length} operator message(s) received.\n`);
+        // Don't consume messages — let the next wait_for_instructions call handle them
+        return {
+          content: [{
+            type: "text",
+            text: `Woke up: operator sent a message. Call wait_for_instructions now to read it.` +
+              getShortReminder(effectiveThreadId),
+          }],
+        };
+      }
+
+      // Check for scheduled tasks
+      const dueTask = checkDueTasks(effectiveThreadId, lastOperatorMessageAt, false);
+      if (dueTask) {
+        process.stderr.write(`[sleep] Waking up — scheduled task fired: ${dueTask.task.label}\n`);
+        // DMN sentinel: generate dynamic first-person reflection
+        const taskPrompt = dueTask.prompt === "__DMN__"
+          ? generateDmnReflection(effectiveThreadId)
+          : `⏰ Woke up: scheduled task **"${dueTask.task.label}"**\n\n${dueTask.prompt}`;
+        return {
+          content: [{
+            type: "text",
+            text: taskPrompt + getShortReminder(effectiveThreadId),
+          }],
+        };
+      }
+
+      // Check alarm
+      if (wakeAt && Date.now() >= wakeAt) {
+        process.stderr.write(`[sleep] Waking up — alarm reached.\n`);
+        return {
+          content: [{
+            type: "text",
+            text: `Woke up: alarm time reached (${new Date(wakeAt).toISOString()}).` +
+              getShortReminder(effectiveThreadId),
+          }],
+        };
+      }
+
+      // SSE keepalive
+      const sinceKeepalive = Date.now() - lastKeepalive;
+      if (sinceKeepalive >= SSE_KEEPALIVE_INTERVAL_MS && extra?.sendNotification) {
+        try {
+          await extra.sendNotification({
+            method: "notifications/message",
+            params: { level: "debug", data: "sleeping", logger: "sensorium" },
+          });
+          lastKeepalive = Date.now();
+        } catch {
+          process.stderr.write(`[sleep] SSE keepalive failed — connection lost.\n`);
+          return {
+            content: [{
+              type: "text",
+              text: "Sleep interrupted: connection lost. Call sleep again to resume." +
+                getShortReminder(effectiveThreadId),
+            }],
+          };
+        }
+      }
+
+      // Check abort signal
+      if (extra.signal.aborted) {
+        process.stderr.write(`[sleep] SSE connection aborted during sleep.\n`);
+        return {
+          content: [{
+            type: "text",
+            text: "Sleep interrupted: connection closed." +
+              getShortReminder(effectiveThreadId),
+          }],
+        };
+      }
+
+      await new Promise<void>((resolve) => setTimeout(resolve, SLEEP_POLL_INTERVAL_MS));
+    }
+
+    // Max sleep duration reached
+    process.stderr.write(`[sleep] Max sleep duration reached (8h).\n`);
+    return {
+      content: [{
+        type: "text",
+        text: "Woke up: maximum sleep duration reached (8 hours)." +
           getShortReminder(effectiveThreadId),
       }],
     };

@@ -214,6 +214,28 @@ export function getToolDefinitions(): ToolDefinition[] {
         },
       },
     },
+    {
+      name: "sleep",
+      description:
+        "Enter sleep mode — the agent hibernates until a specific time, a scheduled task fires, or the operator sends a message. " +
+        "Use this instead of repeated wait_for_instructions calls when nothing is pending. " +
+        "Specify 'wakeAt' (ISO 8601 timestamp) for a timed alarm, or omit it to sleep indefinitely until operator or scheduled task wakes you. " +
+        "Sleep uses a low-frequency poll (30s intervals) to minimize resource usage. " +
+        "On wake, returns the reason: 'operator_message', 'scheduled_task', 'alarm', or 'connection_lost'.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          threadId: {
+            type: "number",
+            description: "Thread ID for the session (optional if already set).",
+          },
+          wakeAt: {
+            type: "string",
+            description: "ISO 8601 timestamp to wake up at (e.g. '2026-03-20T14:00:00+02:00'). If omitted, sleeps until operator message or scheduled task.",
+          },
+        },
+      },
+    },
     // ── Memory Tools ──────────────────────────────────────────────────
     {
       name: "memory_bootstrap",
