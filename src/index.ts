@@ -998,17 +998,17 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             },
             { type: "text", text: "<<< OPERATOR MESSAGE >>>" },
             ...contentBlocks,
-            { type: "text", text: "<<< END OPERATOR MESSAGE >>>" },
             ...(hasVoiceMessages
               ? [{
                 type: "text" as const,
                 text: "(Operator sent voice — respond with `send_voice`.)",
               }]
               : []),
+            { type: "text", text: getReminders(effectiveThreadId) },
+            { type: "text", text: "<<< END OPERATOR MESSAGE >>>" },
             ...(autoMemoryContext
               ? [{ type: "text" as const, text: autoMemoryContext }]
               : []),
-            { type: "text", text: getReminders(effectiveThreadId) },
           ],
         };
       }
