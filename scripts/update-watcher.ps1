@@ -174,6 +174,16 @@ function Start-McpServer {
     }
 }
 
+function Test-McpServerRunning {
+    <#
+    .SYNOPSIS
+        Returns $true if a node process running sensorium-mcp is found.
+    #>
+    $processes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
+    return ($null -ne $processes -and @($processes).Count -gt 0)
+}
+
 # ============================================================================
 # Main Loop
 # ============================================================================
@@ -191,8 +201,29 @@ if (-not (Test-Path $DATA_DIR)) {
     Write-Log "Created data directory: $DATA_DIR"
 }
 
+# --- Ensure MCP server is running on startup ---
+if (-not (Test-McpServerRunning)) {
+    Write-Log "MCP server is not running. Starting it now..."
+    Start-McpServer
+    Start-Sleep -Seconds 5
+    if (Test-McpServerRunning) {
+        Write-Log "MCP server started successfully on initial launch."
+    } else {
+        Write-Log "MCP server may still be starting up. Will check again next cycle." -Level "WARN"
+    }
+} else {
+    Write-Log "MCP server is already running."
+}
+
 while ($true) {
     try {
+        # --- Health check: restart server if it crashed ---
+        if (-not (Test-McpServerRunning)) {
+            Write-Log "MCP server process not found — restarting..." -Level "WARN"
+            Start-McpServer
+            Start-Sleep -Seconds 5
+        }
+
         # --- Step 1: Fetch the latest remote version ---
         $remoteVersion = Get-RemoteVersion
         if (-not $remoteVersion) {
