@@ -28,14 +28,14 @@
 # Configuration
 # ============================================================================
 
-$MCP_START_COMMAND    = "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM"
+$MCP_START_COMMAND = "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM"
 $POLL_INTERVAL_SECONDS = 60
-$GRACE_PERIOD_SECONDS  = 45
-$DATA_DIR              = "$env:USERPROFILE\.remote-copilot-mcp"
-$MAINTENANCE_FLAG      = "$DATA_DIR\maintenance.flag"
-$VERSION_FILE          = "$DATA_DIR\current-version.txt"
-$NPX_CACHE_DIR         = "$env:LOCALAPPDATA\npm-cache\_npx"
-$REGISTRY_URL          = "https://registry.npmjs.org/sensorium-mcp/latest"
+$GRACE_PERIOD_SECONDS = 45
+$DATA_DIR = "$env:USERPROFILE\.remote-copilot-mcp"
+$MAINTENANCE_FLAG = "$DATA_DIR\maintenance.flag"
+$VERSION_FILE = "$DATA_DIR\current-version.txt"
+$NPX_CACHE_DIR = "$env:LOCALAPPDATA\npm-cache\_npx"
+$REGISTRY_URL = "https://registry.npmjs.org/sensorium-mcp/latest"
 
 # ============================================================================
 # Helpers
@@ -110,7 +110,7 @@ function Stop-McpServer {
     Write-Log "Searching for running sensorium-mcp processes..."
 
     $processes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
+    Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
 
     if ($processes) {
         foreach ($proc in $processes) {
@@ -160,12 +160,12 @@ function Start-McpServer {
     try {
         $parts = $MCP_START_COMMAND -split " ", 2
         $executable = $parts[0]
-        $arguments  = if ($parts.Length -gt 1) { $parts[1] } else { "" }
+        $arguments = if ($parts.Length -gt 1) { $parts[1] } else { "" }
 
         Start-Process -FilePath $executable `
-                      -ArgumentList $arguments `
-                      -WindowStyle Hidden `
-                      -PassThru | Out-Null
+            -ArgumentList $arguments `
+            -WindowStyle Hidden `
+            -PassThru | Out-Null
 
         Write-Log "MCP server started successfully."
     }
@@ -180,7 +180,7 @@ function Test-McpServerRunning {
         Returns $true if a node process running sensorium-mcp is found.
     #>
     $processes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
+    Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
     return ($null -ne $processes -and @($processes).Count -gt 0)
 }
 
@@ -212,10 +212,12 @@ if (-not (Test-McpServerRunning)) {
     Start-Sleep -Seconds 10
     if (Test-McpServerRunning) {
         Write-Log "MCP server started successfully on initial launch."
-    } else {
+    }
+    else {
         Write-Log "MCP server may still be starting up. Will check again after grace period." -Level "WARN"
     }
-} else {
+}
+else {
     Write-Log "MCP server is already running."
 }
 
