@@ -996,11 +996,13 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
               type: "text",
               text: "Follow the operator's instructions below.",
             },
+            { type: "text", text: "<<< OPERATOR MESSAGE >>>" },
             ...contentBlocks,
+            { type: "text", text: "<<< END OPERATOR MESSAGE >>>" },
             ...(hasVoiceMessages
               ? [{
                 type: "text" as const,
-                text: "\n(Operator sent voice — respond with `send_voice`.)",
+                text: "(Operator sent voice — respond with `send_voice`.)",
               }]
               : []),
             ...(autoMemoryContext
