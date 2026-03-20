@@ -66,7 +66,7 @@ import {
   updateProcedure,
   updateSemanticNote,
 } from "./memory.js";
-import { analyzeVideoFrames, analyzeVoiceEmotion, extractVideoFrames, generateEmbedding, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
+import { analyzeVideoFrames, analyzeVoiceEmotion, chatCompletion, extractVideoFrames, generateEmbedding, textToSpeech, transcribeAudio, TTS_VOICES, type TTSVoice, type VoiceAnalysisResult } from "./openai.js";
 import { addSchedule, checkDueTasks, generateTaskId, listSchedules, purgeSchedules, removeSchedule, type ScheduledTask } from "./scheduler.js";
 import {
   DEAD_SESSION_TIMEOUT_MS,
@@ -889,15 +889,14 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           }
         }
 
-        // ── Auto-inject relevant memory context ───────────────────────────
-        // Architecture-enforced: the agent should NOT need to manually call
-        // memory_search. The server automatically searches memory for notes
-        // relevant to the operator's message and injects them.
+        // ── Smart context injection (GPT-4o-mini preprocessor) ──────────
+        // Retrieves candidate notes via embedding search, then uses GPT-4o-mini
+        // to select ONLY the notes truly relevant to the operator's message.
+        // This prevents context contamination from near-miss semantic matches.
         let autoMemoryContext = "";
         try {
           const db = getMemoryDb();
           const apiKey = process.env.OPENAI_API_KEY;
-          // Extract the operator's text to use as a memory search query
           const operatorText = stored
             .map(m => m.message.text ?? m.message.caption ?? "")
             .filter(Boolean)
@@ -905,61 +904,79 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             .slice(0, 500);
 
           if (operatorText.length > 10 && apiKey) {
-            // Try embedding-based search first, fall back to keyword search
+            // Phase 1: Broad retrieval — get 10 candidates via embedding search
+            let candidates: { type: string; content: string; confidence: number; similarity?: number }[] = [];
             try {
               const queryEmb = await generateEmbedding(operatorText, apiKey);
-              const relevant = searchByEmbedding(db, queryEmb, { maxResults: 5, minSimilarity: 0.3, skipAccessTracking: true, threadId: effectiveThreadId });
-              if (relevant.length > 0) {
-                let budget = 800;
-                const lines: string[] = [];
-                for (const n of relevant) {
-                  const line = `- **[${n.type}]** ${n.content.slice(0, 200)} _(conf: ${n.confidence}, sim: ${n.similarity.toFixed(2)})_`;
-                  if (budget - line.length < 0) break;
-                  budget -= line.length;
-                  lines.push(line);
-                }
-                if (lines.length > 0) {
-                  autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
-                }
-              }
-            } catch (embErr) {
-              // Fallback to keyword search if embedding fails
-              process.stderr.write(`[memory] Embedding search failed, falling back to keyword: ${embErr instanceof Error ? embErr.message : String(embErr)}\n`);
+              const embResults = searchByEmbedding(db, queryEmb, { maxResults: 10, minSimilarity: 0.25, skipAccessTracking: true, threadId: effectiveThreadId });
+              candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, 200), confidence: n.confidence, similarity: n.similarity }));
+            } catch {
+              // Fallback to keyword search
               const searchQuery = extractSearchKeywords(operatorText);
               if (searchQuery.trim().length > 0) {
-                const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true, threadId: effectiveThreadId });
-                if (relevant.length > 0) {
-                  let budget = 800;
-                  const lines: string[] = [];
-                  for (const n of relevant) {
-                    const line = `- **[${n.type}]** ${n.content.slice(0, 200)} _(conf: ${n.confidence})_`;
-                    if (budget - line.length < 0) break;
-                    budget -= line.length;
-                    lines.push(line);
-                  }
-                  if (lines.length > 0) {
-                    autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
-                  }
-                }
+                const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 10, skipAccessTracking: true, threadId: effectiveThreadId });
+                candidates = kwResults.map(n => ({ type: n.type, content: n.content.slice(0, 200), confidence: n.confidence }));
               }
             }
-          } else {
-            // No API key or text too short — use keyword search
+
+            if (candidates.length > 0) {
+              // Phase 2: GPT-4o-mini filters and compresses
+              try {
+                const noteList = candidates.map((c, i) => `[${i}] [${c.type}] ${c.content}`).join("\n");
+                const filterResponse = await chatCompletion([
+                  {
+                    role: "system",
+                    content:
+                      "You are a context filter for an AI assistant. Given an operator's message and candidate memory notes, " +
+                      "select ONLY the notes that are directly relevant to the operator's current instruction or question. " +
+                      "Discard notes that are tangentially related, duplicates, or noise. " +
+                      "Return a JSON array of objects: [{\"i\": <index>, \"s\": \"<compressed one-liner>\"}] " +
+                      "where 'i' is the note index and 's' is a compressed summary (max 80 chars). " +
+                      "Return [] if no notes are relevant. Return at most 3 notes. Be aggressive about filtering.",
+                  },
+                  {
+                    role: "user",
+                    content: `Operator message: "${operatorText.slice(0, 300)}"\n\nCandidate notes:\n${noteList}`,
+                  },
+                ], apiKey, { maxTokens: 200, temperature: 0 });
+
+                // Parse the response — expect JSON array
+                const jsonMatch = filterResponse.match(/\[.*\]/s);
+                if (jsonMatch) {
+                  const filtered = JSON.parse(jsonMatch[0]) as { i: number; s: string }[];
+                  if (filtered.length > 0) {
+                    const lines = filtered
+                      .filter(f => f.i >= 0 && f.i < candidates.length)
+                      .slice(0, 3)
+                      .map(f => {
+                        const c = candidates[f.i];
+                        return `- **[${c.type}]** ${f.s} _(conf: ${c.confidence})_`;
+                      });
+                    if (lines.length > 0) {
+                      autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
+                    }
+                  }
+                }
+                process.stderr.write(`[memory] Smart filter: ${candidates.length} candidates → ${(jsonMatch ? JSON.parse(jsonMatch[0]) : []).length} selected\n`);
+              } catch (filterErr) {
+                // GPT-4o-mini filter failed — fall back to top-3 raw notes
+                process.stderr.write(`[memory] Smart filter failed, using raw top-3: ${filterErr instanceof Error ? filterErr.message : String(filterErr)}\n`);
+                const lines = candidates.slice(0, 3).map(c =>
+                  `- **[${c.type}]** ${c.content} _(conf: ${c.confidence})_`
+                );
+                autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
+              }
+            }
+          } else if (operatorText.length > 10) {
+            // No API key — keyword search, raw top-3
             const searchQuery = extractSearchKeywords(operatorText);
             if (searchQuery.trim().length > 0) {
-              const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true, threadId: effectiveThreadId });
-              if (relevant.length > 0) {
-                let budget = 800;
-                const lines: string[] = [];
-                for (const n of relevant) {
-                  const line = `- **[${n.type}]** ${n.content.slice(0, 200)} _(conf: ${n.confidence})_`;
-                  if (budget - line.length < 0) break;
-                  budget -= line.length;
-                  lines.push(line);
-                }
-                if (lines.length > 0) {
-                  autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
-                }
+              const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 3, skipAccessTracking: true, threadId: effectiveThreadId });
+              if (kwResults.length > 0) {
+                const lines = kwResults.map(n =>
+                  `- **[${n.type}]** ${n.content.slice(0, 200)} _(conf: ${n.confidence})_`
+                );
+                autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
               }
             }
           }
