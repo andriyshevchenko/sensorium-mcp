@@ -38,7 +38,7 @@ import { readFile } from "fs/promises";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, IncomingMessage } from "node:http";
 import { basename } from "node:path";
-import { config, saveFileToDisk } from "./config.js";
+import { checkMaintenanceFlag, config, saveFileToDisk } from "./config.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
 import { peekThreadMessages, readThreadMessages, startDispatcher } from "./dispatcher.js";
 import { formatDrivePrompt } from "./drive.js";
@@ -551,6 +551,20 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     let lastKeepalive = Date.now();
 
     while (Date.now() < deadline) {
+      // Check for pending update — tell agent to call sleep
+      const maintenanceInfo = checkMaintenanceFlag();
+      if (maintenanceInfo) {
+        process.stderr.write(`[wait] Maintenance flag detected: ${maintenanceInfo}\n`);
+        return {
+          content: [{
+            type: "text",
+            text: `⚠️ **Server update pending** (${maintenanceInfo}). ` +
+              `Call \`sleep\` now to allow a safe restart. Your session will resume after the update.` +
+              getShortReminder(effectiveThreadId),
+          }],
+        };
+      }
+
       // Peek first (non-destructive) to avoid consuming messages when the
       // SSE connection may be dead.
       const peeked = peekThreadMessages(effectiveThreadId);
@@ -1587,6 +1601,17 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         };
       }
 
+      // Maintenance flag: stay asleep (don't wake) — the watcher will restart us
+      // This is distinct from wait_for_instructions which tells the agent to sleep.
+      // Here we're already sleeping, so we just keep sleeping through the update.
+      const maintenanceInfo = checkMaintenanceFlag();
+      if (maintenanceInfo) {
+        process.stderr.write(`[sleep] Maintenance flag detected — staying asleep through update: ${maintenanceInfo}\n`);
+        // Skip all other checks, just keep sleeping
+        await new Promise<void>((resolve) => setTimeout(resolve, SLEEP_POLL_INTERVAL_MS));
+        continue;
+      }
+
       // Check for scheduled tasks
       const dueTask = checkDueTasks(effectiveThreadId, lastOperatorMessageAt, false);
       if (dueTask) {
@@ -1615,15 +1640,19 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         };
       }
 
-      // SSE keepalive
+      // SSE keepalive — use the same approach as wait_for_instructions
       const sinceKeepalive = Date.now() - lastKeepalive;
       if (sinceKeepalive >= SSE_KEEPALIVE_INTERVAL_MS && extra?.sendNotification) {
+        lastKeepalive = Date.now();
         try {
           await extra.sendNotification({
-            method: "notifications/message",
-            params: { level: "debug", data: "sleeping", logger: "sensorium" },
+            method: "notifications/progress",
+            params: {
+              progressToken: extra.requestId,
+              progress: 0,
+              total: 0,
+            },
           });
-          lastKeepalive = Date.now();
         } catch {
           process.stderr.write(`[sleep] SSE keepalive failed — connection lost.\n`);
           return {
@@ -1983,6 +2012,18 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     } catch (err) {
       return errorResult(`Memory forget error: ${errorMessage(err)}` + getShortReminder(threadId));
     }
+  }
+
+  // ── get_version ─────────────────────────────────────────────────────────
+  if (name === "get_version") {
+    const maintenance = checkMaintenanceFlag();
+    return {
+      content: [{
+        type: "text",
+        text: `Server version: ${config.PKG_VERSION}` +
+          (maintenance ? `\n⚠️ Update pending: ${maintenance}` : ""),
+      }],
+    };
   }
 
   // ── get_usage_stats ─────────────────────────────────────────────────────
