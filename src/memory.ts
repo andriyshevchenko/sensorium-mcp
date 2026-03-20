@@ -404,6 +404,15 @@ export function initMemoryDb(): Database {
         process.stderr.write("[memory] Repaired: schema_version was ahead of actual migrations, reset to v2\n");
       }
     }
+    const hasV4 = db.prepare("SELECT version FROM schema_version WHERE version = 4").get();
+    if (hasV4) {
+      const cols = db.prepare("PRAGMA table_info(semantic_notes)").all() as Array<{ name: string }>;
+      const hasThreadId = cols.some(c => c.name === "thread_id");
+      if (!hasThreadId) {
+        db.prepare("DELETE FROM schema_version WHERE version >= 4").run();
+        process.stderr.write("[memory] Repaired: schema_version was ahead of actual migrations, reset to v3\n");
+      }
+    }
   }
 
   // Run any pending migrations (will upgrade from stored version to SCHEMA_VERSION)
@@ -418,6 +427,11 @@ export function initMemoryDb(): Database {
       process.stderr.write("[memory] Direct repair: adding missing priority column\n");
       db.exec(`ALTER TABLE semantic_notes ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL`);
+    }
+    if (!cols.some(c => c.name === "thread_id")) {
+      process.stderr.write("[memory] Direct repair: adding missing thread_id column\n");
+      db.exec(`ALTER TABLE semantic_notes ADD COLUMN thread_id INTEGER`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL`);
     }
   }
 
