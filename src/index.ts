@@ -866,7 +866,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             // Try embedding-based search first, fall back to keyword search
             try {
               const queryEmb = await generateEmbedding(operatorText, apiKey);
-              const relevant = searchByEmbedding(db, queryEmb, { maxResults: 5, minSimilarity: 0.3, skipAccessTracking: true });
+              const relevant = searchByEmbedding(db, queryEmb, { maxResults: 5, minSimilarity: 0.3, skipAccessTracking: true, threadId: effectiveThreadId });
               if (relevant.length > 0) {
                 let budget = 800;
                 const lines: string[] = [];
@@ -885,7 +885,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
               process.stderr.write(`[memory] Embedding search failed, falling back to keyword: ${embErr instanceof Error ? embErr.message : String(embErr)}\n`);
               const searchQuery = extractSearchKeywords(operatorText);
               if (searchQuery.trim().length > 0) {
-                const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true });
+                const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true, threadId: effectiveThreadId });
                 if (relevant.length > 0) {
                   let budget = 800;
                   const lines: string[] = [];
@@ -905,7 +905,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             // No API key or text too short — use keyword search
             const searchQuery = extractSearchKeywords(operatorText);
             if (searchQuery.trim().length > 0) {
-              const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true });
+              const relevant = searchSemanticNotesRanked(db, searchQuery, { maxResults: 5, skipAccessTracking: true, threadId: effectiveThreadId });
               if (relevant.length > 0) {
                 let budget = 800;
                 const lines: string[] = [];
@@ -1626,6 +1626,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         keywords: Array.isArray(typedArgs.keywords) ? typedArgs.keywords.map(String) : typeof typedArgs.keywords === 'string' ? [typedArgs.keywords] : [],
         confidence: typeof typedArgs.confidence === "number" ? typedArgs.confidence : 0.8,
         priority: typeof typedArgs.priority === "number" ? typedArgs.priority : 0,
+        threadId: threadId ?? null,
       });
       // Fire-and-forget embedding generation
       const apiKey = process.env.OPENAI_API_KEY;
