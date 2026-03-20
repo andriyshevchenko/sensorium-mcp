@@ -566,7 +566,9 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     let lastKeepalive = Date.now();
 
     while (Date.now() < deadline) {
-      // Check for pending update — tell agent to hibernate
+      // Check for pending update — tell agent to wait externally via Desktop Commander
+      // CRITICAL: Do NOT tell agents to call hibernate or any MCP tool here — the server
+      // is about to die. Agents must use an external sleep (PowerShell Start-Sleep) instead.
       const maintenanceInfo = checkMaintenanceFlag();
       if (maintenanceInfo) {
         process.stderr.write(`[wait] Maintenance flag detected: ${maintenanceInfo}\n`);
@@ -574,7 +576,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           content: [{
             type: "text",
             text: `⚠️ **Server update pending** (${maintenanceInfo}). ` +
-              `The MCP server will restart shortly. Call \`hibernate\` now, then call start_session after waking.` +
+              `The MCP server will restart shortly. Use Desktop Commander to run: ` +
+              `Start-Sleep -Seconds 180 — then call start_session with threadId=${effectiveThreadId} to reconnect.` +
               getShortReminder(effectiveThreadId),
           }],
         };
