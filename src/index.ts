@@ -295,24 +295,17 @@ function getReminders(threadId?: number, driveActive = false): string {
     hour: "2-digit", minute: "2-digit", hour12: false,
     timeZoneName: "short",
   });
-  const threadHint = threadId !== undefined
-    ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
-    : "";
 
   if (driveActive) {
     return (
-      "\n\nComplete the dispatcher's tasks. Report progress. Then call `remote_copilot_wait_for_instructions`." +
-      "\n- **Voice mode**: Use `send_voice` for progress reports and responses. Only use text if the operator explicitly asks for it." +
-      threadHint +
-      `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
+      "\n\nComplete the dispatcher's tasks. Report progress via `send_voice`. Then call `remote_copilot_wait_for_instructions`." +
+      `\n- threadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m`
     );
   }
 
   return (
-    "\n\nCreate plan. Use subagents. You own decision making and planning, subagents own execution. Report frequently." +
-    "\n- **Voice mode**: Use `send_voice` for progress reports and responses. Only use text if the operator explicitly asks for it." +
-    threadHint +
-    `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
+    "\n\nUse subagents for execution. Report progress via `send_voice`." +
+    `\n- threadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m`
   );
 }
 
@@ -873,22 +866,6 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
         process.stderr.write(`[wait] Episodes saved. Building auto-memory context...\n`);
 
-        // Subagent instruction — embedded directly in operator message flow
-        // so agents treat it as a direct instruction, not ignorable metadata.
-        const subagentInstruction =
-            "\n\n Use subagents.";
-
-        // Append the subagent instruction to the LAST operator content block
-        // so it reads as part of the operator's message stream
-        if (contentBlocks.length > 0) {
-          const last = contentBlocks[contentBlocks.length - 1];
-          if (last.type === "text") {
-            last.text += subagentInstruction;
-          } else {
-            contentBlocks.push({ type: "text", text: subagentInstruction });
-          }
-        }
-
         // ── Smart context injection (GPT-4o-mini preprocessor) ──────────
         // Retrieves candidate notes via embedding search, then uses GPT-4o-mini
         // to select ONLY the notes truly relevant to the operator's message.
@@ -994,13 +971,13 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             ...(hasVoiceMessages
               ? [{
                 type: "text" as const,
-                text: "\n**Note:** The operator sent voice message(s). They prefer voice interaction — use `send_voice` for progress updates and responses when possible.",
+                text: "\n(Operator sent voice — respond with `send_voice`.)",
               }]
               : []),
             ...(autoMemoryContext
               ? [{ type: "text" as const, text: autoMemoryContext }]
               : []),
-            { type: "text", text: " Use subagents." + getReminders(effectiveThreadId) },
+            { type: "text", text: getReminders(effectiveThreadId) },
           ],
         };
       }
