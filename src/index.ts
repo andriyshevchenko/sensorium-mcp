@@ -208,7 +208,7 @@ function createMcpServer(getMcpSessionId?: () => string | undefined, closeTransp
         `I've been thinking while the operator is away.\n\n` +
         `${driveContent}\n\n` +
         `If something here resonates, I should explore it — use subagents, search the codebase, review memory. ` +
-        `Report what I find, then go back to sleep or continue waiting.`
+        `Report what I find, then go back to hibernation or continue waiting.`
       );
     } catch {
       return "I should review memory and the codebase for anything interesting while the operator is away.";
@@ -566,7 +566,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     let lastKeepalive = Date.now();
 
     while (Date.now() < deadline) {
-      // Check for pending update — tell agent to pause via external sleep
+      // Check for pending update — tell agent to hibernate
       const maintenanceInfo = checkMaintenanceFlag();
       if (maintenanceInfo) {
         process.stderr.write(`[wait] Maintenance flag detected: ${maintenanceInfo}\n`);
@@ -574,8 +574,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
           content: [{
             type: "text",
             text: `⚠️ **Server update pending** (${maintenanceInfo}). ` +
-              `The MCP server will restart shortly. Use Desktop Commander to run: ` +
-              `Start-Sleep -Seconds 120 — then call start_session to reconnect.` +
+              `The MCP server will restart shortly. Call \`hibernate\` now, then call start_session after waking.` +
               getShortReminder(effectiveThreadId),
           }],
         };
@@ -1582,8 +1581,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     };
   }
 
-  // ── sleep ────────────────────────────────────────────────────────────────
-  if (name === "sleep") {
+  // ── hibernate ─────────────────────────────────────────────────────────────
+  if (name === "hibernate") {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const effectiveThreadId = resolveThreadId(typedArgs);
     if (effectiveThreadId === undefined) {
@@ -1595,20 +1594,20 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       return errorResult("Error: Invalid wakeAt timestamp. Use ISO 8601 format.");
     }
 
-    // Max sleep: 8 hours
-    const MAX_SLEEP_MS = 8 * 60 * 60 * 1000;
-    const SLEEP_POLL_INTERVAL_MS = 30_000; // 30s
+    // Max hibernation time: 8 hours
+    const MAX_HIBERNATE_MS = 8 * 60 * 60 * 1000;
+    const HIBERNATE_POLL_MS = 30_000; // 30s
     const SSE_KEEPALIVE_INTERVAL_MS = 30_000;
-    const deadline = Date.now() + MAX_SLEEP_MS;
+    const deadline = Date.now() + MAX_HIBERNATE_MS;
     let lastKeepalive = Date.now();
 
-    process.stderr.write(`[sleep] Entering sleep mode. threadId=${effectiveThreadId}, wakeAt=${wakeAt ? new Date(wakeAt).toISOString() : "indefinite"}\n`);
+    process.stderr.write(`[hibernate] Entering hibernation. threadId=${effectiveThreadId}, wakeAt=${wakeAt ? new Date(wakeAt).toISOString() : "indefinite"}\n`);
 
     while (Date.now() < deadline) {
       // Check for operator messages (non-destructive peek)
       const peeked = peekThreadMessages(effectiveThreadId);
       if (peeked.length > 0) {
-        process.stderr.write(`[sleep] Waking up — ${peeked.length} operator message(s) received.\n`);
+        process.stderr.write(`[hibernate] Waking up — ${peeked.length} operator message(s) received.\n`);
         // Don't consume messages — let the next wait_for_instructions call handle them
         return {
           content: [{
@@ -1619,21 +1618,21 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         };
       }
 
-      // Maintenance flag: stay asleep (don't wake) — the watcher will restart us
-      // This is distinct from wait_for_instructions which tells the agent to sleep.
-      // Here we're already sleeping, so we just keep sleeping through the update.
+      // Maintenance flag: stay hibernating (don't wake) — the watcher will restart us
+      // This is distinct from wait_for_instructions which tells the agent to hibernate.
+      // Here we're already hibernating, so we just keep hibernating through the update.
       const maintenanceInfo = checkMaintenanceFlag();
       if (maintenanceInfo) {
-        process.stderr.write(`[sleep] Maintenance flag detected — staying asleep through update: ${maintenanceInfo}\n`);
-        // Skip all other checks, just keep sleeping
-        await new Promise<void>((resolve) => setTimeout(resolve, SLEEP_POLL_INTERVAL_MS));
+        process.stderr.write(`[hibernate] Maintenance flag detected — staying hibernated through update: ${maintenanceInfo}\n`);
+        // Skip all other checks, just keep hibernating
+        await new Promise<void>((resolve) => setTimeout(resolve, HIBERNATE_POLL_MS));
         continue;
       }
 
       // Check for scheduled tasks
       const dueTask = checkDueTasks(effectiveThreadId, lastOperatorMessageAt, false);
       if (dueTask) {
-        process.stderr.write(`[sleep] Waking up — scheduled task fired: ${dueTask.task.label}\n`);
+        process.stderr.write(`[hibernate] Waking up — scheduled task fired: ${dueTask.task.label}\n`);
         // DMN sentinel: generate dynamic first-person reflection
         const taskPrompt = dueTask.prompt === "__DMN__"
           ? generateDmnReflection(effectiveThreadId)
@@ -1648,7 +1647,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
       // Check alarm
       if (wakeAt && Date.now() >= wakeAt) {
-        process.stderr.write(`[sleep] Waking up — alarm reached.\n`);
+        process.stderr.write(`[hibernate] Waking up — alarm reached.\n`);
         return {
           content: [{
             type: "text",
@@ -1672,11 +1671,11 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
             },
           });
         } catch {
-          process.stderr.write(`[sleep] SSE keepalive failed — connection lost.\n`);
+          process.stderr.write(`[hibernate] SSE keepalive failed — connection lost.\n`);
           return {
             content: [{
               type: "text",
-              text: "Sleep interrupted: connection lost. Call sleep again to resume." +
+              text: "Hibernation interrupted: connection lost. Call hibernate again to resume." +
                 getShortReminder(effectiveThreadId),
             }],
           };
@@ -1685,25 +1684,25 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
       // Check abort signal
       if (extra.signal.aborted) {
-        process.stderr.write(`[sleep] SSE connection aborted during sleep.\n`);
+        process.stderr.write(`[hibernate] SSE connection aborted during hibernation.\n`);
         return {
           content: [{
             type: "text",
-            text: "Sleep interrupted: connection closed." +
+            text: "Hibernation interrupted: connection closed." +
               getShortReminder(effectiveThreadId),
           }],
         };
       }
 
-      await new Promise<void>((resolve) => setTimeout(resolve, SLEEP_POLL_INTERVAL_MS));
+      await new Promise<void>((resolve) => setTimeout(resolve, HIBERNATE_POLL_MS));
     }
 
-    // Max sleep duration reached
-    process.stderr.write(`[sleep] Max sleep duration reached (8h).\n`);
+    // Max hibernation duration reached
+    process.stderr.write(`[hibernate] Max hibernation duration reached (8h).\n`);
     return {
       content: [{
         type: "text",
-        text: "Woke up: maximum sleep duration reached (8 hours)." +
+        text: "Woke up: maximum hibernation duration reached (8 hours)." +
           getShortReminder(effectiveThreadId),
       }],
     };
