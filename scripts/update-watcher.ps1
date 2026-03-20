@@ -202,14 +202,18 @@ if (-not (Test-Path $DATA_DIR)) {
 }
 
 # --- Ensure MCP server is running on startup ---
+$script:lastStartTime = [datetime]::MinValue
+$STARTUP_GRACE_SECONDS = 30  # Don't health-check for this long after starting
+
 if (-not (Test-McpServerRunning)) {
     Write-Log "MCP server is not running. Starting it now..."
     Start-McpServer
-    Start-Sleep -Seconds 5
+    $script:lastStartTime = Get-Date
+    Start-Sleep -Seconds 10
     if (Test-McpServerRunning) {
         Write-Log "MCP server started successfully on initial launch."
     } else {
-        Write-Log "MCP server may still be starting up. Will check again next cycle." -Level "WARN"
+        Write-Log "MCP server may still be starting up. Will check again after grace period." -Level "WARN"
     }
 } else {
     Write-Log "MCP server is already running."
@@ -218,10 +222,12 @@ if (-not (Test-McpServerRunning)) {
 while ($true) {
     try {
         # --- Health check: restart server if it crashed ---
-        if (-not (Test-McpServerRunning)) {
-            Write-Log "MCP server process not found — restarting..." -Level "WARN"
+        # Skip if we recently started the server (npx needs time to download/start)
+        $timeSinceStart = (Get-Date) - $script:lastStartTime
+        if ($timeSinceStart.TotalSeconds -gt $STARTUP_GRACE_SECONDS -and -not (Test-McpServerRunning)) {
+            Write-Log "MCP server process not found - restarting..." -Level "WARN"
             Start-McpServer
-            Start-Sleep -Seconds 5
+            $script:lastStartTime = Get-Date
         }
 
         # --- Step 1: Fetch the latest remote version ---
@@ -247,7 +253,7 @@ while ($true) {
             continue
         }
 
-        # --- Step 3: New version detected — begin update sequence ---
+        # --- Step 3: New version detected - begin update sequence ---
         Write-Log "=========================================="
         Write-Log "NEW VERSION DETECTED: v$localVersion -> v$remoteVersion"
         Write-Log "=========================================="
