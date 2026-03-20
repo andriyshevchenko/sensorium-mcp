@@ -1,6 +1,8 @@
 name: Publish to NPM
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       version:
@@ -38,7 +40,32 @@ jobs:
       - name: Test
         run: npm test
 
+      # For push-to-main: only publish if local version > npm version
+      - name: Check if version needs publishing
+        id: version_check
+        if: github.event_name == 'push'
+        run: |
+          LOCAL_VERSION=$(node -p "require('./package.json').version")
+          NPM_VERSION=$(npm view sensorium-mcp version 2>/dev/null || echo "0.0.0")
+          echo "local=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm=$NPM_VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$LOCAL_VERSION" = "$NPM_VERSION" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Version $LOCAL_VERSION already published — skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Publishing $LOCAL_VERSION (npm has $NPM_VERSION)."
+          fi
+
+      - name: Publish to NPM (auto on push)
+        if: github.event_name == 'push' && steps.version_check.outputs.skip != 'true'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+
+      # For manual dispatch: bump version, tag, then publish
       - name: Validate version input
+        if: github.event_name == 'workflow_dispatch'
         run: |
           set -e
           VERSION="${{ github.event.inputs.version }}"
@@ -52,6 +79,7 @@ jobs:
           exit 1
 
       - name: Bump version
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -59,9 +87,11 @@ jobs:
           npm version '${{ github.event.inputs.version }}' --message "chore: release v%s [skip ci]"
 
       - name: Push version commit and tag
+        if: github.event_name == 'workflow_dispatch'
         run: git push --follow-tags
 
-      - name: Publish to NPM
+      - name: Publish to NPM (manual dispatch)
+        if: github.event_name == 'workflow_dispatch'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
