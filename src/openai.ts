@@ -55,6 +55,54 @@ for (const sig of ["exit", "SIGINT", "SIGTERM"] as const) {
 // Run once when the module loads.
 cleanupTempDir();
 
+// ─── Chat Completion (lightweight GPT-4o-mini calls) ──────────────────────
+
+export interface ChatMessage {
+    role: "system" | "user" | "assistant";
+    content: string;
+}
+
+/**
+ * Lightweight chat completion using GPT-4o-mini.
+ * Used for context preprocessing, not for agent dialogue.
+ * Returns the assistant's text response.
+ */
+export async function chatCompletion(
+    messages: ChatMessage[],
+    apiKey: string,
+    options?: { maxTokens?: number; temperature?: number; timeoutMs?: number },
+): Promise<string> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? 15_000);
+    try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages,
+                max_tokens: options?.maxTokens ?? 300,
+                temperature: options?.temperature ?? 0,
+            }),
+            signal: controller.signal,
+        });
+        if (!response.ok) {
+            throw new Error(`OpenAI chat API error: ${response.status} ${response.statusText}`);
+        }
+        const json = await response.json() as {
+            choices: [{ message: { content: string } }];
+        };
+        return json.choices[0]?.message?.content ?? "";
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// ─── TTS ──────────────────────────────────────────────────────────────────
+
 /** Valid TTS voice names. */
 export const TTS_VOICES = [
     "alloy", "echo", "fable", "onyx", "nova", "shimmer",
