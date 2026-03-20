@@ -303,8 +303,12 @@ function getReminders(threadId?: number, driveActive = false): string {
     );
   }
 
+  const directive = config.AUTONOMOUS_MODE
+    ? "\nYou are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable."
+    : "\nFollow the operator's instructions. Report results via `send_voice`.";
+
   return (
-    "\nYou are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable." +
+    directive +
     ` threadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m`
   );
 }
@@ -511,7 +515,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     // first-person introspection prompt sourced from memory.
     // Only create on active thread — purge stale DMN tasks from other threads
     // to avoid every thread accumulating reflection tasks.
-    if (currentThreadId !== undefined) {
+    if (config.AUTONOMOUS_MODE && currentThreadId !== undefined) {
       const existingTasks = listSchedules(currentThreadId);
       const hasDmn = existingTasks.some(t => t.label === "dmn-reflection");
       if (!hasDmn) {
