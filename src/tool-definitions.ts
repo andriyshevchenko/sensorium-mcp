@@ -27,6 +27,9 @@ export function getToolDefinitions(): ToolDefinition[] {
         "look back through the conversation history for a previous start_session " +
         "result that mentioned a Thread ID, then pass it as the threadId parameter " +
         "to resume that existing topic. " +
+        "IMPORTANT: When creating a new session (no threadId), the 'name' parameter is REQUIRED — " +
+        "provide a short, descriptive name for the session (e.g. 'Fix auth bug'). " +
+        "When resuming an existing session (threadId provided), name is optional. " +
         "Requires the Telegram chat to be a forum supergroup with the bot as admin. " +
         "Call this tool once, then call remote_copilot_wait_for_instructions.",
       inputSchema: {
@@ -35,8 +38,8 @@ export function getToolDefinitions(): ToolDefinition[] {
           name: {
             type: "string",
             description:
-              "Optional. A human-readable label for this session's Telegram topic (e.g. 'Fix auth bug'). " +
-              "If omitted, a timestamp-based name is used.",
+              "A human-readable label for this session's Telegram topic (e.g. 'Fix auth bug'). " +
+              "REQUIRED when creating a new session (no threadId). Optional when resuming an existing session (threadId provided).",
           },
           threadId: {
             type: "number",

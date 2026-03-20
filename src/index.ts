@@ -367,6 +367,19 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       ? typedArgs.name.trim()
       : undefined;
 
+    // When creating a new session (no threadId), name is mandatory.
+    if (explicitThreadId === undefined && !customName) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Error: sessionName is required when creating a new session. Provide a descriptive name for the session.",
+          },
+        ],
+        isError: true,
+      };
+    }
+
     // Determine the thread to use:
     // 1. Explicit threadId beats everything.
     // 2. A known name looks up the persisted mapping — resume if found.
