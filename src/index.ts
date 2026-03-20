@@ -1120,19 +1120,17 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       } catch (_) { /* non-fatal */ }
     }
 
-    // Generate autonomous goals only after extended silence (4+ hours)
-    // Before that, show a calm autonomy hint. Drive messages are only
-    // injected every 3rd poll to avoid context saturation.
-    const DRIVE_ACTIVATION_MS = 4 * 60 * 60 * 1000; // 4 hours — drive kicks in
+    // Generate autonomous goals only after extended silence (4+ hours).
+    // Full drive (DMN + assignments) every 3rd poll to avoid context saturation.
+    // Light Dispatcher presence on other polls for continuity.
+    const DRIVE_ACTIVATION_MS = 4 * 60 * 60 * 1000; // 4 hours — Dispatcher appears
     const idleMs = Date.now() - lastOperatorMessageAt;
-    const driveActive = idleMs >= DRIVE_ACTIVATION_MS && callNumber % 3 === 0;
-    const autonomousHint = driveActive
-      ? formatDrivePrompt(idleMs, getMemoryDb(), effectiveThreadId)
-      : "\n\nNo instructions. You have full autonomy. Explore, research, or build something interesting.";
+    const dispatcherActive = idleMs >= DRIVE_ACTIVATION_MS;
+    const fullDrivePoll = dispatcherActive && callNumber % 3 === 0;
 
-    // When drive is active, frame as the Dispatcher — a real actor
-    // giving specific assignments. First-person voice to maximize compliance.
-    if (driveActive) {
+    if (fullDrivePoll) {
+      // Full Dispatcher with DMN recall and assignments
+      const autonomousHint = formatDrivePrompt(idleMs, getMemoryDb(), effectiveThreadId);
       return {
         content: [
           {
@@ -1152,13 +1150,35 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       };
     }
 
+    if (dispatcherActive) {
+      // Light Dispatcher presence — calm, varied, first-person
+      const lightMessages = [
+        "Nothing urgent from me. The session is yours — follow your curiosity.",
+        "I don't have new tasks yet. If something in memory interests you, go for it.",
+        "No new assignments. If you've been working on something, keep at it. Or explore.",
+        "Still waiting on operator. You're free to continue whatever caught your attention.",
+        "I'll have more for you soon. In the meantime — what's been on your mind?",
+      ];
+      const lightMsg = lightMessages[callNumber % lightMessages.length];
+      return {
+        content: [
+          {
+            type: "text",
+            text: `[Dispatcher] ${lightMsg}` +
+              memoryRefresh +
+              scheduleHint +
+              getReminders(effectiveThreadId, true),
+          },
+        ],
+      };
+    }
+
     return {
       content: [
         {
           type: "text",
           text:
             `No new instructions. Call \`remote_copilot_wait_for_instructions\` again to keep listening.` +
-            autonomousHint +
             memoryRefresh +
             scheduleHint +
             getReminders(effectiveThreadId),
