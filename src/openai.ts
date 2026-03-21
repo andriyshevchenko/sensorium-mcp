@@ -84,7 +84,7 @@ export async function chatCompletion(
             body: JSON.stringify({
                 model: "gpt-4o-mini",
                 messages,
-                max_tokens: options?.maxTokens ?? 300,
+                max_completion_tokens: options?.maxTokens ?? 300,
                 temperature: options?.temperature ?? 0,
             }),
             signal: controller.signal,
@@ -419,7 +419,7 @@ export async function analyzeVideoFrames(
             body: JSON.stringify({
                 model: "gpt-5-mini",
                 messages: [{ role: "user", content }],
-                max_tokens: 300,
+                max_completion_tokens: 300,
             }),
             signal: controller.signal,
         });
