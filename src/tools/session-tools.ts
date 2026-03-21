@@ -251,15 +251,21 @@ async function handleHibernate(
       };
     }
 
-    // Maintenance flag: stay hibernating (don't wake) — the watcher will restart us
-    // This is distinct from wait_for_instructions which tells the agent to hibernate.
-    // Here we're already hibernating, so we just keep hibernating through the update.
+    // Maintenance flag: RETURN immediately so the agent can use Desktop Commander
+    // to run Start-Sleep. Do NOT stay hibernating — the server will die and the agent
+    // gets no guidance on how to reconnect.
     const maintenanceInfo = checkMaintenanceFlag();
     if (maintenanceInfo) {
-      process.stderr.write(`[hibernate] Maintenance flag detected — staying hibernated through update: ${maintenanceInfo}\n`);
-      // Skip all other checks, just keep hibernating
-      await new Promise<void>((resolve) => setTimeout(resolve, HIBERNATE_POLL_MS));
-      continue;
+      process.stderr.write(`[hibernate] Maintenance flag detected — returning to let agent use Start-Sleep: ${maintenanceInfo}\n`);
+      return {
+        content: [{
+          type: "text",
+          text: `⚠️ **Server update pending** (${maintenanceInfo}). ` +
+            `The MCP server will restart shortly. Use Desktop Commander to run: ` +
+            `Start-Sleep -Seconds 300 — then call start_session with threadId=${effectiveThreadId} to reconnect.` +
+            getShortReminder(effectiveThreadId),
+        }],
+      };
     }
 
     // Check for scheduled tasks
