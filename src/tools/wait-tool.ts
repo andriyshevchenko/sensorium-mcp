@@ -40,7 +40,7 @@ import type { TelegramClient } from "../telegram.js";
 import type { AppConfig } from "../types.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../utils.js";
 import { log } from "../logger.js";
-import { extractSearchKeywords, buildAnalysisTags, getReminders, getShortReminder } from "../response-builders.js";
+import { extractSearchKeywords, buildAnalysisTags, getReminders, getMediumReminder, getShortReminder } from "../response-builders.js";
 import { classifyIntent } from "../intent.js";
 import { backfillEmbeddings } from "./memory-tools.js";
 
@@ -570,7 +570,7 @@ export async function handleWaitForInstructions(
       const intent = classifyIntent(operatorText);
       log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${intent}`);
       const reminder = intent === "conversational"
-        ? getShortReminder(effectiveThreadId, state.sessionStartedAt)
+        ? getMediumReminder(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE)
         : getReminders(effectiveThreadId, false, state.sessionStartedAt, AUTONOMOUS_MODE);
 
       return {
