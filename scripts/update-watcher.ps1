@@ -30,7 +30,7 @@
 
 $MCP_START_COMMAND = "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM"
 $POLL_INTERVAL_SECONDS = 60
-$GRACE_PERIOD_SECONDS = 180
+$GRACE_PERIOD_SECONDS = 300
 $DATA_DIR = "$env:USERPROFILE\.remote-copilot-mcp"
 $MAINTENANCE_FLAG = "$DATA_DIR\maintenance.flag"
 $VERSION_FILE = "$DATA_DIR\current-version.txt"
