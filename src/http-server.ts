@@ -19,7 +19,6 @@ import { createServer, type IncomingMessage } from "node:http";
 import { config } from "./config.js";
 import { log } from "./logger.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
-import { rateLimiter } from "./rate-limiter.js";
 import { threadSessionRegistry } from "./sessions.js";
 import type { CreateMcpServerFn } from "./types.js";
 
@@ -161,7 +160,7 @@ export function startHttpServer(
 
         transport.onclose = () => {
           const sid = transport.sessionId;
-          if (sid) { transports.delete(sid); sessionLastActivity.delete(sid); rateLimiter.removeSession(sid); }
+          if (sid) { transports.delete(sid); sessionLastActivity.delete(sid); }
         };
 
         // Create a fresh Server per HTTP session — a single Server can only
@@ -232,7 +231,6 @@ export function startHttpServer(
         try { transport.close(); } catch (_) { /* best-effort */ }
         transports.delete(sid);
         sessionLastActivity.delete(sid);
-        rateLimiter.removeSession(sid);
       }
     }
   }, 10 * 60 * 1000);

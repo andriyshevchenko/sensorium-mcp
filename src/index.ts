@@ -41,7 +41,6 @@ import {
 } from "./sessions.js";
 import { TelegramClient } from "./telegram.js";
 import { getToolDefinitions } from "./tool-definitions.js";
-import { rateLimiter } from "./rate-limiter.js";
 import { errorResult } from "./utils.js";
 import { getReminders, getShortReminder } from "./response-builders.js";
 import { startHttpServer } from "./http-server.js";
@@ -89,6 +88,7 @@ function createMcpServer(getMcpSessionId?: () => string | undefined, closeTransp
   let currentThreadId: number | undefined;
   let lastToolCallAt = Date.now();
   let deadSessionAlerted = false;
+  let waitInProgress = false;
   let lastOperatorMessageAt = Date.now();
   let lastConsolidationAt = 0;
   let toolCallsSinceLastDelivery = 0;
@@ -158,6 +158,9 @@ function createMcpServer(getMcpSessionId?: () => string | undefined, closeTransp
   // Dead session detector — per-session, runs every 2 minutes
   const deadSessionInterval = setInterval(async () => {
     if (!currentThreadId) return;
+    // Skip check when wait_for_instructions is actively running — the session
+    // is definitively alive even if lastToolCallAt hasn't been refreshed.
+    if (waitInProgress) return;
     const elapsed = Date.now() - lastToolCallAt;
     if (elapsed > DEAD_SESSION_TIMEOUT_MS && !deadSessionAlerted) {
       deadSessionAlerted = true;
@@ -201,23 +204,6 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 
   // Track tool calls for activity monitoring
   toolCallsSinceLastDelivery++;
-
-  // ── Rate limiter: track API usage per tool ────────────────────────────────
-  const sessionId = getMcpSessionId?.() ?? "stdio";
-  const TOOL_SERVICE_MAP: Record<string, string> = {
-    report_progress: "telegram",
-    send_file: "telegram",
-    send_voice: "telegram",
-    start_session: "telegram",
-    wait_for_instructions: "telegram",
-    memory_search: "openai",   // embedding generation
-    memory_save: "openai",     // embedding generation
-    memory_save_procedure: "openai",
-  };
-  const trackedService = TOOL_SERVICE_MAP[name];
-  if (trackedService) {
-    rateLimiter.record(trackedService, sessionId, currentThreadId);
-  }
 
   // ── start_session ─────────────────────────────────────────────────────────
   if (name === "start_session") {
@@ -283,11 +269,16 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       config,
       errorResult,
     };
-    return handleWaitForInstructions(
-      (args ?? {}) as Record<string, unknown>,
-      waitCtx,
-      extra as unknown as WaitToolExtra,
-    );
+    waitInProgress = true;
+    try {
+      return await handleWaitForInstructions(
+        (args ?? {}) as Record<string, unknown>,
+        waitCtx,
+        extra as unknown as WaitToolExtra,
+      );
+    } finally {
+      waitInProgress = false;
+    }
   }
 
   // ── report_progress / hibernate ───────────────────────────────────────────
@@ -332,8 +323,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     return handleMemoryTool(name, (args ?? {}) as Record<string, unknown>, memoryToolCtx);
   }
 
-  // ── get_version / get_usage_stats ────────────────────────────────────────
-  if (name === "get_version" || name === "get_usage_stats") {
+  // ── get_version ──────────────────────────────────────────────────────────
+  if (name === "get_version") {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const utilityCtx: UtilityToolContext = {
       resolveThreadId,
