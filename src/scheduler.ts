@@ -199,8 +199,6 @@ export function checkDueTasks(
 
         // --- Cron-based recurring ---
         if (task.cron) {
-            let cronFired = false;
-
             // Normal path: current minute matches the cron pattern
             if (matchesCron(task.cron, now)) {
                 // Dedup: don't fire again within the same minute
@@ -222,33 +220,33 @@ export function checkDueTasks(
                 }
                 task.lastFiredAt = now.toISOString();
                 modified = true;
-                cronFired = true;
                 result = { prompt: task.prompt, task };
+                break; // Return FIRST due task — others wait for subsequent polls
             }
 
-            // Catch-up path: detect missed cron executions while server was down
-            if (!cronFired) {
-                const lastMatch = getLastCronMatch(task.cron, now);
-                if (lastMatch) {
-                    const lastFiredTime = task.lastFiredAt
-                        ? new Date(task.lastFiredAt).getTime()
-                        : 0;
-                    if (lastFiredTime < lastMatch.getTime()) {
-                        if (hasNewMessages) {
-                            // Operator is active — skip catch-up
-                            continue;
-                        }
-                        log.info(
-                            `[scheduler] Catch-up firing missed cron task: ${task.label} (was due at ${lastMatch.toISOString()})`,
-                        );
-                        task.lastFiredAt = now.toISOString();
-                        modified = true;
-                        result = { prompt: task.prompt, task };
+            // Catch-up path: detect missed cron executions while server was down.
+            // Only fires the MOST RECENT missed occurrence (via getLastCronMatch),
+            // not every individual missed window. lastFiredAt is set to `now` so
+            // the dedup logic prevents re-firing on the next poll.
+            const lastMatch = getLastCronMatch(task.cron, now);
+            if (lastMatch) {
+                const lastFiredTime = task.lastFiredAt
+                    ? new Date(task.lastFiredAt).getTime()
+                    : 0;
+                if (lastFiredTime < lastMatch.getTime()) {
+                    if (hasNewMessages) {
+                        // Operator is active — skip catch-up
+                        continue;
                     }
+                    log.info(
+                        `[scheduler] Catch-up firing missed cron task: ${task.label} (was due at ${lastMatch.toISOString()})`,
+                    );
+                    task.lastFiredAt = now.toISOString();
+                    modified = true;
+                    result = { prompt: task.prompt, task };
+                    break; // Return FIRST due task — others wait for subsequent polls
                 }
             }
-
-            if (result) break;
         }
 
         // --- Idle-based (fire after N minutes of silence) ---
