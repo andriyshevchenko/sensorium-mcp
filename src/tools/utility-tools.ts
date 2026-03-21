@@ -8,7 +8,6 @@ import { readFile } from "fs/promises";
 import { basename } from "node:path";
 import { checkMaintenanceFlag } from "../config.js";
 import { textToSpeech, TTS_VOICES, type TTSVoice } from "../openai.js";
-import { rateLimiter } from "../rate-limiter.js";
 import { addSchedule, generateTaskId, listSchedules, removeSchedule, type ScheduledTask } from "../scheduler.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig } from "../types.js";
@@ -51,8 +50,6 @@ export async function handleUtilityTool(
       return handleScheduleWakeUp(args, ctx);
     case "get_version":
       return handleGetVersion(ctx);
-    case "get_usage_stats":
-      return handleGetUsageStats(args, ctx);
     default:
       return ctx.errorResult(`Unknown utility tool: ${name}`);
   }
@@ -291,36 +288,4 @@ function handleGetVersion(ctx: UtilityToolContext): ToolResult {
   };
 }
 
-// ---------------------------------------------------------------------------
-// get_usage_stats
-// ---------------------------------------------------------------------------
 
-function handleGetUsageStats(
-  args: Record<string, unknown>,
-  ctx: UtilityToolContext,
-): ToolResult {
-  const threadId = ctx.resolveThreadId(args);
-  const stats = rateLimiter.getStats();
-  const lines: string[] = [
-    `## API Usage Stats`,
-    `Active sessions sharing resources: ${stats.activeSessions}`,
-    `Total API calls (last hour): ${stats.totalCallsLastHour}`,
-    ``,
-  ];
-  for (const svc of stats.services) {
-    const bar = svc.usagePercent > 80 ? "🔴" : svc.usagePercent > 50 ? "🟡" : "🟢";
-    lines.push(`### ${bar} ${svc.description} (${svc.service})`);
-    lines.push(`- Window usage: ${svc.callsInWindow}/${svc.maxPerWindow} (${svc.usagePercent}%)`);
-    lines.push(`- Burst tokens: ${svc.availableTokens}/${svc.burstCapacity}`);
-    if (svc.sessionBreakdown.length > 0) {
-      lines.push(`- Per-session:`);
-      for (const s of svc.sessionBreakdown) {
-        lines.push(`  - Thread ${s.threadId ?? "?"}: ${s.calls} calls`);
-      }
-    }
-    lines.push(``);
-  }
-  return {
-    content: [{ type: "text", text: lines.join("\n") + ctx.getShortReminder(threadId) }],
-  };
-}

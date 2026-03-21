@@ -24,7 +24,6 @@ import {
     searchSemanticNotesRanked,
     type SemanticNote
 } from "./memory.js";
-import { rateLimiter } from "./rate-limiter.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -159,11 +158,6 @@ function handleApiRoute(
             const q = url.searchParams.get("q")?.trim();
             if (!q) { json({ error: "Missing ?q= parameter" }, 400); return true; }
             json(searchSemanticNotesRanked(db, q, { maxResults: parseInt(url.searchParams.get("limit") ?? "20", 10) }));
-            return true;
-        }
-
-        if (path === "/api/rate-limits") {
-            json(rateLimiter.getStats());
             return true;
         }
 
@@ -312,7 +306,6 @@ function getDashboardHTML(): string {
         <button onclick="switchTab('notes')" id="tab-notes" class="pb-3 text-sm font-medium tab-inactive transition">Memory Notes</button>
         <button onclick="switchTab('episodes')" id="tab-episodes" class="pb-3 text-sm font-medium tab-inactive transition">Episodes</button>
         <button onclick="switchTab('topics')" id="tab-topics" class="pb-3 text-sm font-medium tab-inactive transition">Topics</button>
-        <button onclick="switchTab('ratelimits')" id="tab-ratelimits" class="pb-3 text-sm font-medium tab-inactive transition">Rate Limits</button>
       </nav>
     </div>
 
@@ -363,11 +356,6 @@ function getDashboardHTML(): string {
         <div id="topics-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
       </div>
 
-      <!-- Rate Limits -->
-      <div id="panel-ratelimits" class="hidden animate-fade-in">
-        <div id="ratelimits-summary" class="mb-4 glass rounded-xl p-4"></div>
-        <div id="ratelimits-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
-      </div>
     </div>
   </div>
 
@@ -462,10 +450,12 @@ function getDashboardHTML(): string {
       '</div>';
     }
 
+    function updateEl(el, html) { if (el && el.innerHTML !== html) el.innerHTML = html; }
+
     function renderStats(data) {
       const m = data.memory;
       const grid = document.getElementById('stats-grid');
-      grid.innerHTML =
+      const statsHtml =
         statCard('Sessions', data.activeSessions,
           '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
           'success') +
@@ -483,6 +473,7 @@ function getDashboardHTML(): string {
         statCard('Uptime', formatUptime(data.uptime),
           '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>',
           'success');
+      updateEl(grid, statsHtml);
 
       document.getElementById('uptime-display').textContent = formatUptime(data.uptime);
     }
@@ -490,13 +481,13 @@ function getDashboardHTML(): string {
     function renderSessions(sessions) {
       const list = document.getElementById('sessions-list');
       const empty = document.getElementById('sessions-empty');
-      if (!sessions.length) {
-        list.innerHTML = '';
+      if (!sessions || !sessions.length) {
+        if (list.innerHTML !== '') list.innerHTML = '';
         empty.classList.remove('hidden');
         return;
       }
       empty.classList.add('hidden');
-      list.innerHTML = sessions.map(s => {
+      const html = sessions.map(s => {
         const idle = Math.floor((Date.now() - s.lastActivity) / 60000);
         const statusColor = idle < 5 ? 'success' : idle < 30 ? 'warn' : 'danger';
         const statusLabel = idle < 5 ? 'Active' : idle < 30 ? 'Idle ' + idle + 'm' : 'Dormant ' + idle + 'm';
@@ -516,11 +507,12 @@ function getDashboardHTML(): string {
           '</div>' +
         '</div>';
       }).join('');
+      if (list.innerHTML !== html) list.innerHTML = html;
     }
 
     function renderNotes(notes) {
       const list = document.getElementById('notes-list');
-      list.innerHTML = notes.map(n => {
+      const html = (notes || []).map(n => {
         const pClass = 'priority-' + (n.priority || 0);
         return '<div class="glass rounded-xl p-4 ' + pClass + ' animate-fade-in">' +
           '<div class="flex items-start justify-between gap-3">' +
@@ -537,54 +529,62 @@ function getDashboardHTML(): string {
               '</div>' +
             '</div>' +
             '<div class="text-right shrink-0">' +
-              '<div class="text-sm font-mono text-textSecondary">' + (n.confidence * 100).toFixed(0) + '%</div>' +
+              '<div class="text-sm font-mono text-textSecondary">' + ((Number(n.confidence) || 0) * 100).toFixed(0) + '%</div>' +
               '<div class="text-xs text-muted">' + timeAgo(n.createdAt) + '</div>' +
-              '<div class="text-xs text-muted">' + n.accessCount + ' hits</div>' +
+              '<div class="text-xs text-muted">' + (n.accessCount ?? 0) + ' hits</div>' +
             '</div>' +
           '</div>' +
         '</div>';
       }).join('');
+      if (list.innerHTML !== html) list.innerHTML = html;
     }
 
     function renderEpisodes(episodes) {
       const list = document.getElementById('episodes-list');
+      if (!episodes || !episodes.length) { list.innerHTML = '<p class="text-textSecondary text-center py-12">No episodes</p>'; return; }
       const modalityIcons = {
         text: '💬', voice: '🎤', image: '🖼️', file: '📎', system: '⚙️'
       };
-      list.innerHTML = episodes.map(ep => {
+      const html = episodes.map(ep => {
         const icon = modalityIcons[ep.modality] || '📝';
         const content = ep.content ? (typeof ep.content === 'object' ? JSON.stringify(ep.content).slice(0, 300) : String(ep.content).slice(0, 300)) : '(no content)';
+        const type = ep.type || 'unknown';
+        const episodeId = ep.episodeId || '-';
+        const importance = (Number(ep.importance) || 0);
         return '<div class="glass rounded-xl p-4 animate-fade-in">' +
           '<div class="flex items-start gap-3">' +
             '<span class="text-lg">' + icon + '</span>' +
             '<div class="flex-1 min-w-0">' +
               '<div class="flex items-center gap-2 mb-1">' +
-                '<span class="type-badge type-fact">' + ep.type + '</span>' +
-                '<span class="text-xs text-textSecondary font-mono">' + ep.episodeId + '</span>' +
+                '<span class="type-badge type-fact">' + escapeHtml(type) + '</span>' +
+                '<span class="text-xs text-textSecondary font-mono">' + escapeHtml(episodeId) + '</span>' +
                 '<span class="text-xs text-muted">' + timeAgo(ep.createdAt) + '</span>' +
               '</div>' +
               '<p class="text-sm text-textSecondary leading-relaxed break-words">' + escapeHtml(content) + '</p>' +
             '</div>' +
-            '<div class="text-xs text-muted shrink-0">imp: ' + ((ep.importance || 0) * 100).toFixed(0) + '%</div>' +
+            '<div class="text-xs text-muted shrink-0">imp: ' + (importance * 100).toFixed(0) + '%</div>' +
           '</div>' +
         '</div>';
       }).join('');
+      if (list.innerHTML !== html) list.innerHTML = html;
     }
 
     function renderTopics(topics) {
       const grid = document.getElementById('topics-grid');
       if (!topics.length) { grid.innerHTML = '<p class="text-textSecondary col-span-full text-center py-12">No topics yet</p>'; return; }
-      const maxCount = Math.max(...topics.map(t => t.count));
-      grid.innerHTML = topics.map(t => {
-        const intensity = Math.max(0.15, t.count / maxCount);
+      const maxCount = Math.max(...topics.map(t => (t.semanticCount || 0) + (t.proceduralCount || 0))) || 1;
+      const html = topics.map(t => {
+        const count = (t.semanticCount || 0) + (t.proceduralCount || 0);
+        const intensity = Math.max(0.15, count / maxCount);
         return '<div class="glass rounded-xl p-4 animate-slide-up" style="border-left: 3px solid rgba(99,102,241,' + intensity + ')">' +
-          '<div class="font-medium text-sm">' + escapeHtml(t.topic) + '</div>' +
+          '<div class="font-medium text-sm">' + escapeHtml(t.topic || 'Unknown') + '</div>' +
           '<div class="flex items-center justify-between mt-2">' +
-            '<span class="text-lg font-bold font-mono text-accent">' + t.count + '</span>' +
-            '<span class="text-xs text-muted">' + timeAgo(t.lastSeen) + '</span>' +
+            '<span class="text-lg font-bold font-mono text-accent">' + count + '</span>' +
+            '<span class="text-xs text-muted">' + timeAgo(t.lastUpdated) + '</span>' +
           '</div>' +
         '</div>';
       }).join('');
+      if (grid.innerHTML !== html) grid.innerHTML = html;
     }
 
     function renderRateLimits(data) {
@@ -644,7 +644,7 @@ function getDashboardHTML(): string {
 
     // ─── Tab switching ──────────────────────────────────────────────────
     function switchTab(tab) {
-      const tabs = ['sessions', 'notes', 'episodes', 'topics', 'ratelimits'];
+      const tabs = ['sessions', 'notes', 'episodes', 'topics'];
       tabs.forEach(t => {
         document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
         document.getElementById('tab-' + t).className = 'pb-3 text-sm font-medium transition ' + (t === tab ? 'tab-active' : 'tab-inactive');
@@ -692,13 +692,6 @@ function getDashboardHTML(): string {
       } catch (e) { console.error('Topics load error:', e); }
     }
 
-    async function loadRateLimits() {
-      try {
-        const data = await api('/api/rate-limits');
-        renderRateLimits(data);
-      } catch (e) { console.error('Rate limits load error:', e); }
-    }
-
     async function refreshCurrentTab() {
       const data = await api('/api/status').catch(() => null);
       if (data) {
@@ -708,13 +701,12 @@ function getDashboardHTML(): string {
       if (currentTab === 'notes') loadNotes();
       if (currentTab === 'episodes') loadEpisodes();
       if (currentTab === 'topics') loadTopics();
-      if (currentTab === 'ratelimits') loadRateLimits();
     }
 
     function startRefresh() {
       refreshCurrentTab();
       if (refreshTimer) clearInterval(refreshTimer);
-      refreshTimer = setInterval(refreshCurrentTab, 5000);
+      refreshTimer = setInterval(refreshCurrentTab, 30000);
     }
 
     // ─── Utilities ──────────────────────────────────────────────────────
