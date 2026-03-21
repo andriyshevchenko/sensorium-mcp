@@ -33,6 +33,8 @@ export function startHttpServer(
   const transports = new Map<string, StreamableHTTPServerTransport>();
   /** Tracks the last time each HTTP session received any request (epoch ms). */
   const sessionLastActivity = new Map<string, number>();
+  /** Tracks session lifecycle status for dashboard visibility. */
+  const sessionStatus = new Map<string, "active" | "disconnected">();
 
   const MCP_HTTP_SECRET = process.env.MCP_HTTP_SECRET;
   const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
@@ -79,8 +81,8 @@ export function startHttpServer(
     const dashCtx: DashboardContext = {
       getDb: getMemoryDb,
       getActiveSessions: () => {
-        const sessions: Array<{ threadId: number; mcpSessionId: string; lastActivity: number; transportType: string }> = [];
-        for (const [sid, _transport] of transports) {
+        const sessions: Array<{ threadId: number; mcpSessionId: string; lastActivity: number; transportType: string; status: "active" | "disconnected" }> = [];
+        for (const [sid, status] of sessionStatus) {
           // Find which thread this session belongs to
           let threadId = 0;
           for (const [tid, entries] of threadSessionRegistry) {
@@ -91,6 +93,7 @@ export function startHttpServer(
             mcpSessionId: sid,
             lastActivity: sessionLastActivity.get(sid) ?? 0,
             transportType: "http",
+            status,
           });
         }
         return sessions;
@@ -142,6 +145,7 @@ export function startHttpServer(
       // Existing session
       if (sessionId && transports.has(sessionId)) {
         sessionLastActivity.set(sessionId, Date.now());
+        sessionStatus.set(sessionId, "active");
         await transports.get(sessionId)!.handleRequest(req, res, body);
         return;
       }
@@ -155,12 +159,17 @@ export function startHttpServer(
             capturedSid = sid;
             transports.set(sid, transport);
             sessionLastActivity.set(sid, Date.now());
+            sessionStatus.set(sid, "active");
           },
         });
 
         transport.onclose = () => {
           const sid = transport.sessionId;
-          if (sid) { transports.delete(sid); sessionLastActivity.delete(sid); }
+          if (sid) {
+            transports.delete(sid);
+            // Keep in sessionLastActivity & sessionStatus for dashboard visibility
+            sessionStatus.set(sid, "disconnected");
+          }
         };
 
         // Create a fresh Server per HTTP session — a single Server can only
@@ -190,6 +199,13 @@ export function startHttpServer(
         return;
       }
       sessionLastActivity.set(sessionId, Date.now());
+      // Detect SSE stream close — mark session as disconnected
+      const sseSid = sessionId;
+      res.on("close", () => {
+        if (sessionStatus.has(sseSid)) {
+          sessionStatus.set(sseSid, "disconnected");
+        }
+      });
       await transports.get(sessionId)!.handleRequest(req, res);
       return;
     }
@@ -220,6 +236,24 @@ export function startHttpServer(
     log.info(`Remote Copilot MCP server running on http://${httpBind}:${httpPort}/mcp`);
   });
 
+  // ── TTL sweeper — mark idle active sessions as disconnected every 5 min ──
+  const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
+  const ttlSweeperInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [sid, status] of sessionStatus) {
+      if (status === "active" && !transports.has(sid)) {
+        // Transport already gone but status wasn't updated — fix it
+        sessionStatus.set(sid, "disconnected");
+      } else if (status === "active") {
+        const lastActive = sessionLastActivity.get(sid) ?? 0;
+        if (now - lastActive > SESSION_IDLE_TTL_MS) {
+          log.info(`[session-ttl] Marking session ${sid.slice(0, 8)} as disconnected (idle ${Math.round((now - lastActive) / 60000)}m)`);
+          sessionStatus.set(sid, "disconnected");
+        }
+      }
+    }
+  }, 5 * 60 * 1000);
+
   // ── Session reaper — close abandoned SSE sessions every 10 minutes ──────
   const STALE_SESSION_MS = 2 * config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
   const sessionReaperInterval = setInterval(() => {
@@ -231,12 +265,24 @@ export function startHttpServer(
         try { transport.close(); } catch (_) { /* best-effort */ }
         transports.delete(sid);
         sessionLastActivity.delete(sid);
+        sessionStatus.delete(sid);
+      }
+    }
+    // Also purge long-disconnected sessions from tracking maps
+    for (const [sid, status] of sessionStatus) {
+      if (status === "disconnected" && !transports.has(sid)) {
+        const lastActive = sessionLastActivity.get(sid) ?? 0;
+        if (now - lastActive > STALE_SESSION_MS) {
+          sessionLastActivity.delete(sid);
+          sessionStatus.delete(sid);
+        }
       }
     }
   }, 10 * 60 * 1000);
 
   // Simple shutdown — close transports, DB, and exit.
   const shutdown = () => {
+    clearInterval(ttlSweeperInterval);
     clearInterval(sessionReaperInterval);
     for (const [sid, t] of transports) {
       try { t.close(); } catch (_) { /* best-effort */ }

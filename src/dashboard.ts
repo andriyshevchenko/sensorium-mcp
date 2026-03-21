@@ -60,6 +60,7 @@ export interface DashboardContext {
         mcpSessionId: string;
         lastActivity: number;
         transportType: string;
+        status: "active" | "disconnected";
     }>;
     serverStartTime: number;
 }
@@ -418,7 +419,7 @@ function getDashboardHTML(): string {
       <!-- Sessions -->
       <div id="panel-sessions" class="animate-fade-in">
         <div id="sessions-list" class="space-y-3"></div>
-        <p id="sessions-empty" class="hidden text-center text-textSecondary py-12">No active sessions</p>
+        <p id="sessions-empty" class="hidden text-center text-textSecondary py-12">No sessions</p>
       </div>
 
       <!-- Notes -->
@@ -634,11 +635,24 @@ function getDashboardHTML(): string {
         return;
       }
       empty.classList.add('hidden');
+      // Sort: active first, then disconnected by most recent activity
+      sessions.sort(function(a, b) {
+        if (a.status === 'active' && b.status !== 'active') return -1;
+        if (a.status !== 'active' && b.status === 'active') return 1;
+        return b.lastActivity - a.lastActivity;
+      });
       const html = sessions.map(s => {
+        const isDisconnected = s.status === 'disconnected';
         const idle = Math.floor((Date.now() - s.lastActivity) / 60000);
-        const statusColor = idle < 5 ? 'success' : idle < 30 ? 'warn' : 'danger';
-        const statusLabel = idle < 5 ? 'Active' : idle < 30 ? 'Idle ' + idle + 'm' : 'Dormant ' + idle + 'm';
-        return '<div class="glass rounded-xl p-4 animate-slide-up">' +
+        var statusColor, statusLabel;
+        if (isDisconnected) {
+          statusColor = 'muted';
+          statusLabel = 'Disconnected' + (idle > 0 ? ' — ' + idle + 'm ago' : '');
+        } else {
+          statusColor = idle < 5 ? 'success' : idle < 30 ? 'warn' : 'danger';
+          statusLabel = idle < 5 ? 'Active' : idle < 30 ? 'Idle ' + idle + 'm' : 'Dormant ' + idle + 'm';
+        }
+        return '<div class="glass rounded-xl p-4 animate-slide-up' + (isDisconnected ? ' opacity-60' : '') + '">' +
           '<div class="flex items-center justify-between">' +
             '<div class="flex items-center gap-3">' +
               '<span class="w-2.5 h-2.5 rounded-full bg-' + statusColor + '"></span>' +
