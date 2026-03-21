@@ -41,6 +41,7 @@ import type { AppConfig } from "../types.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../utils.js";
 import { log } from "../logger.js";
 import { extractSearchKeywords, buildAnalysisTags, getReminders, getShortReminder } from "../response-builders.js";
+import { classifyIntent } from "../intent.js";
 import { backfillEmbeddings } from "./memory-tools.js";
 
 // ---------------------------------------------------------------------------
@@ -469,6 +470,13 @@ export async function handleWaitForInstructions(
 
       log.info(`[wait] Episodes saved. Building auto-memory context...`);
 
+      // Extract operator text for memory search and intent classification.
+      const operatorText = stored
+        .map(m => m.message.text ?? m.message.caption ?? "")
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 500);
+
       // ── Smart context injection (GPT-4o-mini preprocessor) ──────────
       // Retrieves candidate notes via embedding search, then uses GPT-4o-mini
       // to select ONLY the notes truly relevant to the operator's message.
@@ -477,11 +485,6 @@ export async function handleWaitForInstructions(
       try {
         const db = getMemoryDb();
         const apiKey = process.env.OPENAI_API_KEY;
-        const operatorText = stored
-          .map(m => m.message.text ?? m.message.caption ?? "")
-          .filter(Boolean)
-          .join(" ")
-          .slice(0, 500);
 
         if (operatorText.length > 10 && apiKey) {
           // Phase 1: Broad retrieval — get 10 candidates via embedding search
@@ -564,6 +567,12 @@ export async function handleWaitForInstructions(
 
       log.info(`[wait] Returning response with ${contentBlocks.length} blocks to agent.`);
 
+      const intent = classifyIntent(operatorText);
+      log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${intent}`);
+      const reminder = intent === "conversational"
+        ? getShortReminder(effectiveThreadId, state.sessionStartedAt)
+        : getReminders(effectiveThreadId, false, state.sessionStartedAt, AUTONOMOUS_MODE);
+
       return {
         content: [
           {
@@ -578,7 +587,7 @@ export async function handleWaitForInstructions(
               text: "(Operator sent voice — respond with `send_voice`.)",
             }]
             : []),
-          { type: "text", text: getReminders(effectiveThreadId, false, state.sessionStartedAt, AUTONOMOUS_MODE) },
+          { type: "text", text: reminder },
           { type: "text", text: "<<< END OPERATOR MESSAGE >>>" },
           ...(autoMemoryContext
             ? [{ type: "text" as const, text: autoMemoryContext }]
