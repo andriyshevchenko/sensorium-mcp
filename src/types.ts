@@ -6,6 +6,7 @@
  * to the monolithic index.ts.
  */
 
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Database } from "better-sqlite3";
 import type { TelegramClient } from "./telegram.js";
 
@@ -73,3 +74,10 @@ export interface DashboardCtx {
   }>;
   serverStartTime: number;
 }
+
+// ─── MCP server factory function type ───────────────────────────────────────
+
+export type CreateMcpServerFn = (
+  getMcpSessionId?: () => string | undefined,
+  closeTransport?: () => void,
+) => Server;
