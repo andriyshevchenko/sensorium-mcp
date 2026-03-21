@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { mkdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { log } from "./logger.js";
 import { cosineSimilarity } from "./openai.js";
 
 // Use the Database type from better-sqlite3
@@ -205,7 +206,7 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       }
     }
     if (backfilled > 0) {
-      process.stderr.write(`[migration-4] Backfilled thread_id on ${backfilled}/${notes.length} existing notes.\n`);
+      log.info(`[migration-4] Backfilled thread_id on ${backfilled}/${notes.length} existing notes.`);
     }
   },
 };
@@ -232,7 +233,7 @@ function getCurrentSchemaVersion(db: Database): number {
  */
 function runMigrations(db: Database): void {
   const currentVersion = getCurrentSchemaVersion(db);
-  process.stderr.write(`[memory] Current schema version: ${currentVersion}, target: ${SCHEMA_VERSION}\n`);
+  log.info(`[memory] Current schema version: ${currentVersion}, target: ${SCHEMA_VERSION}`);
   for (let v = currentVersion + 1; v <= SCHEMA_VERSION; v++) {
     const migration = MIGRATIONS[v];
     if (migration) {
@@ -243,9 +244,9 @@ function runMigrations(db: Database): void {
         db.prepare(
           "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)"
         ).run(v, nowISO());
-        process.stderr.write(`[memory] Migrated schema to version ${v}\n`);
+        log.info(`[memory] Migrated schema to version ${v}`);
       } catch (err) {
-        process.stderr.write(`[memory] Migration ${v} FAILED: ${err instanceof Error ? err.message : String(err)}\n`);
+        log.error(`[memory] Migration ${v} FAILED: ${err instanceof Error ? err.message : String(err)}`);
         throw err;
       }
     }
@@ -401,7 +402,7 @@ export function initMemoryDb(): Database {
       if (!hasPriority) {
         // Version 3 was recorded but migration never ran — reset to version 2
         db.prepare("DELETE FROM schema_version WHERE version >= 3").run();
-        process.stderr.write("[memory] Repaired: schema_version was ahead of actual migrations, reset to v2\n");
+        log.warn("[memory] Repaired: schema_version was ahead of actual migrations, reset to v2");
       }
     }
     const hasV4 = db.prepare("SELECT version FROM schema_version WHERE version = 4").get();
@@ -410,7 +411,7 @@ export function initMemoryDb(): Database {
       const hasThreadId = cols.some(c => c.name === "thread_id");
       if (!hasThreadId) {
         db.prepare("DELETE FROM schema_version WHERE version >= 4").run();
-        process.stderr.write("[memory] Repaired: schema_version was ahead of actual migrations, reset to v3\n");
+        log.warn("[memory] Repaired: schema_version was ahead of actual migrations, reset to v3");
       }
     }
   }
@@ -424,12 +425,12 @@ export function initMemoryDb(): Database {
   {
     const cols = db.prepare("PRAGMA table_info(semantic_notes)").all() as Array<{ name: string }>;
     if (!cols.some(c => c.name === "priority")) {
-      process.stderr.write("[memory] Direct repair: adding missing priority column\n");
+      log.info("[memory] Direct repair: adding missing priority column");
       db.exec(`ALTER TABLE semantic_notes ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL`);
     }
     if (!cols.some(c => c.name === "thread_id")) {
-      process.stderr.write("[memory] Direct repair: adding missing thread_id column\n");
+      log.info("[memory] Direct repair: adding missing thread_id column");
       db.exec(`ALTER TABLE semantic_notes ADD COLUMN thread_id INTEGER`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL`);
     }
@@ -1528,7 +1529,7 @@ Rules:
         }
       }
       if (supersededCount > 0) {
-        process.stderr.write(`[memory] Contradiction resolution: superseded ${supersededCount} outdated note(s)\n`);
+        log.info(`[memory] Contradiction resolution: superseded ${supersededCount} outdated note(s)`);
       }
 
       // Mark episodes as consolidated
@@ -1556,7 +1557,7 @@ Rules:
     // data-loss bug: a transient OpenAI outage would permanently lose the
     // episodes' knowledge without extracting anything.
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[memory] Intelligent consolidation failed (episodes NOT marked): ${msg}\n`);
+    log.error(`[memory] Intelligent consolidation failed (episodes NOT marked): ${msg}`);
     details.push(`Consolidation failed (will retry): ${msg}`);
   }
 

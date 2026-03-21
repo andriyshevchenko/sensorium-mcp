@@ -3,6 +3,8 @@
  * No third-party HTTP client required.
  */
 
+import { log } from "./logger.js";
+
 // ---------------------------------------------------------------------------
 // Type definitions
 // ---------------------------------------------------------------------------
@@ -226,16 +228,16 @@ export class TelegramClient {
       const data = await this.tryParseJson<GetUpdatesResult>(response);
 
       if (data === undefined) {
-        process.stderr.write(
-          "Failed to parse Telegram getUpdates response.\n",
+        log.warn(
+          "Failed to parse Telegram getUpdates response.",
         );
       }
 
       // 409 Conflict: another poller is running. Wait and retry.
       if (response.status === 409 && attempt < MAX_409_RETRIES) {
-        process.stderr.write(
+        log.warn(
           `Telegram getUpdates 409 Conflict (attempt ${attempt + 1}/${MAX_409_RETRIES}) — ` +
-          `another bot instance is polling. Retrying in ${RETRY_DELAY_MS / 1000}s...\n`,
+          `another bot instance is polling. Retrying in ${RETRY_DELAY_MS / 1000}s...`,
         );
         // Abort-aware delay: if an abort signal fires during the retry
         // delay, throw immediately instead of sleeping the full 5s.
@@ -434,15 +436,15 @@ export class TelegramClient {
       if (!response.ok && !this.reactionWarned) {
         this.reactionWarned = true;
         const data = await this.tryParseJson<{ description?: string }>(response);
-        process.stderr.write(
-          `[telegram] setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText} (further failures suppressed)\n`,
+        log.warn(
+          `[telegram] setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText} (further failures suppressed)`,
         );
       }
     } catch (err) {
       if (!this.reactionWarned) {
         this.reactionWarned = true;
-        process.stderr.write(
-          `[telegram] setMessageReaction error: ${err instanceof Error ? err.message : String(err)} (further errors suppressed)\n`,
+        log.warn(
+          `[telegram] setMessageReaction error: ${err instanceof Error ? err.message : String(err)} (further errors suppressed)`,
         );
       }
     }

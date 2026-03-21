@@ -24,6 +24,7 @@ import {
   updateSemanticNote,
 } from "../memory.js";
 import { generateEmbedding } from "../openai.js";
+import { log } from "../logger.js";
 import { errorMessage } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -58,9 +59,9 @@ export async function backfillEmbeddings(db: ReturnType<typeof initMemoryDb>): P
     try {
       const emb = await generateEmbedding(content, apiKey);
       saveNoteEmbedding(db, noteId, emb);
-      process.stderr.write(`[memory] Embedded ${noteId}\n`);
+      log.verbose("memory", `Embedded ${noteId}`);
     } catch (err) {
-      process.stderr.write(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}\n`);
+      log.error(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 }
@@ -123,7 +124,7 @@ export async function handleMemoryTool(
                 embeddingSearchDone = true;
               }
             } catch (embErr) {
-              process.stderr.write(`[memory] Embedding search failed in memory_search, falling back to keyword: ${embErr instanceof Error ? embErr.message : String(embErr)}\n`);
+              log.warn(`[memory] Embedding search failed in memory_search, falling back to keyword: ${embErr instanceof Error ? embErr.message : String(embErr)}`);
             }
           }
           if (!embeddingSearchDone) {
@@ -201,7 +202,7 @@ export async function handleMemoryTool(
             void generateEmbedding(content, apiKey).then(emb => {
                 saveNoteEmbedding(getMemoryDb(), noteId, emb);
             }).catch(err => {
-                process.stderr.write(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}\n`);
+                log.error(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}`);
             });
         }
         return {

@@ -17,6 +17,7 @@ import type { Database } from "better-sqlite3";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import { config } from "./config.js";
+import { log } from "./logger.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
 import { rateLimiter } from "./rate-limiter.js";
 import { threadSessionRegistry } from "./sessions.js";
@@ -208,7 +209,7 @@ export function startHttpServer(
     res.writeHead(405, { "Content-Type": "text/plain" });
     res.end("Method Not Allowed");
    } catch (err) {
-    process.stderr.write(`[http] Unhandled error: ${typeof err === 'object' && err !== null && 'message' in err ? (err as Error).message : String(err)}\n`);
+    log.error(`[http] Unhandled error: ${typeof err === 'object' && err !== null && 'message' in err ? (err as Error).message : String(err)}`);
     if (!res.headersSent) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null }));
@@ -217,7 +218,7 @@ export function startHttpServer(
   });
 
   httpServer.listen(httpPort, httpBind, () => {
-    process.stderr.write(`Remote Copilot MCP server running on http://${httpBind}:${httpPort}/mcp\n`);
+    log.info(`Remote Copilot MCP server running on http://${httpBind}:${httpPort}/mcp`);
   });
 
   // ── Session reaper — close abandoned SSE sessions every 10 minutes ──────
@@ -227,7 +228,7 @@ export function startHttpServer(
     for (const [sid, transport] of transports) {
       const lastActive = sessionLastActivity.get(sid) ?? 0;
       if (now - lastActive > STALE_SESSION_MS) {
-        process.stderr.write(`[session-reaper] Closing stale session ${sid} (idle ${Math.round((now - lastActive) / 60000)}m)\n`);
+        log.info(`[session-reaper] Closing stale session ${sid} (idle ${Math.round((now - lastActive) / 60000)}m)`);
         try { transport.close(); } catch (_) { /* best-effort */ }
         transports.delete(sid);
         sessionLastActivity.delete(sid);

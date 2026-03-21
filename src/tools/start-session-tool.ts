@@ -18,6 +18,7 @@ import {
 } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig } from "../types.js";
+import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
 import { readThreadMessages } from "../dispatcher.js";
 
@@ -115,8 +116,8 @@ export async function handleStartSession(
     // re-delivered in the next wait_for_instructions call.
     const stale = readThreadMessages(session.currentThreadId);
     if (stale.length > 0) {
-      process.stderr.write(
-        `[start_session] Drained ${stale.length} stale message(s) from thread ${session.currentThreadId}.\n`,
+      log.info(
+        `[start_session] Drained ${stale.length} stale message(s) from thread ${session.currentThreadId}.`,
       );
       // Notify the operator that stale messages were discarded.
       try {
@@ -136,15 +137,15 @@ export async function handleStartSession(
       await telegram.sendMessage(TELEGRAM_CHAT_ID, "\u{1F504} Session resumed. Continuing in this thread.", undefined, session.currentThreadId);
     } catch (err) {
       const errMsg = errorMessage(err);
-      process.stderr.write(
-        `[start_session] Probe failed for thread ${session.currentThreadId} in chat ${TELEGRAM_CHAT_ID}: ${errMsg}\n`,
+      log.warn(
+        `[start_session] Probe failed for thread ${session.currentThreadId} in chat ${TELEGRAM_CHAT_ID}: ${errMsg}`,
       );
       // Telegram returns "Bad Request: message thread not found" or
       // "Bad Request: the topic was closed" for deleted/closed topics.
       const isThreadGone = /thread not found|topic.*(closed|deleted|not found)/i.test(errMsg);
       if (isThreadGone) {
-        process.stderr.write(
-          `[start_session] Cached thread ${session.currentThreadId} is gone (${errMsg}). Creating new topic.\n`,
+        log.info(
+          `[start_session] Cached thread ${session.currentThreadId} is gone (${errMsg}). Creating new topic.`,
         );
         // Drop the stale mapping and purge any scheduled tasks.
         if (session.currentThreadId !== undefined) purgeSchedules(session.currentThreadId);
@@ -210,7 +211,7 @@ export async function handleStartSession(
     const sid = ctx.getMcpSessionId?.();
     const purged = purgeOtherSessions(session.currentThreadId, sid);
     if (purged > 0) {
-      process.stderr.write(`[start_session] Purged ${purged} stale MCP session(s) for thread ${session.currentThreadId}.\n`);
+      log.info(`[start_session] Purged ${purged} stale MCP session(s) for thread ${session.currentThreadId}.`);
     }
     if (sid && ctx.closeTransport) {
       registerMcpSession(session.currentThreadId, sid, ctx.closeTransport);
@@ -235,7 +236,7 @@ export async function handleStartSession(
         oneShot: false,
         createdAt: new Date().toISOString(),
       });
-      process.stderr.write(`[start_session] Auto-scheduled DMN reflection task for thread ${session.currentThreadId}.\n`);
+      log.info(`[start_session] Auto-scheduled DMN reflection task for thread ${session.currentThreadId}.`);
     }
   }
 

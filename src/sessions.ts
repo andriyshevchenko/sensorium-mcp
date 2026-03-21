@@ -6,6 +6,7 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { log } from "./logger.js";
 import { errorMessage } from "./utils.js";
 
 // ─── Session store (disk-backed name → threadId mapping) ────────────────────
@@ -29,8 +30,8 @@ function saveSessionMap(map: SessionMap): void {
     writeFileSync(tmp, JSON.stringify(map, null, 2), "utf8");
     renameSync(tmp, SESSION_STORE_PATH);
   } catch (err) {
-    process.stderr.write(
-      `Warning: Could not save session map to ${SESSION_STORE_PATH}: ${errorMessage(err)}\n`,
+    log.warn(
+      `Warning: Could not save session map to ${SESSION_STORE_PATH}: ${errorMessage(err)}`,
     );
   }
 }

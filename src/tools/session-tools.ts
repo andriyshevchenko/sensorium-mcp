@@ -9,6 +9,7 @@ import type { TelegramClient } from "../telegram.js";
 import type { peekThreadMessages } from "../dispatcher.js";
 import type { checkMaintenanceFlag } from "../config.js";
 import type { checkDueTasks } from "../scheduler.js";
+import { log } from "../logger.js";
 import { errorMessage } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -119,8 +120,8 @@ async function handleReportProgress(
         }
         sentAsPlainText = true;
       } catch (retryError) {
-        process.stderr.write(
-          `Failed to send progress message via Telegram (plain fallback): ${errorMessage(retryError)}\n`,
+        log.error(
+          `Failed to send progress message via Telegram (plain fallback): ${errorMessage(retryError)}`,
         );
         return errorResult(
           "Error: Failed to send progress update to Telegram even without formatting. " +
@@ -128,8 +129,8 @@ async function handleReportProgress(
         );
       }
     } else {
-      process.stderr.write(
-        `Failed to send progress message via Telegram: ${errMsg}\n`,
+      log.error(
+        `Failed to send progress message via Telegram: ${errMsg}`,
       );
       return errorResult(
         "Error: Failed to send progress update to Telegram. " +
@@ -234,13 +235,13 @@ async function handleHibernate(
   const deadline = Date.now() + MAX_HIBERNATE_MS;
   let lastKeepalive = Date.now();
 
-  process.stderr.write(`[hibernate] Entering hibernation. threadId=${effectiveThreadId}, wakeAt=${wakeAt ? new Date(wakeAt).toISOString() : "indefinite"}\n`);
+  log.info(`[hibernate] Entering hibernation. threadId=${effectiveThreadId}, wakeAt=${wakeAt ? new Date(wakeAt).toISOString() : "indefinite"}`);
 
   while (Date.now() < deadline) {
     // Check for operator messages (non-destructive peek)
     const peeked = peekThreadMessages(effectiveThreadId);
     if (peeked.length > 0) {
-      process.stderr.write(`[hibernate] Waking up — ${peeked.length} operator message(s) received.\n`);
+      log.info(`[hibernate] Waking up — ${peeked.length} operator message(s) received.`);
       // Don't consume messages — let the next wait_for_instructions call handle them
       return {
         content: [{
@@ -256,7 +257,7 @@ async function handleHibernate(
     // gets no guidance on how to reconnect.
     const maintenanceInfo = checkMaintenanceFlag();
     if (maintenanceInfo) {
-      process.stderr.write(`[hibernate] Maintenance flag detected — returning to let agent use Start-Sleep: ${maintenanceInfo}\n`);
+      log.info(`[hibernate] Maintenance flag detected — returning to let agent use Start-Sleep: ${maintenanceInfo}`);
       return {
         content: [{
           type: "text",
@@ -271,7 +272,7 @@ async function handleHibernate(
     // Check for scheduled tasks
     const dueTask = checkDueTasks(effectiveThreadId, lastOperatorMessageAt, false);
     if (dueTask) {
-      process.stderr.write(`[hibernate] Waking up — scheduled task fired: ${dueTask.task.label}\n`);
+      log.info(`[hibernate] Waking up — scheduled task fired: ${dueTask.task.label}`);
       // DMN sentinel: generate dynamic first-person reflection
       const taskPrompt = dueTask.prompt === "__DMN__"
         ? generateDmnReflection(effectiveThreadId)
@@ -286,7 +287,7 @@ async function handleHibernate(
 
     // Check alarm
     if (wakeAt && Date.now() >= wakeAt) {
-      process.stderr.write(`[hibernate] Waking up — alarm reached.\n`);
+      log.info(`[hibernate] Waking up — alarm reached.`);
       return {
         content: [{
           type: "text",
@@ -310,7 +311,7 @@ async function handleHibernate(
           },
         });
       } catch {
-        process.stderr.write(`[hibernate] SSE keepalive failed — connection lost.\n`);
+        log.warn(`[hibernate] SSE keepalive failed — connection lost.`);
         return {
           content: [{
             type: "text",
@@ -323,7 +324,7 @@ async function handleHibernate(
 
     // Check abort signal
     if (extra.signal.aborted) {
-      process.stderr.write(`[hibernate] SSE connection aborted during hibernation.\n`);
+      log.info(`[hibernate] SSE connection aborted during hibernation.`);
       return {
         content: [{
           type: "text",
@@ -337,7 +338,7 @@ async function handleHibernate(
   }
 
   // Max hibernation duration reached
-  process.stderr.write(`[hibernate] Max hibernation duration reached (8h).\n`);
+  log.info(`[hibernate] Max hibernation duration reached (8h).`);
   return {
     content: [{
       type: "text",

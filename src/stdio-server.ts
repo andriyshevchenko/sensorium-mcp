@@ -5,6 +5,7 @@
  */
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { log } from "./logger.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 export async function startStdioServer(
@@ -14,7 +15,7 @@ export async function startStdioServer(
   const transport = new StdioServerTransport();
   const server = createMcpServerFn();
   await server.connect(transport);
-  process.stderr.write("Remote Copilot MCP server running on stdio.\n");
+  log.info("Remote Copilot MCP server running on stdio.");
 
   const stdioShutdown = () => {
     closeMemoryDb();

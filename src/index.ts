@@ -46,6 +46,7 @@ import { errorResult } from "./utils.js";
 import { getReminders, getShortReminder } from "./response-builders.js";
 import { startHttpServer } from "./http-server.js";
 import { startStdioServer } from "./stdio-server.js";
+import { log } from "./logger.js";
 import { handleMemoryTool, type ToolContext } from "./tools/memory-tools.js";
 import { handleUtilityTool, type UtilityToolContext } from "./tools/utility-tools.js";
 import { handleSessionTool, type SessionToolContext } from "./tools/session-tools.js";
@@ -188,6 +189,10 @@ srv.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const { name, arguments: args } = request.params;
+
+  // Verbose logging: tool call dispatch
+  const argsSummary = args ? JSON.stringify(args).slice(0, 200) : "{}";
+  log.verbose("dispatch", `Tool call: ${name} args=${argsSummary}`);
 
   // Dead session detection — update timestamp on any tool call.
   // Only reset the alert flag when wait_for_instructions is called,

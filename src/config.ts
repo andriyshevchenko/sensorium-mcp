@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { log } from "./logger.js";
 import type { AppConfig } from "./types.js";
 
 const esmRequire = createRequire(import.meta.url);
@@ -26,15 +27,15 @@ const WAIT_TIMEOUT_MINUTES = Math.max(1, Number.isFinite(rawWaitTimeoutMinutes) 
 // ─── Validation ─────────────────────────────────────────────────────────────
 
 if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
-  process.stderr.write("Error: TELEGRAM_TOKEN and TELEGRAM_CHAT_ID environment variables are required.\n");
+  log.error("TELEGRAM_TOKEN and TELEGRAM_CHAT_ID environment variables are required.");
   process.exit(1);
 }
 
 if (!OPENAI_API_KEY) {
-  process.stderr.write("Warning: OPENAI_API_KEY not set — voice messages will not be transcribed.\n");
+  log.warn("OPENAI_API_KEY not set — voice messages will not be transcribed.");
 }
 if (VOICE_ANALYSIS_URL) {
-  process.stderr.write(`Voice analysis service configured: ${VOICE_ANALYSIS_URL}\n`);
+  log.info(`Voice analysis service configured: ${VOICE_ANALYSIS_URL}`);
 }
 
 // ─── File storage ───────────────────────────────────────────────────────────
