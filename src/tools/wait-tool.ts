@@ -39,6 +39,7 @@ import { checkDueTasks, listSchedules } from "../scheduler.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig } from "../types.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../utils.js";
+import { log } from "../logger.js";
 import { extractSearchKeywords, buildAnalysisTags, getReminders, getShortReminder } from "../response-builders.js";
 import { backfillEmbeddings } from "./memory-tools.js";
 
@@ -114,6 +115,7 @@ export async function handleWaitForInstructions(
   const SSE_KEEPALIVE_INTERVAL_MS = 30_000;
   let lastScheduleCheck = 0;
   let lastKeepalive = Date.now();
+  let maintenanceNotified = false;
 
   while (Date.now() < deadline) {
     // Check for pending update — tell agent to wait externally via Desktop Commander
@@ -121,7 +123,21 @@ export async function handleWaitForInstructions(
     // is about to die. Agents must use an external sleep (PowerShell Start-Sleep) instead.
     const maintenanceInfo = checkMaintenanceFlag();
     if (maintenanceInfo) {
-      process.stderr.write(`[wait] Maintenance flag detected: ${maintenanceInfo}\n`);
+      log.info(`[wait] Maintenance flag detected: ${maintenanceInfo}`);
+
+      // Notify operator via Telegram once
+      if (!maintenanceNotified) {
+        maintenanceNotified = true;
+        let version = "unknown";
+        try { version = (JSON.parse(maintenanceInfo) as { version?: string }).version ?? version; } catch { /* not JSON or missing field */ }
+        telegram.sendMessage(
+          telegramChatId,
+          `\u26A0\uFE0F Server update: v${version} deploying. Agent sessions will reconnect after update.`,
+          undefined,
+          effectiveThreadId,
+        ).catch(() => {});
+      }
+
       return {
         content: [{
           type: "text",
@@ -142,7 +158,7 @@ export async function handleWaitForInstructions(
       // This prevents the destructive readThreadMessages from eating
       // messages that can never be delivered to a dead connection.
       if (extra.signal.aborted) {
-        process.stderr.write(`[wait] SSE connection aborted before consuming ${peeked.length} messages — leaving in queue.\n`);
+        log.warn(`[wait] SSE connection aborted before consuming ${peeked.length} messages — leaving in queue.`);
         return {
           content: [{
             type: "text",
@@ -153,7 +169,7 @@ export async function handleWaitForInstructions(
 
       // Connection alive — now consume messages for real.
       const stored = readThreadMessages(effectiveThreadId);
-      process.stderr.write(`[wait] Read ${stored.length} messages from thread ${effectiveThreadId}. Processing...\n`);
+      log.info(`[wait] Read ${stored.length} messages from thread ${effectiveThreadId}. Processing...`);
       // Update the operator activity timestamp for idle detection.
       state.lastOperatorMessageAt = Date.now();
 
@@ -249,11 +265,11 @@ export async function handleWaitForInstructions(
           hasVoiceMessages = true;
           if (OPENAI_API_KEY) {
             try {
-              process.stderr.write(`[voice] Downloading voice file ${msg.message.voice.file_id}...\n`);
+              log.verbose("voice", `Downloading voice file ${msg.message.voice.file_id}...`);
               const { buffer } = await telegram.downloadFileAsBuffer(
                 msg.message.voice.file_id,
               );
-              process.stderr.write(`[voice] Downloaded ${buffer.length} bytes. Starting transcription + analysis...\n`);
+              log.verbose("voice", `Downloaded ${buffer.length} bytes. Starting transcription + analysis...`);
 
               // Run transcription and voice analysis in parallel.
               const [transcript, analysis] = await Promise.all([
@@ -325,14 +341,14 @@ export async function handleWaitForInstructions(
           const vn = msg.message.video_note;
           if (OPENAI_API_KEY) {
             try {
-              process.stderr.write(`[video-note] Downloading circle video ${vn.file_id} (${vn.duration}s)...\n`);
+              log.verbose("video-note", `Downloading circle video ${vn.file_id} (${vn.duration}s)...`);
               const { buffer } = await telegram.downloadFileAsBuffer(vn.file_id);
-              process.stderr.write(`[video-note] Downloaded ${buffer.length} bytes. Extracting frames + transcribing...\n`);
+              log.verbose("video-note", `Downloaded ${buffer.length} bytes. Extracting frames + transcribing...`);
 
               // Run frame extraction, audio transcription, and voice analysis in parallel.
               const [frames, transcript, analysis] = await Promise.all([
                 extractVideoFrames(buffer, vn.duration).catch((err) => {
-                  process.stderr.write(`[video-note] Frame extraction failed: ${errorMessage(err)}\n`);
+                  log.error(`[video-note] Frame extraction failed: ${errorMessage(err)}`);
                   return [] as Buffer[];
                 }),
                 transcribeAudio(buffer, OPENAI_API_KEY, "video.mp4").catch(() => ""),
@@ -348,11 +364,11 @@ export async function handleWaitForInstructions(
               let sceneDescription: string | null = "";
               if (frames.length > 0) {
                 try {
-                  process.stderr.write(`[video-note] Analyzing ${frames.length} frames with GPT-4o-mini vision...\n`);
+                  log.verbose("video-note", `Analyzing ${frames.length} frames with GPT-4o-mini vision...`);
                   sceneDescription = await analyzeVideoFrames(frames, vn.duration, OPENAI_API_KEY);
-                  process.stderr.write(`[video-note] Vision analysis complete.\n`);
+                  log.verbose("video-note", `Vision analysis complete.`);
                 } catch (visionErr) {
-                  process.stderr.write(`[video-note] Vision analysis failed: ${visionErr}\n`);
+                  log.error(`[video-note] Vision analysis failed: ${visionErr}`);
                   sceneDescription = null;
                 }
               }
@@ -416,13 +432,13 @@ export async function handleWaitForInstructions(
       }
       if (contentBlocks.length === 0) {
         const msgKeys = stored.map(m => Object.keys(m.message).filter(k => (m.message as Record<string, unknown>)[k] != null).join(",")).join(" | ");
-        process.stderr.write(`[wait] No content blocks from ${stored.length} messages. Fields: ${msgKeys}\n`);
+        log.warn(`[wait] No content blocks from ${stored.length} messages. Fields: ${msgKeys}`);
         contentBlocks.push({
           type: "text",
           text: "[Unsupported message type received — the operator sent a message type that cannot be processed (e.g., sticker, location, contact). Please ask them to resend as text, photo, document, or voice.]",
         });
       }
-      process.stderr.write(`[wait] ${contentBlocks.length} content blocks built. Saving episodes...\n`);
+      log.info(`[wait] ${contentBlocks.length} content blocks built. Saving episodes...`);
 
       // Auto-ingest episodes for messages not already saved by voice/video handlers
       try {
@@ -451,7 +467,7 @@ export async function handleWaitForInstructions(
         }
       } catch (_) { /* memory write failures should never break the main flow */ }
 
-      process.stderr.write(`[wait] Episodes saved. Building auto-memory context...\n`);
+      log.info(`[wait] Episodes saved. Building auto-memory context...`);
 
       // ── Smart context injection (GPT-4o-mini preprocessor) ──────────
       // Retrieves candidate notes via embedding search, then uses GPT-4o-mini
@@ -521,10 +537,10 @@ export async function handleWaitForInstructions(
                   }
                 }
               }
-              process.stderr.write(`[memory] Smart filter: ${candidates.length} candidates → ${(jsonMatch ? JSON.parse(jsonMatch[0]) : []).length} selected\n`);
+              log.verbose("memory", `Smart filter: ${candidates.length} candidates → ${(jsonMatch ? JSON.parse(jsonMatch[0]) : []).length} selected`);
             } catch (filterErr) {
               // GPT-4o-mini filter failed — fall back to top-3 raw notes
-              process.stderr.write(`[memory] Smart filter failed, using raw top-3: ${filterErr instanceof Error ? filterErr.message : String(filterErr)}\n`);
+              log.warn(`[memory] Smart filter failed, using raw top-3: ${filterErr instanceof Error ? filterErr.message : String(filterErr)}`);
               const lines = candidates.slice(0, 3).map(c =>
                 `- **[${c.type}]** ${c.content} _(conf: ${c.confidence})_`
               );
@@ -546,7 +562,7 @@ export async function handleWaitForInstructions(
         }
       } catch (_) { /* memory search failures should never break message delivery */ }
 
-      process.stderr.write(`[wait] Returning response with ${contentBlocks.length} blocks to agent.\n`);
+      log.info(`[wait] Returning response with ${contentBlocks.length} blocks to agent.`);
 
       return {
         content: [
@@ -610,7 +626,7 @@ export async function handleWaitForInstructions(
       } catch {
         // If notification fails, the SSE stream is already dead.
         // Return immediately so the agent can reconnect.
-        process.stderr.write(`[wait] SSE keepalive failed — connection dead. Returning early.\n`);
+        log.warn(`[wait] SSE keepalive failed — connection dead. Returning early.`);
         state.lastToolCallAt = Date.now();
         return {
           content: [{
@@ -679,11 +695,11 @@ export async function handleWaitForInstructions(
       const db = getMemoryDb();
       void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
         if (report.episodesProcessed > 0) {
-          process.stderr.write(`[memory] Consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
+          log.info(`[memory] Consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`);
         }
         await backfillEmbeddings(db);
       }).catch(err => {
-        process.stderr.write(`[memory] Consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
+        log.error(`[memory] Consolidation error: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
   } catch (_) { /* consolidation failure is non-fatal */ }
@@ -699,11 +715,11 @@ export async function handleWaitForInstructions(
         state.lastConsolidationAt = Date.now();
         void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
           if (report.episodesProcessed > 0) {
-            process.stderr.write(`[memory] Episode-count consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
+            log.info(`[memory] Episode-count consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`);
           }
           await backfillEmbeddings(db);
         }).catch(err => {
-          process.stderr.write(`[memory] Episode-count consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
+          log.error(`[memory] Episode-count consolidation error: ${err instanceof Error ? err.message : String(err)}`);
         });
       }
     }
@@ -716,14 +732,14 @@ export async function handleWaitForInstructions(
     if (effectiveThreadId !== undefined && Date.now() - state.lastConsolidationAt > TIME_CONSOLIDATION_INTERVAL) {
       state.lastConsolidationAt = Date.now();
       const db = getMemoryDb();
-      process.stderr.write(`[memory] Time-based consolidation triggered (4h since last)\n`);
+      log.info(`[memory] Time-based consolidation triggered (4h since last)`);
       void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
         if (report.episodesProcessed > 0) {
-          process.stderr.write(`[memory] Time-based consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes\n`);
+          log.info(`[memory] Time-based consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`);
         }
         await backfillEmbeddings(db);
       }).catch(err => {
-        process.stderr.write(`[memory] Time-based consolidation error: ${err instanceof Error ? err.message : String(err)}\n`);
+        log.error(`[memory] Time-based consolidation error: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
   } catch (_) { /* non-fatal */ }

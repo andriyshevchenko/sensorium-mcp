@@ -31,6 +31,7 @@
 $MCP_START_COMMAND = "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM"
 $POLL_INTERVAL_SECONDS = 60
 $GRACE_PERIOD_SECONDS = 300
+$MIN_UPTIME_SECONDS = 600    # Minimum server uptime before allowing a restart (batches rapid publishes)
 $DATA_DIR = "$env:USERPROFILE\.remote-copilot-mcp"
 $MAINTENANCE_FLAG = "$DATA_DIR\maintenance.flag"
 $VERSION_FILE = "$DATA_DIR\current-version.txt"
@@ -192,6 +193,7 @@ Write-Log "=========================================="
 Write-Log "Sensorium MCP Update Watcher started."
 Write-Log "Poll interval : ${POLL_INTERVAL_SECONDS}s"
 Write-Log "Grace period  : ${GRACE_PERIOD_SECONDS}s"
+Write-Log "Min uptime    : ${MIN_UPTIME_SECONDS}s"
 Write-Log "Data directory: $DATA_DIR"
 Write-Log "=========================================="
 
@@ -260,6 +262,15 @@ while ($true) {
         Write-Log "NEW VERSION DETECTED: v$localVersion -> v$remoteVersion"
         Write-Log "=========================================="
 
+        # 3-pre. Check minimum uptime before restarting
+        $uptime = (Get-Date) - $script:lastStartTime
+        if ($uptime.TotalSeconds -lt $MIN_UPTIME_SECONDS) {
+            $remaining = [math]::Ceiling($MIN_UPTIME_SECONDS - $uptime.TotalSeconds)
+            Write-Log "Server uptime too short ($([math]::Floor($uptime.TotalSeconds))s < ${MIN_UPTIME_SECONDS}s), deferring update to next poll cycle (${remaining}s remaining)" -Level "WARN"
+            Start-Sleep -Seconds $POLL_INTERVAL_SECONDS
+            continue
+        }
+
         # 3a. Write maintenance flag
         Write-MaintenanceFlag -NewVersion $remoteVersion
 
@@ -275,6 +286,7 @@ while ($true) {
 
         # 3e. Start the MCP server again
         Start-McpServer
+        $script:lastStartTime = Get-Date
 
         # 3f. Record new version
         Set-LocalVersion -Version $remoteVersion

@@ -34,6 +34,7 @@ import {
 } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { log } from "./logger.js";
 import type { TelegramClient } from "./telegram.js";
 import { errorMessage } from "./utils.js";
 
@@ -70,9 +71,7 @@ function recoverOrphanedReads(): void {
                         const content = readFileSync(orphan, "utf8");
                         writeFileSync(original, content, { flag: "a", encoding: "utf8" });
                         unlinkSync(orphan);
-                        process.stderr.write(
-                            `[dispatcher] Recovered orphaned file: ${f}\n`,
-                        );
+                        log.info(`[dispatcher] Recovered orphaned file: ${f}`);
                     } catch { /* best effort */ }
                 }
             }
@@ -246,9 +245,7 @@ function parseJsonlLines(raw: string, label: string): StoredMessage[] {
         try {
             results.push(JSON.parse(line) as StoredMessage);
         } catch {
-            process.stderr.write(
-                `[dispatcher] Skipping corrupt JSONL line in ${label}\n`,
-            );
+            log.warn(`[dispatcher] Skipping corrupt JSONL line in ${label}`);
         }
     }
     return results;
@@ -412,9 +409,8 @@ async function pollOnce(
                 appendToThread(threadId, stored);
                 committedOffset = u.update_id + 1;
             } catch (writeErr) {
-                process.stderr.write(
-                    `[dispatcher] Failed to write message ${u.update_id} to thread ${threadId}: ${errorMessage(writeErr)
-                    }\n`,
+                log.error(
+                    `[dispatcher] Failed to write message ${u.update_id} to thread ${threadId}: ${errorMessage(writeErr)}`,
                 );
                 allSucceeded = false;
                 break; // Stop processing — don't skip messages.
@@ -426,15 +422,15 @@ async function pollOnce(
             writeOffset(committedOffset);
         }
         if (!allSucceeded) {
-            process.stderr.write(
-                "[dispatcher] Partial batch write. Will retry remaining messages on next poll.\n",
+            log.warn(
+                "[dispatcher] Partial batch write. Will retry remaining messages on next poll.",
             );
         }
     } catch (err) {
         // Ignore abort errors during shutdown.
         if (err instanceof DOMException && err.name === "AbortError") return;
-        process.stderr.write(
-            `[dispatcher] Poll error: ${errorMessage(err)}\n`,
+        log.error(
+            `[dispatcher] Poll error: ${errorMessage(err)}`,
         );
     } finally {
         clearInterval(lockRefresher);
@@ -477,8 +473,8 @@ export async function startDispatcher(
         const timer = setInterval(() => {
             if (tryAcquireLock()) {
                 clearInterval(timer);
-                process.stderr.write(
-                    "[dispatcher] Promoted to poller (previous poller seems inactive).\n",
+                log.info(
+                    "[dispatcher] Promoted to poller (previous poller seems inactive).",
                 );
                 pollerRunning = true;
                 startLoop();
@@ -493,8 +489,8 @@ export async function startDispatcher(
             while (pollerRunning) {
                 const currentLock = readLock();
                 if (currentLock && currentLock.pid !== process.pid) {
-                    process.stderr.write(
-                        `[dispatcher] Lock taken by PID ${currentLock.pid}. Stepping down to consumer.\n`,
+                    log.info(
+                        `[dispatcher] Lock taken by PID ${currentLock.pid}. Stepping down to consumer.`,
                     );
                     pollerRunning = false;
                     installConsumerRetry();
@@ -503,8 +499,8 @@ export async function startDispatcher(
                 try {
                     await pollOnce(telegram, chatId);
                 } catch (err) {
-                    process.stderr.write(
-                        `[dispatcher] Unexpected poll error: ${errorMessage(err)}\n`,
+                    log.error(
+                        `[dispatcher] Unexpected poll error: ${errorMessage(err)}`,
                     );
                     await new Promise<void>((r) => setTimeout(r, 5000));
                 }
@@ -515,13 +511,13 @@ export async function startDispatcher(
     };
 
     if (isPoller) {
-        process.stderr.write("[dispatcher] This instance is the poller.\n");
+        log.info("[dispatcher] This instance is the poller.");
 
         // On first run with no offset file, skip all old updates in one call
         // by fetching the latest update_id and setting the offset past it.
         // Awaited so the poll loop never sees offset=0.
         if (!existsSync(OFFSET_FILE)) {
-            process.stderr.write(
+            log.info(
                 "[dispatcher] No offset file. Skipping old updates...\n",
             );
             try {
@@ -534,8 +530,8 @@ export async function startDispatcher(
                 if (latest.length > 0) {
                     const skipTo = latest[latest.length - 1].update_id + 1;
                     writeOffset(skipTo);
-                    process.stderr.write(
-                        `[dispatcher] Skipped to offset ${skipTo}.\n`,
+                    log.info(
+                        `[dispatcher] Skipped to offset ${skipTo}.`,
                     );
                 } else {
                     writeOffset(0);
@@ -544,9 +540,8 @@ export async function startDispatcher(
                 // Don't write offset=0 — leave it at whatever the current value is.
                 // If the file still doesn't exist, readOffset() returns 0 which is
                 // acceptable because the drain simply failed to optimise.
-                process.stderr.write(
-                    `[dispatcher] Warning: drain failed: ${errorMessage(err)
-                    }. Poll loop will start from offset 0.\n`,
+                log.warn(
+                    `[dispatcher] Warning: drain failed: ${errorMessage(err)}. Poll loop will start from offset 0.`,
                 );
             }
         }
@@ -555,8 +550,8 @@ export async function startDispatcher(
         startLoop();
         registerCleanup();
     } else {
-        process.stderr.write(
-            "[dispatcher] Another instance is the poller. This instance is a consumer only.\n",
+        log.info(
+            "[dispatcher] Another instance is the poller. This instance is a consumer only.",
         );
 
         // Periodically try to become the poller in case the current one dies

@@ -12,6 +12,7 @@ import { rateLimiter } from "../rate-limiter.js";
 import { addSchedule, generateTaskId, listSchedules, removeSchedule, type ScheduledTask } from "../scheduler.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig } from "../types.js";
+import { log } from "../logger.js";
 import { errorMessage, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -112,7 +113,7 @@ async function handleSendFile(
       ],
     };
   } catch (err) {
-    process.stderr.write(`Failed to send file via Telegram: ${errorMessage(err)}\n`);
+    log.error(`Failed to send file via Telegram: ${errorMessage(err)}`);
     return errorResult(`Error: Failed to send file to Telegram: ${errorMessage(err)}`);
   }
 }
@@ -160,7 +161,7 @@ async function handleSendVoice(
       ],
     };
   } catch (err) {
-    process.stderr.write(`Failed to send voice via Telegram: ${errorMessage(err)}\n`);
+    log.error(`Failed to send voice via Telegram: ${errorMessage(err)}`);
     return errorResult(`Error: Failed to send voice message: ${errorMessage(err)}`);
   }
 }

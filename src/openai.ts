@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { log } from "./logger.js";
 
 // Dedicated temp directory so crash-leftover files are cleaned on next startup.
 const TEMP_DIR = join(homedir(), ".remote-copilot-mcp", "tmp");
@@ -241,7 +242,7 @@ export async function analyzeVoiceEmotion(
     const { mimeType = "audio/ogg", filename = "voice.ogg", timeoutMs = 120_000 } = options ?? {};
     const start = Date.now();
     const baseUrl = serviceUrl.replace(/\/+$/, "");
-    process.stderr.write(`[voice-analysis] Starting analysis (timeout: ${timeoutMs}ms, format: ${mimeType})...\n`);
+    log.verbose("voice-analysis", `Starting analysis (timeout: ${timeoutMs}ms, format: ${mimeType})...`);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -261,17 +262,17 @@ export async function analyzeVoiceEmotion(
 
         const elapsed = Date.now() - start;
         if (!response.ok) {
-            process.stderr.write(`[voice-analysis] HTTP ${response.status} after ${elapsed}ms\n`);
+            log.warn(`[voice-analysis] HTTP ${response.status} after ${elapsed}ms`);
             return null;
         }
 
         const result = (await response.json()) as VoiceAnalysisResult;
-        process.stderr.write(`[voice-analysis] Success in ${elapsed}ms\n`);
+        log.verbose("voice-analysis", `Success in ${elapsed}ms`);
         return result;
     } catch (err) {
         const elapsed = Date.now() - start;
         const msg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[voice-analysis] Failed after ${elapsed}ms: ${msg}\n`);
+        log.error(`[voice-analysis] Failed after ${elapsed}ms: ${msg}`);
         return null;
     } finally {
         clearTimeout(timer);
