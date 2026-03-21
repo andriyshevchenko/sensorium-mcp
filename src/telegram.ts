@@ -55,9 +55,17 @@ export interface TelegramVideoNote {
   file_size?: number;
 }
 
+export interface TelegramMessageReaction {
+  chat: { id: number };
+  message_id: number;
+  date: number;
+  new_reaction: Array<{ type: string; emoji?: string }>;
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  message_reaction?: TelegramMessageReaction;
 }
 
 interface GetUpdatesResult {
@@ -120,6 +128,9 @@ const MIME_MAP: Record<string, string> = {
 
 export class TelegramClient {
   private readonly baseUrl: string;
+
+  /** Latest operator reaction received via getUpdates. */
+  lastReaction: { emoji: string; messageId: number; date: number } | null = null;
 
   constructor(private readonly token: string) {
     this.baseUrl = `https://api.telegram.org/bot${token}`;
@@ -218,7 +229,7 @@ export class TelegramClient {
     const url = new URL(`${this.baseUrl}/getUpdates`);
     url.searchParams.set("offset", String(offset));
     url.searchParams.set("timeout", String(timeout));
-    url.searchParams.set("allowed_updates", JSON.stringify(["message"]));
+    url.searchParams.set("allowed_updates", JSON.stringify(["message", "message_reaction"]));
 
     const MAX_409_RETRIES = 12;
     const RETRY_DELAY_MS = 5000;

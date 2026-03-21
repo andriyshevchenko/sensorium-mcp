@@ -16,7 +16,7 @@
 
 import { basename } from "node:path";
 import { checkMaintenanceFlag, saveFileToDisk } from "../config.js";
-import { peekThreadMessages, readThreadMessages } from "../dispatcher.js";
+import { peekThreadMessages, readThreadMessages, readPendingReaction } from "../dispatcher.js";
 import { formatDrivePrompt } from "../drive.js";
 import {
   assembleCompactRefresh,
@@ -467,6 +467,37 @@ export async function handleWaitForInstructions(
           }
         }
       } catch (_) { /* memory write failures should never break the main flow */ }
+
+      // ── Check for pending operator reactions ─────────────────────────
+      const pendingReaction = readPendingReaction() ?? telegram.lastReaction;
+      if (pendingReaction) {
+        const emoji = "emoji" in pendingReaction ? pendingReaction.emoji : "";
+        const messageId = "messageId" in pendingReaction ? pendingReaction.messageId : 0;
+        const reactionDate = "date" in pendingReaction ? pendingReaction.date : 0;
+        if (emoji) {
+          contentBlocks.push({
+            type: "text",
+            text: `(The operator reacted with ${emoji} to a previous message)`,
+          });
+          // Save reaction as episodic memory
+          try {
+            const db = getMemoryDb();
+            const sessionId = `session_${state.sessionStartedAt}`;
+            if (effectiveThreadId !== undefined) {
+              saveEpisode(db, {
+                sessionId,
+                threadId: effectiveThreadId,
+                type: "operator_reaction",
+                modality: "reaction",
+                content: { emoji, messageId, date: reactionDate },
+                importance: 0.3,
+              });
+            }
+          } catch (_) { /* non-fatal */ }
+        }
+        // Clear the reaction after delivery
+        telegram.lastReaction = null;
+      }
 
       log.info(`[wait] Episodes saved. Building auto-memory context...`);
 
