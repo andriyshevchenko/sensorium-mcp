@@ -171,6 +171,42 @@ export function getReminders(
 }
 
 /**
+ * Medium context — includes the orchestrator directive (or standard
+ * instruction) so the agent never loses the fundamental behavioral
+ * constraint, but omits memory auto-injection, drive content, and
+ * template overrides to keep the payload lean.
+ *
+ * Used for conversational-intent messages where full context is overkill
+ * but the orchestrator guardrail must still be present.
+ *
+ * @param threadId          Current Telegram thread ID (if any).
+ * @param sessionStartedAt  Epoch ms when the current session started.
+ * @param autonomousMode    Whether the agent is in autonomous orchestrator mode.
+ */
+export function getMediumReminder(
+  threadId: number | undefined,
+  sessionStartedAt: number,
+  autonomousMode: boolean,
+): string {
+  const now = new Date();
+  const uptimeMin = Math.round((Date.now() - sessionStartedAt) / 60000);
+  const timeStr = now.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+    timeZoneName: "short",
+  });
+
+  const directive = autonomousMode
+    ? "\nYou are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable."
+    : "\nFollow the operator's instructions. Report results via `send_voice`.";
+
+  return (
+    directive +
+    ` threadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m`
+  );
+}
+
+/**
  * Minimal context — appended to regular tool responses to avoid bloating
  * the conversation context. Only includes thread ID and timestamp.
  *
