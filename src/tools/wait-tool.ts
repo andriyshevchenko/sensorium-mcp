@@ -344,12 +344,17 @@ export async function handleWaitForInstructions(
                   : Promise.resolve(null),
               ]);
 
-              // Analyze frames with GPT-4.1 vision.
-              let sceneDescription = "";
+              // Analyze frames with GPT-4o-mini vision.
+              let sceneDescription: string | null = "";
               if (frames.length > 0) {
-                process.stderr.write(`[video-note] Analyzing ${frames.length} frames with GPT-4.1 vision...\n`);
-                sceneDescription = await analyzeVideoFrames(frames, vn.duration, OPENAI_API_KEY);
-                process.stderr.write(`[video-note] Vision analysis complete.\n`);
+                try {
+                  process.stderr.write(`[video-note] Analyzing ${frames.length} frames with GPT-4o-mini vision...\n`);
+                  sceneDescription = await analyzeVideoFrames(frames, vn.duration, OPENAI_API_KEY);
+                  process.stderr.write(`[video-note] Vision analysis complete.\n`);
+                } catch (visionErr) {
+                  process.stderr.write(`[video-note] Vision analysis failed: ${visionErr}\n`);
+                  sceneDescription = null;
+                }
               }
 
               // Build analysis tags (same as voice messages).
