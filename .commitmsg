@@ -1,0 +1,14 @@
+refactor: extract tool handlers — index.ts from 2347 to 334 lines
+
+Extracted into focused modules:
+- src/response-builders.ts: reminder/tag generation
+- src/http-server.ts: HTTP transport bootstrap
+- src/stdio-server.ts: stdio transport bootstrap
+- src/tools/memory-tools.ts: 8 memory tool handlers
+- src/tools/session-tools.ts: report_progress + hibernate
+- src/tools/start-session-tool.ts: session management
+- src/tools/utility-tools.ts: send_file/voice, scheduling, version/stats
+- src/tools/wait-tool.ts: wait_for_instructions (core polling loop)
+
+index.ts is now a thin router that dispatches to extracted modules.
+No behavioral changes — pure structural refactoring.
