@@ -71,6 +71,7 @@ export interface DashboardCtx {
     startedAt: string;
     lastToolCallAt: string;
     toolName?: string;
+    status: "active" | "disconnected";
   }>;
   serverStartTime: number;
 }
