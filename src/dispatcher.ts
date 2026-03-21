@@ -47,6 +47,39 @@ const THREADS_DIR = join(BASE_DIR, "threads");
 const LOCK_FILE = join(BASE_DIR, "poller.lock");
 const OFFSET_FILE = join(BASE_DIR, "offset");
 
+// ---------------------------------------------------------------------------
+// Reaction file helpers
+// ---------------------------------------------------------------------------
+
+export interface StoredReaction {
+    emoji: string;
+    messageId: number;
+    chatId: number;
+    date: number;
+}
+
+const REACTION_FILE = join(BASE_DIR, "pending_reaction.json");
+
+function writeReactionFile(reaction: StoredReaction): void {
+    try {
+        writeFileSync(REACTION_FILE, JSON.stringify(reaction), "utf8");
+    } catch { /* non-fatal */ }
+}
+
+/**
+ * Read and clear the pending reaction (if any).
+ * Returns null if no reaction is pending.
+ */
+export function readPendingReaction(): StoredReaction | null {
+    try {
+        const raw = readFileSync(REACTION_FILE, "utf8");
+        unlinkSync(REACTION_FILE);
+        return JSON.parse(raw) as StoredReaction;
+    } catch {
+        return null;
+    }
+}
+
 function ensureDirs(): void {
     mkdirSync(THREADS_DIR, { recursive: true });
     recoverOrphanedReads();
@@ -350,6 +383,32 @@ async function pollOnce(
         let allSucceeded = true;
 
         for (const u of updates) {
+            // ── Reaction updates ──────────────────────────────────────
+            if (u.message_reaction) {
+                const emoji = u.message_reaction.new_reaction.find(
+                    (r) => r.type === "emoji",
+                )?.emoji;
+                if (emoji) {
+                    const reaction: StoredReaction = {
+                        emoji,
+                        messageId: u.message_reaction.message_id,
+                        chatId: u.message_reaction.chat.id,
+                        date: u.message_reaction.date,
+                    };
+                    telegram.lastReaction = {
+                        emoji,
+                        messageId: u.message_reaction.message_id,
+                        date: u.message_reaction.date,
+                    };
+                    writeReactionFile(reaction);
+                    log.info(
+                        `[dispatcher] Reaction ${emoji} on message ${u.message_reaction.message_id}`,
+                    );
+                }
+                committedOffset = u.update_id + 1;
+                continue;
+            }
+
             if (!u.message) {
                 // Non-message update — skip but still advance past it.
                 committedOffset = u.update_id + 1;

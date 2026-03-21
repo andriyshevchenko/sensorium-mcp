@@ -16,8 +16,8 @@ export interface Episode {
   sessionId: string;
   threadId: number;
   timestamp: string;
-  type: "operator_message" | "agent_action" | "system_event";
-  modality: "text" | "voice" | "photo" | "video_note" | "document" | "mixed";
+  type: "operator_message" | "agent_action" | "system_event" | "operator_reaction";
+  modality: "text" | "voice" | "photo" | "video_note" | "document" | "mixed" | "reaction";
   content: Record<string, unknown>;
   topicTags: string[];
   importance: number;
@@ -519,8 +519,8 @@ export function saveEpisode(
   episode: {
     sessionId: string;
     threadId: number;
-    type: "operator_message" | "agent_action" | "system_event";
-    modality: "text" | "voice" | "photo" | "video_note" | "document" | "mixed";
+    type: "operator_message" | "agent_action" | "system_event" | "operator_reaction";
+    modality: "text" | "voice" | "photo" | "video_note" | "document" | "mixed" | "reaction";
     content: Record<string, unknown>;
     topicTags?: string[];
     importance?: number;
