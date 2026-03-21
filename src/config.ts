@@ -43,6 +43,11 @@ if (VOICE_ANALYSIS_URL) {
 const FILES_DIR = join(homedir(), ".remote-copilot-mcp", "files");
 mkdirSync(FILES_DIR, { recursive: true });
 
+// ─── Templates directory ────────────────────────────────────────────────────
+
+export const TEMPLATES_DIR = join(homedir(), ".remote-copilot-mcp", "templates");
+mkdirSync(TEMPLATES_DIR, { recursive: true });
+
 /**
  * Save a buffer to disk under FILES_DIR with a unique timestamped name.
  * Returns the absolute file path. Caps directory at 500 files by deleting oldest.

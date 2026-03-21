@@ -17,6 +17,11 @@
 import type { Database } from "better-sqlite3";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
     getRecentEpisodes,
     getTopicIndex,
@@ -70,13 +75,23 @@ export function handleDashboardRequest(
                 return true;
             }
         }
-        return handleApiRoute(path, url, res, ctx);
+        return handleApiRoute(req, path, url, res, ctx);
     }
 
     return false;
 }
 
+function readBody(req: IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk: Buffer) => chunks.push(chunk));
+        req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+        req.on("error", reject);
+    });
+}
+
 function handleApiRoute(
+    req: IncomingMessage,
     path: string,
     url: URL,
     res: ServerResponse,
@@ -159,6 +174,67 @@ function handleApiRoute(
             if (!q) { json({ error: "Missing ?q= parameter" }, 400); return true; }
             json(searchSemanticNotesRanked(db, q, { maxResults: parseInt(url.searchParams.get("limit") ?? "20", 10) }));
             return true;
+        }
+
+        // ── Template API endpoints ──────────────────────────────────
+        if (path === "/api/templates" && req.method === "GET") {
+            void (async () => {
+                try {
+                    const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
+                    const userFile = join(templatesDir, "reminders.md");
+                    let content: string;
+                    let isDefault = false;
+                    try {
+                        content = await readFile(userFile, "utf-8");
+                    } catch {
+                        const defaultFile = join(dirname(fileURLToPath(import.meta.url)), "..", "templates", "reminders.default.md");
+                        content = await readFile(defaultFile, "utf-8");
+                        isDefault = true;
+                    }
+                    json({ templates: [{ name: "reminders", content, isDefault }] });
+                } catch (err) {
+                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                }
+            })();
+            return true;
+        }
+
+        const templateMatch = path.match(/^\/api\/templates\/([a-zA-Z0-9-]+)$/);
+        if (templateMatch) {
+            const name = templateMatch[1];
+
+            if (req.method === "POST") {
+                void (async () => {
+                    try {
+                        const body = await readBody(req);
+                        const parsed = JSON.parse(body) as { content?: string };
+                        if (typeof parsed.content !== "string") {
+                            json({ error: "Missing content field" }, 400);
+                            return;
+                        }
+                        const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
+                        await mkdir(templatesDir, { recursive: true });
+                        await writeFile(join(templatesDir, `${name}.md`), parsed.content, "utf-8");
+                        json({ ok: true });
+                    } catch (err) {
+                        json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                    }
+                })();
+                return true;
+            }
+
+            if (req.method === "DELETE") {
+                void (async () => {
+                    try {
+                        const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
+                        try { await unlink(join(templatesDir, `${name}.md`)); } catch { /* ok if missing */ }
+                        json({ ok: true });
+                    } catch (err) {
+                        json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                    }
+                })();
+                return true;
+            }
         }
 
         json({ error: "Not found" }, 404);
@@ -306,6 +382,7 @@ function getDashboardHTML(): string {
         <button onclick="switchTab('notes')" id="tab-notes" class="pb-3 text-sm font-medium tab-inactive transition">Memory Notes</button>
         <button onclick="switchTab('episodes')" id="tab-episodes" class="pb-3 text-sm font-medium tab-inactive transition">Episodes</button>
         <button onclick="switchTab('topics')" id="tab-topics" class="pb-3 text-sm font-medium tab-inactive transition">Topics</button>
+        <button onclick="switchTab('templates')" id="tab-templates" class="pb-3 text-sm font-medium tab-inactive transition">Templates</button>
       </nav>
     </div>
 
@@ -354,6 +431,49 @@ function getDashboardHTML(): string {
       <!-- Topics -->
       <div id="panel-topics" class="hidden animate-fade-in">
         <div id="topics-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+      </div>
+
+      <!-- Templates -->
+      <div id="panel-templates" class="hidden animate-fade-in">
+        <div class="glass rounded-xl p-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div>
+              <h3 class="text-lg font-semibold">Reminders Template</h3>
+              <p class="text-sm text-textSecondary mt-1">Edit the system prompt template sent with every reminder</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="tpl-status" class="text-sm"></span>
+              <button onclick="resetTemplate()" class="px-4 py-2 rounded-xl bg-card hover:bg-cardHover border border-gray-700 text-sm text-textSecondary hover:text-textPrimary transition">Reset to Default</button>
+              <button onclick="saveTemplate()" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Save</button>
+            </div>
+          </div>
+          <div id="tpl-default-badge" class="hidden mb-3">
+            <span class="type-badge" style="background:rgba(245,158,11,0.15);color:#fbbf24">USING DEFAULT — edit and save to customize</span>
+          </div>
+          <textarea id="tpl-editor" rows="20" spellcheck="false"
+            class="w-full px-4 py-3 rounded-xl bg-surface border border-gray-700 text-textPrimary font-mono text-sm leading-relaxed focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition resize-y"
+            placeholder="Loading..."></textarea>
+          <div class="mt-4">
+            <div id="tpl-preview-header" class="flex items-center gap-2 mb-2 cursor-pointer select-none" onclick="toggleTplPreview()">
+              <svg id="tpl-preview-arrow" class="w-4 h-4 text-textSecondary transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+              </svg>
+              <span class="text-sm font-medium text-textSecondary">Preview with highlighted variables</span>
+            </div>
+            <div id="tpl-preview" class="hidden glass rounded-xl p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words"></div>
+          </div>
+          <details class="mt-4">
+            <summary class="text-sm font-medium text-textSecondary cursor-pointer hover:text-textPrimary transition">Available Variables</summary>
+            <div class="mt-2 glass rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              <div><code class="text-accentLight">{{OPERATOR_MESSAGE}}</code> <span class="text-textSecondary">— latest operator message</span></div>
+              <div><code class="text-accentLight">{{THREAD_ID}}</code> <span class="text-textSecondary">— Telegram thread ID</span></div>
+              <div><code class="text-accentLight">{{TIME}}</code> <span class="text-textSecondary">— formatted timestamp</span></div>
+              <div><code class="text-accentLight">{{UPTIME}}</code> <span class="text-textSecondary">— session uptime</span></div>
+              <div><code class="text-accentLight">{{VERSION}}</code> <span class="text-textSecondary">— package version</span></div>
+              <div><code class="text-accentLight">{{MODE}}</code> <span class="text-textSecondary">— "autonomous" or "standard"</span></div>
+            </div>
+          </details>
+        </div>
       </div>
 
     </div>
@@ -644,7 +764,7 @@ function getDashboardHTML(): string {
 
     // ─── Tab switching ──────────────────────────────────────────────────
     function switchTab(tab) {
-      const tabs = ['sessions', 'notes', 'episodes', 'topics'];
+      const tabs = ['sessions', 'notes', 'episodes', 'topics', 'templates'];
       tabs.forEach(t => {
         document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
         document.getElementById('tab-' + t).className = 'pb-3 text-sm font-medium transition ' + (t === tab ? 'tab-active' : 'tab-inactive');
@@ -701,6 +821,7 @@ function getDashboardHTML(): string {
       if (currentTab === 'notes') loadNotes();
       if (currentTab === 'episodes') loadEpisodes();
       if (currentTab === 'topics') loadTopics();
+      if (currentTab === 'templates') loadTemplates();
     }
 
     function startRefresh() {
@@ -708,6 +829,81 @@ function getDashboardHTML(): string {
       if (refreshTimer) clearInterval(refreshTimer);
       refreshTimer = setInterval(refreshCurrentTab, 30000);
     }
+
+    // ─── Templates ────────────────────────────────────────────────────
+    let tplPreviewOpen = false;
+
+    async function loadTemplates() {
+      try {
+        const data = await api('/api/templates');
+        if (data.templates && data.templates.length > 0) {
+          const tpl = data.templates[0];
+          document.getElementById('tpl-editor').value = tpl.content;
+          document.getElementById('tpl-default-badge').classList.toggle('hidden', !tpl.isDefault);
+          updateTplPreview();
+        }
+      } catch (e) { console.error('Templates load error:', e); }
+    }
+
+    async function saveTemplate() {
+      const status = document.getElementById('tpl-status');
+      try {
+        const content = document.getElementById('tpl-editor').value;
+        const r = await fetch('/api/templates/reminders', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        });
+        if (!r.ok) throw new Error(r.statusText);
+        await r.json();
+        status.textContent = 'Saved \u2713';
+        status.className = 'text-sm text-success';
+        document.getElementById('tpl-default-badge').classList.add('hidden');
+        setTimeout(function() { status.textContent = ''; }, 3000);
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'text-sm text-danger';
+      }
+    }
+
+    async function resetTemplate() {
+      if (!confirm('Reset to default template? Your customizations will be lost.')) return;
+      const status = document.getElementById('tpl-status');
+      try {
+        const r = await fetch('/api/templates/reminders', {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + token },
+        });
+        if (!r.ok) throw new Error(r.statusText);
+        await r.json();
+        await loadTemplates();
+        status.textContent = 'Reset to default \u2713';
+        status.className = 'text-sm text-success';
+        setTimeout(function() { status.textContent = ''; }, 3000);
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'text-sm text-danger';
+      }
+    }
+
+    function updateTplPreview() {
+      const content = document.getElementById('tpl-editor').value;
+      const preview = document.getElementById('tpl-preview');
+      const highlighted = escapeHtml(content).replace(/\{\{([A-Z_]+)\}\}/g,
+        '<span class="text-accentLight bg-accent/10 px-1 rounded">{{$1}}</span>');
+      preview.innerHTML = highlighted;
+    }
+
+    function toggleTplPreview() {
+      tplPreviewOpen = !tplPreviewOpen;
+      document.getElementById('tpl-preview').classList.toggle('hidden', !tplPreviewOpen);
+      document.getElementById('tpl-preview-arrow').style.transform = tplPreviewOpen ? 'rotate(90deg)' : '';
+      if (tplPreviewOpen) updateTplPreview();
+    }
+
+    document.getElementById('tpl-editor')?.addEventListener('input', function() {
+      if (tplPreviewOpen) updateTplPreview();
+    });
 
     // ─── Utilities ──────────────────────────────────────────────────────
     function escapeHtml(str) {

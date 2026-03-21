@@ -240,13 +240,17 @@ export async function handleStartSession(
     }
   }
 
+  const resumeNote = resolvedPreexisting
+    ? " Do NOT send a voice greeting or 'back online' message — the text notification in Telegram is sufficient."
+    : "";
+
   return {
     content: [
       {
         type: "text",
         text:
           `Session ${resolvedPreexisting ? "resumed" : "started"}.${threadNote}` +
-          ` Call the remote_copilot_wait_for_instructions tool next.` +
+          ` Call the remote_copilot_wait_for_instructions tool next.${resumeNote}` +
           memoryBriefing +
           ctx.getReminders(session.currentThreadId, false, session.sessionStartedAt, config.AUTONOMOUS_MODE),
       },
