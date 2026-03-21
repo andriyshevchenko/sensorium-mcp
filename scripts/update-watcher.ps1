@@ -28,6 +28,9 @@
 # Configuration
 # ============================================================================
 
+$MODE = "production"       # "production" or "development"
+$POLL_AT_HOUR = 4              # Hour of day (0-23) for daily update check in production mode (local time)
+
 $MCP_START_COMMAND = "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM"
 $POLL_INTERVAL_SECONDS = 60
 $GRACE_PERIOD_SECONDS = 300
@@ -186,12 +189,115 @@ function Test-McpServerRunning {
 }
 
 # ============================================================================
+# Update Check Function
+# ============================================================================
+
+function Invoke-UpdateCheck {
+    <#
+    .SYNOPSIS
+        Checks for a new version and performs the update sequence if one is found.
+    .OUTPUTS
+        Returns $true if an update was applied, $false otherwise.
+    #>
+
+    # --- Health check: restart server if it crashed ---
+    # Skip if we recently started the server (npx needs time to download/start)
+    $timeSinceStart = (Get-Date) - $script:lastStartTime
+    if ($timeSinceStart.TotalSeconds -gt $STARTUP_GRACE_SECONDS -and -not (Test-McpServerRunning)) {
+        Write-Log "MCP server process not found - restarting..." -Level "WARN"
+        Start-McpServer
+        $script:lastStartTime = Get-Date
+    }
+
+    # --- Step 1: Fetch the latest remote version ---
+    $remoteVersion = Get-RemoteVersion
+    if (-not $remoteVersion) {
+        Write-Log "Could not determine remote version." -Level "WARN"
+        return $false
+    }
+
+    # --- Step 2: Compare with local version ---
+    $localVersion = Get-LocalVersion
+    if (-not $localVersion) {
+        Write-Log "No local version recorded. Saving current remote version ($remoteVersion) as baseline."
+        Set-LocalVersion -Version $remoteVersion
+        return $false
+    }
+
+    if ($remoteVersion -eq $localVersion) {
+        Write-Log "Up to date: v$localVersion"
+        return $false
+    }
+
+    # --- Step 3: New version detected - begin update sequence ---
+    Write-Log "=========================================="
+    Write-Log "NEW VERSION DETECTED: v$localVersion -> v$remoteVersion"
+    Write-Log "=========================================="
+
+    # 3-pre. Check minimum uptime before restarting
+    $uptime = (Get-Date) - $script:lastStartTime
+    if ($uptime.TotalSeconds -lt $MIN_UPTIME_SECONDS) {
+        $remaining = [math]::Ceiling($MIN_UPTIME_SECONDS - $uptime.TotalSeconds)
+        Write-Log "Server uptime too short ($([math]::Floor($uptime.TotalSeconds))s < ${MIN_UPTIME_SECONDS}s), deferring update" -Level "WARN"
+        return $false
+    }
+
+    # 3a. Write maintenance flag
+    Write-MaintenanceFlag -NewVersion $remoteVersion
+
+    # 3b. Grace period for agents to wind down
+    Write-Log "Waiting ${GRACE_PERIOD_SECONDS}s grace period for agents to enter sleep..."
+    Start-Sleep -Seconds $GRACE_PERIOD_SECONDS
+
+    # 3c. Stop the MCP server
+    Stop-McpServer
+
+    # 3d. Clear npx cache
+    Clear-NpxCache
+
+    # 3e. Start the MCP server again
+    Start-McpServer
+    $script:lastStartTime = Get-Date
+
+    # 3f. Record new version
+    Set-LocalVersion -Version $remoteVersion
+    Write-Log "Version file updated to v$remoteVersion."
+
+    # 3g. Remove maintenance flag
+    Remove-MaintenanceFlag
+
+    Write-Log "=========================================="
+    Write-Log "Update to v$remoteVersion complete."
+    Write-Log "=========================================="
+    return $true
+}
+
+function Get-SecondsUntilHour {
+    <#
+    .SYNOPSIS
+        Calculates the number of seconds from now until the next occurrence of the given hour (local time).
+    #>
+    param([int]$Hour)
+    $now = Get-Date
+    $target = Get-Date -Hour $Hour -Minute 0 -Second 0
+    if ($target -le $now) {
+        $target = $target.AddDays(1)
+    }
+    return [math]::Ceiling(($target - $now).TotalSeconds)
+}
+
+# ============================================================================
 # Main Loop
 # ============================================================================
 
 Write-Log "=========================================="
 Write-Log "Sensorium MCP Update Watcher started."
-Write-Log "Poll interval : ${POLL_INTERVAL_SECONDS}s"
+Write-Log "Mode          : $MODE"
+if ($MODE -eq "production") {
+    Write-Log "Poll at hour  : ${POLL_AT_HOUR}:00 (local time)"
+} else {
+    Write-Log "Poll interval : ${POLL_INTERVAL_SECONDS}s"
+}
 Write-Log "Grace period  : ${GRACE_PERIOD_SECONDS}s"
 Write-Log "Min uptime    : ${MIN_UPTIME_SECONDS}s"
 Write-Log "Data directory: $DATA_DIR"
@@ -223,89 +329,39 @@ else {
     Write-Log "MCP server is already running."
 }
 
-while ($true) {
-    try {
-        # --- Health check: restart server if it crashed ---
-        # Skip if we recently started the server (npx needs time to download/start)
-        $timeSinceStart = (Get-Date) - $script:lastStartTime
-        if ($timeSinceStart.TotalSeconds -gt $STARTUP_GRACE_SECONDS -and -not (Test-McpServerRunning)) {
-            Write-Log "MCP server process not found - restarting..." -Level "WARN"
-            Start-McpServer
-            $script:lastStartTime = Get-Date
+# --- Mode-specific main loops ---
+
+if ($MODE -eq "production") {
+    # Production mode: sleep until $POLL_AT_HOUR, check once, repeat
+    while ($true) {
+        $sleepSeconds = Get-SecondsUntilHour -Hour $POLL_AT_HOUR
+        $nextCheck = (Get-Date).AddSeconds($sleepSeconds)
+        Write-Log "Production mode: next update check at $($nextCheck.ToString('yyyy-MM-dd HH:mm:ss'))"
+        Start-Sleep -Seconds $sleepSeconds
+
+        try {
+            Invoke-UpdateCheck | Out-Null
         }
-
-        # --- Step 1: Fetch the latest remote version ---
-        $remoteVersion = Get-RemoteVersion
-        if (-not $remoteVersion) {
-            Write-Log "Could not determine remote version. Will retry in ${POLL_INTERVAL_SECONDS}s." -Level "WARN"
-            Start-Sleep -Seconds $POLL_INTERVAL_SECONDS
-            continue
+        catch {
+            Write-Log "Unhandled error in main loop: $_" -Level "ERROR"
+            Write-Log $_.ScriptStackTrace -Level "ERROR"
+            Remove-MaintenanceFlag
         }
-
-        # --- Step 2: Compare with local version ---
-        $localVersion = Get-LocalVersion
-        if (-not $localVersion) {
-            Write-Log "No local version recorded. Saving current remote version ($remoteVersion) as baseline."
-            Set-LocalVersion -Version $remoteVersion
-            Start-Sleep -Seconds $POLL_INTERVAL_SECONDS
-            continue
-        }
-
-        if ($remoteVersion -eq $localVersion) {
-            Write-Log "Up to date: v$localVersion"
-            Start-Sleep -Seconds $POLL_INTERVAL_SECONDS
-            continue
-        }
-
-        # --- Step 3: New version detected - begin update sequence ---
-        Write-Log "=========================================="
-        Write-Log "NEW VERSION DETECTED: v$localVersion -> v$remoteVersion"
-        Write-Log "=========================================="
-
-        # 3-pre. Check minimum uptime before restarting
-        $uptime = (Get-Date) - $script:lastStartTime
-        if ($uptime.TotalSeconds -lt $MIN_UPTIME_SECONDS) {
-            $remaining = [math]::Ceiling($MIN_UPTIME_SECONDS - $uptime.TotalSeconds)
-            Write-Log "Server uptime too short ($([math]::Floor($uptime.TotalSeconds))s < ${MIN_UPTIME_SECONDS}s), deferring update to next poll cycle (${remaining}s remaining)" -Level "WARN"
-            Start-Sleep -Seconds $POLL_INTERVAL_SECONDS
-            continue
-        }
-
-        # 3a. Write maintenance flag
-        Write-MaintenanceFlag -NewVersion $remoteVersion
-
-        # 3b. Grace period for agents to wind down
-        Write-Log "Waiting ${GRACE_PERIOD_SECONDS}s grace period for agents to enter sleep..."
-        Start-Sleep -Seconds $GRACE_PERIOD_SECONDS
-
-        # 3c. Stop the MCP server
-        Stop-McpServer
-
-        # 3d. Clear npx cache
-        Clear-NpxCache
-
-        # 3e. Start the MCP server again
-        Start-McpServer
-        $script:lastStartTime = Get-Date
-
-        # 3f. Record new version
-        Set-LocalVersion -Version $remoteVersion
-        Write-Log "Version file updated to v$remoteVersion."
-
-        # 3g. Remove maintenance flag
-        Remove-MaintenanceFlag
-
-        Write-Log "=========================================="
-        Write-Log "Update to v$remoteVersion complete."
-        Write-Log "=========================================="
     }
-    catch {
-        Write-Log "Unhandled error in main loop: $_" -Level "ERROR"
-        Write-Log $_.ScriptStackTrace -Level "ERROR"
+}
+else {
+    # Development mode: poll every $POLL_INTERVAL_SECONDS
+    Write-Log "Development mode: polling every ${POLL_INTERVAL_SECONDS}s"
+    while ($true) {
+        try {
+            Invoke-UpdateCheck | Out-Null
+        }
+        catch {
+            Write-Log "Unhandled error in main loop: $_" -Level "ERROR"
+            Write-Log $_.ScriptStackTrace -Level "ERROR"
+            Remove-MaintenanceFlag
+        }
 
-        # Clean up maintenance flag if it was left behind
-        Remove-MaintenanceFlag
+        Start-Sleep -Seconds $POLL_INTERVAL_SECONDS
     }
-
-    Start-Sleep -Seconds $POLL_INTERVAL_SECONDS
 }
