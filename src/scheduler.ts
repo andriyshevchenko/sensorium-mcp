@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { randomUUID } from "node:crypto";
 import { homedir } from "os";
 import { join } from "path";
+import { log } from "./logger.js";
 
 const SCHEDULES_DIR = join(homedir(), ".remote-copilot-mcp", "schedules");
 
@@ -133,6 +134,27 @@ function matchesCron(cronExpr: string, date: Date): boolean {
 }
 
 /**
+ * Find the most recent minute before `beforeDate` that matches the cron expression.
+ * Scans backward minute-by-minute up to 1440 minutes (24 hours).
+ * Returns null if no match is found in that window.
+ */
+function getLastCronMatch(cronExpr: string, beforeDate: Date): Date | null {
+    const MAX_LOOKBACK_MINUTES = 1440; // 24 hours
+    // Start from one minute before beforeDate (truncated to the minute)
+    const start = new Date(beforeDate);
+    start.setSeconds(0, 0);
+    start.setTime(start.getTime() - 60000); // one minute before
+
+    for (let i = 0; i < MAX_LOOKBACK_MINUTES; i++) {
+        const candidate = new Date(start.getTime() - i * 60000);
+        if (matchesCron(cronExpr, candidate)) {
+            return candidate;
+        }
+    }
+    return null;
+}
+
+/**
  * Check for due tasks and return the first one that should fire.
  * 
  * @param threadId - Thread to check schedules for
@@ -177,6 +199,9 @@ export function checkDueTasks(
 
         // --- Cron-based recurring ---
         if (task.cron) {
+            let cronFired = false;
+
+            // Normal path: current minute matches the cron pattern
             if (matchesCron(task.cron, now)) {
                 // Dedup: don't fire again within the same minute
                 if (task.lastFiredAt) {
@@ -197,9 +222,33 @@ export function checkDueTasks(
                 }
                 task.lastFiredAt = now.toISOString();
                 modified = true;
+                cronFired = true;
                 result = { prompt: task.prompt, task };
-                break;
             }
+
+            // Catch-up path: detect missed cron executions while server was down
+            if (!cronFired) {
+                const lastMatch = getLastCronMatch(task.cron, now);
+                if (lastMatch) {
+                    const lastFiredTime = task.lastFiredAt
+                        ? new Date(task.lastFiredAt).getTime()
+                        : 0;
+                    if (lastFiredTime < lastMatch.getTime()) {
+                        if (hasNewMessages) {
+                            // Operator is active — skip catch-up
+                            continue;
+                        }
+                        log.info(
+                            `[scheduler] Catch-up firing missed cron task: ${task.label} (was due at ${lastMatch.toISOString()})`,
+                        );
+                        task.lastFiredAt = now.toISOString();
+                        modified = true;
+                        result = { prompt: task.prompt, task };
+                    }
+                }
+            }
+
+            if (result) break;
         }
 
         // --- Idle-based (fire after N minutes of silence) ---
