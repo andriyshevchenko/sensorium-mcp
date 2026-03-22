@@ -261,6 +261,17 @@ export interface StoredMessage {
             length: number;
             duration: number;
         };
+        sticker?: {
+            file_id: string;
+            emoji?: string;
+            set_name?: string;
+        };
+        animation?: {
+            file_id: string;
+            thumbnail?: {
+                file_id: string;
+            };
+        };
         date: number;
     };
 }
@@ -423,7 +434,7 @@ async function pollOnce(
             // new_chat_members, etc.) — they have no user content and would be
             // delivered as "unsupported message type" to the agent.
             const m = u.message;
-            const hasContent = m.text || m.caption || m.photo || m.document || m.voice || m.video_note;
+            const hasContent = m.text || m.caption || m.photo || m.document || m.voice || m.video_note || m.sticker || m.animation;
             if (!hasContent) {
                 committedOffset = u.update_id + 1;
                 continue;
@@ -459,6 +470,17 @@ async function pollOnce(
                         file_id: u.message.video_note.file_id,
                         length: u.message.video_note.length,
                         duration: u.message.video_note.duration,
+                    } : undefined,
+                    sticker: u.message.sticker ? {
+                        file_id: u.message.sticker.file_id,
+                        emoji: u.message.sticker.emoji,
+                        set_name: u.message.sticker.set_name,
+                    } : undefined,
+                    animation: u.message.animation ? {
+                        file_id: u.message.animation.file_id,
+                        thumbnail: (u.message.animation.thumbnail ?? u.message.animation.thumb)
+                            ? { file_id: (u.message.animation.thumbnail ?? u.message.animation.thumb)!.file_id }
+                            : undefined,
                     } : undefined,
                     date: u.message.date,
                 },
