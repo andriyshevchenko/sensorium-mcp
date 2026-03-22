@@ -47,7 +47,6 @@ export interface StartSessionContext {
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
   getReminders: (
     threadId: number | undefined,
-    driveActive: boolean,
     sessionStartedAt: number,
     autonomousMode: boolean,
   ) => string;
@@ -253,7 +252,7 @@ export async function handleStartSession(
           `Session ${resolvedPreexisting ? "resumed" : "started"}.${threadNote}` +
           ` Call the remote_copilot_wait_for_instructions tool next.${resumeNote}` +
           memoryBriefing +
-          ctx.getReminders(session.currentThreadId, false, session.sessionStartedAt, config.AUTONOMOUS_MODE),
+          ctx.getReminders(session.currentThreadId, session.sessionStartedAt, config.AUTONOMOUS_MODE),
       },
     ],
   };

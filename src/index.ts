@@ -92,6 +92,8 @@ function createMcpServer(getMcpSessionId?: () => string | undefined, closeTransp
   let lastOperatorMessageText = "";
   let lastConsolidationAt = 0;
   let toolCallsSinceLastDelivery = 0;
+  let lastDriveAttemptAt = 0;
+  let drivePhase2Fired = false;
   const previewedUpdateIds = new Set<number>();
   const PREVIEWED_IDS_CAP = 1000;
 
@@ -112,19 +114,21 @@ function createMcpServer(getMcpSessionId?: () => string | undefined, closeTransp
    * Generate a first-person DMN (Default Mode Network) reflection prompt.
    * Called when the __DMN__ sentinel fires as a scheduled task.
    */
-  function generateDmnReflection(threadId: number): string {
+  function generateDmnReflection(_threadId: number): string {
     try {
-      const db = getMemoryDb();
       const idleMs = Date.now() - lastOperatorMessageAt;
-      const driveContent = formatDrivePrompt(idleMs, db, threadId);
+      const driveResult = formatDrivePrompt(idleMs, config.DMN_ACTIVATION_HOURS);
 
-      // Reframe in first person
-      return (
-        `I've been thinking while the operator is away.\n\n` +
-        `${driveContent}\n\n` +
-        `If something here resonates, I should explore it — use subagents, search the codebase, review memory. ` +
-        `Report what I find, then go back to hibernation or continue waiting.`
-      );
+      if (driveResult.activated && driveResult.prompt) {
+        return (
+          `I've been thinking while the operator is away.\n\n` +
+          `${driveResult.prompt}\n\n` +
+          `If something here resonates, I should explore it — use subagents, search the codebase, review memory. ` +
+          `Report what I find, then go back to hibernation or continue waiting.`
+        );
+      }
+
+      return "I should review memory and the codebase for anything interesting while the operator is away.";
     } catch {
       return "I should review memory and the codebase for anything interesting while the operator is away.";
     }
@@ -262,6 +266,10 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         set lastOperatorMessageText(v) { lastOperatorMessageText = v; },
         get lastConsolidationAt() { return lastConsolidationAt; },
         set lastConsolidationAt(v) { lastConsolidationAt = v; },
+        get lastDriveAttemptAt() { return lastDriveAttemptAt; },
+        set lastDriveAttemptAt(v) { lastDriveAttemptAt = v; },
+        get drivePhase2Fired() { return drivePhase2Fired; },
+        set drivePhase2Fired(v) { drivePhase2Fired = v; },
         previewedUpdateIds,
       },
       addPreviewedId,

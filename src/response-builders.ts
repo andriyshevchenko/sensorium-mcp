@@ -120,13 +120,11 @@ export function buildAnalysisTags(analysis: VoiceAnalysisResult | null): string[
  * responses where the agent needs the complete context for decision-making.
  *
  * @param threadId        Current Telegram thread ID (if any).
- * @param driveActive     Whether the dispatcher drive is currently active.
  * @param sessionStartedAt  Epoch ms when the current session started.
  * @param autonomousMode  Whether the agent is in autonomous orchestrator mode.
  */
 export function getReminders(
   threadId: number | undefined,
-  driveActive: boolean,
   sessionStartedAt: number,
   autonomousMode: boolean,
 ): string {
@@ -152,14 +150,7 @@ export function getReminders(
     return "\n" + renderTemplate(tpl, vars).trim();
   }
 
-  // ── Hardcoded fallback (original behaviour) ────────────────────────────
-  if (driveActive) {
-    return (
-      "\nComplete the dispatcher's tasks. Report progress via `send_voice`. Then call `remote_copilot_wait_for_instructions`." +
-      ` threadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m`
-    );
-  }
-
+  // ── Hardcoded fallback ─────────────────────────────────────────────────
   const directive = autonomousMode
     ? "\nYou are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable."
     : "\nFollow the operator's instructions. Report results via `send_voice`.";
