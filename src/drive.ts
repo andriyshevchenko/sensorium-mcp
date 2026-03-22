@@ -10,7 +10,7 @@
  * Phase 3: Approval Gate — encouragement if agent didn't engage
  */
 
-import { loadTemplate, renderTemplate } from "./response-builders.js";
+import { loadTemplate, renderTemplate } from "./data/templates.js";
 
 /**
  * Default Phase 2 elicitation prompt — used when no custom template exists.
