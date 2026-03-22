@@ -642,6 +642,64 @@ export async function handleWaitForInstructions(
       };
     }
 
+    // ── Reaction-only wake-up ───────────────────────────────────────
+    // If no text messages arrived but a reaction is pending, return
+    // immediately so the agent can reflect on the reaction as a CTA.
+    const pendingReactionOnly = readPendingReaction() ?? telegram.lastReaction;
+    if (pendingReactionOnly) {
+      const rEmoji = "emoji" in pendingReactionOnly ? pendingReactionOnly.emoji : "";
+      const rMsgId = "messageId" in pendingReactionOnly ? pendingReactionOnly.messageId : 0;
+      const rDate = "date" in pendingReactionOnly ? pendingReactionOnly.date : 0;
+      if (rEmoji) {
+        // Clear in-memory reaction after consumption
+        telegram.lastReaction = null;
+
+        const snippet = telegram.lookupSentMessage(rMsgId);
+        const reactionNote = snippet
+          ? `(The operator reacted with ${rEmoji} to your message: '${snippet}')`
+          : `(The operator reacted with ${rEmoji} to message #${rMsgId})`;
+
+        // Save reaction as episodic memory
+        try {
+          const db = getMemoryDb();
+          const sessionId = `session_${state.sessionStartedAt}`;
+          if (effectiveThreadId !== undefined) {
+            saveEpisode(db, {
+              sessionId,
+              threadId: effectiveThreadId,
+              type: "operator_reaction",
+              modality: "reaction",
+              content: { emoji: rEmoji, messageId: rMsgId, date: rDate },
+              importance: 0.3,
+            });
+          }
+        } catch (_) { /* non-fatal */ }
+
+        log.info(`[wait] Reaction-only wake-up: ${rEmoji} on message ${rMsgId}`);
+
+        return {
+          content: [
+            { type: "text", text: "<<< OPERATOR REACTION >>>" },
+            { type: "text", text: reactionNote },
+            {
+              type: "text",
+              text:
+                "The operator reacted to your message without sending a text reply. " +
+                "This may be a confirmation, approval, or acknowledgment. " +
+                "Reflect on what your last message said and whether this reaction is a call to action " +
+                "(e.g., proceed with a plan, continue what you were doing, etc.). " +
+                "If no action is needed, call `remote_copilot_wait_for_instructions` to resume waiting.",
+            },
+            { type: "text", text: "<<< END OPERATOR REACTION >>>" },
+            {
+              type: "text",
+              text: getMediumReminder(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
+            },
+          ],
+        };
+      }
+    }
+
     // Check scheduled tasks every ~60s during idle polling.
     if (effectiveThreadId !== undefined && Date.now() - lastScheduleCheck >= 60_000) {
       lastScheduleCheck = Date.now();
