@@ -895,6 +895,41 @@ export function supersedeNote(
   return newId;
 }
 
+/**
+ * Find existing active notes that potentially conflict with a newly saved note.
+ * Matches notes with the same type and at least 2 keywords in common.
+ * Returns matching notes (excluding the note itself) for the agent to review.
+ */
+export function findPotentialConflicts(
+  db: Database,
+  noteId: string,
+): SemanticNote[] {
+  const row = db.prepare(
+    `SELECT note_id, type, keywords FROM semantic_notes WHERE note_id = ?`
+  ).get(noteId) as { note_id: string; type: string; keywords: string } | undefined;
+
+  if (!row) return [];
+
+  const noteKeywords: string[] = row.keywords ? JSON.parse(row.keywords) : [];
+  if (noteKeywords.length < 2) return [];
+
+  // Fetch all active notes of the same type (excluding this note and superseded ones)
+  const candidates = db.prepare(
+    `SELECT * FROM semantic_notes
+     WHERE type = ? AND note_id != ? AND valid_to IS NULL AND superseded_by IS NULL`
+  ).all(row.type, noteId) as Record<string, unknown>[];
+
+  const lowerKeywords = new Set(noteKeywords.map(k => k.toLowerCase()));
+
+  return candidates
+    .filter(c => {
+      const cKeywords: string[] = c.keywords ? JSON.parse(c.keywords as string) : [];
+      const overlap = cKeywords.filter(k => lowerKeywords.has(k.toLowerCase())).length;
+      return overlap >= 2;
+    })
+    .map(rowToSemanticNote);
+}
+
 // ─── Procedural Memory ──────────────────────────────────────────────────────
 
 export function saveProcedure(
@@ -1213,14 +1248,53 @@ function getVoiceBaseline(db: Database, dayRange = 30): VoiceBaseline | null {
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
-export function assembleBootstrap(db: Database, threadId: number): string {
-  const status = getMemoryStatus(db, threadId);
-  const recentEpisodes = getRecentEpisodes(db, threadId, 5);
-  const topNotes = getTopSemanticNotes(db, { limit: 10, sortBy: "access_count" });
-  // Preferences first
-  const preferences = topNotes.filter((n) => n.type === "preference");
-  const otherNotes = topNotes.filter((n) => n.type !== "preference");
-  const sortedNotes = [...preferences, ...otherNotes].slice(0, 10);
+export function assembleBootstrap(db: Database, threadId?: number): string {
+  const status = getMemoryStatus(db, threadId ?? 0);
+  const recentEpisodes = threadId ? getRecentEpisodes(db, threadId, 5) : [];
+
+  // Thread-aware Key Knowledge:
+  // 1. Thread-scoped notes (up to 6) for the current thread
+  // 2. Global profile notes (thread_id IS NULL, preference/pattern) up to 4
+  // If no threadId, show up to 10 null-thread notes (preferences/patterns first)
+  let sortedNotes: SemanticNote[];
+  if (threadId) {
+    const threadNotes = db
+      .prepare(
+        `SELECT * FROM semantic_notes
+         WHERE valid_to IS NULL AND superseded_by IS NULL
+           AND thread_id = ?
+         ORDER BY access_count DESC, confidence DESC
+         LIMIT 6`
+      )
+      .all(threadId) as Record<string, unknown>[];
+    const remaining = 10 - threadNotes.length;
+    const globalNotes = remaining > 0
+      ? (db
+          .prepare(
+            `SELECT * FROM semantic_notes
+             WHERE valid_to IS NULL AND superseded_by IS NULL
+               AND thread_id IS NULL
+               AND type IN ('preference', 'pattern')
+             ORDER BY access_count DESC, confidence DESC
+             LIMIT ?`
+          )
+          .all(remaining) as Record<string, unknown>[])
+      : [];
+    sortedNotes = [...threadNotes, ...globalNotes].map(rowToSemanticNote);
+  } else {
+    const nullThreadNotes = db
+      .prepare(
+        `SELECT * FROM semantic_notes
+         WHERE valid_to IS NULL AND superseded_by IS NULL
+           AND thread_id IS NULL
+         ORDER BY
+           CASE WHEN type IN ('preference', 'pattern') THEN 0 ELSE 1 END,
+           access_count DESC, confidence DESC
+         LIMIT 10`
+      )
+      .all() as Record<string, unknown>[];
+    sortedNotes = nullThreadNotes.map(rowToSemanticNote);
+  }
 
   const activeProcedures = db
     .prepare(
@@ -1264,7 +1338,8 @@ export function assembleBootstrap(db: Database, threadId: number): string {
   if (sortedNotes.length > 0) {
     lines.push("## Key Knowledge");
     for (const note of sortedNotes) {
-      lines.push(`- **[${note.type}]** ${note.content} (conf: ${note.confidence.toFixed(2)}, accessed: ${note.accessCount}x)`);
+      const savedDate = note.createdAt ? note.createdAt.slice(0, 10) : 'unknown';
+      lines.push(`- **[${note.type}]** ${note.content} (conf: ${note.confidence.toFixed(2)}, accessed: ${note.accessCount}x, saved: ${savedDate})`);
     }
     lines.push("");
   }

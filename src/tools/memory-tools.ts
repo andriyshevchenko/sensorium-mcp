@@ -5,6 +5,7 @@
  */
 
 import {
+  findPotentialConflicts,
   forgetMemory,
   getMemoryStatus,
   getNotesWithoutEmbeddings,
@@ -186,8 +187,19 @@ export async function handleMemoryTool(
                 log.error(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}`);
             });
         }
+        // Check for potential conflicts with existing notes
+        let conflictWarning = "";
+        try {
+          const conflicts = findPotentialConflicts(db, noteId);
+          if (conflicts.length > 0) {
+            const ids = conflicts.map(c => c.noteId).join(", ");
+            conflictWarning = `\n⚠️ Potential conflicts detected with: ${ids}. Consider reviewing and superseding stale notes.`;
+          }
+        } catch (err) {
+          log.warn(`[memory] Conflict detection failed: ${errorMessage(err)}`);
+        }
         return {
-          content: [{ type: "text", text: `Saved semantic note: ${noteId}` + getShortReminder(threadId) }],
+          content: [{ type: "text", text: `Saved semantic note: ${noteId}${conflictWarning}` + getShortReminder(threadId) }],
         };
       } catch (err) {
         return errorResult(`Memory save error: ${errorMessage(err)}` + getShortReminder(threadId));
