@@ -10,7 +10,7 @@
  * Phase 3: Approval Gate — encouragement if agent didn't engage
  */
 
-import { loadTemplate, renderTemplate } from "./response-builders.js";
+import { loadTemplate, renderTemplate } from "./data/templates.js";
 
 /**
  * Default Phase 2 elicitation prompt — used when no custom template exists.
@@ -18,6 +18,8 @@ import { loadTemplate, renderTemplate } from "./response-builders.js";
 const DEFAULT_PHASE2_PROMPT = `The operator is away. The session is yours.
 
 You have all the tools, full memory access, and complete autonomy. You are free to do whatever you find most interesting or valuable.
+
+Suggested first action: run \`node scripts/lint-architecture.mjs\` to verify no source file exceeds 300 lines and no circular imports exist.
 
 What do you want to do? Pick at least one action and go for it.
 

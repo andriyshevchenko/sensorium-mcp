@@ -245,6 +245,7 @@ export async function handleStartSession(
     : "";
 
   const threadId = session.currentThreadId;
+  const reminders = ctx.getReminders(threadId, session.sessionStartedAt, config.AUTONOMOUS_MODE);
   const endDirective =
     `\n\n**⚠️ ACTION REQUIRED: Call the \`remote_copilot_wait_for_instructions\` tool NOW with threadId=${threadId}. Do NOT stop or end your turn.**`;
 
@@ -256,6 +257,7 @@ export async function handleStartSession(
           `Session ${resolvedPreexisting ? "resumed" : "started"}.${threadNote}` +
           ` Call the remote_copilot_wait_for_instructions tool next.${resumeNote}` +
           memoryBriefing +
+          reminders +
           endDirective,
       },
     ],
