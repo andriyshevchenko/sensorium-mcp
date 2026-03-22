@@ -1,7 +1,7 @@
 /**
  * Utility tool handlers extracted from index.ts.
  *
- * Handles: send_file, send_voice, schedule_wake_up, get_version, get_usage_stats
+ * Handles: send_file, send_voice, schedule_wake_up, get_version
  */
 
 import { readFile } from "fs/promises";
@@ -26,8 +26,6 @@ export interface UtilityToolContext {
   telegram: TelegramClient;
   config: AppConfig;
   sessionStartedAt: number;
-  waitCallCount: number;
-  toolCallsSinceLastDelivery: number;
 }
 
 type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };

@@ -56,8 +56,7 @@ import { handleWaitForInstructions, type WaitToolContext, type WaitToolExtra } f
 // Destructure config for backwards-compatible local references
 // ---------------------------------------------------------------------------
 
-const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, OPENAI_API_KEY, VOICE_ANALYSIS_URL,
-  WAIT_TIMEOUT_MINUTES, FILES_DIR, PKG_VERSION } = config;
+const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, PKG_VERSION } = config;
 
 // ---------------------------------------------------------------------------
 // Telegram client + dispatcher
@@ -291,7 +290,6 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const sessionToolCtx: SessionToolContext = {
       resolveThreadId,
-      getReminders: (threadId, driveActive) => getReminders(threadId, driveActive, sessionStartedAt, config.AUTONOMOUS_MODE),
       getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
       errorResult,
       telegram,
@@ -318,8 +316,6 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       telegram,
       config,
       sessionStartedAt,
-      waitCallCount,
-      toolCallsSinceLastDelivery,
     };
     return handleUtilityTool(name, typedArgs, utilityCtx);
   }
@@ -339,8 +335,6 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       telegram,
       config,
       sessionStartedAt,
-      waitCallCount,
-      toolCallsSinceLastDelivery,
     };
     return handleUtilityTool(name, typedArgs, utilityCtx);
   }
