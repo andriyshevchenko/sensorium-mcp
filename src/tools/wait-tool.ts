@@ -22,27 +22,23 @@ import {
   assembleCompactRefresh,
   runIntelligentConsolidation,
   saveEpisode,
-  saveVoiceSignature,
   searchByEmbedding,
   searchSemanticNotesRanked,
   type initMemoryDb,
 } from "../memory.js";
 import {
-  analyzeVideoFrames,
-  analyzeVoiceEmotion,
   chatCompletion,
-  extractVideoFrames,
   generateEmbedding,
-  transcribeAudio,
 } from "../openai.js";
 import { checkDueTasks, listSchedules } from "../scheduler.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig } from "../types.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../utils.js";
 import { log } from "../logger.js";
-import { extractSearchKeywords, buildAnalysisTags, getReminders, getMediumReminder, getShortReminder } from "../response-builders.js";
+import { extractSearchKeywords, getReminders, getMediumReminder, getShortReminder } from "../response-builders.js";
 import { classifyIntent } from "../intent.js";
 import { backfillEmbeddings } from "./memory-tools.js";
+import { processVoice, processAnimation, processVideoNote, type MediaContext } from "./wait/media-processor.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -272,76 +268,10 @@ export async function handleWaitForInstructions(
         // Voice messages: transcribe using OpenAI Whisper.
         if (msg.message.voice) {
           hasVoiceMessages = true;
-          if (OPENAI_API_KEY) {
-            try {
-              log.verbose("voice", `Downloading voice file ${msg.message.voice.file_id}...`);
-              const { buffer } = await telegram.downloadFileAsBuffer(
-                msg.message.voice.file_id,
-              );
-              log.verbose("voice", `Downloaded ${buffer.length} bytes. Starting transcription + analysis...`);
-
-              // Run transcription and voice analysis in parallel.
-              const [transcript, analysis] = await Promise.all([
-                transcribeAudio(buffer, OPENAI_API_KEY),
-                VOICE_ANALYSIS_URL
-                  ? analyzeVoiceEmotion(buffer, VOICE_ANALYSIS_URL)
-                  : Promise.resolve(null),
-              ]);
-
-              // Build rich voice analysis tag from VANPY results.
-              const tags = buildAnalysisTags(analysis);
-              const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
-
-              contentBlocks.push({
-                type: "text",
-                text: transcript
-                  ? `[Voice message — ${msg.message.voice.duration}s${analysisTag}, transcribed]: ${transcript}`
-                  : `[Voice message — ${msg.message.voice.duration}s${analysisTag}, transcribed]: (empty — no speech detected)`,
-              });
-
-              // Auto-save voice signature
-              if (analysis && effectiveThreadId !== undefined) {
-                try {
-                  const db = getMemoryDb();
-                  const sessionId = `session_${state.sessionStartedAt}`;
-                  const epId = saveEpisode(db, {
-                    sessionId,
-                    threadId: effectiveThreadId,
-                    type: "operator_message",
-                    modality: "voice",
-                    content: { text: transcript ?? "", duration: msg.message.voice.duration },
-                    importance: 0.6,
-                  });
-                  saveVoiceSignature(db, {
-                    episodeId: epId,
-                    emotion: analysis.emotion ?? undefined,
-                    arousal: analysis.arousal ?? undefined,
-                    dominance: analysis.dominance ?? undefined,
-                    valence: analysis.valence ?? undefined,
-                    speechRate: analysis.paralinguistics?.speech_rate ?? undefined,
-                    meanPitchHz: analysis.paralinguistics?.mean_pitch_hz ?? undefined,
-                    pitchStdHz: analysis.paralinguistics?.pitch_std_hz ?? undefined,
-                    jitter: analysis.paralinguistics?.jitter ?? undefined,
-                    shimmer: analysis.paralinguistics?.shimmer ?? undefined,
-                    hnrDb: analysis.paralinguistics?.hnr_db ?? undefined,
-                    audioEvents: analysis.audio_events?.map(e => ({ label: e.label, confidence: e.score })),
-                    durationSec: msg.message.voice.duration,
-                  });
-                  savedEpisodeUpdateIds.add(msg.update_id);
-                } catch (_) { /* non-fatal */ }
-              }
-            } catch (err) {
-              contentBlocks.push({
-                type: "text",
-                text: `[Voice message — ${msg.message.voice.duration}s — transcription failed: ${errorMessage(err)}]`,
-              });
-            }
-          } else {
-            contentBlocks.push({
-              type: "text",
-              text: `[Voice message received — ${msg.message.voice.duration}s — cannot transcribe: OPENAI_API_KEY not set]`,
-            });
-          }
+          const mediaCtx: MediaContext = { telegram, openaiApiKey: OPENAI_API_KEY, voiceAnalysisUrl: VOICE_ANALYSIS_URL, effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt, getMemoryDb };
+          const result = await processVoice(msg, mediaCtx);
+          contentBlocks.push(...result.blocks);
+          if (result.episodeSaved) savedEpisodeUpdateIds.add(msg.update_id);
         }
         // Stickers: deliver as text with emoji, set name, and file_id (so agent can re-use it).
         if (msg.message.sticker) {
@@ -356,149 +286,18 @@ export async function handleWaitForInstructions(
         // Animations / GIFs: download full file, extract frames, run multi-frame vision analysis
         // (same pipeline as video_notes — uses extractVideoFrames + analyzeVideoFrames).
         if (msg.message.animation) {
-          const anim = msg.message.animation;
-          const animDuration = anim.duration ?? 3; // default to 3s if Telegram omits duration
-          if (OPENAI_API_KEY) {
-            try {
-              log.verbose("gif", `Downloading animation ${anim.file_id} (~${animDuration}s)...`);
-              const { buffer } = await telegram.downloadFileAsBuffer(anim.file_id);
-              const diskPath = saveFileToDisk(buffer, "gif-animation.mp4");
-              log.verbose("gif", `Downloaded ${buffer.length} bytes. Extracting frames...`);
-
-              // Extract frames with ffmpeg (same as video_notes).
-              const frames = await extractVideoFrames(buffer, animDuration).catch((err) => {
-                log.error(`[gif] Frame extraction failed: ${errorMessage(err)}`);
-                return [] as Buffer[];
-              });
-
-              // Analyze frames with GPT-4o-mini vision (same as video_notes).
-              let sceneDescription: string | null = null;
-              if (frames.length > 0) {
-                try {
-                  log.verbose("gif", `Analyzing ${frames.length} frames with GPT-4o-mini vision...`);
-                  sceneDescription = await analyzeVideoFrames(frames, animDuration, OPENAI_API_KEY);
-                  log.verbose("gif", `Vision analysis complete.`);
-                } catch (visionErr) {
-                  log.error(`[gif] Vision analysis failed: ${visionErr}`);
-                  sceneDescription = null;
-                }
-              }
-
-              const caption = msg.message.caption || "";
-              const parts: string[] = [];
-              parts.push(`(The operator sent a GIF — ${animDuration}s)`);
-              if (sceneDescription) parts.push(`Scene: ${sceneDescription}`);
-              if (!sceneDescription) parts.push("(no visual content could be extracted)");
-              parts.push(`Saved to: ${diskPath}`);
-              if (caption) parts.push(`Caption: ${caption}`);
-              contentBlocks.push({ type: "text", text: parts.join("\n") });
-            } catch (err) {
-              contentBlocks.push({
-                type: "text",
-                text: `(The operator sent a GIF — analysis failed: ${errorMessage(err)})`,
-              });
-            }
-          } else {
-            contentBlocks.push({
-              type: "text",
-              text: `(The operator sent a GIF — cannot analyze: OPENAI_API_KEY not set)`,
-            });
-          }
+          const mediaCtx: MediaContext = { telegram, openaiApiKey: OPENAI_API_KEY, voiceAnalysisUrl: VOICE_ANALYSIS_URL, effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt, getMemoryDb };
+          const animBlocks = await processAnimation(msg, mediaCtx);
+          contentBlocks.push(...animBlocks);
         }
         // Video notes (circle videos): extract frames, analyze with GPT-4.1 vision,
         // optionally transcribe the audio track.
         if (msg.message.video_note) {
           hasVoiceMessages = true; // Video notes often contain speech
-          const vn = msg.message.video_note;
-          if (OPENAI_API_KEY) {
-            try {
-              log.verbose("video-note", `Downloading circle video ${vn.file_id} (${vn.duration}s)...`);
-              const { buffer } = await telegram.downloadFileAsBuffer(vn.file_id);
-              log.verbose("video-note", `Downloaded ${buffer.length} bytes. Extracting frames + transcribing...`);
-
-              // Run frame extraction, audio transcription, and voice analysis in parallel.
-              const [frames, transcript, analysis] = await Promise.all([
-                extractVideoFrames(buffer, vn.duration).catch((err) => {
-                  log.error(`[video-note] Frame extraction failed: ${errorMessage(err)}`);
-                  return [] as Buffer[];
-                }),
-                transcribeAudio(buffer, OPENAI_API_KEY, "video.mp4").catch(() => ""),
-                VOICE_ANALYSIS_URL
-                  ? analyzeVoiceEmotion(buffer, VOICE_ANALYSIS_URL, {
-                      mimeType: "video/mp4",
-                      filename: "video.mp4",
-                    }).catch(() => null)
-                  : Promise.resolve(null),
-              ]);
-
-              // Analyze frames with GPT-4o-mini vision.
-              let sceneDescription: string | null = "";
-              if (frames.length > 0) {
-                try {
-                  log.verbose("video-note", `Analyzing ${frames.length} frames with GPT-4o-mini vision...`);
-                  sceneDescription = await analyzeVideoFrames(frames, vn.duration, OPENAI_API_KEY);
-                  log.verbose("video-note", `Vision analysis complete.`);
-                } catch (visionErr) {
-                  log.error(`[video-note] Vision analysis failed: ${visionErr}`);
-                  sceneDescription = null;
-                }
-              }
-
-              // Build analysis tags (same as voice messages).
-              const tags = buildAnalysisTags(analysis);
-              const analysisTag = tags.length > 0 ? ` | ${tags.join(", ")}` : "";
-
-              const parts: string[] = [];
-              parts.push(`[Video note — ${vn.duration}s${analysisTag}]`);
-              if (sceneDescription) parts.push(`Scene: ${sceneDescription}`);
-              if (transcript) parts.push(`Audio: "${transcript}"`);
-              if (!sceneDescription && !transcript) parts.push("(no visual or audio content could be extracted)");
-
-              contentBlocks.push({ type: "text", text: parts.join("\n") });
-
-              // Auto-save voice signature for video notes
-              if (analysis && effectiveThreadId !== undefined) {
-                try {
-                  const db = getMemoryDb();
-                  const sessionId = `session_${state.sessionStartedAt}`;
-                  const epId = saveEpisode(db, {
-                    sessionId,
-                    threadId: effectiveThreadId,
-                    type: "operator_message",
-                    modality: "video_note",
-                    content: { text: transcript ?? "", scene: sceneDescription ?? "", duration: vn.duration },
-                    importance: 0.6,
-                  });
-                  saveVoiceSignature(db, {
-                    episodeId: epId,
-                    emotion: analysis.emotion ?? undefined,
-                    arousal: analysis.arousal ?? undefined,
-                    dominance: analysis.dominance ?? undefined,
-                    valence: analysis.valence ?? undefined,
-                    speechRate: analysis.paralinguistics?.speech_rate ?? undefined,
-                    meanPitchHz: analysis.paralinguistics?.mean_pitch_hz ?? undefined,
-                    pitchStdHz: analysis.paralinguistics?.pitch_std_hz ?? undefined,
-                    jitter: analysis.paralinguistics?.jitter ?? undefined,
-                    shimmer: analysis.paralinguistics?.shimmer ?? undefined,
-                    hnrDb: analysis.paralinguistics?.hnr_db ?? undefined,
-                    audioEvents: analysis.audio_events?.map(e => ({ label: e.label, confidence: e.score })),
-                    durationSec: vn.duration,
-                  });
-                  savedEpisodeUpdateIds.add(msg.update_id);
-                } catch (_) { /* non-fatal */ }
-              }
-            } catch (err) {
-              contentBlocks.push({
-                type: "text",
-                text: `[Video note — ${vn.duration}s — analysis failed: ${errorMessage(err)}]`,
-              });
-            }
-          } else {
-            contentBlocks.push({
-              type: "text",
-              text: `[Video note received — ${vn.duration}s — cannot analyze: OPENAI_API_KEY not set]`,
-            });
-          }
+          const mediaCtx: MediaContext = { telegram, openaiApiKey: OPENAI_API_KEY, voiceAnalysisUrl: VOICE_ANALYSIS_URL, effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt, getMemoryDb };
+          const result = await processVideoNote(msg, mediaCtx);
+          contentBlocks.push(...result.blocks);
+          if (result.episodeSaved) savedEpisodeUpdateIds.add(msg.update_id);
         }
       }
       if (contentBlocks.length === 0) {
