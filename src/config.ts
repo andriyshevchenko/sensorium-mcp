@@ -24,6 +24,9 @@ const AUTONOMOUS_MODE = process.env.AUTONOMOUS_MODE === "true";
 const rawWaitTimeoutMinutes = parseInt(process.env.WAIT_TIMEOUT_MINUTES ?? "", 10);
 const WAIT_TIMEOUT_MINUTES = Math.max(1, Number.isFinite(rawWaitTimeoutMinutes) ? rawWaitTimeoutMinutes : 120);
 
+const rawDmnActivationHours = parseFloat(process.env.DMN_ACTIVATION_HOURS ?? "");
+const DMN_ACTIVATION_HOURS = Math.max(0.5, Number.isFinite(rawDmnActivationHours) ? rawDmnActivationHours : 4);
+
 // ─── Validation ─────────────────────────────────────────────────────────────
 
 if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
@@ -102,6 +105,7 @@ export const config: AppConfig = {
   OPENAI_API_KEY,
   VOICE_ANALYSIS_URL,
   WAIT_TIMEOUT_MINUTES,
+  DMN_ACTIVATION_HOURS,
   FILES_DIR,
   PKG_VERSION,
   AUTONOMOUS_MODE,

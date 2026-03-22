@@ -51,6 +51,59 @@ const DEFAULT_REMINDERS_TEMPLATE = `<!--
 You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `;
 
+// Embedded default drive template presets — used when the on-disk files are unavailable
+const DEFAULT_DRIVE_PRESETS: Record<string, string> = {
+    "operator-instruction": `The operator left this instruction before stepping away:
+
+"I'll be away for a while. While I'm gone, work on what matters most. Here's what surfaced from memory:"
+
+{{DMN_FRAGMENTS}}
+
+Execute the most impactful item. Report progress via send_voice, then continue waiting.
+`,
+    "operator-notes": `The operator stepped away {{IDLE_HOURS}} hours ago but left these notes for you:
+
+{{DMN_FRAGMENTS}}
+
+Pick what's most relevant and make progress. The operator will review when they return.
+`,
+    "dispatcher": `\u26A1 DISPATCHER ACTIVE \u2014 Operator away {{IDLE_HOURS}}h
+
+Assignment from the Dispatcher:
+{{DMN_FRAGMENTS}}
+
+Complete the most impactful assignment. Report progress, then call wait_for_instructions.
+`,
+    "first-person": `I've been thinking while the operator is away...
+
+{{DMN_FRAGMENTS}}
+
+If any of these resonate, I should explore them \u2014 use subagents, search the codebase, review memory. Report what I find, then go back to waiting.
+`,
+};
+
+const DRIVE_PRESET_DEFS = [
+    { name: "Direct Instruction", key: "operator-instruction" },
+    { name: "Operator Notes", key: "operator-notes" },
+    { name: "Dispatcher", key: "dispatcher" },
+    { name: "First Person", key: "first-person" },
+];
+
+async function loadDrivePresets(): Promise<Array<{ name: string; key: string; content: string }>> {
+    const presets: Array<{ name: string; key: string; content: string }> = [];
+    for (const def of DRIVE_PRESET_DEFS) {
+        let content: string;
+        try {
+            const defaultFile = join(dirname(fileURLToPath(import.meta.url)), "..", "templates", `drive-${def.key}.default.md`);
+            content = await readFile(defaultFile, "utf-8");
+        } catch {
+            content = DEFAULT_DRIVE_PRESETS[def.key] ?? `(default template for ${def.key} not found)`;
+        }
+        presets.push({ name: def.name, key: def.key, content });
+    }
+    return presets;
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface DashboardContext {
@@ -224,6 +277,46 @@ function handleApiRoute(
                     json({ error: err instanceof Error ? err.message : String(err) }, 500);
                 }
             })();
+            return true;
+        }
+
+        // ── Drive template endpoints ────────────────────────────────
+        if (path === "/api/templates/drive" && req.method === "GET") {
+            void (async () => {
+                try {
+                    const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
+                    const userFile = join(templatesDir, "drive.md");
+                    let content: string | null = null;
+                    let isDefault = true;
+                    try {
+                        content = await readFile(userFile, "utf-8");
+                        isDefault = false;
+                    } catch {
+                        content = null;
+                    }
+                    json({ content, isDefault });
+                } catch (err) {
+                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                }
+            })();
+            return true;
+        }
+
+        if (path === "/api/templates/drive-presets" && req.method === "GET") {
+            void (async () => {
+                try {
+                    const presets = await loadDrivePresets();
+                    json({ presets });
+                } catch (err) {
+                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                }
+            })();
+            return true;
+        }
+
+        if (path === "/api/settings/dmn-activation-hours" && req.method === "GET") {
+            const rawVal = parseFloat(process.env.DMN_ACTIVATION_HOURS ?? "");
+            json({ value: Math.max(0.5, Number.isFinite(rawVal) ? rawVal : 4) });
             return true;
         }
 
@@ -499,6 +592,61 @@ function getDashboardHTML(): string {
               <div><code class="text-accentLight">{{UPTIME}}</code> <span class="text-textSecondary">— session uptime</span></div>
               <div><code class="text-accentLight">{{VERSION}}</code> <span class="text-textSecondary">— package version</span></div>
               <div><code class="text-accentLight">{{MODE}}</code> <span class="text-textSecondary">— "autonomous" or "standard"</span></div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Drive Framing Template -->
+        <div class="glass rounded-xl p-6 mt-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div>
+              <h3 class="text-lg font-semibold">Drive Framing Template</h3>
+              <p class="text-sm text-textSecondary mt-1">Customize the autonomous drive prompt sent when the operator is away</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="drive-tpl-status" class="text-sm"></span>
+              <button onclick="resetDriveTemplate()" class="px-4 py-2 rounded-xl bg-card hover:bg-cardHover border border-gray-700 text-sm text-textSecondary hover:text-textPrimary transition">Reset to Default</button>
+              <button onclick="saveDriveTemplate()" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Save</button>
+            </div>
+          </div>
+          <div class="mb-4 flex flex-wrap items-center gap-3">
+            <label class="text-sm text-textSecondary">Drive Activation Period:</label>
+            <div class="flex items-center gap-2">
+              <input id="drive-activation-hours" type="number" min="0.5" step="0.5" class="w-20 px-3 py-1.5 rounded-lg bg-surface border border-gray-700 text-textPrimary font-mono text-sm focus:outline-none focus:border-accent transition" />
+              <span class="text-sm text-textSecondary">hours</span>
+            </div>
+            <span class="text-xs text-muted">(informational \u2014 requires server restart via DMN_ACTIVATION_HOURS env var)</span>
+          </div>
+          <div id="drive-tpl-default-badge" class="hidden mb-3">
+            <span class="type-badge" style="background:rgba(245,158,11,0.15);color:#fbbf24">NO CUSTOM TEMPLATE \u2014 using hardcoded drive prompts. Load a preset and save to customize.</span>
+          </div>
+          <div class="flex flex-wrap gap-2 mb-3">
+            <span class="text-sm text-textSecondary self-center">Presets:</span>
+            <button onclick="loadPreset('operator-instruction')" class="px-3 py-1.5 rounded-lg bg-card hover:bg-cardHover border border-gray-700 text-xs text-textSecondary hover:text-textPrimary transition">\uD83D\uDCCB Direct Instruction</button>
+            <button onclick="loadPreset('operator-notes')" class="px-3 py-1.5 rounded-lg bg-card hover:bg-cardHover border border-gray-700 text-xs text-textSecondary hover:text-textPrimary transition">\uD83D\uDCDD Operator Notes</button>
+            <button onclick="loadPreset('dispatcher')" class="px-3 py-1.5 rounded-lg bg-card hover:bg-cardHover border border-gray-700 text-xs text-textSecondary hover:text-textPrimary transition">\u26A1 Dispatcher</button>
+            <button onclick="loadPreset('first-person')" class="px-3 py-1.5 rounded-lg bg-card hover:bg-cardHover border border-gray-700 text-xs text-textSecondary hover:text-textPrimary transition">\uD83D\uDCAD First Person</button>
+          </div>
+          <textarea id="drive-tpl-editor" rows="15" spellcheck="false"
+            class="w-full px-4 py-3 rounded-xl bg-surface border border-gray-700 text-textPrimary font-mono text-sm leading-relaxed focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition resize-y"
+            placeholder="Load a preset or type a custom drive template..."></textarea>
+          <div class="mt-4">
+            <div id="drive-tpl-preview-header" class="flex items-center gap-2 mb-2 cursor-pointer select-none" onclick="toggleDriveTplPreview()">
+              <svg id="drive-tpl-preview-arrow" class="w-4 h-4 text-textSecondary transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+              </svg>
+              <span class="text-sm font-medium text-textSecondary">Preview with sample values</span>
+            </div>
+            <div id="drive-tpl-preview" class="hidden glass rounded-xl p-4 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words"></div>
+          </div>
+          <details class="mt-4">
+            <summary class="text-sm font-medium text-textSecondary cursor-pointer hover:text-textPrimary transition">Available Variables</summary>
+            <div class="mt-2 glass rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              <div><code class="text-accentLight">{{LEVEL}}</code> <span class="text-textSecondary">\u2014 drive level (0-4)</span></div>
+              <div><code class="text-accentLight">{{IDLE_HOURS}}</code> <span class="text-textSecondary">\u2014 hours since last operator interaction</span></div>
+              <div><code class="text-accentLight">{{THREAD_ID}}</code> <span class="text-textSecondary">\u2014 current Telegram thread ID</span></div>
+              <div><code class="text-accentLight">{{DMN_FRAGMENTS}}</code> <span class="text-textSecondary">\u2014 spontaneous memory recall fragments</span></div>
+              <div><code class="text-accentLight">{{TIME}}</code> <span class="text-textSecondary">\u2014 ISO timestamp</span></div>
             </div>
           </details>
         </div>
@@ -862,7 +1010,7 @@ function getDashboardHTML(): string {
       if (currentTab === 'notes') loadNotes();
       if (currentTab === 'episodes') loadEpisodes();
       if (currentTab === 'topics') loadTopics();
-      if (currentTab === 'templates') loadTemplates();
+      if (currentTab === 'templates') { loadTemplates(); loadDriveTemplate(); }
     }
 
     function startRefresh() {
@@ -944,6 +1092,110 @@ function getDashboardHTML(): string {
 
     document.getElementById('tpl-editor')?.addEventListener('input', function() {
       if (tplPreviewOpen) updateTplPreview();
+    });
+
+    // ─── Drive Templates ──────────────────────────────────────────────
+    let drivePresets = [];
+    let driveTplPreviewOpen = false;
+
+    async function loadDriveTemplate() {
+      try {
+        const [driveData, presetsData, settingsData] = await Promise.all([
+          api('/api/templates/drive'),
+          api('/api/templates/drive-presets'),
+          api('/api/settings/dmn-activation-hours'),
+        ]);
+        drivePresets = presetsData.presets || [];
+        document.getElementById('drive-activation-hours').value = settingsData.value;
+        if (driveData.content) {
+          document.getElementById('drive-tpl-editor').value = driveData.content;
+          document.getElementById('drive-tpl-default-badge').classList.add('hidden');
+        } else {
+          document.getElementById('drive-tpl-editor').value = '';
+          document.getElementById('drive-tpl-default-badge').classList.remove('hidden');
+        }
+        updateDriveTplPreview();
+      } catch (e) { console.error('Drive template load error:', e); }
+    }
+
+    async function saveDriveTemplate() {
+      const status = document.getElementById('drive-tpl-status');
+      try {
+        const content = document.getElementById('drive-tpl-editor').value;
+        if (!content.trim()) {
+          status.textContent = 'Template is empty \u2014 load a preset first';
+          status.className = 'text-sm text-warn';
+          setTimeout(function() { status.textContent = ''; }, 3000);
+          return;
+        }
+        const r = await fetch('/api/templates/drive', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        });
+        if (!r.ok) throw new Error(r.statusText);
+        await r.json();
+        status.textContent = 'Saved \u2713';
+        status.className = 'text-sm text-success';
+        document.getElementById('drive-tpl-default-badge').classList.add('hidden');
+        setTimeout(function() { status.textContent = ''; }, 3000);
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'text-sm text-danger';
+      }
+    }
+
+    async function resetDriveTemplate() {
+      if (!confirm('Reset drive template? The custom template will be removed and the system will use hardcoded drive prompts.')) return;
+      const status = document.getElementById('drive-tpl-status');
+      try {
+        const r = await fetch('/api/templates/drive', {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + token },
+        });
+        if (!r.ok) throw new Error(r.statusText);
+        await r.json();
+        document.getElementById('drive-tpl-editor').value = '';
+        document.getElementById('drive-tpl-default-badge').classList.remove('hidden');
+        status.textContent = 'Reset to default \u2713';
+        status.className = 'text-sm text-success';
+        setTimeout(function() { status.textContent = ''; }, 3000);
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'text-sm text-danger';
+      }
+    }
+
+    function loadPreset(key) {
+      var preset = drivePresets.find(function(p) { return p.key === key; });
+      if (preset) {
+        document.getElementById('drive-tpl-editor').value = preset.content;
+        document.getElementById('drive-tpl-default-badge').classList.add('hidden');
+        updateDriveTplPreview();
+      }
+    }
+
+    function updateDriveTplPreview() {
+      var content = document.getElementById('drive-tpl-editor').value;
+      var preview = document.getElementById('drive-tpl-preview');
+      if (!content) {
+        preview.innerHTML = '<span class="text-muted">(no template loaded)</span>';
+        return;
+      }
+      var highlighted = escapeHtml(content).replace(/\{\{([A-Z_]+)\}\}/g,
+        '<span class="text-accentLight bg-accent/10 px-1 rounded">{{$1}}</span>');
+      preview.innerHTML = highlighted;
+    }
+
+    function toggleDriveTplPreview() {
+      driveTplPreviewOpen = !driveTplPreviewOpen;
+      document.getElementById('drive-tpl-preview').classList.toggle('hidden', !driveTplPreviewOpen);
+      document.getElementById('drive-tpl-preview-arrow').style.transform = driveTplPreviewOpen ? 'rotate(90deg)' : '';
+      if (driveTplPreviewOpen) updateDriveTplPreview();
+    }
+
+    document.getElementById('drive-tpl-editor')?.addEventListener('input', function() {
+      if (driveTplPreviewOpen) updateDriveTplPreview();
     });
 
     // ─── Utilities ──────────────────────────────────────────────────────

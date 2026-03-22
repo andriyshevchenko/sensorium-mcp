@@ -18,6 +18,7 @@ export interface AppConfig {
   OPENAI_API_KEY: string;
   VOICE_ANALYSIS_URL: string;
   WAIT_TIMEOUT_MINUTES: number;
+  DMN_ACTIVATION_HOURS: number;
   FILES_DIR: string;
   PKG_VERSION: string;
   AUTONOMOUS_MODE: boolean;

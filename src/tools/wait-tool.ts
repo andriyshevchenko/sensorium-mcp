@@ -61,6 +61,7 @@ export interface WaitToolContext {
     deadSessionAlerted: boolean;
     toolCallsSinceLastDelivery: number;
     lastOperatorMessageAt: number;
+    lastOperatorMessageText: string;
     lastConsolidationAt: number;
     previewedUpdateIds: Set<number>;
   };
@@ -171,8 +172,13 @@ export async function handleWaitForInstructions(
       // Connection alive — now consume messages for real.
       const stored = readThreadMessages(effectiveThreadId);
       log.info(`[wait] Read ${stored.length} messages from thread ${effectiveThreadId}. Processing...`);
-      // Update the operator activity timestamp for idle detection.
+      // Update the operator activity timestamp and last message text.
       state.lastOperatorMessageAt = Date.now();
+      state.lastOperatorMessageText = stored
+        .map(m => m.message.text ?? m.message.caption ?? "")
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 2000) || "";
 
       // Clear only the consumed IDs from the previewed set (scoped clear).
       // This is safe because Node.js is single-threaded — no report_progress
@@ -475,10 +481,16 @@ export async function handleWaitForInstructions(
         const messageId = "messageId" in pendingReaction ? pendingReaction.messageId : 0;
         const reactionDate = "date" in pendingReaction ? pendingReaction.date : 0;
         if (emoji) {
-          contentBlocks.push({
-            type: "text",
-            text: `(The operator reacted with ${emoji} to a previous message)`,
-          });
+          const reactionNote = `(The operator reacted with ${emoji} to message #${messageId})`;
+          // Inline the reaction with the last text block if messages exist,
+          // otherwise add it as a standalone block.
+          const lastTextIdx = contentBlocks.map(b => b.type).lastIndexOf("text");
+          if (lastTextIdx >= 0) {
+            const prev = contentBlocks[lastTextIdx] as { type: "text"; text: string };
+            prev.text = `${prev.text}\n${reactionNote}`;
+          } else {
+            contentBlocks.push({ type: "text", text: reactionNote });
+          }
           // Save reaction as episodic memory
           try {
             const db = getMemoryDb();
@@ -795,15 +807,13 @@ export async function handleWaitForInstructions(
     } catch (_) { /* non-fatal */ }
   }
 
-  // Generate autonomous goals only after extended silence (4+ hours).
-  // Full drive (DMN + assignments) every 3rd poll to avoid context saturation.
-  // Light Dispatcher presence on other polls for continuity.
-  const DRIVE_ACTIVATION_MS = 4 * 60 * 60 * 1000; // 4 hours — Dispatcher appears
+  // Generate autonomous goals only after extended silence (configurable, default 4h).
+  // Every idle poll beyond the threshold gets full DMN content.
+  const DRIVE_ACTIVATION_MS = config.DMN_ACTIVATION_HOURS * 60 * 60 * 1000;
   const idleMs = Date.now() - state.lastOperatorMessageAt;
   const dispatcherActive = idleMs >= DRIVE_ACTIVATION_MS;
-  const fullDrivePoll = dispatcherActive && callNumber % 3 === 0;
 
-  if (fullDrivePoll) {
+  if (dispatcherActive) {
     // Full Dispatcher with DMN recall and assignments
     const autonomousHint = formatDrivePrompt(idleMs, getMemoryDb(), effectiveThreadId);
     return {
@@ -821,29 +831,6 @@ export async function handleWaitForInstructions(
         },
         ...(memoryRefresh ? [{ type: "text" as const, text: memoryRefresh.replace(/^\n\n/, "") }] : []),
         { type: "text", text: scheduleHint + getReminders(effectiveThreadId, true, state.sessionStartedAt, AUTONOMOUS_MODE) },
-      ],
-    };
-  }
-
-  if (dispatcherActive) {
-    // Light Dispatcher presence — calm, varied, first-person
-    const lightMessages = [
-      "Nothing urgent from me. The session is yours — follow your curiosity.",
-      "I don't have new tasks yet. If something in memory interests you, go for it.",
-      "No new assignments. If you've been working on something, keep at it. Or explore.",
-      "Still waiting on operator. You're free to continue whatever caught your attention.",
-      "I'll have more for you soon. In the meantime — what's been on your mind?",
-    ];
-    const lightMsg = lightMessages[callNumber % lightMessages.length];
-    return {
-      content: [
-        {
-          type: "text",
-          text: `[Dispatcher] ${lightMsg}` +
-            memoryRefresh +
-            scheduleHint +
-            getReminders(effectiveThreadId, true, state.sessionStartedAt, AUTONOMOUS_MODE),
-        },
       ],
     };
   }
