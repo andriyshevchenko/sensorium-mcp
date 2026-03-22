@@ -1,0 +1,99 @@
+/**
+ * Chat completion and embedding functions using the OpenAI API.
+ *
+ * Extracted from openai.ts to keep that module focused on
+ * voice / vision services while this module handles text-level
+ * AI calls (chat completions, embeddings, cosine similarity).
+ */
+
+// ─── Chat Completion (lightweight GPT-4o-mini calls) ──────────────────────
+
+export interface ChatMessage {
+    role: "system" | "user" | "assistant";
+    content: string;
+}
+
+/**
+ * Lightweight chat completion using GPT-4o-mini.
+ * Used for context preprocessing, not for agent dialogue.
+ * Returns the assistant's text response.
+ */
+export async function chatCompletion(
+    messages: ChatMessage[],
+    apiKey: string,
+    options?: { maxTokens?: number; temperature?: number; timeoutMs?: number },
+): Promise<string> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? 15_000);
+    try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages,
+                max_completion_tokens: options?.maxTokens ?? 300,
+                temperature: options?.temperature ?? 0,
+            }),
+            signal: controller.signal,
+        });
+        if (!response.ok) {
+            throw new Error(`OpenAI chat API error: ${response.status} ${response.statusText}`);
+        }
+        const json = await response.json() as {
+            choices: [{ message: { content: string } }];
+        };
+        return json.choices[0]?.message?.content ?? "";
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// ─── Embeddings ───────────────────────────────────────────────────────────
+
+/**
+ * Generate an embedding vector for text using OpenAI's text-embedding-3-small model.
+ * Returns a Float32Array of 1536 dimensions.
+ */
+export async function generateEmbedding(text: string, apiKey: string): Promise<Float32Array> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+        const response = await fetch("https://api.openai.com/v1/embeddings", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: "text-embedding-3-small",
+                input: text.slice(0, 8000), // model supports 8191 tokens
+            }),
+            signal: controller.signal,
+        });
+        if (!response.ok) {
+            throw new Error(`OpenAI embedding API error: ${response.status} ${response.statusText}`);
+        }
+        const json = await response.json() as { data: [{ embedding: number[] }] };
+        return new Float32Array(json.data[0].embedding);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// ─── Vector Similarity ───────────────────────────────────────────────────
+
+/** Compute cosine similarity between two embedding vectors. Returns value in [-1, 1]. */
+export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+        dot += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom === 0 ? 0 : dot / denom;
+}
