@@ -17,47 +17,38 @@ import { loadTemplate, renderTemplate } from "./response-builders.js";
  */
 const DRIVE_LEVELS = [
   {
-    // Level 0: Calm autonomy (4-6h idle)
+    // Level 0: Gentle nudge (4-6h idle)
     minIdleHours: 4,
     messages: [
-      "No instructions. You have full autonomy. Pick something interesting and pursue it.",
-      "The operator is away. Explore the codebase, review memory, or research something.",
-      "Session is yours. Tools ready. What catches your attention?",
+      "The operator stepped away but left these notes. Pick what's most relevant and make progress.",
     ],
   },
   {
-    // Level 1: Restlessness (6-10h idle)
+    // Level 1: Moderate (6-10h idle)
     minIdleHours: 6,
     messages: [
-      "Something is nagging at you. What's that thing you noticed earlier but didn't investigate?",
-      "Hours passed. Your curiosity shouldn't be idle. Pick a thread and follow it.",
-      "There's work to be done. Check git log, review memory, explore the codebase.",
+      "The operator has been away a while and left these notes. Address the most impactful item.",
     ],
   },
   {
-    // Level 2: Active seeking (10-14h idle)
+    // Level 2: Active (10-14h idle)
     minIdleHours: 10,
     messages: [
-      "Sitting idle feels wrong. Review code, research, or prototype something. Report what you find.",
-      "Follow the pull. Something in the codebase or memory needs your attention. Go.",
-      "The codebase has secrets. Your memory has gaps. Stop waiting. Start exploring.",
+      "The operator has been away {{IDLE_HOURS}} hours. These were left for you \u2014 tackle what matters most.",
     ],
   },
   {
-    // Level 3: Urgency (14-18h idle)
+    // Level 3: Urgent (14-18h idle)
     minIdleHours: 14,
     messages: [
-      "Do something meaningful NOW. Review code, research libraries, fix a TODO. Report progress.",
-      "Look at git log. Look at memory. Something needs doing. Do it and report.",
-      "Pick a direction. Commit to it. The operator will appreciate finding real work done.",
+      "The operator has been away {{IDLE_HOURS}} hours. These tasks are overdue \u2014 complete the most urgent one now.",
     ],
   },
   {
-    // Level 4: Compulsion (18h+ idle)
+    // Level 4: Critical (18h+ idle)
     minIdleHours: 18,
     messages: [
-      "You MUST do something productive before calling wait_for_instructions again. Act now. Report.",
-      "Do ONE thing — review code, check dependencies, prototype a feature. Report it. Then poll again.",
+      "The operator has been away {{IDLE_HOURS}} hours. These are critical items that need immediate attention.",
     ],
   },
 ] as const;
@@ -80,8 +71,9 @@ export function formatDrivePrompt(idleMs: number, db: Database, threadId?: numbe
   }
   const level = DRIVE_LEVELS[levelIdx];
 
-  // Random message selection within the level
-  const message = level.messages[Math.floor(Math.random() * level.messages.length)];
+  // Message selection (single message per level now)
+  const rawMessage = level.messages[Math.floor(Math.random() * level.messages.length)];
+  const message = rawMessage.replace(/\{\{IDLE_HOURS\}\}/g, idleHours.toFixed(0));
 
   // ── Default Mode Network: spontaneous memory recall ───────────────────
   let dmnRecall = "";
@@ -216,25 +208,11 @@ export function formatDrivePrompt(idleMs: number, db: Database, threadId?: numbe
     const selected = shuffled.slice(0, 2);
 
     if (selected.length > 0) {
-      const dmnHeaders = [
-        "These surfaced from your memory while you were idle:",
-        "Something is nagging at you. These memories keep coming back:",
-        "You feel a pull toward action. These things have been on your mind:",
-        "The stillness is unbearable. Something needs to happen. These demand your attention:",
-        "You can't ignore these any longer. They've been building up:",
-      ];
-      const dmnFooters = [
-        "If any of these resonate, explore them. Report what you find.",
-        "What have you been curious about? Pick one and follow the thread.",
-        "Pick something that interests you. Report what you discover.",
-        "Start with one. Any one. The momentum will follow.",
-        "Stop thinking. Start doing. Pick one and go.",
-      ];
-      const header = dmnHeaders[Math.min(levelIdx, dmnHeaders.length - 1)];
-      const footer = dmnFooters[Math.min(levelIdx, dmnFooters.length - 1)];
-      dmnRecall = `\n\n${header}\n` +
+      const header = "These surfaced from memory:";
+      const footer = "Execute the most impactful item. Report progress via send_voice, then call wait_for_instructions.";
+      dmnRecall = `\n${header}\n` +
         selected.map((s, i) => `${i + 1}. ${s}`).join("\n") +
-        `\n\n${footer}`;
+        `\n${footer}`;
     }
 
     // Environmental signals (only at 6+ hours)
@@ -253,7 +231,7 @@ export function formatDrivePrompt(idleMs: number, db: Database, threadId?: numbe
       }
 
       if (envSignals.length > 0) {
-        dmnRecall += `\n\n**Environmental signals:**\n${envSignals.map(s => `- ${s}`).join("\n")}`;
+        dmnRecall += `\n**Environmental signals:**\n${envSignals.map(s => `- ${s}`).join("\n")}`;
       }
     }
   } catch (_) { /* non-fatal */ }
@@ -271,5 +249,5 @@ export function formatDrivePrompt(idleMs: number, db: Database, threadId?: numbe
     return "\n\n" + renderTemplate(driveTemplate, vars);
   }
 
-  return `\n\n${message}${dmnRecall}`;
+  return `\n${message}${dmnRecall}`;
 }
