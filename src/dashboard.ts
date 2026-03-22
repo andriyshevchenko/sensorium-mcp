@@ -55,30 +55,27 @@ You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_f
 const DEFAULT_DRIVE_PRESETS: Record<string, string> = {
     "operator-instruction": `The operator left this instruction before stepping away:
 
-"I'll be away for a while. While I'm gone, work on what matters most. Here's what surfaced from memory:"
+"I'll be away for {{IDLE_HOURS}} hours. The session is yours \u2014 you have all the tools, full memory access, and complete autonomy. Pick something meaningful and go for it."
 
-{{DMN_FRAGMENTS}}
-
-Execute the most impactful item. Report progress via send_voice, then continue waiting.
+What do you want to do? Pick at least one action and execute it.
 `,
-    "operator-notes": `The operator stepped away {{IDLE_HOURS}} hours ago but left these notes for you:
+    "operator-notes": `The operator stepped away {{IDLE_HOURS}} hours ago and left you this note:
 
-{{DMN_FRAGMENTS}}
+"You're free to work on whatever you find most interesting or valuable. Use your memory, search the codebase, or explore something new."
 
-Pick what's most relevant and make progress. The operator will review when they return.
+What catches your attention? Pick at least one action and go for it.
 `,
-    "dispatcher": `\u26A1 DISPATCHER ACTIVE \u2014 Operator away {{IDLE_HOURS}}h
+    "dispatcher": `\u26A1 DISPATCHER \u2014 Operator away {{IDLE_HOURS}}h
 
-Assignment from the Dispatcher:
-{{DMN_FRAGMENTS}}
+The session is yours. You have complete autonomy and all tools available.
 
-Complete the most impactful assignment. Report progress, then call wait_for_instructions.
+What do you want to do? Pick at least one action. Report progress when done, then call wait_for_instructions.
 `,
-    "first-person": `I've been thinking while the operator is away...
+    "first-person": `The operator has been away {{IDLE_HOURS}} hours. I'm free to pursue whatever interests me.
 
-{{DMN_FRAGMENTS}}
+I have all the tools and full memory access. What should I explore?
 
-If any of these resonate, I should explore them \u2014 use subagents, search the codebase, review memory. Report what I find, then go back to waiting.
+(If nothing interests me, I should say so \u2014 that's useful diagnostic information.)
 `,
 };
 
@@ -642,11 +639,9 @@ function getDashboardHTML(): string {
           <details class="mt-4">
             <summary class="text-sm font-medium text-textSecondary cursor-pointer hover:text-textPrimary transition">Available Variables</summary>
             <div class="mt-2 glass rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-              <div><code class="text-accentLight">{{LEVEL}}</code> <span class="text-textSecondary">\u2014 drive level (0-4)</span></div>
               <div><code class="text-accentLight">{{IDLE_HOURS}}</code> <span class="text-textSecondary">\u2014 hours since last operator interaction</span></div>
-              <div><code class="text-accentLight">{{THREAD_ID}}</code> <span class="text-textSecondary">\u2014 current Telegram thread ID</span></div>
-              <div><code class="text-accentLight">{{DMN_FRAGMENTS}}</code> <span class="text-textSecondary">\u2014 spontaneous memory recall fragments</span></div>
               <div><code class="text-accentLight">{{TIME}}</code> <span class="text-textSecondary">\u2014 ISO timestamp</span></div>
+              <div><code class="text-accentLight">{{PROBABILITY}}</code> <span class="text-textSecondary">\u2014 drive activation probability (0.2\u20131.0)</span></div>
             </div>
           </details>
         </div>

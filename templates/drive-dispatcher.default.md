@@ -1,6 +1,5 @@
-⚡ DISPATCHER ACTIVE — Operator away {{IDLE_HOURS}}h
+⚡ DISPATCHER — Operator away {{IDLE_HOURS}}h
 
-Assignment from the Dispatcher:
-{{DMN_FRAGMENTS}}
+The session is yours. You have complete autonomy and all tools available.
 
-Complete the most impactful assignment. Report progress, then call wait_for_instructions.
+What do you want to do? Pick at least one action. Report progress when done, then call wait_for_instructions.

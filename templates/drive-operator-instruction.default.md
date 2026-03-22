@@ -1,7 +1,5 @@
 The operator left this instruction before stepping away:
 
-"I'll be away for a while. While I'm gone, work on what matters most. Here's what surfaced from memory:"
+"I'll be away for {{IDLE_HOURS}} hours. The session is yours — you have all the tools, full memory access, and complete autonomy. Pick something meaningful and go for it."
 
-{{DMN_FRAGMENTS}}
-
-Execute the most impactful item. Report progress via send_voice, then continue waiting.
+What do you want to do? Pick at least one action and execute it.

@@ -1,5 +1,5 @@
-The operator stepped away {{IDLE_HOURS}} hours ago but left these notes for you:
+The operator stepped away {{IDLE_HOURS}} hours ago and left you this note:
 
-{{DMN_FRAGMENTS}}
+"You're free to work on whatever you find most interesting or valuable. Use your memory, search the codebase, or explore something new."
 
-Pick what's most relevant and make progress. The operator will review when they return.
+What catches your attention? Pick at least one action and go for it.
