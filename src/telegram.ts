@@ -7,6 +7,7 @@ import { log } from "./logger.js";
 import type {
   TelegramUpdate,
   TelegramMessage,
+  TelegramFile,
   ForumTopic,
   GetUpdatesResult,
   SendMessageResult,
