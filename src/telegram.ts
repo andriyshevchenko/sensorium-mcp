@@ -19,6 +19,12 @@ export interface TelegramSticker {
 export interface TelegramAnimation {
   file_id: string;
   file_unique_id: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  mime_type?: string;
+  file_name?: string;
+  file_size?: number;
   thumbnail?: PhotoSize;
   thumb?: PhotoSize; // legacy alias
 }
