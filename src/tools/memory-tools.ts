@@ -5,7 +5,6 @@
  */
 
 import {
-  assembleBootstrap,
   forgetMemory,
   getMemoryStatus,
   getNotesWithoutEmbeddings,
@@ -14,7 +13,6 @@ import {
   type initMemoryDb,
   runIntelligentConsolidation,
   saveNoteEmbedding,
-  saveProcedure,
   saveSemanticNote,
   searchByEmbedding,
   searchProcedures,
@@ -78,23 +76,6 @@ export async function handleMemoryTool(
   const { resolveThreadId, getShortReminder, getMemoryDb, errorResult } = ctx;
 
   switch (name) {
-    // ── memory_bootstrap ──────────────────────────────────────────────────
-    case "memory_bootstrap": {
-      const threadId = resolveThreadId(args);
-      if (threadId === undefined) {
-        return errorResult("Error: No active thread. Call start_session first." + getShortReminder(undefined));
-      }
-      try {
-        const db = getMemoryDb();
-        const briefing = assembleBootstrap(db, threadId);
-        return {
-          content: [{ type: "text", text: `## Memory Briefing\n\n${briefing}` + getShortReminder(threadId) }],
-        };
-      } catch (err) {
-        return errorResult(`Memory bootstrap error: ${errorMessage(err)}` + getShortReminder(threadId));
-      }
-    }
-
     // ── memory_search ─────────────────────────────────────────────────────
     case "memory_search": {
       const threadId = resolveThreadId(args);
@@ -210,42 +191,6 @@ export async function handleMemoryTool(
         };
       } catch (err) {
         return errorResult(`Memory save error: ${errorMessage(err)}` + getShortReminder(threadId));
-      }
-    }
-
-    // ── memory_save_procedure ─────────────────────────────────────────────
-    case "memory_save_procedure": {
-      const threadId = resolveThreadId(args);
-      try {
-        const db = getMemoryDb();
-        const existingId = args.procedureId as string | undefined;
-        if (existingId) {
-          updateProcedure(db, existingId, {
-            description: args.description as string | undefined,
-            steps: Array.isArray(args.steps) ? args.steps.map(String) : typeof args.steps === 'string' ? [args.steps] : undefined,
-            triggerConditions: Array.isArray(args.triggerConditions) ? args.triggerConditions.map(String) : typeof args.triggerConditions === 'string' ? [args.triggerConditions] : undefined,
-          });
-          return {
-            content: [{ type: "text", text: `Updated procedure: ${existingId}` + getShortReminder(threadId) }],
-          };
-        }
-        const VALID_PROC_TYPES = ["workflow", "habit", "tool_pattern", "template"] as const;
-        const procType = String(args.type ?? "workflow");
-        if (!VALID_PROC_TYPES.includes(procType as typeof VALID_PROC_TYPES[number])) {
-          return errorResult(`Invalid procedure type "${procType}". Must be one of: ${VALID_PROC_TYPES.join(", ")}`);
-        }
-        const procId = saveProcedure(db, {
-          name: String(args.name ?? ""),
-          type: procType as typeof VALID_PROC_TYPES[number],
-          description: String(args.description ?? ""),
-          steps: Array.isArray(args.steps) ? args.steps.map(String) : typeof args.steps === 'string' ? [args.steps] : undefined,
-          triggerConditions: Array.isArray(args.triggerConditions) ? args.triggerConditions.map(String) : typeof args.triggerConditions === 'string' ? [args.triggerConditions] : undefined,
-        });
-        return {
-          content: [{ type: "text", text: `Saved procedure: ${procId}` + getShortReminder(threadId) }],
-        };
-      } catch (err) {
-        return errorResult(`Procedure save error: ${errorMessage(err)}` + getShortReminder(threadId));
       }
     }
 
