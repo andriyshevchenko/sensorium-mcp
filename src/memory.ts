@@ -739,11 +739,11 @@ export function searchSemanticNotesRanked(
   params.push(maxResults * 3); // fetch more to allow scoring/filtering
 
   const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
-  let notes = rows.map(rowToSemanticNote);
+  const allNotes = rows.map(rowToSemanticNote);
 
   // Score by how many terms match
   const minMatches = Math.max(2, Math.ceil(terms.length * minMatchRatio));
-  notes = notes.map(n => {
+  const scored = allNotes.map(n => {
     const text = (n.content + " " + n.keywords.join(" ")).toLowerCase();
     let matchCount = 0;
     for (const term of terms) {
@@ -751,14 +751,13 @@ export function searchSemanticNotesRanked(
     }
     return { ...n, _matchCount: matchCount };
   })
-  .filter(n => (n as any)._matchCount >= minMatches)
+  .filter(n => n._matchCount >= minMatches)
   .sort((a, b) => {
-    const scoreA = (a as any)._matchCount;
-    const scoreB = (b as any)._matchCount;
-    if (scoreB !== scoreA) return scoreB - scoreA;
+    if (b._matchCount !== a._matchCount) return b._matchCount - a._matchCount;
     return b.confidence - a.confidence;
   })
   .slice(0, maxResults);
+  const notes: SemanticNote[] = scored;
 
   // Update access counts
   if (!options?.skipAccessTracking) {
