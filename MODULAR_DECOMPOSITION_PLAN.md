@@ -1,5 +1,50 @@
 # Modular Decomposition Plan — sensorium-mcp
 
+> **This document is fully self-contained.** A fresh agent session with zero conversation history can execute this entire plan by reading only this file. No thread context or memory lookup required.
+
+---
+
+## Execution Protocol (READ THIS FIRST)
+
+### How to Run This Plan
+
+1. **Start session**: Call `start_session` with any available threadId (or create a new one). This is for Telegram reporting only.
+2. **Create a feature branch**: `git checkout -b refactor/modular-decomposition`
+3. **Read this file** and execute phases 1–7 in order.
+4. **After all phases pass**: Create a PR or merge to main.
+
+### Orchestrator Rules
+
+- You are the **ORCHESTRATOR**. ALL code changes (file reads, edits, creation, deletion) MUST go through `runSubagent`.
+- Each subagent receives **specific instructions**: source file, function/block to extract, destination file, and expected line count.
+- **Never** dispatch a single subagent for an entire phase. Break into per-task subagents.
+- Parallel dispatch is allowed ONLY when tasks touch **non-overlapping files**.
+- Sequential dispatch when tasks have dependencies (marked in this plan).
+
+### Safety Protocol
+
+1. **Compile after every task**: `cd c:\src\remote-copilot-mcp; npx tsc --noEmit`
+2. **If compilation fails**: The subagent must fix it before the task is considered done. If unfixable, revert: `git checkout -- .`
+3. **One commit per task**: `git add -A; git commit -m "refactor(phaseN): <description>"`
+4. **Barrel re-exports**: When splitting a file (e.g., `memory.ts` → `data/memory/*.ts`), create an `index.ts` barrel that re-exports everything. All existing imports must continue to work unchanged.
+5. **No behavior changes**: This is pure refactoring. Zero functional changes.
+6. **No version bumps**: Only structural changes.
+7. **Push after each completed phase**: `git push origin refactor/modular-decomposition`
+
+### Reporting
+
+- After each phase completes: call `send_voice` with a summary of what was extracted, how many files created, and line counts.
+- After final phase: call `send_voice` with the full before/after comparison.
+
+### Workspace
+
+- Path: `c:\src\remote-copilot-mcp`
+- Language: TypeScript (Node.js, ESM)
+- Build: `npx tsc --noEmit` (type check), `npm run build` (compile to dist/)
+- Terminal tool: use `mcp_desktop-comma_start_process` from subagents
+
+---
+
 ## Goal
 Achieve Linux-kernel-level modularity: strict boundaries, single responsibility per file, <300 LOC per file, explicit typed interfaces, clean DAG dependencies.
 
