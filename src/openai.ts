@@ -13,6 +13,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "./logger.js";
 
+// Re-export chat completion + embedding functions extracted to integrations/openai/chat.ts
+export { chatCompletion, cosineSimilarity, generateEmbedding } from "./integrations/openai/chat.js";
+export type { ChatMessage } from "./integrations/openai/chat.js";
+
 // Dedicated temp directory so crash-leftover files are cleaned on next startup.
 const TEMP_DIR = join(homedir(), ".remote-copilot-mcp", "tmp");
 
@@ -55,52 +59,6 @@ for (const sig of ["exit", "SIGINT", "SIGTERM"] as const) {
 
 // Run once when the module loads.
 cleanupTempDir();
-
-// ─── Chat Completion (lightweight GPT-4o-mini calls) ──────────────────────
-
-export interface ChatMessage {
-    role: "system" | "user" | "assistant";
-    content: string;
-}
-
-/**
- * Lightweight chat completion using GPT-4o-mini.
- * Used for context preprocessing, not for agent dialogue.
- * Returns the assistant's text response.
- */
-export async function chatCompletion(
-    messages: ChatMessage[],
-    apiKey: string,
-    options?: { maxTokens?: number; temperature?: number; timeoutMs?: number },
-): Promise<string> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? 15_000);
-    try {
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                messages,
-                max_completion_tokens: options?.maxTokens ?? 300,
-                temperature: options?.temperature ?? 0,
-            }),
-            signal: controller.signal,
-        });
-        if (!response.ok) {
-            throw new Error(`OpenAI chat API error: ${response.status} ${response.statusText}`);
-        }
-        const json = await response.json() as {
-            choices: [{ message: { content: string } }];
-        };
-        return json.choices[0]?.message?.content ?? "";
-    } finally {
-        clearTimeout(timer);
-    }
-}
 
 // ─── Image / Vision Analysis ──────────────────────────────────────────────
 
@@ -162,99 +120,9 @@ export async function analyzeImage(
     }
 }
 
-// ─── TTS ──────────────────────────────────────────────────────────────────
+// ─── TTS & Transcription (re-exported from integrations/openai/speech.ts) ─
 
-/** Valid TTS voice names. */
-export const TTS_VOICES = [
-    "alloy", "echo", "fable", "onyx", "nova", "shimmer",
-] as const;
-export type TTSVoice = typeof TTS_VOICES[number];
-
-/**
- * Convert text to speech using OpenAI TTS API.
- * Returns OGG Opus audio suitable for Telegram's sendVoice.
- */
-export async function textToSpeech(
-    text: string,
-    apiKey: string,
-    voice: TTSVoice = "nova",
-): Promise<Buffer> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60_000);
-    try {
-        const response = await fetch("https://api.openai.com/v1/audio/speech", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model: "tts-1",
-                input: text,
-                voice,
-                response_format: "opus",
-            }),
-            signal: controller.signal,
-        });
-
-        if (!response.ok) {
-            const errText = await response.text().catch(() => response.statusText);
-            throw new Error(`OpenAI TTS failed: ${response.status} ${errText}`);
-        }
-
-        return Buffer.from(await response.arrayBuffer());
-    } finally {
-        clearTimeout(timer);
-    }
-}
-
-/**
- * Transcribe an audio buffer using OpenAI Whisper API.
- * @param audioBuffer  Raw audio content (OGG Opus from Telegram voice messages).
- * @param apiKey       OpenAI API key.
- * @returns The transcribed text (empty string if no speech detected).
- */
-export async function transcribeAudio(
-    audioBuffer: Buffer,
-    apiKey: string,
-    filename: string = "voice.ogg",
-): Promise<string> {
-    // Telegram stores voice as .oga (OGG Opus). Whisper accepts .ogg but
-    // not .oga, so we hardcode the extension.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60_000);
-    try {
-        const formData = new FormData();
-        formData.append(
-            "file",
-            new Blob([new Uint8Array(audioBuffer)]),
-            filename,
-        );
-        formData.append("model", "whisper-1");
-
-        const response = await fetch(
-            "https://api.openai.com/v1/audio/transcriptions",
-            {
-                method: "POST",
-                headers: { Authorization: `Bearer ${apiKey}` },
-                body: formData,
-                signal: controller.signal,
-            },
-        );
-
-        if (!response.ok) {
-            const errText = await response.text().catch(() => response.statusText);
-            throw new Error(
-                `OpenAI Whisper transcription failed: ${response.status} ${errText}`,
-            );
-        }
-
-        const result = (await response.json()) as { text?: string };
-        return result.text ?? "";
-    } finally {
-        clearTimeout(timer);
-    }
-}
+export { TTS_VOICES, type TTSVoice, textToSpeech, transcribeAudio } from "./integrations/openai/speech.js";
 
 // ---------------------------------------------------------------------------
 // Voice Emotion Analysis (optional external microservice)
@@ -499,44 +367,4 @@ export async function analyzeVideoFrames(
     }
 }
 
-/**
- * Generate an embedding vector for text using OpenAI's text-embedding-3-small model.
- * Returns a Float32Array of 1536 dimensions.
- */
-export async function generateEmbedding(text: string, apiKey: string): Promise<Float32Array> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-    try {
-        const response = await fetch("https://api.openai.com/v1/embeddings", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model: "text-embedding-3-small",
-                input: text.slice(0, 8000), // model supports 8191 tokens
-            }),
-            signal: controller.signal,
-        });
-        if (!response.ok) {
-            throw new Error(`OpenAI embedding API error: ${response.status} ${response.statusText}`);
-        }
-        const json = await response.json() as { data: [{ embedding: number[] }] };
-        return new Float32Array(json.data[0].embedding);
-    } finally {
-        clearTimeout(timer);
-    }
-}
 
-/** Compute cosine similarity between two embedding vectors. Returns value in [-1, 1]. */
-export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-    let dot = 0, normA = 0, normB = 0;
-    for (let i = 0; i < a.length; i++) {
-        dot += a[i] * b[i];
-        normA += a[i] * a[i];
-        normB += b[i] * b[i];
-    }
-    const denom = Math.sqrt(normA) * Math.sqrt(normB);
-    return denom === 0 ? 0 : dot / denom;
-}
