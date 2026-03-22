@@ -241,22 +241,6 @@ export function getToolDefinitions(): ToolDefinition[] {
     },
     // ── Memory Tools ──────────────────────────────────────────────────
     {
-      name: "memory_bootstrap",
-      description:
-        "Load memory briefing for session start. Call this ONCE after start_session. " +
-        "Returns operator profile, recent context, active procedures, and memory health. " +
-        "~2,500 tokens. Essential for crash recovery — restores knowledge from previous sessions.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          threadId: {
-            type: "number",
-            description: "Active thread ID.",
-          },
-        },
-      },
-    },
-    {
       name: "memory_search",
       description:
         "Search across all memory layers for relevant information. " +
@@ -324,48 +308,6 @@ export function getToolDefinitions(): ToolDefinition[] {
           },
         },
         required: ["content", "type", "keywords"],
-      },
-    },
-    {
-      name: "memory_save_procedure",
-      description:
-        "Save or update a learned workflow/procedure to procedural memory (Layer 4). " +
-        "Use after completing a multi-step task the 2nd+ time, or when the operator teaches a process.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          name: {
-            type: "string",
-            description: "Short name for the procedure.",
-          },
-          type: {
-            type: "string",
-            description: '"workflow" | "habit" | "tool_pattern" | "template".',
-          },
-          description: {
-            type: "string",
-            description: "What this procedure accomplishes.",
-          },
-          steps: {
-            type: "array",
-            items: { type: "string" },
-            description: "Ordered steps (for workflows).",
-          },
-          triggerConditions: {
-            type: "array",
-            items: { type: "string" },
-            description: "When to use this procedure.",
-          },
-          procedureId: {
-            type: "string",
-            description: "Existing ID to update (omit to create new).",
-          },
-          threadId: {
-            type: "number",
-            description: "Active thread ID.",
-          },
-        },
-        required: ["name", "type", "description"],
       },
     },
     {
