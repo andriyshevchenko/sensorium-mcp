@@ -30,7 +30,7 @@ import {
   chatCompletion,
   generateEmbedding,
 } from "../openai.js";
-import { checkDueTasks, listSchedules } from "../scheduler.js";
+import { listSchedules } from "../scheduler.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig } from "../types.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../utils.js";
@@ -40,6 +40,7 @@ import { classifyIntent } from "../intent.js";
 import { backfillEmbeddings } from "./memory-tools.js";
 import { processVoice, processAnimation, processVideoNote, type MediaContext } from "./wait/media-processor.js";
 import { handleReactionWithMessages, handleReactionOnly } from "./wait/reaction-handler.js";
+import { checkForDueTasks } from "./wait/task-handler.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -489,23 +490,8 @@ export async function handleWaitForInstructions(
     // Check scheduled tasks every ~60s during idle polling.
     if (effectiveThreadId !== undefined && Date.now() - lastScheduleCheck >= 60_000) {
       lastScheduleCheck = Date.now();
-      const dueTask = checkDueTasks(effectiveThreadId, state.lastOperatorMessageAt, false);
-      if (dueTask) {
-        // DMN sentinel: generate dynamic first-person reflection
-        const taskPrompt = dueTask.prompt === "__DMN__"
-          ? ctx.generateDmnReflection(effectiveThreadId)
-          : `⏰ **Scheduled task fired: "${dueTask.task.label}"**\n\n` +
-            `This task was scheduled by you. Execute it now using subagents, then report progress and continue waiting.\n\n` +
-            `Task prompt: ${dueTask.prompt}`;
-        return {
-          content: [
-            {
-              type: "text",
-              text: taskPrompt + getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
-            },
-          ],
-        };
-      }
+      const taskResult = checkForDueTasks(ctx, effectiveThreadId);
+      if (taskResult) return taskResult;
     }
 
     // No messages yet — sleep briefly and check again.
@@ -543,23 +529,8 @@ export async function handleWaitForInstructions(
 
   // Check for scheduled wake-up tasks.
   if (effectiveThreadId !== undefined) {
-    const dueTask = checkDueTasks(effectiveThreadId, state.lastOperatorMessageAt, false);
-    if (dueTask) {
-      // DMN sentinel: generate dynamic first-person reflection
-      const taskPrompt = dueTask.prompt === "__DMN__"
-        ? ctx.generateDmnReflection(effectiveThreadId)
-        : `⏰ **Scheduled task fired: "${dueTask.task.label}"**\n\n` +
-          `This task was scheduled by you. Execute it now using subagents, then report progress and continue waiting.\n\n` +
-          `Task prompt: ${dueTask.prompt}`;
-      return {
-        content: [
-          {
-            type: "text",
-            text: taskPrompt + getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
-          },
-        ],
-      };
-    }
+    const taskResult = checkForDueTasks(ctx, effectiveThreadId);
+    if (taskResult) return taskResult;
   }
 
   const idleMinutes = Math.round((Date.now() - state.lastOperatorMessageAt) / 60000);
