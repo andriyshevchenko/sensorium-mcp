@@ -1462,6 +1462,7 @@ export async function runIntelligentConsolidation(
     .map(([w]) => w);
 
   let existingNotesSection = "";
+  let stalenessSection = "";
   if (topKeywords.length > 0) {
     try {
       const related = searchSemanticNotesRanked(db, topKeywords.join(" "), {
@@ -1472,6 +1473,23 @@ export async function runIntelligentConsolidation(
       if (related.length > 0) {
         existingNotesSection = `\n\nExisting memory notes (potentially related):
 ${related.map(n => `[${n.noteId}] (${n.type}, conf: ${n.confidence}) ${n.content}`).join("\n")}`;
+
+        // ── Staleness detection: highlight notes with high keyword overlap ──
+        const lowerTopKeywords = new Set(topKeywords.map(k => k.toLowerCase()));
+        const stalenessCandidates = related
+          .map(n => {
+            const overlapping = n.keywords.filter(k => lowerTopKeywords.has(k.toLowerCase()));
+            return { note: n, overlapping };
+          })
+          .filter(c => c.overlapping.length >= 2)
+          .slice(0, 5);
+
+        if (stalenessCandidates.length > 0) {
+          stalenessSection = `\n\n## Potentially Stale Notes (review for superseding)
+The following existing notes share keywords with the episodes being consolidated. If any are outdated or contradicted by the new episodes, include a supersede entry.
+${stalenessCandidates.map(c => `- [${c.note.noteId}] (${c.note.type}) ${c.note.content} [keywords overlap: ${c.overlapping.join(", ")}]`).join("\n")}`;
+          log.info(`[memory] Consolidation: ${stalenessCandidates.length} potentially stale note(s) detected — keywords overlap with current episodes`);
+        }
       }
     } catch (_) { /* non-fatal — proceed without existing notes */ }
   }
@@ -1479,7 +1497,7 @@ ${related.map(n => `[${n.noteId}] (${n.type}, conf: ${n.confidence}) ${n.content
   const systemPrompt = `You are a memory consolidation agent. Analyze these conversation episodes and extract knowledge that should be remembered across sessions.
 
 Episodes:
-${episodesText}${existingNotesSection}
+${episodesText}${existingNotesSection}${stalenessSection}
 
 Output a JSON object with:
 {
