@@ -4,125 +4,18 @@
  */
 
 import { log } from "./logger.js";
+import type {
+  TelegramUpdate,
+  TelegramMessage,
+  ForumTopic,
+  GetUpdatesResult,
+  SendMessageResult,
+  CreateForumTopicResult,
+  GetFileResult,
+} from "./integrations/telegram/types.js";
 
-// ---------------------------------------------------------------------------
-// Type definitions
-// ---------------------------------------------------------------------------
-
-export interface TelegramSticker {
-  file_id: string;
-  file_unique_id: string;
-  emoji?: string;
-  set_name?: string;
-}
-
-export interface TelegramAnimation {
-  file_id: string;
-  file_unique_id: string;
-  width?: number;
-  height?: number;
-  duration?: number;
-  mime_type?: string;
-  file_name?: string;
-  file_size?: number;
-  thumbnail?: PhotoSize;
-  thumb?: PhotoSize; // legacy alias
-}
-
-export interface TelegramMessage {
-  message_id: number;
-  chat: { id: number };
-  text?: string;
-  caption?: string;
-  date: number;
-  message_thread_id?: number;
-  photo?: PhotoSize[];
-  document?: TelegramDocument;
-  voice?: TelegramVoice;
-  video_note?: TelegramVideoNote;
-  sticker?: TelegramSticker;
-  animation?: TelegramAnimation;
-}
-
-export interface PhotoSize {
-  file_id: string;
-  file_unique_id: string;
-  width: number;
-  height: number;
-  file_size?: number;
-}
-
-export interface TelegramDocument {
-  file_id: string;
-  file_unique_id: string;
-  file_name?: string;
-  mime_type?: string;
-  file_size?: number;
-}
-
-export interface TelegramVoice {
-  file_id: string;
-  file_unique_id: string;
-  duration: number;
-  mime_type?: string;
-  file_size?: number;
-}
-
-export interface TelegramVideoNote {
-  file_id: string;
-  file_unique_id: string;
-  length: number;       // width = height (square circle video)
-  duration: number;     // seconds, max 60
-  thumbnail?: PhotoSize;
-  file_size?: number;
-}
-
-export interface TelegramMessageReaction {
-  chat: { id: number };
-  message_id: number;
-  date: number;
-  new_reaction: Array<{ type: string; emoji?: string }>;
-}
-
-export interface TelegramUpdate {
-  update_id: number;
-  message?: TelegramMessage;
-  message_reaction?: TelegramMessageReaction;
-}
-
-interface GetUpdatesResult {
-  ok: boolean;
-  result: TelegramUpdate[];
-  description?: string;
-}
-
-interface SendMessageResult {
-  ok: boolean;
-  result?: TelegramMessage;
-  description?: string;
-}
-
-export interface ForumTopic {
-  message_thread_id: number;
-  name: string;
-}
-
-interface CreateForumTopicResult {
-  ok: boolean;
-  result?: ForumTopic;
-  description?: string;
-}
-
-interface TelegramFile {
-  file_id: string;
-  file_path: string;
-}
-
-interface GetFileResult {
-  ok: boolean;
-  result?: TelegramFile;
-  description?: string;
-}
+// Re-export all types so existing consumers of ./telegram.js are unaffected
+export * from "./integrations/telegram/types.js";
 
 // ---------------------------------------------------------------------------
 // Extension → MIME type mapping (used by downloadFileAsBase64)
