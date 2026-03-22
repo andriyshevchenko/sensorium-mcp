@@ -16,7 +16,7 @@
 
 import { basename } from "node:path";
 import { checkMaintenanceFlag, saveFileToDisk } from "../config.js";
-import { peekThreadMessages, readThreadMessages, readPendingReaction } from "../dispatcher.js";
+import { peekThreadMessages, readThreadMessages } from "../dispatcher.js";
 import { formatDrivePrompt, PHASE3_APPROVAL_PROMPT } from "../drive.js";
 import {
   assembleCompactRefresh,
@@ -39,6 +39,7 @@ import { extractSearchKeywords, getReminders, getMediumReminder, getShortReminde
 import { classifyIntent } from "../intent.js";
 import { backfillEmbeddings } from "./memory-tools.js";
 import { processVoice, processAnimation, processVideoNote, type MediaContext } from "./wait/media-processor.js";
+import { handleReactionWithMessages, handleReactionOnly } from "./wait/reaction-handler.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -338,44 +339,12 @@ export async function handleWaitForInstructions(
       } catch (_) { /* memory write failures should never break the main flow */ }
 
       // ── Check for pending operator reactions ─────────────────────────
-      const pendingReaction = readPendingReaction() ?? telegram.lastReaction;
-      if (pendingReaction) {
-        const emoji = "emoji" in pendingReaction ? pendingReaction.emoji : "";
-        const messageId = "messageId" in pendingReaction ? pendingReaction.messageId : 0;
-        const reactionDate = "date" in pendingReaction ? pendingReaction.date : 0;
-        if (emoji) {
-          const snippet = telegram.lookupSentMessage(messageId);
-          const reactionNote = snippet
-            ? `(The operator reacted with ${emoji} to your message: '${snippet}')`
-            : `(The operator reacted with ${emoji} to message #${messageId})`;
-          // Inline the reaction with the last text block if messages exist,
-          // otherwise add it as a standalone block.
-          const lastTextIdx = contentBlocks.map(b => b.type).lastIndexOf("text");
-          if (lastTextIdx >= 0) {
-            const prev = contentBlocks[lastTextIdx] as { type: "text"; text: string };
-            prev.text = `${prev.text}\n${reactionNote}`;
-          } else {
-            contentBlocks.push({ type: "text", text: reactionNote });
-          }
-          // Save reaction as episodic memory
-          try {
-            const db = getMemoryDb();
-            const sessionId = `session_${state.sessionStartedAt}`;
-            if (effectiveThreadId !== undefined) {
-              saveEpisode(db, {
-                sessionId,
-                threadId: effectiveThreadId,
-                type: "operator_reaction",
-                modality: "reaction",
-                content: { emoji, messageId, date: reactionDate },
-                importance: 0.3,
-              });
-            }
-          } catch (_) { /* non-fatal */ }
-        }
-        // Clear the reaction after delivery
-        telegram.lastReaction = null;
-      }
+      await handleReactionWithMessages(contentBlocks, {
+        telegram,
+        getMemoryDb,
+        effectiveThreadId,
+        sessionStartedAt: state.sessionStartedAt,
+      });
 
       log.info(`[wait] Episodes saved. Building auto-memory context...`);
 
@@ -506,61 +475,15 @@ export async function handleWaitForInstructions(
     }
 
     // ── Reaction-only wake-up ───────────────────────────────────────
-    // If no text messages arrived but a reaction is pending, return
-    // immediately so the agent can reflect on the reaction as a CTA.
-    const pendingReactionOnly = readPendingReaction() ?? telegram.lastReaction;
-    if (pendingReactionOnly) {
-      const rEmoji = "emoji" in pendingReactionOnly ? pendingReactionOnly.emoji : "";
-      const rMsgId = "messageId" in pendingReactionOnly ? pendingReactionOnly.messageId : 0;
-      const rDate = "date" in pendingReactionOnly ? pendingReactionOnly.date : 0;
-      if (rEmoji) {
-        // Clear in-memory reaction after consumption
-        telegram.lastReaction = null;
-
-        const snippet = telegram.lookupSentMessage(rMsgId);
-        const reactionNote = snippet
-          ? `(The operator reacted with ${rEmoji} to your message: '${snippet}')`
-          : `(The operator reacted with ${rEmoji} to message #${rMsgId})`;
-
-        // Save reaction as episodic memory
-        try {
-          const db = getMemoryDb();
-          const sessionId = `session_${state.sessionStartedAt}`;
-          if (effectiveThreadId !== undefined) {
-            saveEpisode(db, {
-              sessionId,
-              threadId: effectiveThreadId,
-              type: "operator_reaction",
-              modality: "reaction",
-              content: { emoji: rEmoji, messageId: rMsgId, date: rDate },
-              importance: 0.3,
-            });
-          }
-        } catch (_) { /* non-fatal */ }
-
-        log.info(`[wait] Reaction-only wake-up: ${rEmoji} on message ${rMsgId}`);
-
-        return {
-          content: [
-            { type: "text", text: "<<< OPERATOR REACTION >>>" },
-            { type: "text", text: reactionNote },
-            {
-              type: "text",
-              text:
-                "The operator reacted to your message without sending a text reply. " +
-                "This may be a confirmation, approval, or acknowledgment. " +
-                "Reflect on what your last message said and whether this reaction is a call to action " +
-                "(e.g., proceed with a plan, continue what you were doing, etc.). " +
-                "If no action is needed, call `remote_copilot_wait_for_instructions` to resume waiting.",
-            },
-            { type: "text", text: "<<< END OPERATOR REACTION >>>" },
-            {
-              type: "text",
-              text: getMediumReminder(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
-            },
-          ],
-        };
-      }
+    {
+      const reactionResult = await handleReactionOnly({
+        telegram,
+        getMemoryDb,
+        effectiveThreadId,
+        sessionStartedAt: state.sessionStartedAt,
+        autonomousMode: AUTONOMOUS_MODE,
+      });
+      if (reactionResult) return reactionResult;
     }
 
     // Check scheduled tasks every ~60s during idle polling.
