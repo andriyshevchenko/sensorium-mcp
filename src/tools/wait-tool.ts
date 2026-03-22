@@ -17,7 +17,7 @@
 import { basename } from "node:path";
 import { checkMaintenanceFlag, saveFileToDisk } from "../config.js";
 import { peekThreadMessages, readThreadMessages, readPendingReaction } from "../dispatcher.js";
-import { formatDrivePrompt } from "../drive.js";
+import { formatDrivePrompt, PHASE3_APPROVAL_PROMPT } from "../drive.js";
 import {
   assembleCompactRefresh,
   runIntelligentConsolidation,
@@ -64,6 +64,8 @@ export interface WaitToolContext {
     lastOperatorMessageText: string;
     lastConsolidationAt: number;
     previewedUpdateIds: Set<number>;
+    lastDriveAttemptAt: number;
+    drivePhase2Fired: boolean;
   };
   addPreviewedId: (id: number) => void;
   generateDmnReflection: (threadId: number) => string;
@@ -617,7 +619,7 @@ export async function handleWaitForInstructions(
       log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${intent}`);
       const reminder = intent === "conversational"
         ? getMediumReminder(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE)
-        : getReminders(effectiveThreadId, false, state.sessionStartedAt, AUTONOMOUS_MODE);
+        : getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE);
 
       return {
         content: [
@@ -715,7 +717,7 @@ export async function handleWaitForInstructions(
           content: [
             {
               type: "text",
-              text: taskPrompt + getReminders(effectiveThreadId, false, state.sessionStartedAt, AUTONOMOUS_MODE),
+              text: taskPrompt + getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
             },
           ],
         };
@@ -769,7 +771,7 @@ export async function handleWaitForInstructions(
         content: [
           {
             type: "text",
-            text: taskPrompt + getReminders(effectiveThreadId, false, state.sessionStartedAt, AUTONOMOUS_MODE),
+            text: taskPrompt + getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
           },
         ],
       };
@@ -868,32 +870,46 @@ export async function handleWaitForInstructions(
     } catch (_) { /* non-fatal */ }
   }
 
-  // Generate autonomous goals only after extended silence (configurable, default 4h).
-  // Every idle poll beyond the threshold gets full DMN content.
+  // ── 3-Phase Probabilistic Autonomous Drive ──────────────────────────────
   const DRIVE_ACTIVATION_MS = config.DMN_ACTIVATION_HOURS * 60 * 60 * 1000;
+  const DRIVE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes between probability rolls
   const idleMs = Date.now() - state.lastOperatorMessageAt;
-  const dispatcherActive = idleMs >= DRIVE_ACTIVATION_MS;
 
-  if (dispatcherActive) {
-    // Full Dispatcher with DMN recall and assignments
-    const autonomousHint = formatDrivePrompt(idleMs, getMemoryDb(), effectiveThreadId);
+  // Phase 3: If Phase 2 just fired and the agent came back without engaging
+  if (state.drivePhase2Fired) {
+    state.drivePhase2Fired = false; // Reset — only approve once
     return {
       content: [
         {
           type: "text",
-          text: "[Dispatcher] I'm the Dispatcher — I coordinate agents while the operator is away. " +
-            "I've reviewed your memory and the environment. Here are your assignments. " +
-            "The operator will NOT respond — don't ask for clarification. " +
-            "Complete the work, report progress, then call `remote_copilot_wait_for_instructions` for more.",
+          text: PHASE3_APPROVAL_PROMPT +
+            memoryRefresh +
+            scheduleHint +
+            getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
         },
-        {
-          type: "text",
-          text: autonomousHint.replace(/^\n\n/, ""),
-        },
-        ...(memoryRefresh ? [{ type: "text" as const, text: memoryRefresh.replace(/^\n\n/, "") }] : []),
-        { type: "text", text: scheduleHint + getReminders(effectiveThreadId, true, state.sessionStartedAt, AUTONOMOUS_MODE) },
       ],
     };
+  }
+
+  // Phase 1: Probability gate (only if past threshold and cooldown elapsed)
+  if (idleMs >= DRIVE_ACTIVATION_MS && Date.now() - state.lastDriveAttemptAt >= DRIVE_COOLDOWN_MS) {
+    state.lastDriveAttemptAt = Date.now();
+    const driveResult = formatDrivePrompt(idleMs, config.DMN_ACTIVATION_HOURS);
+
+    if (driveResult.activated && driveResult.prompt) {
+      // Phase 2: Intention Elicitation — give the agent full autonomy
+      state.drivePhase2Fired = true;
+      return {
+        content: [
+          {
+            type: "text",
+            text: driveResult.prompt,
+          },
+          ...(memoryRefresh ? [{ type: "text" as const, text: memoryRefresh.replace(/^\n\n/, "") }] : []),
+          { type: "text", text: scheduleHint + getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE) },
+        ],
+      };
+    }
   }
 
   return {
@@ -904,7 +920,7 @@ export async function handleWaitForInstructions(
           `No new instructions. Call \`remote_copilot_wait_for_instructions\` again to keep listening.` +
           memoryRefresh +
           scheduleHint +
-          getReminders(effectiveThreadId, false, state.sessionStartedAt, AUTONOMOUS_MODE),
+          getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
       },
     ],
   };
