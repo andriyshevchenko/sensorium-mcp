@@ -28,6 +28,7 @@ import {
   type initMemoryDb,
 } from "../memory.js";
 import {
+  analyzeImage,
   analyzeVideoFrames,
   analyzeVoiceEmotion,
   chatCompletion,
@@ -343,33 +344,56 @@ export async function handleWaitForInstructions(
             });
           }
         }
-        // Stickers: deliver as text with emoji and set name.
+        // Stickers: deliver as text with emoji, set name, and file_id (so agent can re-use it).
         if (msg.message.sticker) {
           const emoji = msg.message.sticker.emoji || "🏷️";
           const setName = msg.message.sticker.set_name || "unknown";
+          const fileId = msg.message.sticker.file_id;
           contentBlocks.push({
             type: "text",
-            text: `(The operator sent a sticker: ${emoji} from pack "${setName}")`,
+            text: `(The operator sent a sticker: ${emoji} from pack "${setName}", file_id: "${fileId}")`,
           });
         }
-        // Animations / GIFs: download first-frame thumbnail if available.
+        // Animations / GIFs: download first-frame thumbnail if available, run vision analysis.
         if (msg.message.animation) {
           const anim = msg.message.animation;
           const thumbnail = anim.thumbnail;
           let diskPath: string | null = null;
+          let thumbnailBuffer: Buffer | null = null;
           if (thumbnail && thumbnail.file_id) {
             try {
               const { buffer } = await telegram.downloadFileAsBuffer(thumbnail.file_id);
+              thumbnailBuffer = buffer;
               diskPath = saveFileToDisk(buffer, "gif-first-frame.jpg");
             } catch (err) {
               log.warn(`[wait] Could not download GIF thumbnail: ${errorMessage(err)}`);
             }
           }
+          // Run vision analysis on the first frame if we have the thumbnail and an API key.
+          let visionAnalysis: string | null = null;
+          if (thumbnailBuffer && OPENAI_API_KEY) {
+            try {
+              visionAnalysis = await analyzeImage(
+                thumbnailBuffer,
+                "This is the first frame of a GIF sent by a user in a chat. Briefly describe: " +
+                  "(1) what the GIF depicts, (2) the emotional intent or reaction it conveys, " +
+                  "(3) whether it could be interpreted as an approval, rejection, humor, or call to action. " +
+                  "Keep it under 50 words.",
+                OPENAI_API_KEY,
+              );
+            } catch (err) {
+              log.warn(`[wait] GIF vision analysis failed: ${errorMessage(err)}`);
+            }
+          }
           const caption = msg.message.caption || "";
           const parts: string[] = [];
-          parts.push(diskPath
-            ? `(The operator sent a GIF. First frame saved to: ${diskPath})`
-            : `(The operator sent a GIF.)`);
+          if (diskPath && visionAnalysis) {
+            parts.push(`(The operator sent a GIF. Vision analysis: "${visionAnalysis}" First frame saved to: ${diskPath})`);
+          } else if (diskPath) {
+            parts.push(`(The operator sent a GIF. First frame saved to: ${diskPath})`);
+          } else {
+            parts.push(`(The operator sent a GIF.)`);
+          }
           if (caption) parts.push(`Caption: ${caption}`);
           contentBlocks.push({ type: "text", text: parts.join("\n") });
         }

@@ -44,6 +44,8 @@ export async function handleUtilityTool(
       return handleSendFile(args, ctx);
     case "send_voice":
       return handleSendVoice(args, ctx);
+    case "send_sticker":
+      return handleSendSticker(args, ctx);
     case "schedule_wake_up":
       return handleScheduleWakeUp(args, ctx);
     case "get_version":
@@ -269,6 +271,37 @@ async function handleScheduleWakeUp(
         getShortReminder(effectiveThreadId),
     }],
   };
+}
+
+// ---------------------------------------------------------------------------
+// send_sticker
+// ---------------------------------------------------------------------------
+
+async function handleSendSticker(
+  args: Record<string, unknown>,
+  ctx: UtilityToolContext,
+): Promise<ToolResult> {
+  const { resolveThreadId, getShortReminder, errorResult, telegram, config } = ctx;
+  const effectiveThreadId = resolveThreadId(args);
+  if (effectiveThreadId === undefined) {
+    return errorResult("Error: No active session. Call start_session first, then pass the returned threadId.");
+  }
+  const stickerId = typeof args.stickerId === "string" ? args.stickerId.trim() : "";
+  if (!stickerId) {
+    return errorResult("Error: 'stickerId' argument is required for send_sticker. Use a file_id from a previously received sticker message.");
+  }
+  try {
+    await telegram.sendSticker(config.TELEGRAM_CHAT_ID, stickerId, effectiveThreadId);
+    return {
+      content: [{
+        type: "text",
+        text: `Sticker sent to Telegram successfully.` + getShortReminder(effectiveThreadId),
+      }],
+    };
+  } catch (err) {
+    log.error(`Failed to send sticker via Telegram: ${errorMessage(err)}`);
+    return errorResult(`Error: Failed to send sticker to Telegram: ${errorMessage(err)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
