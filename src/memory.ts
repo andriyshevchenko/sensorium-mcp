@@ -1684,7 +1684,7 @@ export function saveNoteEmbedding(db: Database, noteId: string, embedding: Float
 }
 
 /** Load all note embeddings into memory for cosine similarity search. */
-export function loadAllEmbeddings(db: Database, threadId?: number): Map<string, Float32Array> {
+function loadAllEmbeddings(db: Database, threadId?: number): Map<string, Float32Array> {
     // When threadId is provided, return embeddings for notes in that thread OR global notes (thread_id IS NULL)
     let sql = `SELECT ne.note_id, ne.embedding FROM note_embeddings ne
        JOIN semantic_notes sn ON sn.note_id = ne.note_id
@@ -1772,41 +1772,4 @@ export function getNotesWithoutEmbeddings(db: Database): { noteId: string; conte
          LEFT JOIN note_embeddings ne ON ne.note_id = sn.note_id
          WHERE ne.note_id IS NULL AND sn.valid_to IS NULL AND sn.superseded_by IS NULL`
     ).all() as { noteId: string; content: string }[];
-}
-
-/**
- * Backfill thread_id on existing semantic notes that lack it.
- * Infers thread from source episodes. Notes with no episode links remain global (NULL).
- * Returns the number of notes updated.
- */
-export function backfillNoteThreadIds(db: Database): number {
-  const notes = db.prepare(
-    `SELECT note_id, source_episodes FROM semantic_notes WHERE thread_id IS NULL AND valid_to IS NULL AND superseded_by IS NULL`
-  ).all() as { note_id: string; source_episodes: string | null }[];
-
-  if (notes.length === 0) return 0;
-
-  const update = db.prepare(`UPDATE semantic_notes SET thread_id = ? WHERE note_id = ?`);
-  let updated = 0;
-
-  const txn = db.transaction(() => {
-    for (const note of notes) {
-      const episodeIds = parseJsonArray(note.source_episodes);
-      if (episodeIds.length === 0) continue;
-
-      // Find the most common thread_id among source episodes
-      const placeholders = episodeIds.map(() => "?").join(",");
-      const rows = db.prepare(
-        `SELECT thread_id, COUNT(*) as cnt FROM episodes WHERE episode_id IN (${placeholders}) GROUP BY thread_id ORDER BY cnt DESC LIMIT 1`
-      ).all(...episodeIds) as { thread_id: number; cnt: number }[];
-
-      if (rows.length > 0 && rows[0].thread_id != null) {
-        update.run(rows[0].thread_id, note.note_id);
-        updated++;
-      }
-    }
-  });
-  txn();
-
-  return updated;
 }
