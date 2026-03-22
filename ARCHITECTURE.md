@@ -6,59 +6,139 @@ sensorium-mcp is an MCP (Model Context Protocol) server that provides remote age
 
 ## Module Structure
 
-### Core
+After the modular decomposition refactoring, the codebase is organized into a layered directory tree. Each directory corresponds to a dependency layer (Layer 0–5). Imports flow strictly downward: a module may only import from its own layer or lower layers.
 
-| File | Responsibility |
-|------|---------------|
-| `src/index.ts` | Main entry point — creates `Server` instances via `createMcpServer()` factory, wires per-session state, dispatches tool calls to handler modules, starts HTTP or stdio transport |
-| `src/config.ts` | Reads and validates environment variables at startup, exports the `AppConfig` object, manages file storage directory, and checks the maintenance flag |
-| `src/types.ts` | Shared TypeScript interfaces (`AppConfig`, `SessionState`, `ToolContext`, `DashboardCtx`, `CreateMcpServerFn`) used across modules |
-| `src/tool-definitions.ts` | JSON schemas for all MCP tool definitions, returned by the `ListTools` handler |
+```
+src/
+├── index.ts                 [  46] Entrypoint: startup + transport mode selection
+├── config.ts                [  50] Env parsing, validation, AppConfig export
+├── types.ts                 [  25] Shared interfaces (AppConfig, SessionState, ToolContext, etc.)
+├── utils.ts                 [  67] errorMessage, errorResult, describeADV, constants
+├── logger.ts                [  79] File + stderr logging with 5 MB rotation
+├── intent.ts                [  31] Synchronous intent classifier (conversational vs task)
+├── markdown.ts              [ 110] MD → Telegram MarkdownV2 conversion + message splitting
+├── response-builders.ts     [ 160] Reminder text builders + keyword extraction
+├── drive.ts                 [  76] 3-phase probabilistic autonomy model
+├── scheduler.ts             [ 259] Wake-up task scheduler (cron + delay), disk-persisted
+├── sessions.ts              [  87] Name→thread mapping + MCP session registry
+├── http-server.ts           [ 277] HTTP/SSE transport, CORS, auth, session reaper
+├── stdio-server.ts          [  27] Stdio transport bootstrap
+├── telegram.ts              [ 399] Telegram Bot API client (send, topics, media, files)
+│
+├── memory.ts                [   8] ← barrel re-export of data/memory/*
+├── openai.ts                [  18] ← barrel re-export of integrations/openai/*
+├── dispatcher.ts            [   8] ← barrel re-export of services/dispatcher/*
+├── dashboard.ts             [   9] ← barrel re-export of dashboard/*
+├── tool-definitions.ts      [   1] ← barrel re-export of tools/definitions
+│
+├── data/                           # Layer 2: Data access + persistence
+│   ├── file-storage.ts      [  52] Binary file save/cleanup (extracted from config.ts)
+│   ├── templates.ts         [  48] Template file loading, rendering, caching
+│   └── memory/                     # SQLite-backed persistent memory (better-sqlite3)
+│       ├── index.ts          [  13] Barrel re-export
+│       ├── schema.ts        [ 313] DB init, migrations, table definitions
+│       ├── episodes.ts      [ 127] Episode CRUD + batch save
+│       ├── semantic.ts      [ 457] Semantic note CRUD + ranked search + embeddings
+│       ├── procedures.ts    [ 168] Procedure CRUD + matching
+│       ├── voice-sig.ts     [  95] Voice signature storage + baseline
+│       ├── consolidation.ts [ 285] Intelligent consolidation engine
+│       └── bootstrap.ts     [ 272] Session memory briefing assembly + status
+│
+├── integrations/                   # Layer 1: External service clients
+│   ├── openai/
+│   │   ├── index.ts          [   5] Barrel re-export
+│   │   ├── chat.ts          [  92] Chat completions + embeddings + cosine similarity
+│   │   ├── speech.ts        [  90] TTS synthesis + Whisper transcription
+│   │   ├── vision.ts        [ 129] Image analysis (GPT-4o vision)
+│   │   ├── video.ts         [ 125] Video frame extraction (ffmpeg)
+│   │   └── voice-emotion.ts [  82] Voice emotion analysis service client
+│   └── telegram/
+│       └── types.ts         [ 110] Telegram API type definitions
+│
+├── services/                       # Layer 3: Business logic + orchestration
+│   └── dispatcher/
+│       ├── index.ts          [   8] Barrel re-export
+│       ├── broker.ts        [ 218] File-based per-thread message routing
+│       ├── lock.ts          [ 112] File-lock acquisition + recovery
+│       └── poller.ts        [ 305] Telegram getUpdates polling loop
+│
+├── server/                         # Layer 5: Server factory
+│   └── factory.ts           [ 303] createMcpServer + per-session state + tool dispatch
+│
+├── dashboard/                      # Layer 3b: Admin UI
+│   ├── spa.html                    Static SPA template
+│   ├── routes.ts            [ 290] API endpoint handlers (/api/status, /sessions, etc.)
+│   └── presets.ts           [  66] Drive template preset loading
+│
+└── tools/                          # Layer 4: MCP tool handlers
+    ├── definitions.ts       [ 440] JSON schema definitions for all MCP tools
+    ├── start-session-tool.ts[ 243] start_session — topic creation, memory bootstrap
+    ├── session-tools.ts     [ 324] report_progress, hibernate
+    ├── utility-tools.ts     [ 283] send_file, send_voice, send_sticker, schedule_wake_up, etc.
+    ├── memory-tools.ts      [ 317] All memory_* tool handlers
+    ├── wait-tool.ts         [   5] ← barrel re-export of wait/*
+    └── wait/                       # Decomposed wait-for-instructions handler
+        ├── index.ts          [   7] Barrel re-export
+        ├── poll-loop.ts     [ 330] Main polling orchestrator + SSE keepalive
+        ├── message-delivery.ts[326] Format + deliver operator messages
+        ├── media-processor.ts[282] Voice/video/GIF/sticker/photo processing
+        ├── reaction-handler.ts[139] Reaction wake-up logic
+        ├── drive-handler.ts [ 158] Drive activation + Phase 2/3 delivery
+        └── task-handler.ts  [  57] Scheduled task firing + __DMN__ sentinel
+```
 
-### Transport
+**56 TypeScript files** (up from 24 pre-refactor), organized into 7 directories.
 
-| File | Responsibility |
-|------|---------------|
-| `src/http-server.ts` | HTTP/SSE transport bootstrap — creates HTTP server, handles CORS, auth (`MCP_HTTP_SECRET`), session management, dashboard routing, session reaper, and graceful shutdown |
-| `src/stdio-server.ts` | Stdio transport bootstrap — used when `MCP_HTTP_PORT` is not set; creates a single `StdioServerTransport` connection |
+## Layer Hierarchy
 
-### Communication
+The codebase follows a strict 6-layer dependency DAG. Each layer may only import from layers with a lower number.
 
-| File | Responsibility |
-|------|---------------|
-| `src/telegram.ts` | Telegram Bot API client using native `fetch` — sends messages, manages forum topics, downloads files, handles media |
-| `src/openai.ts` | OpenAI API client for Whisper transcription, TTS voice synthesis, GPT-4o-mini chat completions, embeddings, and video frame analysis |
+| Layer | Directory / Files | Responsibility |
+|:-----:|-------------------|----------------|
+| **0** | `types.ts`, `utils.ts`, `logger.ts`, `intent.ts`, `config.ts` | Pure, zero-dependency modules. No imports from other src/ files (only npm packages). |
+| **1** | `integrations/openai/*`, `integrations/telegram/*`, `markdown.ts` | External service clients. Import only Layer 0. |
+| **2** | `data/*`, `sessions.ts`, `scheduler.ts` | Data access and persistence. Import Layers 0–1. |
+| **3** | `services/*`, `drive.ts`, `response-builders.ts`, `dashboard/*` | Business logic and orchestration. Import Layers 0–2. |
+| **4** | `tools/*` | MCP tool handlers. Import Layers 0–3. |
+| **5** | `server/factory.ts`, `http-server.ts`, `stdio-server.ts`, `index.ts` | Entrypoints and server bootstrap. Import all layers. |
 
-### Tools
+## Interface Boundaries
 
-| File | Responsibility |
-|------|---------------|
-| `src/tools/start-session-tool.ts` | `start_session` — creates or resumes a Telegram forum topic, bootstraps memory, auto-schedules DMN reflection, returns session greeting with full reminders |
-| `src/tools/wait-tool.ts` | `remote_copilot_wait_for_instructions` — core long-polling loop; polls dispatcher for operator messages every 2s, processes all media types, runs voice analysis, auto-saves episodes, injects relevant memory context, checks scheduled tasks, triggers auto-consolidation, sends SSE keepalives, detects maintenance flags |
-| `src/tools/session-tools.ts` | `report_progress`, `hibernate` — sends progress updates to Telegram, handles hibernation with maintenance/drive/schedule checks |
-| `src/tools/utility-tools.ts` | `send_file`, `send_voice`, `schedule_wake_up`, `get_version`, `get_usage_stats` — file/voice sending, scheduled task management, version info |
-| `src/tools/memory-tools.ts` | All `memory_*` tools — save/search/update/forget semantic notes and procedures, consolidation, bootstrap, status, embedding backfill |
+Layers communicate through typed interfaces defined in `types.ts` (Layer 0):
 
-### State
+- **`AppConfig`** — Immutable configuration object passed down from Layer 5 to all layers.
+- **`SessionState`** — Per-session mutable state, created in `server/factory.ts` closure, accessed through getter/setter pairs in tool context objects.
+- **`ToolContext`** — Typed context bag passed to every tool handler. Contains service clients, state accessors, config, and helper functions. No handler directly accesses global state.
+- **`DashboardCtx`** — Subset of server state exposed to dashboard routes.
+- **`CreateMcpServerFn`** — Factory function type used by transport modules to create per-connection server instances.
 
-| File | Responsibility |
-|------|---------------|
-| `src/memory.ts` | SQLite-backed persistent memory system (better-sqlite3) — semantic notes, episodes, procedures, topic index, embeddings, consolidation, and bootstrap assembly |
-| `src/sessions.ts` | Session management — persists Telegram topic → thread ID mappings to disk, tracks active MCP transport sessions per thread, dead session timeout |
-| `src/scheduler.ts` | Wake-up task scheduler — supports cron-based and delay-based tasks, persists state per-thread to disk, checked during wait polling |
-| `src/dispatcher.ts` | Shared Telegram update dispatcher — file-system message broker that solves the single-poller problem; one instance polls `getUpdates`, writes to per-thread JSONL files, all instances read their own thread file |
+Each decomposed sub-module (e.g., `tools/wait/*.ts`) defines its own context interface that narrows `ToolContext` to only the fields the handler needs.
 
-### Utilities
+## File Size Constraints
 
-| File | Responsibility |
-|------|---------------|
-| `src/utils.ts` | Shared helpers — `errorMessage()`, `errorResult()`, `describeADV()`, image extension list, constants |
-| `src/logger.ts` | File + stderr logging with 5 MB rotation (`~/.remote-copilot-mcp/server.log`) |
-| `src/intent.ts` | Lightweight synchronous intent classifier — classifies operator messages as `"conversational"` or `"task"` using exact-match and heuristics; defaults to `"task"` when uncertain |
-| `src/response-builders.ts` | Builds reminder text appended to tool responses — `getReminders()` (full directive), `getShortReminder()` (minimal), plus keyword extraction and voice analysis tag formatting |
-| `src/dashboard.ts` | Web UI SPA for monitoring agent sessions — serves HTML dashboard and authenticated JSON API endpoints (`/api/status`, `/api/sessions`, `/api/notes`, `/api/episodes`, etc.) |
-| `src/markdown.ts` | Converts standard Markdown to Telegram MarkdownV2 format, working around `telegramify-markdown` limitations, with message splitting for length limits |
-| `src/drive.ts` | Drive-based autonomy system — models dopaminergic motivation with escalating discomfort thresholds during operator silence; generates introspection prompts from memory |
+- **Target cap**: 300 lines per file.
+- **Enforcement**: Planned lint script (`scripts/lint-size`) to check no file exceeds the cap and no circular imports exist.
+- **Current status**: Most files are within cap. A few modules remain slightly over 300 lines and are candidates for further splitting in future phases.
+
+## Barrel Re-export Pattern
+
+When a monolithic file was split into a directory of sub-modules, a **barrel re-export stub** was left at the original import path to preserve backward compatibility:
+
+```typescript
+// src/memory.ts (8 lines) — barrel stub
+export * from "./data/memory/index.js";
+```
+
+This allows all existing `import { ... } from "./memory.js"` statements across the codebase to continue working without modification. The same pattern is used for:
+
+- `memory.ts` → `data/memory/*`
+- `openai.ts` → `integrations/openai/*`
+- `dispatcher.ts` → `services/dispatcher/*`
+- `dashboard.ts` → `dashboard/*`
+- `tool-definitions.ts` → `tools/definitions`
+- `tools/wait-tool.ts` → `tools/wait/*`
+
+New code should import directly from the sub-module path (e.g., `from "./data/memory/semantic.js"`) rather than through the barrel.
 
 ## Tool Handler Pattern
 
@@ -69,11 +149,13 @@ Each tool handler is a **pure async function** in its own file under `src/tools/
 - **Config** (the `AppConfig` object)
 - **Helper functions** (`resolveThreadId`, `getReminders`, `getShortReminder`, `errorResult`)
 
-The main `index.ts` `createMcpServer()` factory:
+The `server/factory.ts` `createMcpServer()` factory:
 1. Creates per-session mutable state variables in its closure
 2. Registers a `CallToolRequest` handler that dispatches by tool name
 3. Constructs the appropriate context object for each handler category
 4. Calls the handler and returns its result
+
+The `index.ts` entrypoint is now a thin 46-line shim that reads config, selects transport mode (HTTP or stdio), and delegates to `server/factory.ts`.
 
 This pattern keeps handlers testable and decoupled from transport/server lifecycle concerns. No handler directly accesses global mutable state — all state flows through the context object.
 
@@ -125,7 +207,7 @@ The `scripts/update-watcher.ps1` PowerShell script manages zero-downtime updates
 
 ## Rules
 
-1. **Tool handlers must be pure functions** — no global mutable state. All state flows through the typed context object constructed in `createMcpServer()`.
+1. **Tool handlers must be pure functions** — no global mutable state. All state flows through the typed context object constructed in `server/factory.ts` `createMcpServer()`.
 
 2. **Per-session state is isolated** in the `createMcpServer()` closure. Each HTTP session or stdio connection gets its own set of state variables (`waitCallCount`, `currentThreadId`, `lastToolCallAt`, etc.).
 
@@ -136,3 +218,7 @@ The `scripts/update-watcher.ps1` PowerShell script manages zero-downtime updates
 5. **Never call MCP tools during maintenance** — when the maintenance flag is detected, the agent must use Desktop Commander `Start-Sleep` to wait externally until the update completes.
 
 6. **Auto-consolidation is fire-and-forget** — never blocks the wait polling loop. Consolidation runs in the background and updates `lastConsolidationAt` on completion.
+
+7. **300-line cap per file** — every TypeScript source file should stay under 300 lines. When a file grows beyond this, extract a sub-module into the appropriate layer directory.
+
+8. **Imports follow the layer DAG** — a module may only import from its own layer or lower layers (Layer 0–5). No upward or circular dependencies.
