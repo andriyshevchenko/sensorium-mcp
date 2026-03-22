@@ -424,11 +424,6 @@ export function getToolDefinitions(): ToolDefinition[] {
             type: "number",
             description: "Active thread ID.",
           },
-          phases: {
-            type: "array",
-            items: { type: "string" },
-            description: 'Run specific phases: ["promote", "decay", "meta"]. Default: all.',
-          },
         },
       },
     },

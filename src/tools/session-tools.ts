@@ -19,7 +19,6 @@ import { errorMessage } from "../utils.js";
 /** Closure-bound helpers passed by the caller (index.ts createMcpServer). */
 export interface SessionToolContext {
   resolveThreadId: (args: Record<string, unknown>) => number | undefined;
-  getReminders: (threadId: number | undefined, driveActive: boolean) => string;
   getShortReminder: (threadId: number | undefined) => string;
   errorResult: (msg: string) => { content: Array<{ type: string; text: string }>; isError: true };
   telegram: TelegramClient;
