@@ -28,7 +28,6 @@ import {
   type initMemoryDb,
 } from "../memory.js";
 import {
-  analyzeImage,
   analyzeVideoFrames,
   analyzeVoiceEmotion,
   chatCompletion,
@@ -354,48 +353,57 @@ export async function handleWaitForInstructions(
             text: `(The operator sent a sticker: ${emoji} from pack "${setName}", file_id: "${fileId}")`,
           });
         }
-        // Animations / GIFs: download first-frame thumbnail if available, run vision analysis.
+        // Animations / GIFs: download full file, extract frames, run multi-frame vision analysis
+        // (same pipeline as video_notes — uses extractVideoFrames + analyzeVideoFrames).
         if (msg.message.animation) {
           const anim = msg.message.animation;
-          const thumbnail = anim.thumbnail;
-          let diskPath: string | null = null;
-          let thumbnailBuffer: Buffer | null = null;
-          if (thumbnail && thumbnail.file_id) {
+          const animDuration = anim.duration ?? 3; // default to 3s if Telegram omits duration
+          if (OPENAI_API_KEY) {
             try {
-              const { buffer } = await telegram.downloadFileAsBuffer(thumbnail.file_id);
-              thumbnailBuffer = buffer;
-              diskPath = saveFileToDisk(buffer, "gif-first-frame.jpg");
+              log.verbose("gif", `Downloading animation ${anim.file_id} (~${animDuration}s)...`);
+              const { buffer } = await telegram.downloadFileAsBuffer(anim.file_id);
+              const diskPath = saveFileToDisk(buffer, "gif-animation.mp4");
+              log.verbose("gif", `Downloaded ${buffer.length} bytes. Extracting frames...`);
+
+              // Extract frames with ffmpeg (same as video_notes).
+              const frames = await extractVideoFrames(buffer, animDuration).catch((err) => {
+                log.error(`[gif] Frame extraction failed: ${errorMessage(err)}`);
+                return [] as Buffer[];
+              });
+
+              // Analyze frames with GPT-4o-mini vision (same as video_notes).
+              let sceneDescription: string | null = null;
+              if (frames.length > 0) {
+                try {
+                  log.verbose("gif", `Analyzing ${frames.length} frames with GPT-4o-mini vision...`);
+                  sceneDescription = await analyzeVideoFrames(frames, animDuration, OPENAI_API_KEY);
+                  log.verbose("gif", `Vision analysis complete.`);
+                } catch (visionErr) {
+                  log.error(`[gif] Vision analysis failed: ${visionErr}`);
+                  sceneDescription = null;
+                }
+              }
+
+              const caption = msg.message.caption || "";
+              const parts: string[] = [];
+              parts.push(`(The operator sent a GIF — ${animDuration}s)`);
+              if (sceneDescription) parts.push(`Scene: ${sceneDescription}`);
+              if (!sceneDescription) parts.push("(no visual content could be extracted)");
+              parts.push(`Saved to: ${diskPath}`);
+              if (caption) parts.push(`Caption: ${caption}`);
+              contentBlocks.push({ type: "text", text: parts.join("\n") });
             } catch (err) {
-              log.warn(`[wait] Could not download GIF thumbnail: ${errorMessage(err)}`);
+              contentBlocks.push({
+                type: "text",
+                text: `(The operator sent a GIF — analysis failed: ${errorMessage(err)})`,
+              });
             }
-          }
-          // Run vision analysis on the first frame if we have the thumbnail and an API key.
-          let visionAnalysis: string | null = null;
-          if (thumbnailBuffer && OPENAI_API_KEY) {
-            try {
-              visionAnalysis = await analyzeImage(
-                thumbnailBuffer,
-                "This is the first frame of a GIF sent by a user in a chat. Briefly describe: " +
-                  "(1) what the GIF depicts, (2) the emotional intent or reaction it conveys, " +
-                  "(3) whether it could be interpreted as an approval, rejection, humor, or call to action. " +
-                  "Keep it under 50 words.",
-                OPENAI_API_KEY,
-              );
-            } catch (err) {
-              log.warn(`[wait] GIF vision analysis failed: ${errorMessage(err)}`);
-            }
-          }
-          const caption = msg.message.caption || "";
-          const parts: string[] = [];
-          if (diskPath && visionAnalysis) {
-            parts.push(`(The operator sent a GIF. Vision analysis: "${visionAnalysis}" First frame saved to: ${diskPath})`);
-          } else if (diskPath) {
-            parts.push(`(The operator sent a GIF. First frame saved to: ${diskPath})`);
           } else {
-            parts.push(`(The operator sent a GIF.)`);
+            contentBlocks.push({
+              type: "text",
+              text: `(The operator sent a GIF — cannot analyze: OPENAI_API_KEY not set)`,
+            });
           }
-          if (caption) parts.push(`Caption: ${caption}`);
-          contentBlocks.push({ type: "text", text: parts.join("\n") });
         }
         // Video notes (circle videos): extract frames, analyze with GPT-4.1 vision,
         // optionally transcribe the audio track.

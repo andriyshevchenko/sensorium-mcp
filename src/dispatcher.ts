@@ -268,6 +268,7 @@ export interface StoredMessage {
         };
         animation?: {
             file_id: string;
+            duration?: number;
             thumbnail?: {
                 file_id: string;
             };
@@ -478,6 +479,7 @@ async function pollOnce(
                     } : undefined,
                     animation: u.message.animation ? {
                         file_id: u.message.animation.file_id,
+                        duration: u.message.animation.duration,
                         thumbnail: (u.message.animation.thumbnail ?? u.message.animation.thumb)
                             ? { file_id: (u.message.animation.thumbnail ?? u.message.animation.thumb)!.file_id }
                             : undefined,
