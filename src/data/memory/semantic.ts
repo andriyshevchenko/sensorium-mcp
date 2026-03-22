@@ -524,3 +524,37 @@ export function getNotesWithoutEmbeddings(db: Database): { noteId: string; conte
          WHERE ne.note_id IS NULL AND sn.valid_to IS NULL AND sn.superseded_by IS NULL`
     ).all() as { noteId: string; content: string }[];
 }
+
+/**
+ * Find semantic notes that potentially conflict with a given note
+ * by sharing >= 2 keywords of the same type.
+ */
+export function findPotentialConflicts(
+  db: Database,
+  noteId: string,
+): SemanticNote[] {
+  const row = db.prepare(
+    `SELECT note_id, type, keywords FROM semantic_notes WHERE note_id = ?`
+  ).get(noteId) as { note_id: string; type: string; keywords: string } | undefined;
+
+  if (!row) return [];
+
+  const noteKeywords: string[] = row.keywords ? JSON.parse(row.keywords) : [];
+  if (noteKeywords.length < 2) return [];
+
+  // Fetch all active notes of the same type (excluding this note and superseded ones)
+  const candidates = db.prepare(
+    `SELECT * FROM semantic_notes
+     WHERE type = ? AND note_id != ? AND valid_to IS NULL AND superseded_by IS NULL`
+  ).all(row.type, noteId) as Record<string, unknown>[];
+
+  const lowerKeywords = new Set(noteKeywords.map(k => k.toLowerCase()));
+
+  return candidates
+    .filter(c => {
+      const cKeywords: string[] = c.keywords ? JSON.parse(c.keywords as string) : [];
+      const overlap = cKeywords.filter(k => lowerKeywords.has(k.toLowerCase())).length;
+      return overlap >= 2;
+    })
+    .map(rowToSemanticNote);
+}
