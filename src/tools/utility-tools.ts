@@ -146,7 +146,7 @@ async function handleSendVoice(
 
   try {
     const audioBuffer = await textToSpeech(text, config.OPENAI_API_KEY, voice);
-    await telegram.sendVoice(config.TELEGRAM_CHAT_ID, audioBuffer, effectiveThreadId);
+    await telegram.sendVoice(config.TELEGRAM_CHAT_ID, audioBuffer, effectiveThreadId, text);
     return {
       content: [
         {
