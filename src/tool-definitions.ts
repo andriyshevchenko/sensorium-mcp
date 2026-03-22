@@ -245,13 +245,14 @@ export function getToolDefinitions(): ToolDefinition[] {
       description:
         "Search across all memory layers for relevant information. " +
         "Use BEFORE starting any task to recall facts, preferences, past events, or procedures. " +
-        "Returns ranked results with source layer. Do NOT use for info already in your bootstrap briefing.",
+        "Returns ranked results with source layer. Do NOT use for info already in your bootstrap briefing. " +
+        "Supports #hashtag search in query (e.g., '#important architecture') to find tagged memories.",
       inputSchema: {
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "Natural language search query.",
+            description: "Natural language search query. Supports #hashtags to find tagged memories (e.g., '#important', '#sensorium').",
           },
           layers: {
             type: "array",
@@ -292,7 +293,8 @@ export function getToolDefinitions(): ToolDefinition[] {
           keywords: {
             type: "array",
             items: { type: "string" },
-            description: "3-7 keywords for retrieval.",
+            description:
+              "Array of 3-7 keywords/tags for retrieval. Supports #hashtags for operator-controlled tagging (e.g., ['architecture', '#important', '#sensorium']).",
           },
           confidence: {
             type: "number",
