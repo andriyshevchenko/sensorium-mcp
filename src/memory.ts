@@ -146,7 +146,7 @@ function parseJsonObject(val: string | null | undefined): Record<string, unknown
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -209,6 +209,34 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       log.info(`[migration-4] Backfilled thread_id on ${backfilled}/${notes.length} existing notes.`);
     }
   },
+  5: (db) => {
+    // Widen CHECK constraints on episodes table to include 'operator_reaction'
+    // type and 'reaction' modality. SQLite does not support ALTER COLUMN, so we
+    // must recreate the table.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS episodes_new (
+        episode_id     TEXT PRIMARY KEY,
+        session_id     TEXT NOT NULL,
+        thread_id      INTEGER NOT NULL,
+        timestamp      TEXT NOT NULL,
+        type           TEXT NOT NULL CHECK(type IN ('operator_message','agent_action','system_event','operator_reaction')),
+        modality       TEXT NOT NULL CHECK(modality IN ('text','voice','photo','video_note','document','mixed','reaction')),
+        content        TEXT NOT NULL,
+        topic_tags     TEXT,
+        importance     REAL NOT NULL DEFAULT 0.5,
+        consolidated   INTEGER DEFAULT 0,
+        accessed_count INTEGER DEFAULT 0,
+        last_accessed  TEXT,
+        created_at     TEXT NOT NULL
+      );
+      INSERT INTO episodes_new SELECT * FROM episodes;
+      DROP TABLE episodes;
+      ALTER TABLE episodes_new RENAME TO episodes;
+      CREATE INDEX IF NOT EXISTS idx_ep_thread_time ON episodes(thread_id, timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_ep_importance ON episodes(importance DESC);
+      CREATE INDEX IF NOT EXISTS idx_ep_uncons ON episodes(consolidated) WHERE consolidated = 0;
+    `);
+  },
 };
 
 /**
@@ -259,8 +287,8 @@ CREATE TABLE IF NOT EXISTS episodes (
   session_id     TEXT NOT NULL,
   thread_id      INTEGER NOT NULL,
   timestamp      TEXT NOT NULL,
-  type           TEXT NOT NULL CHECK(type IN ('operator_message','agent_action','system_event')),
-  modality       TEXT NOT NULL CHECK(modality IN ('text','voice','photo','video_note','document','mixed')),
+  type           TEXT NOT NULL CHECK(type IN ('operator_message','agent_action','system_event','operator_reaction')),
+  modality       TEXT NOT NULL CHECK(modality IN ('text','voice','photo','video_note','document','mixed','reaction')),
   content        TEXT NOT NULL,
   topic_tags     TEXT,
   importance     REAL NOT NULL DEFAULT 0.5,
