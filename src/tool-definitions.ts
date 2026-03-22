@@ -279,10 +279,6 @@ export function getToolDefinitions(): ToolDefinition[] {
             items: { type: "string" },
             description: 'Filter by type: ["fact", "preference", "pattern", "workflow", ...].',
           },
-          maxTokens: {
-            type: "number",
-            description: "Token budget for results. Default: 1500.",
-          },
           threadId: {
             type: "number",
             description: "Active thread ID.",
