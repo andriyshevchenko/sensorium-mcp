@@ -132,8 +132,26 @@ export class TelegramClient {
   /** Latest operator reaction received via getUpdates. */
   lastReaction: { emoji: string; messageId: number; date: number } | null = null;
 
+  // Ring buffer for sent messages (tracks message_id → content snippet)
+  private sentMessages: Array<{ messageId: number; snippet: string; timestamp: number }> = [];
+  private static readonly MAX_SENT_MESSAGES = 50;
+
   constructor(private readonly token: string) {
     this.baseUrl = `https://api.telegram.org/bot${token}`;
+  }
+
+  /** Record a sent message for later lookup (e.g. when a reaction arrives). */
+  private recordSentMessage(messageId: number, snippet: string): void {
+    this.sentMessages.push({ messageId, snippet, timestamp: Date.now() });
+    if (this.sentMessages.length > TelegramClient.MAX_SENT_MESSAGES) {
+      this.sentMessages.splice(0, this.sentMessages.length - TelegramClient.MAX_SENT_MESSAGES);
+    }
+  }
+
+  /** Look up the content snippet for a previously sent message. Returns null if not found. */
+  lookupSentMessage(messageId: number): string | null {
+    const entry = this.sentMessages.find(m => m.messageId === messageId);
+    return entry?.snippet ?? null;
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────
@@ -196,7 +214,7 @@ export class TelegramClient {
     blob: Blob,
     filename: string,
     options?: { caption?: string; threadId?: number },
-  ): Promise<void> {
+  ): Promise<number | undefined> {
     const url = `${this.baseUrl}/${method}`;
     const formData = new FormData();
     formData.append("chat_id", chatId);
@@ -212,6 +230,7 @@ export class TelegramClient {
       const description = data?.description ?? response.statusText;
       throw new Error(`Telegram ${method} failed: ${response.status} ${description}`);
     }
+    return data?.result?.message_id;
   }
 
   // ── Public API ──────────────────────────────────────────────────────────
@@ -335,6 +354,9 @@ export class TelegramClient {
       const description = data.description ?? "Unknown Telegram API error";
       throw new Error(`Telegram API error in sendMessage: ${description}`);
     }
+    if (data.result?.message_id) {
+      this.recordSentMessage(data.result.message_id, text.slice(0, 80));
+    }
   }
 
   /**
@@ -395,8 +417,11 @@ export class TelegramClient {
     caption?: string,
     threadId?: number,
   ): Promise<void> {
-    await this.sendMedia("sendDocument", chatId, "document",
+    const msgId = await this.sendMedia("sendDocument", chatId, "document",
       new Blob([new Uint8Array(fileBuffer)]), filename, { caption, threadId });
+    if (msgId) {
+      this.recordSentMessage(msgId, caption?.slice(0, 80) ?? `[document: ${filename}]`);
+    }
   }
 
   /** Send a photo to a chat. */
@@ -407,8 +432,11 @@ export class TelegramClient {
     caption?: string,
     threadId?: number,
   ): Promise<void> {
-    await this.sendMedia("sendPhoto", chatId, "photo",
+    const msgId = await this.sendMedia("sendPhoto", chatId, "photo",
       new Blob([new Uint8Array(imageBuffer)]), filename, { caption, threadId });
+    if (msgId) {
+      this.recordSentMessage(msgId, caption?.slice(0, 80) ?? "[photo]");
+    }
   }
 
   /** Send a voice message (OGG Opus) to a chat. */
@@ -417,8 +445,11 @@ export class TelegramClient {
     audioBuffer: Buffer,
     threadId?: number,
   ): Promise<void> {
-    await this.sendMedia("sendVoice", chatId, "voice",
+    const msgId = await this.sendMedia("sendVoice", chatId, "voice",
       new Blob([new Uint8Array(audioBuffer)]), "voice.ogg", { threadId });
+    if (msgId) {
+      this.recordSentMessage(msgId, "[voice message]");
+    }
   }
 
   /**

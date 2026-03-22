@@ -481,7 +481,10 @@ export async function handleWaitForInstructions(
         const messageId = "messageId" in pendingReaction ? pendingReaction.messageId : 0;
         const reactionDate = "date" in pendingReaction ? pendingReaction.date : 0;
         if (emoji) {
-          const reactionNote = `(The operator reacted with ${emoji} to message #${messageId})`;
+          const snippet = telegram.lookupSentMessage(messageId);
+          const reactionNote = snippet
+            ? `(The operator reacted with ${emoji} to your message: '${snippet}')`
+            : `(The operator reacted with ${emoji} to message #${messageId})`;
           // Inline the reaction with the last text block if messages exist,
           // otherwise add it as a standalone block.
           const lastTextIdx = contentBlocks.map(b => b.type).lastIndexOf("text");
