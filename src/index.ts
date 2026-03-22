@@ -50,7 +50,7 @@ import { handleMemoryTool, type ToolContext } from "./tools/memory-tools.js";
 import { handleUtilityTool, type UtilityToolContext } from "./tools/utility-tools.js";
 import { handleSessionTool, type SessionToolContext } from "./tools/session-tools.js";
 import { handleStartSession, type StartSessionContext } from "./tools/start-session-tool.js";
-import { handleWaitForInstructions, type WaitToolContext, type WaitToolExtra } from "./tools/wait-tool.js";
+import { handleWaitForInstructions, type WaitToolContext, type WaitToolExtra } from "./tools/wait/index.js";
 
 // ---------------------------------------------------------------------------
 // Destructure config for backwards-compatible local references
