@@ -35,6 +35,8 @@ export function startHttpServer(
   const sessionLastActivity = new Map<string, number>();
   /** Tracks session lifecycle status for dashboard visibility. */
   const sessionStatus = new Map<string, "active" | "disconnected">();
+  /** Records the epoch ms when a session became disconnected (for GC). */
+  const sessionDisconnectedAt = new Map<string, number>();
 
   const MCP_HTTP_SECRET = process.env.MCP_HTTP_SECRET;
   const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
@@ -146,6 +148,7 @@ export function startHttpServer(
       if (sessionId && transports.has(sessionId)) {
         sessionLastActivity.set(sessionId, Date.now());
         sessionStatus.set(sessionId, "active");
+        sessionDisconnectedAt.delete(sessionId);
         await transports.get(sessionId)!.handleRequest(req, res, body);
         return;
       }
@@ -169,6 +172,7 @@ export function startHttpServer(
             transports.delete(sid);
             // Keep in sessionLastActivity & sessionStatus for dashboard visibility
             sessionStatus.set(sid, "disconnected");
+            sessionDisconnectedAt.set(sid, Date.now());
           }
         };
 
@@ -204,6 +208,9 @@ export function startHttpServer(
       res.on("close", () => {
         if (sessionStatus.has(sseSid)) {
           sessionStatus.set(sseSid, "disconnected");
+          if (!sessionDisconnectedAt.has(sseSid)) {
+            sessionDisconnectedAt.set(sseSid, Date.now());
+          }
         }
       });
       await transports.get(sessionId)!.handleRequest(req, res);
@@ -244,15 +251,40 @@ export function startHttpServer(
       if (status === "active" && !transports.has(sid)) {
         // Transport already gone but status wasn't updated — fix it
         sessionStatus.set(sid, "disconnected");
+        if (!sessionDisconnectedAt.has(sid)) {
+          sessionDisconnectedAt.set(sid, now);
+        }
       } else if (status === "active") {
         const lastActive = sessionLastActivity.get(sid) ?? 0;
         if (now - lastActive > SESSION_IDLE_TTL_MS) {
           log.info(`[session-ttl] Marking session ${sid.slice(0, 8)} as disconnected (idle ${Math.round((now - lastActive) / 60000)}m)`);
           sessionStatus.set(sid, "disconnected");
+          sessionDisconnectedAt.set(sid, now);
         }
       }
     }
   }, 5 * 60 * 1000);
+
+  // ── Session GC — remove disconnected sessions after 5 minutes ───────────
+  const SESSION_GC_GRACE_MS = 5 * 60 * 1000;
+  const sessionGcInterval = setInterval(() => {
+    const now = Date.now();
+    let removed = 0;
+    for (const [sid, disconnectTime] of sessionDisconnectedAt) {
+      if (now - disconnectTime > SESSION_GC_GRACE_MS) {
+        // Only GC if actually disconnected (safety check)
+        if (sessionStatus.get(sid) !== "active" && !transports.has(sid)) {
+          sessionStatus.delete(sid);
+          sessionLastActivity.delete(sid);
+          sessionDisconnectedAt.delete(sid);
+          removed++;
+        }
+      }
+    }
+    if (removed > 0) {
+      log.info(`[session-gc] Removed ${removed} disconnected session(s)`);
+    }
+  }, 60 * 1000);
 
   // ── Session reaper — close abandoned SSE sessions every 10 minutes ──────
   const STALE_SESSION_MS = 2 * config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
@@ -275,6 +307,7 @@ export function startHttpServer(
         if (now - lastActive > STALE_SESSION_MS) {
           sessionLastActivity.delete(sid);
           sessionStatus.delete(sid);
+          sessionDisconnectedAt.delete(sid);
         }
       }
     }
@@ -283,6 +316,7 @@ export function startHttpServer(
   // Simple shutdown — close transports, DB, and exit.
   const shutdown = () => {
     clearInterval(ttlSweeperInterval);
+    clearInterval(sessionGcInterval);
     clearInterval(sessionReaperInterval);
     for (const [sid, t] of transports) {
       try { t.close(); } catch (_) { /* best-effort */ }
