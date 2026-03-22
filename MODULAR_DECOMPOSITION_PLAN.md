@@ -48,11 +48,11 @@
 ## Goal
 Achieve Linux-kernel-level modularity: strict boundaries, single responsibility per file, <300 LOC per file, explicit typed interfaces, clean DAG dependencies.
 
-## Current State
-- **8,456 LOC** across 24 TypeScript files
-- **4 files over 300 lines** (violating the target cap)
-- **1 god function** (`handleWaitForInstructions`: 896 lines in a single function)
-- **1 god file** (`memory.ts`: 1582 lines, 5+ responsibilities)
+## Current State (as of v2.16.29)
+- **~8,800 LOC** across 24 TypeScript files
+- **7 files over 300 lines** (violating the target cap)
+- **1 god function** (`handleWaitForInstructions`: 923 lines in a single function)
+- **1 god file** (`memory.ts`: 1666 lines, 6+ responsibilities)
 - **1 embedded SPA** (`dashboard.ts`: 833-line HTML generator inline)
 - **No circular imports** (clean DAG — good foundation)
 
@@ -60,16 +60,16 @@ Achieve Linux-kernel-level modularity: strict boundaries, single responsibility 
 
 | File | Lines | Status |
 |------|------:|--------|
-| memory.ts | 1582 | **CRITICAL** — must split |
+| memory.ts | 1666 | **CRITICAL** — must split |
 | dashboard.ts | 1110 | **CRITICAL** — extract SPA |
 | tools/wait-tool.ts | 923 | **CRITICAL** — decompose god function |
 | dispatcher.ts | 594 | **HIGH** — split broker + polling |
 | openai.ts | 490 | **HIGH** — split by API domain |
 | telegram.ts | 490 | **HIGH** — split client + types |
-| tool-definitions.ts | 440 | **MEDIUM** — move to data file |
+| tool-definitions.ts | 442 | **MEDIUM** — move to data file |
 | index.ts | 337 | **MEDIUM** — extract state factory |
+| tools/memory-tools.ts | 329 | OK (slightly over) |
 | tools/session-tools.ts | 324 | OK (slightly over) |
-| tools/memory-tools.ts | 317 | OK (slightly over) |
 | All others | <300 | ✅ Within cap |
 
 ---
