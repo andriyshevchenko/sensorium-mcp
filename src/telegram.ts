@@ -470,6 +470,31 @@ export class TelegramClient {
     }
   }
 
+  /** Send a sticker to a chat by file_id. */
+  async sendSticker(
+    chatId: string,
+    stickerId: string,
+    threadId?: number,
+  ): Promise<void> {
+    const url = `${this.baseUrl}/sendSticker`;
+    const body: Record<string, unknown> = { chat_id: chatId, sticker: stickerId };
+    if (threadId !== undefined) body.message_thread_id = threadId;
+
+    const response = await this.safeFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await this.tryParseJson<SendMessageResult>(response);
+    if (!response.ok || data?.ok !== true) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram sendSticker failed: ${response.status} ${description}`);
+    }
+    if (data?.result?.message_id) {
+      this.recordSentMessage(data.result.message_id, `[sticker: ${stickerId.slice(0, 20)}...]`);
+    }
+  }
+
   /**
    * Set an emoji reaction on a message ("seen" indicator).
    * Non-throwing: silently ignores errors since reactions are non-critical UX.

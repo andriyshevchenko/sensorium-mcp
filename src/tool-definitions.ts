@@ -405,6 +405,30 @@ export function getToolDefinitions(): ToolDefinition[] {
         required: ["memoryId", "reason"],
       },
     },
+    // ── Sticker Tool ──────────────────────────────────────────────────
+    {
+      name: "send_sticker",
+      description:
+        "Send a sticker to the operator in Telegram. Use sticker file_ids from previously received sticker messages. " +
+        "When the operator sends a sticker, the file_id is included in the delivered message — you can reuse it to send the same sticker back or mirror their reaction.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          stickerId: {
+            type: "string",
+            description:
+              "The Telegram file_id of the sticker to send. Obtain this from sticker messages received from the operator.",
+          },
+          threadId: {
+            type: "number",
+            description:
+              "The Telegram thread ID of the active session. " +
+              "ALWAYS pass this if you received it from start_session.",
+          },
+        },
+        required: ["stickerId"],
+      },
+    },
     // ── Server Info Tools ─────────────────────────────────────────────
     {
       name: "get_version",

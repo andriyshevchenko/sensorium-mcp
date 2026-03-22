@@ -315,7 +315,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   }
 
   // ── send_file / send_voice / schedule_wake_up ─────────────────────────────
-  if (["send_file", "send_voice", "schedule_wake_up"].includes(name)) {
+  if (["send_file", "send_voice", "schedule_wake_up", "send_sticker"].includes(name)) {
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const utilityCtx: UtilityToolContext = {
       resolveThreadId,
