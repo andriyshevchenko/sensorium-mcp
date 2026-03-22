@@ -244,6 +244,11 @@ export async function handleStartSession(
     ? " Do NOT send a voice greeting or 'back online' message — the text notification in Telegram is sufficient."
     : "";
 
+  const threadId = session.currentThreadId;
+  const reminders = ctx.getReminders(threadId, session.sessionStartedAt, config.AUTONOMOUS_MODE);
+  const endDirective =
+    `\n\n**⚠️ ACTION REQUIRED: Call the \`remote_copilot_wait_for_instructions\` tool NOW with threadId=${threadId}. Do NOT stop or end your turn.**`;
+
   return {
     content: [
       {
@@ -252,7 +257,8 @@ export async function handleStartSession(
           `Session ${resolvedPreexisting ? "resumed" : "started"}.${threadNote}` +
           ` Call the remote_copilot_wait_for_instructions tool next.${resumeNote}` +
           memoryBriefing +
-          ctx.getReminders(session.currentThreadId, session.sessionStartedAt, config.AUTONOMOUS_MODE),
+          reminders +
+          endDirective,
       },
     ],
   };
