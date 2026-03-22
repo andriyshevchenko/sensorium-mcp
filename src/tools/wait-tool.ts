@@ -14,32 +14,23 @@
  *   - Activates the Dispatcher drive after extended operator silence
  */
 
-import { basename } from "node:path";
-import { checkMaintenanceFlag, saveFileToDisk } from "../config.js";
+import { checkMaintenanceFlag } from "../config.js";
 import { peekThreadMessages, readThreadMessages } from "../dispatcher.js";
 import {
   assembleCompactRefresh,
-  saveEpisode,
-  searchByEmbedding,
-  searchSemanticNotesRanked,
   type initMemoryDb,
 } from "../memory.js";
-import {
-  chatCompletion,
-  generateEmbedding,
-} from "../openai.js";
 import { listSchedules } from "../scheduler.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig } from "../types.js";
-import { errorMessage, IMAGE_EXTENSIONS } from "../utils.js";
 import { log } from "../logger.js";
-import { extractSearchKeywords, getReminders, getMediumReminder, getShortReminder } from "../response-builders.js";
-import { classifyIntent } from "../intent.js";
+import { getReminders, getShortReminder } from "../response-builders.js";
 
 import { processVoice, processAnimation, processVideoNote, type MediaContext } from "./wait/media-processor.js";
 import { handleReactionWithMessages, handleReactionOnly } from "./wait/reaction-handler.js";
 import { checkForDueTasks } from "./wait/task-handler.js";
 import { runAutoConsolidation, checkDriveActivation } from "./wait/drive-handler.js";
+import { processSimpleMessage, handleEmptyContent, autoIngestEpisodes, buildSmartContext, assembleOperatorResponse } from "./wait/message-delivery.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -202,70 +193,10 @@ export async function handleWaitForInstructions(
       const savedEpisodeUpdateIds = new Set<number>();
 
       for (const msg of stored) {
-        // Photos: download the largest size, persist to disk, and embed as base64.
-        if (msg.message.photo && msg.message.photo.length > 0) {
-          const largest = msg.message.photo[msg.message.photo.length - 1];
-          try {
-            const { buffer, filePath: telegramPath } = await telegram.downloadFileAsBuffer(
-              largest.file_id,
-            );
-            const ext = telegramPath.split(".").pop()?.toLowerCase() ?? "jpg";
-            const mimeType = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-            const base64 = buffer.toString("base64");
-            const diskPath = saveFileToDisk(buffer, `photo.${ext}`);
-            contentBlocks.push({ type: "image", data: base64, mimeType });
-            contentBlocks.push({
-              type: "text",
-              text: `[Photo saved to: ${diskPath}]` +
-                (msg.message.caption ? ` Caption: ${msg.message.caption}` : ""),
-            });
-          } catch (err) {
-            contentBlocks.push({
-              type: "text",
-              text: `[Photo received but could not be downloaded: ${errorMessage(err)}]`,
-            });
-          }
-        }
-        // Documents: download, persist to disk, and embed as base64.
-        if (msg.message.document) {
-          const doc = msg.message.document;
-          try {
-            const { buffer, filePath: telegramPath } = await telegram.downloadFileAsBuffer(
-              doc.file_id,
-            );
-            const filename = doc.file_name ?? basename(telegramPath);
-            const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-            const mimeType = doc.mime_type ?? (IMAGE_EXTENSIONS.has(ext) ? `image/${ext === "jpg" ? "jpeg" : ext}` : "application/octet-stream");
-            const base64 = buffer.toString("base64");
-            const diskPath = saveFileToDisk(buffer, filename);
-            const isImage = mimeType.startsWith("image/");
-            if (isImage) {
-              contentBlocks.push({ type: "image", data: base64, mimeType });
-              contentBlocks.push({
-                type: "text",
-                text: `[File saved to: ${diskPath}]` +
-                  (msg.message.caption ? ` Caption: ${msg.message.caption}` : ""),
-              });
-            } else {
-              // Non-image documents: provide the disk path instead of
-              // dumping potentially huge base64 into the LLM context.
-              contentBlocks.push({
-                type: "text",
-                text: `[Document: ${filename} (${mimeType}) — saved to: ${diskPath}]` +
-                  (msg.message.caption ? ` Caption: ${msg.message.caption}` : ""),
-              });
-            }
-          } catch (err) {
-            contentBlocks.push({
-              type: "text",
-              text: `[Document "${doc.file_name ?? "file"}" received but could not be downloaded: ${errorMessage(err)}]`,
-            });
-          }
-        }
-        // Text messages.
-        if (msg.message.text) {
-          contentBlocks.push({ type: "text", text: msg.message.text });
-        }
+        // Photos, documents, text, stickers — handled by message-delivery.
+        const simpleBlocks = await processSimpleMessage(msg, telegram);
+        contentBlocks.push(...simpleBlocks);
+
         // Voice messages: transcribe using OpenAI Whisper.
         if (msg.message.voice) {
           hasVoiceMessages = true;
@@ -273,16 +204,6 @@ export async function handleWaitForInstructions(
           const result = await processVoice(msg, mediaCtx);
           contentBlocks.push(...result.blocks);
           if (result.episodeSaved) savedEpisodeUpdateIds.add(msg.update_id);
-        }
-        // Stickers: deliver as text with emoji, set name, and file_id (so agent can re-use it).
-        if (msg.message.sticker) {
-          const emoji = msg.message.sticker.emoji || "🏷️";
-          const setName = msg.message.sticker.set_name || "unknown";
-          const fileId = msg.message.sticker.file_id;
-          contentBlocks.push({
-            type: "text",
-            text: `(The operator sent a sticker: ${emoji} from pack "${setName}", file_id: "${fileId}")`,
-          });
         }
         // Animations / GIFs: download full file, extract frames, run multi-frame vision analysis
         // (same pipeline as video_notes — uses extractVideoFrames + analyzeVideoFrames).
@@ -301,42 +222,11 @@ export async function handleWaitForInstructions(
           if (result.episodeSaved) savedEpisodeUpdateIds.add(msg.update_id);
         }
       }
-      if (contentBlocks.length === 0) {
-        const msgKeys = stored.map(m => Object.keys(m.message).filter(k => (m.message as Record<string, unknown>)[k] != null).join(",")).join(" | ");
-        log.warn(`[wait] No content blocks from ${stored.length} messages. Fields: ${msgKeys}`);
-        contentBlocks.push({
-          type: "text",
-          text: "[Unsupported message type received — the operator sent a message type that cannot be processed (e.g., sticker, location, contact). Please ask them to resend as text, photo, document, or voice.]",
-        });
-      }
+      handleEmptyContent(contentBlocks, stored);
       log.info(`[wait] ${contentBlocks.length} content blocks built. Saving episodes...`);
 
       // Auto-ingest episodes for messages not already saved by voice/video handlers
-      try {
-        const db = getMemoryDb();
-        const sessionId = `session_${state.sessionStartedAt}`;
-        if (effectiveThreadId !== undefined) {
-          // Collect text from messages that didn't already get an episode
-          const unsavedMsgs = stored.filter(m => !savedEpisodeUpdateIds.has(m.update_id));
-          if (unsavedMsgs.length > 0) {
-            const textContent = unsavedMsgs
-              .map(m => m.message.text ?? m.message.caption ?? "")
-              .filter(Boolean)
-              .join("\n")
-              .slice(0, 2000);
-            if (textContent) {
-              saveEpisode(db, {
-                sessionId,
-                threadId: effectiveThreadId,
-                type: "operator_message",
-                modality: "text",
-                content: { text: textContent },
-                importance: 0.5,
-              });
-            }
-          }
-        }
-      } catch (_) { /* memory write failures should never break the main flow */ }
+      autoIngestEpisodes(stored, savedEpisodeUpdateIds, { getMemoryDb, effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt });
 
       // ── Check for pending operator reactions ─────────────────────────
       await handleReactionWithMessages(contentBlocks, {
@@ -355,123 +245,18 @@ export async function handleWaitForInstructions(
         .join(" ")
         .slice(0, 500);
 
-      // ── Smart context injection (GPT-4o-mini preprocessor) ──────────
-      // Retrieves candidate notes via embedding search, then uses GPT-4o-mini
-      // to select ONLY the notes truly relevant to the operator's message.
-      // This prevents context contamination from near-miss semantic matches.
-      let autoMemoryContext = "";
-      try {
-        const db = getMemoryDb();
-        const apiKey = process.env.OPENAI_API_KEY;
-
-        if (operatorText.length > 10 && apiKey) {
-          // Phase 1: Broad retrieval — get 10 candidates via embedding search
-          let candidates: { type: string; content: string; confidence: number; similarity?: number }[] = [];
-          try {
-            const queryEmb = await generateEmbedding(operatorText, apiKey);
-            const embResults = searchByEmbedding(db, queryEmb, { maxResults: 10, minSimilarity: 0.25, skipAccessTracking: true, threadId: effectiveThreadId });
-            candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, 200), confidence: n.confidence, similarity: n.similarity }));
-          } catch {
-            // Fallback to keyword search
-            const searchQuery = extractSearchKeywords(operatorText);
-            if (searchQuery.trim().length > 0) {
-              const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 10, skipAccessTracking: true, threadId: effectiveThreadId });
-              candidates = kwResults.map(n => ({ type: n.type, content: n.content.slice(0, 200), confidence: n.confidence }));
-            }
-          }
-
-          if (candidates.length > 0) {
-            // Phase 2: GPT-4o-mini filters and compresses
-            try {
-              const noteList = candidates.map((c, i) => `[${i}] [${c.type}] ${c.content}`).join("\n");
-              const filterResponse = await chatCompletion([
-                {
-                  role: "system",
-                  content:
-                    "You are a context filter for an AI assistant. Given an operator's message and candidate memory notes, " +
-                    "select ONLY the notes that are directly relevant to the operator's current instruction or question. " +
-                    "Discard notes that are tangentially related, duplicates, or noise. " +
-                    "Return a JSON array of objects: [{\"i\": <index>, \"s\": \"<compressed one-liner>\"}] " +
-                    "where 'i' is the note index and 's' is a compressed summary (max 80 chars). " +
-                    "Return [] if no notes are relevant. Return at most 3 notes. Be aggressive about filtering.",
-                },
-                {
-                  role: "user",
-                  content: `Operator message: "${operatorText.slice(0, 300)}"\n\nCandidate notes:\n${noteList}`,
-                },
-              ], apiKey, { maxTokens: 200, temperature: 0 });
-
-              // Parse the response — expect JSON array
-              const jsonMatch = filterResponse.match(/\[.*\]/s);
-              if (jsonMatch) {
-                const filtered = JSON.parse(jsonMatch[0]) as { i: number; s: string }[];
-                if (filtered.length > 0) {
-                  const lines = filtered
-                    .filter(f => f.i >= 0 && f.i < candidates.length)
-                    .slice(0, 3)
-                    .map(f => {
-                      const c = candidates[f.i];
-                      return `- **[${c.type}]** ${f.s} _(conf: ${c.confidence})_`;
-                    });
-                  if (lines.length > 0) {
-                    autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
-                  }
-                }
-              }
-              log.verbose("memory", `Smart filter: ${candidates.length} candidates → ${(jsonMatch ? JSON.parse(jsonMatch[0]) : []).length} selected`);
-            } catch (filterErr) {
-              // GPT-4o-mini filter failed — fall back to top-3 raw notes
-              log.warn(`[memory] Smart filter failed, using raw top-3: ${filterErr instanceof Error ? filterErr.message : String(filterErr)}`);
-              const lines = candidates.slice(0, 3).map(c =>
-                `- **[${c.type}]** ${c.content} _(conf: ${c.confidence})_`
-              );
-              autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
-            }
-          }
-        } else if (operatorText.length > 10) {
-          // No API key — keyword search, raw top-3
-          const searchQuery = extractSearchKeywords(operatorText);
-          if (searchQuery.trim().length > 0) {
-            const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 3, skipAccessTracking: true, threadId: effectiveThreadId });
-            if (kwResults.length > 0) {
-              const lines = kwResults.map(n =>
-                `- **[${n.type}]** ${n.content.slice(0, 200)} _(conf: ${n.confidence})_`
-              );
-              autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
-            }
-          }
-        }
-      } catch (_) { /* memory search failures should never break message delivery */ }
+      // Smart context injection (GPT-4o-mini preprocessor)
+      const autoMemoryContext = await buildSmartContext(operatorText, { getMemoryDb, effectiveThreadId });
 
       log.info(`[wait] Returning response with ${contentBlocks.length} blocks to agent.`);
 
-      const intent = classifyIntent(operatorText);
-      log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${intent}`);
-      const reminder = intent === "conversational"
-        ? getMediumReminder(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE)
-        : getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE);
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Follow the operator's instructions below.",
-          },
-          { type: "text", text: "<<< OPERATOR MESSAGE >>>" },
-          ...contentBlocks,
-          ...(hasVoiceMessages
-            ? [{
-              type: "text" as const,
-              text: "(Operator sent voice — respond with `send_voice`.)",
-            }]
-            : []),
-          { type: "text", text: reminder },
-          { type: "text", text: "<<< END OPERATOR MESSAGE >>>" },
-          ...(autoMemoryContext
-            ? [{ type: "text" as const, text: autoMemoryContext }]
-            : []),
-        ],
-      };
+      return assembleOperatorResponse(
+        contentBlocks,
+        operatorText,
+        hasVoiceMessages,
+        autoMemoryContext,
+        { effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt, autonomousMode: AUTONOMOUS_MODE },
+      );
     }
 
     // ── Reaction-only wake-up ───────────────────────────────────────
