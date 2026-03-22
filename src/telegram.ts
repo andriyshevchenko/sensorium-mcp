@@ -444,11 +444,13 @@ export class TelegramClient {
     chatId: string,
     audioBuffer: Buffer,
     threadId?: number,
+    textSnippet?: string,
   ): Promise<void> {
     const msgId = await this.sendMedia("sendVoice", chatId, "voice",
       new Blob([new Uint8Array(audioBuffer)]), "voice.ogg", { threadId });
     if (msgId) {
-      this.recordSentMessage(msgId, "[voice message]");
+      const snippet = textSnippet ? textSnippet.slice(0, 80) : "[voice message]";
+      this.recordSentMessage(msgId, snippet);
     }
   }
 
