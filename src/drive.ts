@@ -9,6 +9,7 @@
 import type { Database } from "better-sqlite3";
 import type { SemanticNote } from "./memory.js";
 import { getTopSemanticNotes } from "./memory.js";
+import { loadTemplate, renderTemplate } from "./response-builders.js";
 
 /**
  * Drive thresholds and their associated emotional states.
@@ -256,6 +257,19 @@ export function formatDrivePrompt(idleMs: number, db: Database, threadId?: numbe
       }
     }
   } catch (_) { /* non-fatal */ }
+
+  // ── Template-based rendering (overrides hardcoded messages if template exists) ──
+  const driveTemplate = loadTemplate("drive");
+  if (driveTemplate) {
+    const vars: Record<string, string> = {
+      LEVEL: String(levelIdx),
+      IDLE_HOURS: idleHours.toFixed(1),
+      THREAD_ID: threadId !== undefined ? String(threadId) : "none",
+      DMN_FRAGMENTS: dmnRecall.replace(/^\n\n/, "") || "(no memory fragments surfaced)",
+      TIME: new Date().toISOString(),
+    };
+    return "\n\n" + renderTemplate(driveTemplate, vars);
+  }
 
   return `\n\n${message}${dmnRecall}`;
 }

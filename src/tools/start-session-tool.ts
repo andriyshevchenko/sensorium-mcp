@@ -37,6 +37,7 @@ export interface StartSessionContext {
     toolCallsSinceLastDelivery: number;
     previewedUpdateIds: Set<number>;
     lastOperatorMessageAt: number;
+    lastOperatorMessageText: string;
     lastConsolidationAt: number;
   };
 

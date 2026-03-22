@@ -90,6 +90,7 @@ function createMcpServer(getMcpSessionId?: () => string | undefined, closeTransp
   let deadSessionAlerted = false;
   let waitInProgress = false;
   let lastOperatorMessageAt = Date.now();
+  let lastOperatorMessageText = "";
   let lastConsolidationAt = 0;
   let toolCallsSinceLastDelivery = 0;
   const previewedUpdateIds = new Set<number>();
@@ -224,6 +225,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         previewedUpdateIds,
         get lastOperatorMessageAt() { return lastOperatorMessageAt; },
         set lastOperatorMessageAt(v) { lastOperatorMessageAt = v; },
+        get lastOperatorMessageText() { return lastOperatorMessageText; },
+        set lastOperatorMessageText(v) { lastOperatorMessageText = v; },
         get lastConsolidationAt() { return lastConsolidationAt; },
         set lastConsolidationAt(v) { lastConsolidationAt = v; },
       },
@@ -256,6 +259,8 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         set toolCallsSinceLastDelivery(v) { toolCallsSinceLastDelivery = v; },
         get lastOperatorMessageAt() { return lastOperatorMessageAt; },
         set lastOperatorMessageAt(v) { lastOperatorMessageAt = v; },
+        get lastOperatorMessageText() { return lastOperatorMessageText; },
+        set lastOperatorMessageText(v) { lastOperatorMessageText = v; },
         get lastConsolidationAt() { return lastConsolidationAt; },
         set lastConsolidationAt(v) { lastConsolidationAt = v; },
         previewedUpdateIds,
@@ -296,6 +301,7 @@ srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       checkDueTasks,
       generateDmnReflection,
       lastOperatorMessageAt,
+      lastOperatorMessageText,
       previewedUpdateIds,
       addPreviewedId,
     };

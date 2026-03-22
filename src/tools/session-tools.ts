@@ -29,6 +29,7 @@ export interface SessionToolContext {
   checkDueTasks: typeof checkDueTasks;
   generateDmnReflection: (threadId: number) => string;
   lastOperatorMessageAt: number;
+  lastOperatorMessageText: string;
   previewedUpdateIds: Set<number>;
   addPreviewedId: (id: number) => void;
 }
@@ -215,12 +216,21 @@ async function handleHibernate(
   const {
     resolveThreadId, getShortReminder, errorResult,
     peekThreadMessages, checkMaintenanceFlag, checkDueTasks,
-    generateDmnReflection, lastOperatorMessageAt,
+    generateDmnReflection, lastOperatorMessageAt, lastOperatorMessageText,
   } = ctx;
 
   const effectiveThreadId = resolveThreadId(args);
   if (effectiveThreadId === undefined) {
     return errorResult("Error: No active session. Call start_session first.");
+  }
+
+  // ── Guard: hibernate only when operator explicitly requested it ──────
+  const HIBERNATE_KEYWORDS = /\b(hibernate|sleep|goodnight|go\s+to\s+sleep|shut\s*down|stop|stand\s*by|pause)\b/i;
+  if (!HIBERNATE_KEYWORDS.test(lastOperatorMessageText)) {
+    return errorResult(
+      "Hibernate can only be called when the operator explicitly requests it. " +
+      "Continue using wait_for_instructions instead.",
+    );
   }
 
   const wakeAt = typeof args.wakeAt === "string" ? new Date(args.wakeAt).getTime() : undefined;

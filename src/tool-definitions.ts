@@ -221,7 +221,7 @@ export function getToolDefinitions(): ToolDefinition[] {
       name: "hibernate",
       description:
         "Enter hibernation — the agent suspends until a specific time, a scheduled task fires, or the operator sends a message. " +
-        "Use this instead of repeated wait_for_instructions calls when nothing is pending. " +
+        "Only call this when the operator explicitly asks you to hibernate/sleep/stop. Self-hibernation is not allowed. " +
         "Specify 'wakeAt' (ISO 8601 timestamp) for a timed alarm, or omit it to hibernate indefinitely until operator message or scheduled task wakes you. " +
         "Hibernation uses a low-frequency poll (30s intervals) to minimize resource usage. " +
         "On wake, returns the reason: 'operator_message', 'scheduled_task', 'alarm', or 'connection_lost'.",
