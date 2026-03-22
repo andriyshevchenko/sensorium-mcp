@@ -343,6 +343,36 @@ export async function handleWaitForInstructions(
             });
           }
         }
+        // Stickers: deliver as text with emoji and set name.
+        if (msg.message.sticker) {
+          const emoji = msg.message.sticker.emoji || "🏷️";
+          const setName = msg.message.sticker.set_name || "unknown";
+          contentBlocks.push({
+            type: "text",
+            text: `(The operator sent a sticker: ${emoji} from pack "${setName}")`,
+          });
+        }
+        // Animations / GIFs: download first-frame thumbnail if available.
+        if (msg.message.animation) {
+          const anim = msg.message.animation;
+          const thumbnail = anim.thumbnail;
+          let diskPath: string | null = null;
+          if (thumbnail && thumbnail.file_id) {
+            try {
+              const { buffer } = await telegram.downloadFileAsBuffer(thumbnail.file_id);
+              diskPath = saveFileToDisk(buffer, "gif-first-frame.jpg");
+            } catch (err) {
+              log.warn(`[wait] Could not download GIF thumbnail: ${errorMessage(err)}`);
+            }
+          }
+          const caption = msg.message.caption || "";
+          const parts: string[] = [];
+          parts.push(diskPath
+            ? `(The operator sent a GIF. First frame saved to: ${diskPath})`
+            : `(The operator sent a GIF.)`);
+          if (caption) parts.push(`Caption: ${caption}`);
+          contentBlocks.push({ type: "text", text: parts.join("\n") });
+        }
         // Video notes (circle videos): extract frames, analyze with GPT-4.1 vision,
         // optionally transcribe the audio track.
         if (msg.message.video_note) {

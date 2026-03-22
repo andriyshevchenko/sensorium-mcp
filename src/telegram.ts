@@ -9,6 +9,20 @@ import { log } from "./logger.js";
 // Type definitions
 // ---------------------------------------------------------------------------
 
+export interface TelegramSticker {
+  file_id: string;
+  file_unique_id: string;
+  emoji?: string;
+  set_name?: string;
+}
+
+export interface TelegramAnimation {
+  file_id: string;
+  file_unique_id: string;
+  thumbnail?: PhotoSize;
+  thumb?: PhotoSize; // legacy alias
+}
+
 export interface TelegramMessage {
   message_id: number;
   chat: { id: number };
@@ -20,6 +34,8 @@ export interface TelegramMessage {
   document?: TelegramDocument;
   voice?: TelegramVoice;
   video_note?: TelegramVideoNote;
+  sticker?: TelegramSticker;
+  animation?: TelegramAnimation;
 }
 
 export interface PhotoSize {
