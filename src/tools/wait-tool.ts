@@ -17,10 +17,8 @@
 import { basename } from "node:path";
 import { checkMaintenanceFlag, saveFileToDisk } from "../config.js";
 import { peekThreadMessages, readThreadMessages } from "../dispatcher.js";
-import { formatDrivePrompt, PHASE3_APPROVAL_PROMPT } from "../drive.js";
 import {
   assembleCompactRefresh,
-  runIntelligentConsolidation,
   saveEpisode,
   searchByEmbedding,
   searchSemanticNotesRanked,
@@ -37,10 +35,11 @@ import { errorMessage, IMAGE_EXTENSIONS } from "../utils.js";
 import { log } from "../logger.js";
 import { extractSearchKeywords, getReminders, getMediumReminder, getShortReminder } from "../response-builders.js";
 import { classifyIntent } from "../intent.js";
-import { backfillEmbeddings } from "./memory-tools.js";
+
 import { processVoice, processAnimation, processVideoNote, type MediaContext } from "./wait/media-processor.js";
 import { handleReactionWithMessages, handleReactionOnly } from "./wait/reaction-handler.js";
 import { checkForDueTasks } from "./wait/task-handler.js";
+import { runAutoConsolidation, checkDriveActivation } from "./wait/drive-handler.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -556,63 +555,7 @@ export async function handleWaitForInstructions(
   }
 
   // ── Auto-consolidation during idle (fire-and-forget) ────────────────────
-  // Don't await — consolidation can take 10-30s (OpenAI call) and would
-  // stall the agent's poll loop, silently delaying the timeout response.
-  try {
-    const idleMs = Date.now() - state.lastOperatorMessageAt;
-    if (idleMs > 15 * 60 * 1000 && effectiveThreadId !== undefined && Date.now() - state.lastConsolidationAt > 30 * 60 * 1000) {
-      state.lastConsolidationAt = Date.now();
-      const db = getMemoryDb();
-      void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
-        if (report.episodesProcessed > 0) {
-          log.info(`[memory] Consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`);
-        }
-        await backfillEmbeddings(db);
-      }).catch(err => {
-        log.error(`[memory] Consolidation error: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    }
-  } catch (_) { /* consolidation failure is non-fatal */ }
-
-  // ── Episode-count consolidation — don't wait for idle ──────────────────
-  // If many episodes accumulated during active use, consolidate now.
-  // This prevents stale/contradictory knowledge from persisting.
-  try {
-    if (effectiveThreadId !== undefined && Date.now() - state.lastConsolidationAt > 30 * 60 * 1000) {
-      const db = getMemoryDb();
-      const uncons = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0 AND thread_id = ?").get(effectiveThreadId) as { c: number };
-      if (uncons.c >= 15) {
-        state.lastConsolidationAt = Date.now();
-        void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
-          if (report.episodesProcessed > 0) {
-            log.info(`[memory] Episode-count consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`);
-          }
-          await backfillEmbeddings(db);
-        }).catch(err => {
-          log.error(`[memory] Episode-count consolidation error: ${err instanceof Error ? err.message : String(err)}`);
-        });
-      }
-    }
-  } catch (_) { /* non-fatal */ }
-
-  // ── Time-based consolidation — every 4 hours regardless ────────────────
-  // Ensures stale knowledge gets cleaned up even during low-activity periods.
-  try {
-    const TIME_CONSOLIDATION_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
-    if (effectiveThreadId !== undefined && Date.now() - state.lastConsolidationAt > TIME_CONSOLIDATION_INTERVAL) {
-      state.lastConsolidationAt = Date.now();
-      const db = getMemoryDb();
-      log.info(`[memory] Time-based consolidation triggered (4h since last)`);
-      void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
-        if (report.episodesProcessed > 0) {
-          log.info(`[memory] Time-based consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`);
-        }
-        await backfillEmbeddings(db);
-      }).catch(err => {
-        log.error(`[memory] Time-based consolidation error: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    }
-  } catch (_) { /* non-fatal */ }
+  runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, config, memoryRefresh: "", scheduleHint: "" });
 
   // Periodic memory refresh — re-ground the agent every 10 polls (~5h)
   // (reduced from 5 since auto-inject now handles per-message context)
@@ -626,46 +569,8 @@ export async function handleWaitForInstructions(
   }
 
   // ── 3-Phase Probabilistic Autonomous Drive ──────────────────────────────
-  const DRIVE_ACTIVATION_MS = config.DMN_ACTIVATION_HOURS * 60 * 60 * 1000;
-  const DRIVE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes between probability rolls
-  const idleMs = Date.now() - state.lastOperatorMessageAt;
-
-  // Phase 3: If Phase 2 just fired and the agent came back without engaging
-  if (state.drivePhase2Fired) {
-    state.drivePhase2Fired = false; // Reset — only approve once
-    return {
-      content: [
-        {
-          type: "text",
-          text: PHASE3_APPROVAL_PROMPT +
-            memoryRefresh +
-            scheduleHint +
-            getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
-        },
-      ],
-    };
-  }
-
-  // Phase 1: Probability gate (only if past threshold and cooldown elapsed)
-  if (idleMs >= DRIVE_ACTIVATION_MS && Date.now() - state.lastDriveAttemptAt >= DRIVE_COOLDOWN_MS) {
-    state.lastDriveAttemptAt = Date.now();
-    const driveResult = formatDrivePrompt(idleMs, config.DMN_ACTIVATION_HOURS);
-
-    if (driveResult.activated && driveResult.prompt) {
-      // Phase 2: Intention Elicitation — give the agent full autonomy
-      state.drivePhase2Fired = true;
-      return {
-        content: [
-          {
-            type: "text",
-            text: driveResult.prompt,
-          },
-          ...(memoryRefresh ? [{ type: "text" as const, text: memoryRefresh.replace(/^\n\n/, "") }] : []),
-          { type: "text", text: scheduleHint + getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE) },
-        ],
-      };
-    }
-  }
+  const driveActivationResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, config, memoryRefresh, scheduleHint });
+  if (driveActivationResult) return driveActivationResult;
 
   return {
     content: [
