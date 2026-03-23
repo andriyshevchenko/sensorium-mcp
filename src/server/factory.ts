@@ -71,6 +71,7 @@ function createMcpServer(
   let currentThreadId: number | undefined;
   let lastToolCallAt = Date.now();
   let deadSessionAlerted = false;
+  let deadSessionAlertedAt = 0;
   let waitInProgress = false;
   let lastOperatorMessageAt = Date.now();
   let lastOperatorMessageText = "";
@@ -144,14 +145,19 @@ function createMcpServer(
   );
 
   // Dead session detector — per-session, runs every 2 minutes
+  const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // 60 min between alerts
   const deadSessionInterval = setInterval(async () => {
     if (!currentThreadId) return;
     // Skip check when wait_for_instructions is actively running — the session
     // is definitively alive even if lastToolCallAt hasn't been refreshed.
     if (waitInProgress) return;
-    const elapsed = Date.now() - lastToolCallAt;
-    if (elapsed > DEAD_SESSION_TIMEOUT_MS && !deadSessionAlerted) {
+    // Consider both tool calls and operator messages as session activity.
+    const lastActivity = Math.max(lastToolCallAt, lastOperatorMessageAt);
+    const elapsed = Date.now() - lastActivity;
+    const cooldownOk = Date.now() - deadSessionAlertedAt > ALERT_COOLDOWN_MS;
+    if (elapsed > DEAD_SESSION_TIMEOUT_MS && cooldownOk) {
       deadSessionAlerted = true;
+      deadSessionAlertedAt = Date.now();
       try {
         const minutes = Math.round(elapsed / 60000);
         await telegram.sendMessage(
