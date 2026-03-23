@@ -64,8 +64,9 @@ export function handleDashboardRequest(
 
     // Serve dashboard SPA
     if (path === "/" || path === "/dashboard") {
+        const html = getDashboardHTML();
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(getDashboardHTML());
+        res.end(html);
         return true;
     }
 
@@ -103,11 +104,12 @@ function handleApiRoute(
     ctx: DashboardContext
 ): boolean {
     const json = (data: unknown, status = 200) => {
+        const body = JSON.stringify(data);
         res.writeHead(status, {
             "Content-Type": "application/json",
             "Cache-Control": "no-cache",
         });
-        res.end(JSON.stringify(data));
+        res.end(body);
     };
 
     try {

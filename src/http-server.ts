@@ -20,7 +20,6 @@ import { config } from "./config.js";
 import { log } from "./logger.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
 import {
-  threadSessionRegistry,
   registerDashboardSession,
   updateDashboardActivity,
   markDashboardSessionDisconnected,
@@ -251,12 +250,14 @@ export function startHttpServer(
         if (!sessionDisconnectedAt.has(sid)) {
           sessionDisconnectedAt.set(sid, now);
         }
+        markDashboardSessionDisconnected(sid);
       } else if (status === "active") {
         const lastActive = sessionLastActivity.get(sid) ?? 0;
         if (now - lastActive > SESSION_IDLE_TTL_MS) {
           log.info(`[session-ttl] Marking session ${sid.slice(0, 8)} as disconnected (idle ${Math.round((now - lastActive) / 60000)}m)`);
           sessionStatus.set(sid, "disconnected");
           sessionDisconnectedAt.set(sid, now);
+          markDashboardSessionDisconnected(sid);
         }
       }
     }
