@@ -269,7 +269,8 @@ export function startHttpServer(
   });
 
   // ── TTL sweeper — mark idle active sessions as disconnected every 5 min ──
-  const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
+  // Use the configured wait timeout so sessions waiting up to WAIT_TIMEOUT_MINUTES aren't prematurely marked dead
+  const SESSION_IDLE_TTL_MS = config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
   const ttlSweeperInterval = setInterval(() => {
     const now = Date.now();
     for (const [sid, status] of sessionStatus) {
@@ -292,10 +293,11 @@ export function startHttpServer(
     }
   }, 5 * 60 * 1000);
 
-  // ── Session GC — remove disconnected sessions after 5 minutes ───────────
+  // ── Session GC — remove disconnected sessions after grace period ─────────
   // Sessions with a recent lastWaitCallAt (within WAIT_LIVENESS_MS) are
   // considered "truly alive" even if the transport shows disconnected.
-  const SESSION_GC_GRACE_MS = 5 * 60 * 1000;
+  // Grace period matches wait timeout so long-polling sessions aren't reaped.
+  const SESSION_GC_GRACE_MS = config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
   const sessionGcInterval = setInterval(() => {
     const now = Date.now();
     let removed = 0;
