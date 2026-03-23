@@ -16,7 +16,12 @@ import { checkMaintenanceFlag, config } from "../config.js";
 import { peekThreadMessages } from "../dispatcher.js";
 import { formatDrivePrompt } from "../drive.js";
 import { checkDueTasks } from "../scheduler.js";
-import { DEAD_SESSION_TIMEOUT_MS } from "../sessions.js";
+import {
+  DEAD_SESSION_TIMEOUT_MS,
+  updateDashboardActivity,
+  updateDashboardThreadId,
+  updateLastWaitCall,
+} from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import { getToolDefinitions } from "../tool-definitions.js";
 import { errorResult } from "../utils.js";
@@ -219,11 +224,23 @@ function createMcpServer(
         getMcpSessionId,
         closeTransport,
       };
-      return handleStartSession((args ?? {}) as Record<string, unknown>, startSessionCtx);
+      return handleStartSession((args ?? {}) as Record<string, unknown>, startSessionCtx).then(result => {
+        // Update the dashboard registry with the resolved threadId
+        const sid = getMcpSessionId?.();
+        if (sid && currentThreadId !== undefined) {
+          updateDashboardThreadId(sid, currentThreadId);
+          updateDashboardActivity(sid);
+        }
+        return result;
+      });
     }
 
     // ── remote_copilot_wait_for_instructions ────────────────────────────────
     if (name === "remote_copilot_wait_for_instructions") {
+      // Update wait heartbeat for dashboard liveness tracking
+      const waitSid = getMcpSessionId?.();
+      if (waitSid) updateLastWaitCall(waitSid);
+
       const waitCtx: WaitToolContext = {
         state: {
           get currentThreadId() { return currentThreadId; },
