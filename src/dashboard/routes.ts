@@ -31,7 +31,7 @@ import {
     type SemanticNote
 } from "../memory.js";
 
-import { DEFAULT_REMINDERS_TEMPLATE, loadDrivePresets } from "./presets.js";
+import { DEFAULT_REMINDERS_TEMPLATE, DEFAULT_DRIVE_PROMPT, loadDrivePresets } from "./presets.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -218,15 +218,13 @@ function handleApiRoute(
                 try {
                     const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
                     const userFile = join(templatesDir, "drive.md");
-                    let content: string | null = null;
-                    let isDefault = true;
+                    let custom: string | null = null;
                     try {
-                        content = await readFile(userFile, "utf-8");
-                        isDefault = false;
+                        custom = await readFile(userFile, "utf-8");
                     } catch {
-                        content = null;
+                        custom = null;
                     }
-                    json({ content, isDefault });
+                    json({ custom, default: DEFAULT_DRIVE_PROMPT });
                 } catch (err) {
                     json({ error: err instanceof Error ? err.message : String(err) }, 500);
                 }
