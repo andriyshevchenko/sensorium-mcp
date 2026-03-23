@@ -4,9 +4,7 @@
  * Extracted from memory.ts — procedural memory layer.
  */
 
-import { randomUUID } from "crypto";
 import type { Database } from "./schema.js";
-import { updateTopicIndexForKeywords } from "./semantic.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -30,17 +28,8 @@ export interface Procedure {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function generateId(prefix: string): string {
-  return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-}
-
 function nowISO(): string {
   return new Date().toISOString();
-}
-
-function jsonOrNull(val: unknown): string | null {
-  if (val === undefined || val === null) return null;
-  return JSON.stringify(val);
 }
 
 function parseJsonArray(val: string | null | undefined): string[] {
@@ -75,47 +64,6 @@ export function rowToProcedure(row: Record<string, unknown>): Procedure {
 }
 
 // ─── Procedural Memory ──────────────────────────────────────────────────────
-
-export function saveProcedure(
-  db: Database,
-  proc: {
-    name: string;
-    type: "workflow" | "habit" | "tool_pattern" | "template";
-    description: string;
-    steps?: string[];
-    triggerConditions?: string[];
-  }
-): string {
-  const id = generateId("pr");
-  const now = nowISO();
-
-  db.prepare(
-    `INSERT INTO procedures
-       (procedure_id, name, type, description, steps, trigger_conditions, success_rate, times_executed, learned_from, corrections, related_procedures, confidence, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0.5, 0, ?, ?, ?, 0.5, ?, ?)`
-  ).run(
-    id,
-    proc.name,
-    proc.type,
-    proc.description,
-    jsonOrNull(proc.steps),
-    jsonOrNull(proc.triggerConditions),
-    null, // learned_from
-    null, // corrections
-    null, // related_procedures
-    now,
-    now
-  );
-
-  // Update topic index based on procedure name words
-  const keywords = proc.name
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 2);
-  updateTopicIndexForKeywords(db, keywords, "procedural");
-
-  return id;
-}
 
 export function searchProcedures(db: Database, query: string, maxResults = 10): Procedure[] {
   const terms = query
