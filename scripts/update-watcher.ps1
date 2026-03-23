@@ -123,7 +123,8 @@ function Stop-StaleProcesses {
     if (-not $processes) { return }
 
     foreach ($proc in $processes) {
-        if ($proc.CreationDate -lt $versionFileTime) {
+        $ageSec = ($versionFileTime - $proc.CreationDate).TotalSeconds
+        if ($proc.CreationDate -lt $versionFileTime -and $ageSec -gt 60) {
             Write-Log "Killing stale process PID=$($proc.ProcessId) (started $($proc.CreationDate), version file updated $versionFileTime)" -Level "WARN"
             try {
                 Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
@@ -207,15 +208,18 @@ function Invoke-UpdateCheck {
 
     Stop-McpServer
     Clear-NpxCache
+
+    # Set version BEFORE starting server so stale detection won't kill the new process
+    Set-LocalVersion $remoteVersion
+
     Start-McpServer
 
-    # Wait for new process to start, then kill any stale old-version processes
+    # Wait for new process to start, then kill any leftover old-version processes
     Start-Sleep -Seconds 10
     Stop-StaleProcesses
 
     $script:lastStartTime = Get-Date
 
-    Set-LocalVersion $remoteVersion
     Remove-MaintenanceFlag
 
     Write-Log "Update complete."
