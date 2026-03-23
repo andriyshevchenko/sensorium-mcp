@@ -9,25 +9,12 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Embedded default drive prompt — matches DEFAULT_PHASE2_PROMPT in drive.ts
+export const DEFAULT_DRIVE_PROMPT = `The operator is away. The session is yours.\nYou have all the tools, full memory access, and complete autonomy.\nDo what is interesting, useful, or creative.\nRun consolidation if unconsolidated episodes > 20.\nReport anything significant via send_voice.`;
+
 // Embedded default template — used when the file-system copy is unavailable
 // (e.g. after `npm install` where templates/ isn't in the package).
-export const DEFAULT_REMINDERS_TEMPLATE = `<!-- 
-  Default reminders template for remote-copilot-mcp.
-  
-  Copy this file to ~/.remote-copilot-mcp/templates/reminders.md to activate.
-  Customize the text as needed — the hardcoded fallback will no longer be used
-  once the template file exists.
-
-  Supported variables (replaced at render time):
-    {{OPERATOR_MESSAGE}}  — the operator's latest message text (may be empty)
-    {{THREAD_ID}}         — current Telegram thread ID (or "?" if unset)
-    {{TIME}}              — formatted timestamp, e.g. "21 Mar 2026, 14:05 GMT"
-    {{UPTIME}}            — session uptime string, e.g. "12m"
-    {{VERSION}}           — package version from package.json
-    {{MODE}}              — "autonomous" or "standard"
--->
-
-You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+export const DEFAULT_REMINDERS_TEMPLATE = `You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `;
 
 // Embedded default drive template presets — used when the on-disk files are unavailable
@@ -36,11 +23,11 @@ export const DEFAULT_DRIVE_PRESETS: Record<string, string> = {
 
 "I'll be away for {{IDLE_HOURS}} hours. The session is yours \u2014 you have all the tools, full memory access, and complete autonomy. Pick something meaningful and go for it."
 
-What do you want to do? Pick at least one action and execute it.
+You are free to choose your own actions. Pick at least one and execute it.
 `,
     "operator-notes": `The operator stepped away {{IDLE_HOURS}} hours ago and left you this note:
 
-"You're free to work on whatever you find most interesting or valuable. Use your memory, search the codebase, or explore something new."
+"You are free to work on whatever you find most interesting or valuable. Use your memory, search the codebase, or explore something new."
 
 What catches your attention? Pick at least one action and go for it.
 `,
@@ -48,13 +35,13 @@ What catches your attention? Pick at least one action and go for it.
 
 The session is yours. You have complete autonomy and all tools available.
 
-What do you want to do? Pick at least one action. Report progress when done, then call wait_for_instructions.
+You are expected to pick at least one action. Report your progress when done, then call wait_for_instructions.
 `,
-    "first-person": `The operator has been away {{IDLE_HOURS}} hours. I'm free to pursue whatever interests me.
+    "first-person": `The operator has been away {{IDLE_HOURS}} hours. You are free to pursue whatever interests you.
 
-I have all the tools and full memory access. What should I explore?
+You have all the tools and full memory access. What do you want to explore?
 
-(If nothing interests me, I should say so \u2014 that's useful diagnostic information.)
+(If nothing interests you, say so \u2014 that is useful diagnostic information.)
 `,
 };
 
@@ -62,7 +49,7 @@ export const DRIVE_PRESET_DEFS = [
     { name: "Direct Instruction", key: "operator-instruction" },
     { name: "Operator Notes", key: "operator-notes" },
     { name: "Dispatcher", key: "dispatcher" },
-    { name: "First Person", key: "first-person" },
+    { name: "Open Autonomy", key: "first-person" },
 ];
 
 export async function loadDrivePresets(): Promise<Array<{ name: string; key: string; content: string }>> {
