@@ -6,10 +6,11 @@
  * time, uptime, operating-mode reminders, etc.).
  */
 
-import { config } from "./config.js";
+import { config, getAgentType } from "./config.js";
 import { describeADV } from "./utils.js";
 import { loadTemplate, renderTemplate } from "./data/templates.js";
 import type { VoiceAnalysisResult } from "./openai.js";
+import { getDefaultRemindersTemplate } from "./dashboard/presets.js";
 
 export { loadTemplate, renderTemplate } from "./data/templates.js";
 
@@ -104,15 +105,17 @@ export function getReminders(
     return "\n" + renderTemplate(tpl, vars).trim();
   }
 
-  // ── Hardcoded fallback ─────────────────────────────────────────────────
-  const directive = autonomousMode
-    ? "\nYou are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable."
-    : "\nFollow the operator's instructions. Report results via `send_voice`.";
-
-  return (
-    directive +
-    ` threadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m`
-  );
+  // ── Fallback: use agent-specific default template ────────────────────
+  const defaultTpl = getDefaultRemindersTemplate(getAgentType());
+  const fallbackVars: Record<string, string> = {
+    OPERATOR_MESSAGE: "",
+    THREAD_ID: String(threadId ?? "?"),
+    TIME: timeStr,
+    UPTIME: `${uptimeMin}m`,
+    VERSION: config.PKG_VERSION,
+    MODE: autonomousMode ? "autonomous" : "standard",
+  };
+  return "\n" + renderTemplate(defaultTpl, fallbackVars).trim();
 }
 
 /**
