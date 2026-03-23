@@ -372,7 +372,7 @@
     function updateEl(el, html) { if (el && el.innerHTML !== html) el.innerHTML = html; }
 
     function renderStats(data) {
-      const m = data.memory;
+      const m = data.memory || {};
       const grid = document.getElementById('stats-grid');
       const statsHtml =
         statCard('Sessions', data.activeSessions,
@@ -400,7 +400,7 @@
     function renderSessions(sessions) {
       const list = document.getElementById('sessions-list');
       const empty = document.getElementById('sessions-empty');
-      if (!sessions || !sessions.length) {
+      if (!Array.isArray(sessions) || !sessions.length) {
         if (list.innerHTML !== '') list.innerHTML = '';
         empty.classList.remove('hidden');
         return;
@@ -635,15 +635,25 @@
     }
 
     async function refreshCurrentTab() {
-      const data = await api('/api/status').catch(() => null);
-      if (data) {
-        renderStats(data);
-        renderSessions(data.sessions);
+      try {
+        const data = await api('/api/status').catch(() => null);
+        if (data && data.memory) {
+          renderStats(data);
+          renderSessions(data.sessions || []);
+        } else if (data && data.error) {
+          console.error('Dashboard API error:', data.error);
+        }
+      } catch (e) {
+        console.error('Dashboard refresh error:', e);
       }
-      if (currentTab === 'notes') loadNotes();
-      if (currentTab === 'episodes') loadEpisodes();
-      if (currentTab === 'topics') loadTopics();
-      if (currentTab === 'templates') { loadTemplates(); loadDriveTemplate(); }
+      try {
+        if (currentTab === 'notes') loadNotes();
+        if (currentTab === 'episodes') loadEpisodes();
+        if (currentTab === 'topics') loadTopics();
+        if (currentTab === 'templates') { loadTemplates(); loadDriveTemplate(); }
+      } catch (e) {
+        console.error('Tab load error:', e);
+      }
     }
 
     function startRefresh() {
