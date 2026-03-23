@@ -107,6 +107,42 @@ function Stop-McpServer {
     }
 }
 
+function Stop-StaleProcesses {
+    <#
+    .SYNOPSIS
+        Kill sensorium-mcp processes running outdated versions.
+        Extracts the version from the process command line (npx cache path
+        contains the package version) and compares against the current
+        local version.  Processes whose version does not match are killed.
+    #>
+    $currentVersion = Get-LocalVersion
+    if (-not $currentVersion) { return }
+
+    $processes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
+
+    if (-not $processes) { return }
+
+    foreach ($proc in $processes) {
+        $cmd = $proc.CommandLine
+        # npx cache paths look like: ...\sensorium-mcp@2.16.47\...
+        # or package.json contains the version in the install dir
+        $versionMatch = [regex]::Match($cmd, 'sensorium-mcp@([\d.]+)')
+        if ($versionMatch.Success) {
+            $procVersion = $versionMatch.Groups[1].Value
+            if ($procVersion -ne $currentVersion) {
+                Write-Log "Killing stale process PID=$($proc.ProcessId) running v$procVersion (current: v$currentVersion)" -Level "WARN"
+                try {
+                    Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+                }
+                catch {
+                    Write-Log "Failed to kill stale PID=$($proc.ProcessId): $_" -Level "WARN"
+                }
+            }
+        }
+    }
+}
+
 function Clear-NpxCache {
     if (Test-Path $NPX_CACHE_DIR) {
         Write-Log "Clearing npx cache..."
@@ -181,6 +217,10 @@ function Invoke-UpdateCheck {
     Clear-NpxCache
     Start-McpServer
 
+    # Wait for new process to start, then kill any stale old-version processes
+    Start-Sleep -Seconds 10
+    Stop-StaleProcesses
+
     $script:lastStartTime = Get-Date
 
     Set-LocalVersion $remoteVersion
@@ -211,6 +251,9 @@ Write-Log "Watcher started (Mode: $Mode)"
 $script:lastStartTime = [datetime]::MinValue
 $STARTUP_GRACE_SECONDS = 30
 
+# Kill any leftover processes running outdated versions
+Stop-StaleProcesses
+
 if (-not (Test-McpServerRunning)) {
     Start-McpServer
     $script:lastStartTime = Get-Date
@@ -239,7 +282,10 @@ if ($Mode -eq "production") {
     Write-Log "Development mode polling every $POLL_INTERVAL_SECONDS sec"
 
     while ($true) {
-        try { Invoke-UpdateCheck }
+        try {
+            Stop-StaleProcesses
+            Invoke-UpdateCheck
+        }
         catch {
             Write-Log "Error: $_" -Level "ERROR"
             Remove-MaintenanceFlag
