@@ -271,7 +271,7 @@ async function handleHibernate(
           type: "text",
           text: `⚠️ **Server update pending** (${maintenanceInfo}). ` +
             `The MCP server will restart shortly. Use Desktop Commander to run: ` +
-            `Start-Sleep -Seconds 180 — then call start_session with threadId=${effectiveThreadId} to reconnect.` +
+            `Start-Sleep -Seconds 300 — then call start_session with threadId=${effectiveThreadId} to reconnect.` +
             getShortReminder(effectiveThreadId),
         }],
       };
