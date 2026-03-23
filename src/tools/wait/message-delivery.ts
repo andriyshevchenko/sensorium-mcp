@@ -162,29 +162,6 @@ export function handleEmptyContent(
 }
 
 // ---------------------------------------------------------------------------
-// Maintenance message filter
-// ---------------------------------------------------------------------------
-
-/** Phrases that identify infrastructure/maintenance noise — not real operator content. */
-const MAINTENANCE_PATTERNS: RegExp[] = [
-  /server update pending/i,
-  /server will restart/i,
-  /Start-Sleep -Seconds/i,
-  /server restarting/i,
-  /Keep-Alive trigger/i,
-  /session interrupted\.?\s*Resume remote session/i,
-  /MCP server will restart shortly/i,
-];
-
-/**
- * Returns true when the text is purely operational / infrastructure noise
- * that should NOT be persisted as an episode.
- */
-export function isMaintenanceMessage(content: string): boolean {
-  return MAINTENANCE_PATTERNS.some(re => re.test(content));
-}
-
-// ---------------------------------------------------------------------------
 // autoIngestEpisodes
 // ---------------------------------------------------------------------------
 
@@ -204,16 +181,13 @@ export function autoIngestEpisodes(
       // Collect text from messages that didn't already get an episode
       const unsavedMsgs = stored.filter(m => !savedEpisodeUpdateIds.has(m.update_id));
       if (unsavedMsgs.length > 0) {
+        // No content filter needed: autoIngestEpisodes only processes
+        // Telegram messages (from readThreadMessages). Server-generated
+        // maintenance messages are returned as tool responses and never
+        // enter the dispatcher queue, so they cannot reach this path.
         const textContent = unsavedMsgs
           .map(m => m.message.text ?? m.message.caption ?? "")
           .filter(Boolean)
-          .filter(t => {
-            if (isMaintenanceMessage(t)) {
-              log.debug(`Skipping maintenance episode: ${t.slice(0, 80)}`);
-              return false;
-            }
-            return true;
-          })
           .join("\n")
           .slice(0, 2000);
         if (textContent) {
