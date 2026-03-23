@@ -161,6 +161,12 @@ function Start-McpServer {
 }
 
 function Test-McpServerRunning {
+    # First check: is anything listening on the MCP HTTP port?
+    $port = if ($env:MCP_HTTP_PORT) { $env:MCP_HTTP_PORT } else { 3847 }
+    $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+    if ($listener) { return $true }
+
+    # Fallback: check for sensorium-mcp node processes
     $processes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -match "sensorium-mcp" }
 
