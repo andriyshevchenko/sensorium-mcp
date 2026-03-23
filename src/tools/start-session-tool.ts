@@ -17,7 +17,7 @@ import {
   removeSession,
 } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
-import type { AppConfig } from "../types.js";
+import type { AppConfig, ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
 import { readThreadMessages } from "../dispatcher.js";
@@ -56,8 +56,6 @@ export interface StartSessionContext {
   /** Close the transport — used for session registration. */
   closeTransport?: () => void;
 }
-
-type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
 
 // ---------------------------------------------------------------------------
 // Handler

@@ -31,13 +31,11 @@ import { handleReactionWithMessages, handleReactionOnly } from "./reaction-handl
 import { checkForDueTasks } from "./task-handler.js";
 import { runAutoConsolidation, checkDriveActivation } from "./drive-handler.js";
 import { processSimpleMessage, handleEmptyContent, autoIngestEpisodes, buildSmartContext, assembleOperatorResponse } from "./message-delivery.js";
+import type { ContentBlock, ToolResult, TextBlock, ImageBlock } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type ContentBlock = { type: string; text: string } | { type: "image"; data: string; mimeType: string };
-type ToolResult = { content: Array<ContentBlock>; isError?: boolean };
 
 export interface WaitToolContext {
   /** Mutable per-session state — the handler reads and writes directly. */
@@ -66,7 +64,7 @@ export interface WaitToolContext {
   config: AppConfig;
 
   // Response builders
-  errorResult: (msg: string) => { content: Array<{ type: string; text: string }>; isError: true };
+  errorResult: (msg: string) => ToolResult & { isError: true };
 }
 
 export interface WaitToolExtra {
@@ -185,8 +183,6 @@ export async function handleWaitForInstructions(
         ).catch(() => {});
       }
 
-      type TextBlock = { type: "text"; text: string };
-      type ImageBlock = { type: "image"; data: string; mimeType: string };
       const contentBlocks: Array<TextBlock | ImageBlock> = [];
       let hasVoiceMessages = false;
       // Track which messages already had episodes saved (voice/video handlers)
