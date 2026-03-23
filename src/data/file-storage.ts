@@ -8,6 +8,7 @@
 import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { log } from "../logger.js";
 
 // ─── File storage ───────────────────────────────────────────────────────────
 
@@ -46,15 +47,37 @@ export function saveFileToDisk(buffer: Buffer, filename: string): string {
 const DATA_DIR = join(homedir(), ".remote-copilot-mcp");
 const MAINTENANCE_FLAG_PATH = join(DATA_DIR, "maintenance.flag");
 
+/** Maximum age of a maintenance flag before it is considered stale (5 minutes). */
+const MAINTENANCE_FLAG_MAX_AGE_MS = 5 * 60 * 1000;
+
 /**
  * Check if a maintenance/update is pending.
  * The update watcher writes this file before restarting the server.
  * Returns the flag file content (version info) or null if no maintenance pending.
+ *
+ * If the flag is older than 5 minutes it is assumed stale (the update watcher
+ * failed to clean it up) and is automatically deleted.
  */
 export function checkMaintenanceFlag(): string | null {
   try {
     if (existsSync(MAINTENANCE_FLAG_PATH)) {
-      return readFileSync(MAINTENANCE_FLAG_PATH, "utf-8").trim();
+      const raw = readFileSync(MAINTENANCE_FLAG_PATH, "utf-8").trim();
+
+      // The flag file is JSON with { version, timestamp (ISO-8601) }.
+      // Auto-clear if it has been sitting for too long.
+      try {
+        const parsed = JSON.parse(raw) as { timestamp?: string };
+        if (parsed.timestamp) {
+          const age = Date.now() - new Date(parsed.timestamp).getTime();
+          if (age > MAINTENANCE_FLAG_MAX_AGE_MS) {
+            log.warn(`Auto-clearing stale maintenance flag (age ${Math.round(age / 1000)}s): ${raw}`);
+            try { unlinkSync(MAINTENANCE_FLAG_PATH); } catch { /* ignore */ }
+            return null;
+          }
+        }
+      } catch { /* Not valid JSON — fall through and return raw content */ }
+
+      return raw;
     }
   } catch { /* ignore read errors */ }
   return null;
