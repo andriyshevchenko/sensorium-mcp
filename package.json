@@ -1,6 +1,6 @@
 {
   "name": "sensorium-mcp",
-  "version": "2.16.35",
+  "version": "2.16.36",
   "description": "MCP server for remote control of AI assistants via Telegram",
   "main": "dist/index.js",
   "bin": {
@@ -11,7 +11,7 @@
     "templates"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"const{mkdirSync,copyFileSync}=require('fs'),{join}=require('path');mkdirSync(join('dist','dashboard'),{recursive:true});copyFileSync(join('src','dashboard','spa.html'),join('dist','dashboard','spa.html'))\"",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "prepublishOnly": "npm run build",
