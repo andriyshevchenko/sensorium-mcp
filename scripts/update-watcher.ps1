@@ -110,13 +110,12 @@ function Stop-McpServer {
 function Stop-StaleProcesses {
     <#
     .SYNOPSIS
-        Kill sensorium-mcp processes running outdated versions.
-        Extracts the version from the process command line (npx cache path
-        contains the package version) and compares against the current
-        local version.  Processes whose version does not match are killed.
+        Kill sensorium-mcp processes that were started before the last update.
+        Compares each process CreationDate against the VERSION_FILE last-write
+        time. If a process predates the version file, it's running old code.
     #>
-    $currentVersion = Get-LocalVersion
-    if (-not $currentVersion) { return }
+    if (-not (Test-Path $VERSION_FILE)) { return }
+    $versionFileTime = (Get-Item $VERSION_FILE).LastWriteTime
 
     $processes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
@@ -124,20 +123,13 @@ function Stop-StaleProcesses {
     if (-not $processes) { return }
 
     foreach ($proc in $processes) {
-        $cmd = $proc.CommandLine
-        # npx cache paths look like: ...\sensorium-mcp@2.16.47\...
-        # or package.json contains the version in the install dir
-        $versionMatch = [regex]::Match($cmd, 'sensorium-mcp@([\d.]+)')
-        if ($versionMatch.Success) {
-            $procVersion = $versionMatch.Groups[1].Value
-            if ($procVersion -ne $currentVersion) {
-                Write-Log "Killing stale process PID=$($proc.ProcessId) running v$procVersion (current: v$currentVersion)" -Level "WARN"
-                try {
-                    Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
-                }
-                catch {
-                    Write-Log "Failed to kill stale PID=$($proc.ProcessId): $_" -Level "WARN"
-                }
+        if ($proc.CreationDate -lt $versionFileTime) {
+            Write-Log "Killing stale process PID=$($proc.ProcessId) (started $($proc.CreationDate), version file updated $versionFileTime)" -Level "WARN"
+            try {
+                Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Log "Failed to kill stale PID=$($proc.ProcessId): $_" -Level "WARN"
             }
         }
     }
