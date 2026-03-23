@@ -28,3 +28,25 @@ export type CreateMcpServerFn = (
   getMcpSessionId?: () => string | undefined,
   closeTransport?: () => void,
 ) => Server;
+
+// ─── Shared tool-result types ───────────────────────────────────────────────
+
+export type TextBlock = { type: "text"; text: string };
+export type ImageBlock = { type: "image"; data: string; mimeType: string };
+
+/**
+ * A single block inside a `ToolResult.content` array.
+ *
+ * Most tools only produce `TextBlock`s, but media-processing tools
+ * (voice, photo, video note) may also emit `ImageBlock`s.
+ */
+export type ContentBlock = TextBlock | ImageBlock;
+
+/**
+ * Standard return shape for every MCP tool handler.
+ */
+export interface ToolResult {
+  [key: string]: unknown;
+  content: ContentBlock[];
+  isError?: boolean;
+}

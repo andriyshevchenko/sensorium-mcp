@@ -11,13 +11,11 @@ import { log } from "../../logger.js";
 import { runIntelligentConsolidation, type initMemoryDb } from "../../memory.js";
 import { getReminders } from "../../response-builders.js";
 import { backfillEmbeddings } from "../memory-tools.js";
+import type { ToolResult } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type ContentBlock = { type: string; text: string } | { type: "image"; data: string; mimeType: string };
-type ToolResult = { content: Array<ContentBlock>; isError?: boolean };
 
 export interface DriveContext {
   state: {

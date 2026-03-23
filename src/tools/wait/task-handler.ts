@@ -7,13 +7,11 @@
 
 import { checkDueTasks } from "../../scheduler.js";
 import { getReminders } from "../../response-builders.js";
+import type { ToolResult } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type ContentBlock = { type: string; text: string } | { type: "image"; data: string; mimeType: string };
-type ToolResult = { content: Array<ContentBlock>; isError?: boolean };
 
 export interface TaskContext {
   state: {

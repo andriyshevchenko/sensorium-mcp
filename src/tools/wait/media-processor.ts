@@ -21,15 +21,14 @@ import {
 } from "../../openai.js";
 import { buildAnalysisTags } from "../../response-builders.js";
 import type { TelegramClient } from "../../telegram.js";
+import type { ContentBlock } from "../../types.js";
 import { errorMessage } from "../../utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type ContentBlock =
-  | { type: "text"; text: string }
-  | { type: "image"; data: string; mimeType: string };
+export type { ContentBlock };
 
 /** Focused context that media processors need — not the full WaitToolContext. */
 export interface MediaContext {

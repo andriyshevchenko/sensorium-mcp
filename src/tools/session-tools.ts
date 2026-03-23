@@ -10,6 +10,7 @@ import type { peekThreadMessages } from "../dispatcher.js";
 import type { checkMaintenanceFlag } from "../config.js";
 import type { checkDueTasks } from "../scheduler.js";
 import { log } from "../logger.js";
+import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -20,7 +21,7 @@ import { errorMessage } from "../utils.js";
 export interface SessionToolContext {
   resolveThreadId: (args: Record<string, unknown>) => number | undefined;
   getShortReminder: (threadId: number | undefined) => string;
-  errorResult: (msg: string) => { content: Array<{ type: string; text: string }>; isError: true };
+  errorResult: (msg: string) => ToolResult & { isError: true };
   telegram: TelegramClient;
   telegramChatId: string;
   peekThreadMessages: typeof peekThreadMessages;
@@ -32,8 +33,6 @@ export interface SessionToolContext {
   previewedUpdateIds: Set<number>;
   addPreviewedId: (id: number) => void;
 }
-
-type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
 
 interface Extra {
   sendNotification?: Function;

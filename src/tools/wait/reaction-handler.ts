@@ -11,15 +11,11 @@ import { saveEpisode, type initMemoryDb } from "../../memory.js";
 import type { TelegramClient } from "../../telegram.js";
 import { log } from "../../logger.js";
 import { getMediumReminder } from "../../response-builders.js";
+import type { TextBlock, ImageBlock, ContentBlock, ToolResult } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type TextBlock = { type: "text"; text: string };
-type ImageBlock = { type: "image"; data: string; mimeType: string };
-type ContentBlock = TextBlock | ImageBlock;
-type ToolResult = { content: Array<ContentBlock>; isError?: boolean };
 
 export interface ReactionContext {
   telegram: TelegramClient;

@@ -27,14 +27,11 @@ import { extractSearchKeywords, getReminders, getMediumReminder } from "../../re
 import type { TelegramClient } from "../../telegram.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../../utils.js";
 
+import type { TextBlock, ImageBlock, ContentBlock, ToolResult } from "../../types.js";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type TextBlock = { type: "text"; text: string };
-type ImageBlock = { type: "image"; data: string; mimeType: string };
-type ContentBlock = TextBlock | ImageBlock;
-type ToolResult = { content: Array<ContentBlock>; isError?: boolean };
 
 export interface MessageDeliveryContext {
   telegram: TelegramClient;

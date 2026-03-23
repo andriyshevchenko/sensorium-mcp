@@ -24,6 +24,7 @@ import {
 } from "../memory.js";
 import { generateEmbedding } from "../openai.js";
 import { log } from "../logger.js";
+import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -35,12 +36,10 @@ export interface ToolContext {
   resolveThreadId: (args: Record<string, unknown>) => number | undefined;
   getShortReminder: (threadId: number | undefined) => string;
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
-  errorResult: (msg: string) => { content: Array<{ type: string; text: string }>; isError: true };
+  errorResult: (msg: string) => ToolResult & { isError: true };
   /** Called when consolidation completes so the caller can update its timestamp. */
   onConsolidation?: () => void;
 }
-
-type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
 
 // ---------------------------------------------------------------------------
 // Helpers

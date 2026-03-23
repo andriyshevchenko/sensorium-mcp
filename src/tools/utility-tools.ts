@@ -10,7 +10,7 @@ import { checkMaintenanceFlag } from "../config.js";
 import { textToSpeech, TTS_VOICES, type TTSVoice } from "../openai.js";
 import { addSchedule, generateTaskId, listSchedules, removeSchedule, type ScheduledTask } from "../scheduler.js";
 import type { TelegramClient } from "../telegram.js";
-import type { AppConfig } from "../types.js";
+import type { AppConfig, ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "../utils.js";
 
@@ -22,13 +22,11 @@ import { errorMessage, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "../utils.j
 export interface UtilityToolContext {
   resolveThreadId: (args: Record<string, unknown>) => number | undefined;
   getShortReminder: (threadId: number | undefined) => string;
-  errorResult: (msg: string) => { content: Array<{ type: string; text: string }>; isError: true };
+  errorResult: (msg: string) => ToolResult & { isError: true };
   telegram: TelegramClient;
   config: AppConfig;
   sessionStartedAt: number;
 }
-
-type ToolResult = { content: Array<{ type: string; text: string }>; isError?: boolean };
 
 // ---------------------------------------------------------------------------
 // Dispatcher
