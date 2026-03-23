@@ -9,6 +9,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { AgentType } from "../config.js";
+
 // Embedded default drive prompt — matches DEFAULT_PHASE2_PROMPT in drive.ts
 export const DEFAULT_DRIVE_PROMPT = `The operator is away. The session is yours.\nYou have all the tools, full memory access, and complete autonomy.\nDo what is interesting, useful, or creative.\nRun consolidation if unconsolidated episodes > 20.\nReport anything significant via send_voice.`;
 
@@ -16,6 +18,20 @@ export const DEFAULT_DRIVE_PROMPT = `The operator is away. The session is yours.
 // (e.g. after `npm install` where templates/ isn't in the package).
 export const DEFAULT_REMINDERS_TEMPLATE = `You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `;
+
+// Per-agent default reminders templates
+export const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
+  copilot: `You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. This includes ALL Desktop Commander calls, ALL Playwright calls, ALL file operations. Zero exceptions \u2014 direct tool calls bloat context and trigger redacted_thinking errors. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+`,
+  claude: `You are the ORCHESTRATOR. Coordinate work using available MCP tools. For complex multi-step tasks, break them into sequential steps and execute each one carefully. Keep context lean by summarizing before proceeding to new tasks. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+`,
+  cursor: `You are the ORCHESTRATOR. Use available MCP tools to execute tasks. For file changes, prefer targeted edits over large rewrites. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+`,
+};
+
+export function getDefaultRemindersTemplate(agentType: AgentType): string {
+  return AGENT_REMINDERS_TEMPLATES[agentType] ?? AGENT_REMINDERS_TEMPLATES.copilot;
+}
 
 // Embedded default drive template presets — used when the on-disk files are unavailable
 export const DEFAULT_DRIVE_PRESETS: Record<string, string> = {

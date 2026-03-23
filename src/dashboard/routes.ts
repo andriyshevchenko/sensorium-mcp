@@ -31,7 +31,8 @@ import {
     type SemanticNote
 } from "../memory.js";
 
-import { DEFAULT_REMINDERS_TEMPLATE, DEFAULT_DRIVE_PROMPT, loadDrivePresets } from "./presets.js";
+import { DEFAULT_REMINDERS_TEMPLATE, DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "./presets.js";
+import { getAgentType, setAgentType, type AgentType } from "../config.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -194,14 +195,7 @@ function handleApiRoute(
                     try {
                         content = await readFile(userFile, "utf-8");
                     } catch {
-                        // Try the on-disk default first (works in dev / git clone)
-                        try {
-                            const defaultFile = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "templates", "reminders.default.md");
-                            content = await readFile(defaultFile, "utf-8");
-                        } catch {
-                            // File not available (e.g. npm package) — use embedded copy
-                            content = DEFAULT_REMINDERS_TEMPLATE;
-                        }
+                        content = getDefaultRemindersTemplate(getAgentType());
                         isDefault = true;
                     }
                     json({ templates: [{ name: "reminders", content, isDefault }] });
@@ -247,6 +241,30 @@ function handleApiRoute(
         if (path === "/api/settings/dmn-activation-hours" && req.method === "GET") {
             const rawVal = parseFloat(process.env.DMN_ACTIVATION_HOURS ?? "");
             json({ value: Math.max(0.5, Number.isFinite(rawVal) ? rawVal : 4) });
+            return true;
+        }
+
+        if (path === "/api/settings/agent-type" && req.method === "GET") {
+            json({ agentType: getAgentType() });
+            return true;
+        }
+
+        if (path === "/api/settings/agent-type" && req.method === "POST") {
+            void (async () => {
+                try {
+                    const body = await readBody(req);
+                    const parsed = JSON.parse(body) as { agentType?: string };
+                    const valid = ["copilot", "claude", "cursor"];
+                    if (!parsed.agentType || !valid.includes(parsed.agentType)) {
+                        json({ error: "Invalid agent type. Must be: copilot, claude, cursor" }, 400);
+                        return;
+                    }
+                    setAgentType(parsed.agentType as AgentType);
+                    json({ ok: true, agentType: parsed.agentType });
+                } catch (err) {
+                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                }
+            })();
             return true;
         }
 

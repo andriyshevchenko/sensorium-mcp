@@ -181,6 +181,20 @@
 
       <!-- Templates -->
       <div id="panel-templates" class="hidden animate-fade-in">
+        <!-- Agent Type selector -->
+        <div class="glass rounded-xl p-4 mb-4">
+          <div class="flex items-center gap-4">
+            <label for="agent-type-select" class="text-sm font-medium text-textSecondary">Agent Type</label>
+            <select id="agent-type-select" onchange="changeAgentType()"
+              class="px-3 py-2 rounded-xl bg-card border border-gray-700 text-sm text-textPrimary focus:outline-none focus:border-accent transition">
+              <option value="copilot">Copilot</option>
+              <option value="claude">Claude</option>
+              <option value="cursor">Cursor</option>
+            </select>
+            <span id="agent-type-status" class="text-sm"></span>
+            <span class="text-xs text-muted">Changes which default reminders template is used</span>
+          </div>
+        </div>
         <div class="glass rounded-xl p-6">
           <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
             <div>
@@ -650,7 +664,7 @@
         if (currentTab === 'notes') loadNotes();
         if (currentTab === 'episodes') loadEpisodes();
         if (currentTab === 'topics') loadTopics();
-        if (currentTab === 'templates') { loadTemplates(); loadDriveTemplate(); }
+        if (currentTab === 'templates') { loadAgentType(); loadTemplates(); loadDriveTemplate(); }
       } catch (e) {
         console.error('Tab load error:', e);
       }
@@ -675,6 +689,33 @@
           updateTplPreview();
         }
       } catch (e) { console.error('Templates load error:', e); }
+    }
+
+    async function loadAgentType() {
+      try {
+        const data = await api('/api/settings/agent-type');
+        document.getElementById('agent-type-select').value = data.agentType || 'copilot';
+      } catch (e) { console.error('Agent type load error:', e); }
+    }
+
+    async function changeAgentType() {
+      const status = document.getElementById('agent-type-status');
+      const agentType = document.getElementById('agent-type-select').value;
+      try {
+        const r = await fetch('/api/settings/agent-type', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentType }),
+        });
+        if (!r.ok) throw new Error(r.statusText);
+        status.textContent = 'Saved \u2713';
+        status.className = 'text-sm text-success';
+        setTimeout(function() { status.textContent = ''; }, 3000);
+        await loadTemplates();
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'text-sm text-danger';
+      }
     }
 
     async function saveTemplate() {

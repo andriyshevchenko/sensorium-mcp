@@ -4,7 +4,7 @@
  */
 
 import { createRequire } from "node:module";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "./logger.js";
@@ -48,6 +48,28 @@ if (VOICE_ANALYSIS_URL) {
 
 export const TEMPLATES_DIR = join(homedir(), ".remote-copilot-mcp", "templates");
 mkdirSync(TEMPLATES_DIR, { recursive: true });
+
+// ─── Agent-type settings ────────────────────────────────────────────────────
+
+export type AgentType = "copilot" | "claude" | "cursor";
+
+const SETTINGS_PATH = join(homedir(), ".remote-copilot-mcp", "settings.json");
+
+export function getAgentType(): AgentType {
+  try {
+    const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
+    const t = raw.agentType;
+    if (t === "copilot" || t === "claude" || t === "cursor") return t;
+  } catch { /* missing or invalid settings file */ }
+  return "copilot";
+}
+
+export function setAgentType(type: AgentType): void {
+  let settings: Record<string, unknown> = {};
+  try { settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>; } catch { /* ok */ }
+  settings.agentType = type;
+  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
+}
 
 // ─── Exported config object ─────────────────────────────────────────────────
 
