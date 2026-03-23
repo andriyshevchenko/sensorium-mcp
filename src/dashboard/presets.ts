@@ -23,9 +23,9 @@ export const DEFAULT_REMINDERS_TEMPLATE = `You are the ORCHESTRATOR. Your only p
 export const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
   copilot: `You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. This includes ALL Desktop Commander calls, ALL Playwright calls, ALL file operations. Zero exceptions \u2014 direct tool calls bloat context and trigger redacted_thinking errors. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
-  claude: `You are the ORCHESTRATOR. Coordinate work using available MCP tools. For complex multi-step tasks, break them into sequential steps and execute each one carefully. Keep context lean by summarizing before proceeding to new tasks. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+  claude: `You coordinate work via MCP tools. For complex tasks, break them into sequential steps. Keep context lean \u2014 summarize progress before starting new work. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
-  cursor: `You are the ORCHESTRATOR. Use available MCP tools to execute tasks. For file changes, prefer targeted edits over large rewrites. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+  cursor: `You coordinate work via MCP tools. Prefer targeted, minimal edits. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
 };
 
