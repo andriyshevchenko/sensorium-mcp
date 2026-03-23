@@ -47,6 +47,8 @@ function logConsolidation(db: Database, entry: ConsolidationLog): void {
 // API for knowledge extraction and consolidation. Operators can disable this
 // by setting the environment variable CONSOLIDATION_ENABLED=false (or "0").
 
+let consolidationInProgress = false;
+
 export async function runIntelligentConsolidation(
   db: Database,
   threadId: number,
@@ -62,6 +64,19 @@ export async function runIntelligentConsolidation(
       details: ["Consolidation disabled via CONSOLIDATION_ENABLED env var."],
     };
   }
+
+  if (consolidationInProgress) {
+    log.info("Consolidation already in progress — skipping");
+    return {
+      episodesProcessed: 0,
+      notesCreated: 0,
+      durationMs: 0,
+      details: ["Skipped — consolidation already in progress."],
+    };
+  }
+
+  consolidationInProgress = true;
+  try {
 
   const startMs = Date.now();
   const maxEpisodes = options?.maxEpisodes ?? 30;
@@ -313,4 +328,8 @@ Rules:
     durationMs: Date.now() - startMs,
     details,
   };
+
+  } finally {
+    consolidationInProgress = false;
+  }
 }
