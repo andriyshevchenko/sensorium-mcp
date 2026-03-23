@@ -146,8 +146,23 @@ export function startHttpServer(
         return;
       }
 
-      // New session — must be initialize
-      if (!sessionId && isInitializeRequest(body)) {
+      // New session OR session adoption after server restart.
+      // Accept initialize requests regardless of whether the client sent a
+      // (now stale) session ID.  This covers:
+      //   - Brand-new clients (no sessionId header)
+      //   - Clients reconnecting after a server restart whose SDK transport
+      //     still carries the old session ID (e.g. Claude Code CLI)
+      if (isInitializeRequest(body)) {
+        // If the client sent a stale session ID, clean up any leftover
+        // tracking state from the previous incarnation.
+        if (sessionId) {
+          log.info(`[http] Session adoption: stale session ${sessionId.slice(0, 8)}… re-initializing`);
+          sessionLastActivity.delete(sessionId);
+          sessionStatus.delete(sessionId);
+          sessionDisconnectedAt.delete(sessionId);
+          removeDashboardSession(sessionId);
+        }
+
         let capturedSid: string | undefined;
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
@@ -179,6 +194,20 @@ export function startHttpServer(
         );
         await sessionServer.connect(transport);
         await transport.handleRequest(req, res, body);
+        return;
+      }
+
+      // Non-initialize request with an unknown/stale session ID.
+      // Return 404 per MCP spec ("Session not found") so clients know
+      // the session is gone and should re-initialize from scratch.
+      if (sessionId) {
+        log.warn(`[http] Unknown session ${sessionId.slice(0, 8)}… — returning 404 (session not found)`);
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          jsonrpc: "2.0",
+          error: { code: -32001, message: "Session not found" },
+          id: null,
+        }));
         return;
       }
 
