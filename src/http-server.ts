@@ -311,7 +311,16 @@ export function startHttpServer(
         // Skip GC if session is still alive via wait heartbeat
         if (liveByWait.has(sid)) continue;
         // Only GC if actually disconnected (safety check)
-        if (sessionStatus.get(sid) !== "active" && !transports.has(sid)) {
+        if (sessionStatus.get(sid) !== "active") {
+          // Close and remove the transport if it still exists — this was
+          // previously guarded by `!transports.has(sid)` which meant GC
+          // never fired for SSE-disconnected sessions whose transport
+          // object was still in the map.
+          const transport = transports.get(sid);
+          if (transport) {
+            try { transport.close(); } catch (_) { /* best-effort */ }
+            transports.delete(sid);
+          }
           sessionStatus.delete(sid);
           sessionLastActivity.delete(sid);
           sessionDisconnectedAt.delete(sid);
