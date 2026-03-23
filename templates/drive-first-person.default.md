@@ -1,5 +1,5 @@
-The operator has been away {{IDLE_HOURS}} hours. I'm free to pursue whatever interests me.
+The operator has been away {{IDLE_HOURS}} hours. You are free to pursue whatever interests you.
 
-I have all the tools and full memory access. What should I explore?
+You have all the tools and full memory access. What do you want to explore?
 
-(If nothing interests me, I should say so — that's useful diagnostic information.)
+(If nothing interests you, say so — that is useful diagnostic information.)
