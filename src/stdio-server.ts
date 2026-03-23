@@ -5,7 +5,12 @@
  */
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { randomUUID } from "node:crypto";
 import { log } from "./logger.js";
+import {
+  registerDashboardSession,
+  markDashboardSessionDisconnected,
+} from "./sessions.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 export async function startStdioServer(
@@ -13,11 +18,21 @@ export async function startStdioServer(
   closeMemoryDb: () => void,
 ): Promise<void> {
   const transport = new StdioServerTransport();
-  const server = createMcpServerFn();
+  const stdioSessionId = randomUUID();
+
+  const server = createMcpServerFn(
+    () => stdioSessionId,
+    () => { try { transport.close?.(); } catch (_) { /* best-effort */ } },
+  );
   await server.connect(transport);
+
+  // Register the STDIO session so it appears on the dashboard
+  registerDashboardSession(stdioSessionId, "stdio");
+
   log.info("Remote Copilot MCP server running on stdio.");
 
   const stdioShutdown = () => {
+    markDashboardSessionDisconnected(stdioSessionId);
     closeMemoryDb();
     process.exit(0);
   };
@@ -26,5 +41,8 @@ export async function startStdioServer(
   if (process.platform === "win32") {
     process.on("SIGBREAK", stdioShutdown);
   }
-  process.on("exit", () => { closeMemoryDb(); });
+  process.on("exit", () => {
+    markDashboardSessionDisconnected(stdioSessionId);
+    closeMemoryDb();
+  });
 }

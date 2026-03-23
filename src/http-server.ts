@@ -19,7 +19,15 @@ import { createServer, type IncomingMessage } from "node:http";
 import { config } from "./config.js";
 import { log } from "./logger.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
-import { threadSessionRegistry } from "./sessions.js";
+import {
+  threadSessionRegistry,
+  registerDashboardSession,
+  updateDashboardActivity,
+  markDashboardSessionDisconnected,
+  removeDashboardSession,
+  getDashboardSessions,
+  WAIT_LIVENESS_MS,
+} from "./sessions.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 export function startHttpServer(
@@ -83,22 +91,7 @@ export function startHttpServer(
     const dashCtx: DashboardContext = {
       getDb: getMemoryDb,
       getActiveSessions: () => {
-        const sessions: Array<{ threadId: number; mcpSessionId: string; lastActivity: number; transportType: string; status: "active" | "disconnected" }> = [];
-        for (const [sid, status] of sessionStatus) {
-          // Find which thread this session belongs to
-          let threadId = 0;
-          for (const [tid, entries] of threadSessionRegistry) {
-            if (entries.some(e => e.mcpSessionId === sid)) { threadId = tid; break; }
-          }
-          sessions.push({
-            threadId,
-            mcpSessionId: sid,
-            lastActivity: sessionLastActivity.get(sid) ?? 0,
-            transportType: "http",
-            status,
-          });
-        }
-        return sessions;
+        return getDashboardSessions();
       },
       serverStartTime,
     };
@@ -149,6 +142,7 @@ export function startHttpServer(
         sessionLastActivity.set(sessionId, Date.now());
         sessionStatus.set(sessionId, "active");
         sessionDisconnectedAt.delete(sessionId);
+        updateDashboardActivity(sessionId);
         await transports.get(sessionId)!.handleRequest(req, res, body);
         return;
       }
@@ -163,6 +157,7 @@ export function startHttpServer(
             transports.set(sid, transport);
             sessionLastActivity.set(sid, Date.now());
             sessionStatus.set(sid, "active");
+            registerDashboardSession(sid, "http");
           },
         });
 
@@ -173,6 +168,7 @@ export function startHttpServer(
             // Keep in sessionLastActivity & sessionStatus for dashboard visibility
             sessionStatus.set(sid, "disconnected");
             sessionDisconnectedAt.set(sid, Date.now());
+            markDashboardSessionDisconnected(sid);
           }
         };
 
@@ -211,6 +207,7 @@ export function startHttpServer(
           if (!sessionDisconnectedAt.has(sseSid)) {
             sessionDisconnectedAt.set(sseSid, Date.now());
           }
+          markDashboardSessionDisconnected(sseSid);
         }
       });
       await transports.get(sessionId)!.handleRequest(req, res);
@@ -266,17 +263,29 @@ export function startHttpServer(
   }, 5 * 60 * 1000);
 
   // ── Session GC — remove disconnected sessions after 5 minutes ───────────
+  // Sessions with a recent lastWaitCallAt (within WAIT_LIVENESS_MS) are
+  // considered "truly alive" even if the transport shows disconnected.
   const SESSION_GC_GRACE_MS = 5 * 60 * 1000;
   const sessionGcInterval = setInterval(() => {
     const now = Date.now();
     let removed = 0;
+    // Check global dashboard sessions for wait-liveness before GC
+    const liveByWait = new Set<string>();
+    for (const ds of getDashboardSessions()) {
+      if (ds.lastWaitCallAt && now - ds.lastWaitCallAt < WAIT_LIVENESS_MS) {
+        liveByWait.add(ds.mcpSessionId);
+      }
+    }
     for (const [sid, disconnectTime] of sessionDisconnectedAt) {
       if (now - disconnectTime > SESSION_GC_GRACE_MS) {
+        // Skip GC if session is still alive via wait heartbeat
+        if (liveByWait.has(sid)) continue;
         // Only GC if actually disconnected (safety check)
         if (sessionStatus.get(sid) !== "active" && !transports.has(sid)) {
           sessionStatus.delete(sid);
           sessionLastActivity.delete(sid);
           sessionDisconnectedAt.delete(sid);
+          removeDashboardSession(sid);
           removed++;
         }
       }
@@ -298,6 +307,7 @@ export function startHttpServer(
         transports.delete(sid);
         sessionLastActivity.delete(sid);
         sessionStatus.delete(sid);
+        removeDashboardSession(sid);
       }
     }
     // Also purge long-disconnected sessions from tracking maps
@@ -308,6 +318,7 @@ export function startHttpServer(
           sessionLastActivity.delete(sid);
           sessionStatus.delete(sid);
           sessionDisconnectedAt.delete(sid);
+          removeDashboardSession(sid);
         }
       }
     }

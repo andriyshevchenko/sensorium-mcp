@@ -100,3 +100,86 @@ export function purgeOtherSessions(threadId: number, keepMcpSessionId?: string):
 
 /** Dead session detection threshold — alert if no tool calls in this period. */
 export const DEAD_SESSION_TIMEOUT_MS = 60 * 60 * 1000;
+
+// ─── Global dashboard session registry ──────────────────────────────────────
+// Tracks ALL sessions (HTTP + STDIO) for dashboard visibility and GC.
+
+export interface DashboardSessionInfo {
+  mcpSessionId: string;
+  threadId: number;
+  transportType: "http" | "stdio";
+  status: "active" | "disconnected";
+  lastActivity: number;
+  lastWaitCallAt: number | null;
+  disconnectedAt: number | null;
+}
+
+const dashboardSessions = new Map<string, DashboardSessionInfo>();
+
+/** Register a new session for dashboard tracking. */
+export function registerDashboardSession(
+  mcpSessionId: string,
+  transportType: "http" | "stdio",
+  threadId = 0,
+): void {
+  dashboardSessions.set(mcpSessionId, {
+    mcpSessionId,
+    threadId,
+    transportType,
+    status: "active",
+    lastActivity: Date.now(),
+    lastWaitCallAt: null,
+    disconnectedAt: null,
+  });
+}
+
+/** Update the last activity timestamp for a session. */
+export function updateDashboardActivity(mcpSessionId: string): void {
+  const entry = dashboardSessions.get(mcpSessionId);
+  if (entry) {
+    entry.lastActivity = Date.now();
+    entry.status = "active";
+    entry.disconnectedAt = null;
+  }
+}
+
+/** Update the threadId for a session (called after start_session resolves). */
+export function updateDashboardThreadId(mcpSessionId: string, threadId: number): void {
+  const entry = dashboardSessions.get(mcpSessionId);
+  if (entry) {
+    entry.threadId = threadId;
+  }
+}
+
+/** Record a wait_for_instructions heartbeat. */
+export function updateLastWaitCall(mcpSessionId: string): void {
+  const entry = dashboardSessions.get(mcpSessionId);
+  if (entry) {
+    entry.lastWaitCallAt = Date.now();
+    entry.lastActivity = Date.now();
+    entry.status = "active";
+    entry.disconnectedAt = null;
+  }
+}
+
+/** Mark a session as disconnected. */
+export function markDashboardSessionDisconnected(mcpSessionId: string): void {
+  const entry = dashboardSessions.get(mcpSessionId);
+  if (entry) {
+    entry.status = "disconnected";
+    entry.disconnectedAt = Date.now();
+  }
+}
+
+/** Remove a session from dashboard tracking entirely. */
+export function removeDashboardSession(mcpSessionId: string): void {
+  dashboardSessions.delete(mcpSessionId);
+}
+
+/** Get all dashboard-tracked sessions. */
+export function getDashboardSessions(): DashboardSessionInfo[] {
+  return Array.from(dashboardSessions.values());
+}
+
+/** Grace period: a session is "truly alive" if lastWaitCallAt is within this. */
+export const WAIT_LIVENESS_MS = 5 * 60 * 1000;

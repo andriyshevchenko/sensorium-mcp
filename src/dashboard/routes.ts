@@ -43,6 +43,7 @@ export interface DashboardContext {
         lastActivity: number;
         transportType: string;
         status: "active" | "disconnected";
+        lastWaitCallAt: number | null;
     }>;
     serverStartTime: number;
 }

@@ -423,6 +423,16 @@
           statusColor = idle < 5 ? 'success' : idle < 30 ? 'warn' : 'danger';
           statusLabel = idle < 5 ? 'Active' : idle < 30 ? 'Idle ' + idle + 'm' : 'Dormant ' + idle + 'm';
         }
+        // Wait-for-instructions heartbeat indicator
+        var pollLabel = '';
+        if (s.lastWaitCallAt) {
+          var waitAgo = Math.floor((Date.now() - s.lastWaitCallAt) / 60000);
+          if (waitAgo < 5) {
+            pollLabel = '<span class="text-xs text-success ml-2">Polling — ' + (waitAgo === 0 ? 'just now' : waitAgo + 'm ago') + '</span>';
+          } else {
+            pollLabel = '<span class="text-xs text-warn ml-2">Last poll — ' + waitAgo + 'm ago</span>';
+          }
+        }
         return '<div class="glass rounded-xl p-4 animate-slide-up' + (isDisconnected ? ' opacity-60' : '') + '">' +
           '<div class="flex items-center justify-between">' +
             '<div class="flex items-center gap-3">' +
@@ -433,7 +443,7 @@
               '</div>' +
             '</div>' +
             '<div class="text-right">' +
-              '<div class="text-sm font-medium text-' + statusColor + '">' + statusLabel + '</div>' +
+              '<div class="text-sm font-medium text-' + statusColor + '">' + statusLabel + pollLabel + '</div>' +
               '<div class="text-xs text-textSecondary">' + s.transportType + '</div>' +
             '</div>' +
           '</div>' +
