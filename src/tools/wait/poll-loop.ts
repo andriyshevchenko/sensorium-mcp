@@ -14,7 +14,7 @@
  *   - Activates the Dispatcher drive after extended operator silence
  */
 
-import { checkMaintenanceFlag, getAgentType } from "../../config.js";
+import { checkMaintenanceFlag } from "../../config.js";
 import { peekThreadMessages, readThreadMessages } from "../../dispatcher.js";
 import {
   assembleCompactRefresh,
@@ -24,7 +24,7 @@ import { listSchedules } from "../../scheduler.js";
 import type { TelegramClient } from "../../telegram.js";
 import type { AppConfig } from "../../types.js";
 import { log } from "../../logger.js";
-import { getReminders, getShortReminder } from "../../response-builders.js";
+import { getReminders, getShortReminder, buildMaintenanceResponse } from "../../response-builders.js";
 
 import { processVoice, processAnimation, processVideoNote, type MediaContext } from "./media-processor.js";
 import { handleReactionWithMessages, handleReactionOnly } from "./reaction-handler.js";
@@ -130,22 +130,7 @@ export async function handleWaitForInstructions(
         ).catch(() => {});
       }
 
-      const sleepCmd = {
-        copilot: "Use Desktop Commander to run: Start-Sleep -Seconds 600",
-        claude: "Run in Bash: sleep 600",
-        cursor: "Run in terminal: sleep 600",
-      }[getAgentType()];
-
-      return {
-        content: [{
-          type: "text",
-          text: `⚠️ Server update in progress. STOP.\n\n` +
-            `Do NOT call start_session, wait_for_instructions, or any other tool.\n\n` +
-            `Your only next action: ${sleepCmd}. Do nothing else until it completes.\n\n` +
-            `After the sleep completes, call start_session with threadId=${effectiveThreadId} to reconnect.` +
-            getShortReminder(effectiveThreadId, state.sessionStartedAt),
-        }],
-      };
+      return buildMaintenanceResponse(effectiveThreadId!, getShortReminder(effectiveThreadId, state.sessionStartedAt));
     }
 
     // Peek first (non-destructive) to avoid consuming messages when the
