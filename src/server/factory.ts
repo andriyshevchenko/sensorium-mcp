@@ -319,7 +319,7 @@ function createMcpServer(
     }
 
     // ── send_file / send_voice / schedule_wake_up ───────────────────────────
-    if (["send_file", "send_voice", "schedule_wake_up", "send_sticker"].includes(name)) {
+    if (["send_file", "send_voice", "schedule_wake_up", "send_sticker", "send_message_to_thread"].includes(name)) {
       const typedArgs = (args ?? {}) as Record<string, unknown>;
       const utilityCtx: UtilityToolContext = {
         resolveThreadId,

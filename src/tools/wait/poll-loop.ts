@@ -34,6 +34,7 @@ import { handleReactionWithMessages, handleReactionOnly } from "./reaction-handl
 import { checkForDueTasks } from "./task-handler.js";
 import { runAutoConsolidation, checkDriveActivation } from "./drive-handler.js";
 import { processSimpleMessage, handleEmptyContent, autoIngestEpisodes, buildSmartContext, assembleOperatorResponse } from "./message-delivery.js";
+import { drainInbox } from "../../thread-mailbox.js";
 import type { ToolResult, TextBlock, ImageBlock } from "../../types.js";
 
 // ---------------------------------------------------------------------------
@@ -268,6 +269,15 @@ export async function handleWaitForInstructions(
 
       // Smart context injection (GPT-4o-mini preprocessor)
       const autoMemoryContext = await buildSmartContext(operatorText, { getMemoryDb, effectiveThreadId });
+
+      // ── Inter-thread mailbox messages ─────────────────────────────
+      const mailboxMessages = drainInbox(effectiveThreadId!);
+      for (const m of mailboxMessages) {
+        contentBlocks.push({
+          type: "text",
+          text: `📨 **Inter-thread message from thread ${m.fromThreadId}:**\n${m.message}`,
+        });
+      }
 
       log.info(`[wait] Returning response with ${contentBlocks.length} blocks to agent.`);
 

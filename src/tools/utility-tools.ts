@@ -13,6 +13,7 @@ import type { TelegramClient } from "../telegram.js";
 import type { AppConfig, ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, IMAGE_EXTENSIONS, OPENAI_TTS_MAX_CHARS } from "../utils.js";
+import { sendToThread } from "../thread-mailbox.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +49,8 @@ export async function handleUtilityTool(
       return handleScheduleWakeUp(args, ctx);
     case "get_version":
       return handleGetVersion(ctx);
+    case "send_message_to_thread":
+      return handleSendMessageToThread(args, ctx);
     default:
       return ctx.errorResult(`Unknown utility tool: ${name}`);
   }
@@ -313,6 +316,43 @@ function handleGetVersion(ctx: UtilityToolContext): ToolResult {
       type: "text",
       text: `Server version: ${ctx.config.PKG_VERSION}` +
         (maintenance ? `\n⚠️ Update pending: ${maintenance}` : ""),
+    }],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// send_message_to_thread
+// ---------------------------------------------------------------------------
+
+function handleSendMessageToThread(
+  args: Record<string, unknown>,
+  ctx: UtilityToolContext,
+): ToolResult {
+  const { resolveThreadId, errorResult } = ctx;
+  const currentThreadId = resolveThreadId(args);
+  if (currentThreadId === undefined) {
+    return errorResult("Error: No active session. Call start_session first.");
+  }
+
+  const targetThreadId = typeof args.targetThreadId === "number"
+    ? args.targetThreadId
+    : typeof args.targetThreadId === "string" ? Number(args.targetThreadId) : undefined;
+  const message = typeof args.message === "string" ? args.message : "";
+
+  if (targetThreadId === undefined || !Number.isFinite(targetThreadId)) {
+    return errorResult("Error: targetThreadId is required and must be a number.");
+  }
+  if (!message) {
+    return errorResult("Error: message is required.");
+  }
+
+  sendToThread(targetThreadId, currentThreadId, message);
+  log.info(`[send_message_to_thread] ${currentThreadId} → ${targetThreadId}: ${message.slice(0, 100)}`);
+
+  return {
+    content: [{
+      type: "text",
+      text: `Message sent to thread ${targetThreadId}.`,
     }],
   };
 }
