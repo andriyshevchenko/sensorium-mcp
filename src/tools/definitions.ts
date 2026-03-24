@@ -429,6 +429,37 @@ export function getToolDefinitions(): ToolDefinition[] {
         required: ["stickerId"],
       },
     },
+    // ── Delegation Tool ─────────────────────────────────────────────
+    {
+      name: "delegate_to_thread",
+      description:
+        "Spawn a background Claude Code process in its own Telegram thread, connected to sensorium via MCP. " +
+        "Use this to delegate a self-contained task to a parallel agent that runs independently. " +
+        "The spawned agent will pick up the task on its first wait_for_instructions call.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description:
+              "Thread name for the new session (e.g. 'Azure-WorkItems'). " +
+              "A new Telegram forum topic will be created with this name.",
+          },
+          task: {
+            type: "string",
+            description:
+              "Task description to inject on the spawned thread's first wait_for_instructions call.",
+          },
+          agentType: {
+            type: "string",
+            description:
+              'Which agent type to use: "copilot" | "claude" | "cursor". Defaults to "claude".',
+            enum: ["copilot", "claude", "cursor"],
+          },
+        },
+        required: ["name", "task"],
+      },
+    },
     // ── Server Info Tools ─────────────────────────────────────────────
     {
       name: "get_version",
