@@ -51,12 +51,20 @@ export function writeReactionFile(reaction: StoredReaction): void {
  * Returns null if no reaction is pending.
  */
 export function readPendingReaction(): StoredReaction | null {
+    let raw: string;
     try {
-        const raw = readFileSync(REACTION_FILE, "utf8");
-        unlinkSync(REACTION_FILE);
+        raw = readFileSync(REACTION_FILE, "utf8");
+    } catch {
+        return null; // File doesn't exist — no pending reaction.
+    }
+    // Delete the file *after* a successful read.  If unlinkSync fails
+    // (e.g. another process already consumed it) we still have `raw`
+    // and can parse + return the reaction instead of discarding it.
+    try { unlinkSync(REACTION_FILE); } catch { /* already gone — fine */ }
+    try {
         return JSON.parse(raw) as StoredReaction;
     } catch {
-        return null;
+        return null; // Corrupt JSON — discard.
     }
 }
 
