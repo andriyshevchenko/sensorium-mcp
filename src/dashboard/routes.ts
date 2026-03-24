@@ -32,7 +32,7 @@ import {
 } from "../memory.js";
 
 import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "./presets.js";
-import { getAgentType, setAgentType, type AgentType } from "../config.js";
+import { getAgentType, setAgentType, getEffectiveAgentType, setThreadAgentType, getAllThreadAgentTypes, type AgentType } from "../config.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ function handleApiRoute(
                     try {
                         content = await readFile(userFile, "utf-8");
                     } catch {
-                        content = getDefaultRemindersTemplate(getAgentType());
+                        content = getDefaultRemindersTemplate(getEffectiveAgentType());
                         isDefault = true;
                     }
                     json({ templates: [{ name: "reminders", content, isDefault }] });
@@ -261,6 +261,35 @@ function handleApiRoute(
                     }
                     setAgentType(parsed.agentType as AgentType);
                     json({ ok: true, agentType: parsed.agentType });
+                } catch (err) {
+                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                }
+            })();
+            return true;
+        }
+
+        // ── Per-thread agent-type overrides ──────────────────────────
+        if (path === "/api/settings/thread-agent-types" && req.method === "GET") {
+            json({ threadAgentTypes: getAllThreadAgentTypes() });
+            return true;
+        }
+
+        if (path === "/api/settings/thread-agent-type" && req.method === "POST") {
+            void (async () => {
+                try {
+                    const body = await readBody(req);
+                    const parsed = JSON.parse(body) as { threadId?: number; agentType?: string };
+                    const valid = ["copilot", "claude", "cursor"];
+                    if (parsed.threadId == null || !Number.isFinite(parsed.threadId)) {
+                        json({ error: "Missing or invalid threadId (must be a number)" }, 400);
+                        return;
+                    }
+                    if (!parsed.agentType || !valid.includes(parsed.agentType)) {
+                        json({ error: "Invalid agent type. Must be: copilot, claude, cursor" }, 400);
+                        return;
+                    }
+                    setThreadAgentType(parsed.threadId, parsed.agentType as AgentType);
+                    json({ ok: true, threadId: parsed.threadId, agentType: parsed.agentType });
                 } catch (err) {
                     json({ error: err instanceof Error ? err.message : String(err) }, 500);
                 }

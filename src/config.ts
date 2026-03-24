@@ -71,6 +71,59 @@ export function setAgentType(type: AgentType): void {
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
 }
 
+// ─── Per-thread agent-type overrides ────────────────────────────────────────
+
+/** Returns the per-thread agent-type override, or null if none is set. */
+export function getThreadAgentType(threadId: number): AgentType | null {
+  try {
+    const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
+    const map = raw.threadAgentTypes as Record<string, unknown> | undefined;
+    if (map) {
+      const t = map[String(threadId)];
+      if (t === "copilot" || t === "claude" || t === "cursor") return t;
+    }
+  } catch { /* missing or invalid */ }
+  return null;
+}
+
+/** Persists a per-thread agent-type override. */
+export function setThreadAgentType(threadId: number, agentType: AgentType): void {
+  let settings: Record<string, unknown> = {};
+  try { settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>; } catch { /* ok */ }
+  const map = (settings.threadAgentTypes ?? {}) as Record<string, unknown>;
+  map[String(threadId)] = agentType;
+  settings.threadAgentTypes = map;
+  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
+}
+
+/** Returns all per-thread agent-type overrides. */
+export function getAllThreadAgentTypes(): Record<string, AgentType> {
+  try {
+    const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
+    const map = raw.threadAgentTypes as Record<string, string> | undefined;
+    if (map && typeof map === "object") {
+      const result: Record<string, AgentType> = {};
+      for (const [k, v] of Object.entries(map)) {
+        if (v === "copilot" || v === "claude" || v === "cursor") result[k] = v;
+      }
+      return result;
+    }
+  } catch { /* missing or invalid */ }
+  return {};
+}
+
+/**
+ * Returns the effective agent type for a given thread.
+ * Per-thread override takes precedence over the global default.
+ */
+export function getEffectiveAgentType(threadId?: number): AgentType {
+  if (threadId !== undefined) {
+    const override = getThreadAgentType(threadId);
+    if (override) return override;
+  }
+  return getAgentType();
+}
+
 // ─── Exported config object ─────────────────────────────────────────────────
 
 export const config: AppConfig = {
