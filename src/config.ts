@@ -4,7 +4,7 @@
  */
 
 import { createRequire } from "node:module";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "./logger.js";
@@ -54,6 +54,13 @@ mkdirSync(TEMPLATES_DIR, { recursive: true });
 export type AgentType = "copilot" | "claude" | "cursor";
 
 const SETTINGS_PATH = join(homedir(), ".remote-copilot-mcp", "settings.json");
+const SETTINGS_TMP_PATH = SETTINGS_PATH + ".tmp";
+
+/** Atomically persist settings: write to .tmp then rename over the original. */
+function atomicWriteSettings(settings: Record<string, unknown>): void {
+  writeFileSync(SETTINGS_TMP_PATH, JSON.stringify(settings, null, 2), "utf-8");
+  renameSync(SETTINGS_TMP_PATH, SETTINGS_PATH);
+}
 
 export function getAgentType(): AgentType {
   try {
@@ -68,7 +75,7 @@ export function setAgentType(type: AgentType): void {
   let settings: Record<string, unknown> = {};
   try { settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>; } catch { /* ok */ }
   settings.agentType = type;
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
+  atomicWriteSettings(settings);
 }
 
 // ─── Per-thread agent-type overrides ────────────────────────────────────────
@@ -93,7 +100,7 @@ export function setThreadAgentType(threadId: number, agentType: AgentType): void
   const map = (settings.threadAgentTypes ?? {}) as Record<string, unknown>;
   map[String(threadId)] = agentType;
   settings.threadAgentTypes = map;
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
+  atomicWriteSettings(settings);
 }
 
 /** Returns all per-thread agent-type overrides. */
