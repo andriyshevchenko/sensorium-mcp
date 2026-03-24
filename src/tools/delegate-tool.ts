@@ -185,6 +185,26 @@ export async function handleDelegateToThread(
   // Use shell only when the resolved path is a Windows batch script (.cmd/.bat)
   const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath);
 
+  // On Windows, ensure CLAUDE_CODE_GIT_BASH_PATH is set for the child process.
+  // The parent Node.js process may not have inherited this env var even though
+  // it's set at the user level (e.g. if sensorium was started before the var
+  // was added or from a service context).
+  const spawnEnv = { ...process.env };
+  if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) {
+    const gitBashCandidates = [
+      join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"),
+      "C:\\Program Files\\Git\\bin\\bash.exe",
+      "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+    ];
+    for (const candidate of gitBashCandidates) {
+      if (existsSync(candidate)) {
+        spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate;
+        log.info(`[delegate] Auto-detected git-bash at ${candidate}`);
+        break;
+      }
+    }
+  }
+
   let child;
   try {
     child = spawn(claudePath, cliArgs, {
@@ -192,6 +212,7 @@ export async function handleDelegateToThread(
       stdio: ["ignore", logFd, logFd],
       shell: needsShell,
       windowsHide: true,
+      env: spawnEnv,
     });
   } catch (err) {
     closeSync(logFd);
