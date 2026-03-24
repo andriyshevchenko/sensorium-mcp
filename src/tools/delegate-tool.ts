@@ -9,7 +9,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setThreadAgentType, getClaudeMcpConfigPath, type AgentType } from "../config.js";
@@ -61,10 +61,13 @@ function isProcessAlive(pid: number): boolean {
 
 /**
  * Find a spawned thread entry by threadId whose process is still alive.
+ * Searches from the end of the array to find the most recently spawned entry.
  */
 function findAliveThread(threadId: number): SpawnedThread | undefined {
-  const entry = spawnedThreads.find(t => t.threadId === threadId);
-  if (entry && isProcessAlive(entry.pid)) return entry;
+  for (let i = spawnedThreads.length - 1; i >= 0; i--) {
+    const t = spawnedThreads[i];
+    if (t.threadId === threadId && isProcessAlive(t.pid)) return t;
+  }
   return undefined;
 }
 
@@ -82,10 +85,12 @@ export function isThreadRunning(threadId: number): boolean {
 const BASE_DIR = join(homedir(), ".remote-copilot-mcp");
 const PENDING_TASKS_DIR = join(BASE_DIR, "pending-tasks");
 const LOGS_DIR = join(BASE_DIR, "logs");
+const PIDS_DIR = join(BASE_DIR, "pids");
 
 function ensureDirs(): void {
   mkdirSync(PENDING_TASKS_DIR, { recursive: true });
   mkdirSync(LOGS_DIR, { recursive: true });
+  mkdirSync(PIDS_DIR, { recursive: true });
 }
 
 /**
@@ -139,11 +144,10 @@ function spawnAgentProcess(
   mcpConfigPath: string,
   name: string,
   threadId: number,
-  agentType: AgentType,
 ): { pid: number; logFile: string } | { error: string } {
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const logFileName = `${safeName}_${dateStr}.json`;
+  const logFileName = `${safeName}_${threadId}_${dateStr}.json`;
   const logFilePath = join(LOGS_DIR, logFileName);
 
   const logFd = openSync(logFilePath, "a");
@@ -201,6 +205,12 @@ function spawnAgentProcess(
     return { error: "Claude process spawned but PID is undefined — spawn may have failed." };
   }
 
+  // Write PID file for external process tracking
+  const pidFilePath = join(PIDS_DIR, `${threadId}.pid`);
+  try {
+    writeFileSync(pidFilePath, String(pid), "utf-8");
+  } catch { /* non-fatal */ }
+
   // Track spawned process
   const entry: SpawnedThread = {
     pid,
@@ -211,10 +221,11 @@ function spawnAgentProcess(
   };
   spawnedThreads.push(entry);
 
-  // Monitor process exit — clean up stale entries and log health info
+  // Monitor process exit — clean up stale entries, PID file, and log health info
   child.on("exit", (code) => {
     const idx = spawnedThreads.indexOf(entry);
     if (idx !== -1) spawnedThreads.splice(idx, 1);
+    try { unlinkSync(pidFilePath); } catch { /* already removed */ }
     log.info(`[start_thread] Claude process PID=${pid} for thread ${threadId} exited with code ${code}`);
   });
 
@@ -224,6 +235,34 @@ function spawnAgentProcess(
   log.info(`[start_thread] Spawned Claude process PID=${pid} for thread ${threadId} ("${name}")`);
 
   return { pid, logFile: logFilePath };
+}
+
+// ---------------------------------------------------------------------------
+// Stale PID cleanup
+// ---------------------------------------------------------------------------
+
+/**
+ * Remove PID files for processes that are no longer running.
+ * Called on server startup / before spawning new threads.
+ */
+function cleanupStalePidFiles(): void {
+  try {
+    const files = readdirSync(PIDS_DIR);
+    for (const file of files) {
+      if (!file.endsWith(".pid")) continue;
+      const filePath = join(PIDS_DIR, file);
+      try {
+        const pid = Number(readFileSync(filePath, "utf-8").trim());
+        if (!isProcessAlive(pid)) {
+          unlinkSync(filePath);
+          log.info(`[cleanup] Removed stale PID file ${file} (pid ${pid})`);
+        }
+      } catch {
+        // Corrupt or unreadable — remove it
+        try { unlinkSync(filePath); } catch { /* ignore */ }
+      }
+    }
+  } catch { /* PIDS_DIR may not exist yet */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +285,10 @@ export async function handleStartThread(
     rawAgentType === "copilot" || rawAgentType === "claude" || rawAgentType === "cursor"
       ? rawAgentType
       : "claude";
+
+  if (agentType && agentType !== 'claude') {
+    return errorResult(`Agent type "${agentType}" is not yet supported for thread spawning. Only "claude" is currently available.`);
+  }
 
   // ── Verify CLI availability ───────────────────────────────────────────
   const claudePath = resolveClaudePath();
@@ -308,7 +351,8 @@ export async function handleStartThread(
   // ── 2. Set per-thread agent type ──────────────────────────────────────
   setThreadAgentType(threadId, agentType);
 
-  // ── 3. Check if already running ───────────────────────────────────────
+  // ── 3. Clean stale PID files & check if already running ──────────────
+  cleanupStalePidFiles();
   const alive = findAliveThread(threadId);
   if (alive) {
     return {
@@ -321,7 +365,7 @@ export async function handleStartThread(
 
   // ── 4. Dormant (topic existed, process dead) → restart ────────────────
   ensureDirs();
-  const result = spawnAgentProcess(claudePath, mcpConfigPath, name, threadId, agentType);
+  const result = spawnAgentProcess(claudePath, mcpConfigPath, name, threadId);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
   const status = topicExisted ? "restarted" : "created";
@@ -365,6 +409,9 @@ export function handleSendMessageToThread(
 
   if (threadId === undefined || !Number.isFinite(threadId)) {
     return errorResult("Error: 'threadId' is required and must be a number.");
+  }
+  if (!Number.isInteger(threadId) || threadId <= 0) {
+    return errorResult('threadId must be a positive integer');
   }
   if (!message) {
     return errorResult("Error: 'message' is required.");

@@ -14,7 +14,7 @@
  *   - Activates the Dispatcher drive after extended operator silence
  */
 
-import { readFileSync, unlinkSync } from "node:fs";
+import { readFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { checkMaintenanceFlag } from "../../config.js";
@@ -111,8 +111,10 @@ export async function handleWaitForInstructions(
   const PENDING_TASKS_DIR = join(homedir(), ".remote-copilot-mcp", "pending-tasks");
   const pendingTaskPath = join(PENDING_TASKS_DIR, `${effectiveThreadId}.txt`);
   try {
-    const taskContent = readFileSync(pendingTaskPath, "utf-8");
-    try { unlinkSync(pendingTaskPath); } catch { /* ignore cleanup errors */ }
+    const tmpPath = pendingTaskPath + '.processing';
+    renameSync(pendingTaskPath, tmpPath);
+    const taskContent = readFileSync(tmpPath, "utf-8");
+    try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
     log.info(`[wait] Injecting pending task for thread ${effectiveThreadId} (${taskContent.length} chars)`);
     return {
       content: [
