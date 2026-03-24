@@ -263,8 +263,10 @@ export async function buildSmartContext(
 
           // Parse the response — expect JSON array
           const jsonMatch = filterResponse.match(/\[.*\]/s);
+          let selectedCount = 0;
           if (jsonMatch) {
             const filtered = JSON.parse(jsonMatch[0]) as { i: number; s: string }[];
+            selectedCount = filtered.length;
             if (filtered.length > 0) {
               const lines = filtered
                 .filter(f => f.i >= 0 && f.i < candidates.length)
@@ -278,7 +280,7 @@ export async function buildSmartContext(
               }
             }
           }
-          log.verbose("memory", `Smart filter: ${candidates.length} candidates → ${(jsonMatch ? JSON.parse(jsonMatch[0]) : []).length} selected`);
+          log.verbose("memory", `Smart filter: ${candidates.length} candidates → ${selectedCount} selected`);
         } catch (filterErr) {
           // GPT-4o-mini filter failed — fall back to top-3 raw notes
           log.warn(`[memory] Smart filter failed, using raw top-3: ${filterErr instanceof Error ? filterErr.message : String(filterErr)}`);
