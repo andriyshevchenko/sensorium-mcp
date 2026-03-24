@@ -307,8 +307,10 @@ function createMcpServer(
         checkMaintenanceFlag,
         checkDueTasks,
         generateDmnReflection,
-        lastOperatorMessageAt,
-        lastOperatorMessageText,
+        get lastOperatorMessageAt() { return lastOperatorMessageAt; },
+        set lastOperatorMessageAt(v) { lastOperatorMessageAt = v; },
+        get lastOperatorMessageText() { return lastOperatorMessageText; },
+        set lastOperatorMessageText(v) { lastOperatorMessageText = v; },
         previewedUpdateIds,
         addPreviewedId,
       };
