@@ -98,9 +98,6 @@ export function purgeOtherSessions(threadId: number, keepMcpSessionId?: string):
   return purged;
 }
 
-/** Dead session detection threshold — alert if no tool calls in this period. */
-export const DEAD_SESSION_TIMEOUT_MS = 60 * 60 * 1000;
-
 // ─── Global dashboard session registry ──────────────────────────────────────
 // Tracks ALL sessions (HTTP + STDIO) for dashboard visibility and GC.
 

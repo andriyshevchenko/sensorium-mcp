@@ -48,7 +48,6 @@ export interface WaitToolContext {
     sessionStartedAt: number;
     waitCallCount: number;
     lastToolCallAt: number;
-    deadSessionAlerted: boolean;
     toolCallsSinceLastDelivery: number;
     lastOperatorMessageAt: number;
     lastOperatorMessageText: string;
@@ -89,10 +88,6 @@ export async function handleWaitForInstructions(
   const { state, telegram, telegramChatId, config, getMemoryDb } = ctx;
   const { OPENAI_API_KEY, VOICE_ANALYSIS_URL, WAIT_TIMEOUT_MINUTES, AUTONOMOUS_MODE } = config;
 
-  // Agent is actively polling — this is the primary health signal.
-  // Do NOT reset deadSessionAlerted here — the cooldown in factory.ts
-  // handles repeat-prevention. Resetting it caused alert spam because
-  // each wait call re-armed the detector.
   state.toolCallsSinceLastDelivery = 0;
 
   const effectiveThreadId = ctx.resolveThreadId(args);
