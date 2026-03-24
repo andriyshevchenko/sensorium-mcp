@@ -36,7 +36,7 @@ export interface SessionToolContext {
 }
 
 interface Extra {
-  sendNotification?: Function;
+  sendNotification?: (notification: { method: string; params: Record<string, unknown> }) => Promise<void>;
   signal: AbortSignal;
   requestId?: string | number;
 }
