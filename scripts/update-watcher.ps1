@@ -137,13 +137,13 @@ function Stop-StaleProcesses {
 }
 
 function Clear-NpxCache {
-    if (Test-Path $NPX_CACHE_DIR) {
-        Write-Log "Clearing npx cache..."
-        try {
-            Get-ChildItem -Path $NPX_CACHE_DIR -Force | Remove-Item -Recurse -Force -ErrorAction Stop
-        }
-        catch {
-            Write-Log "Failed to fully clear npx cache: $_" -Level "WARN"
+    if (-not (Test-Path $NPX_CACHE_DIR)) { return }
+    Write-Log "Clearing sensorium-mcp from npx cache..."
+    Get-ChildItem -Path $NPX_CACHE_DIR -Directory -Force | ForEach-Object {
+        $pkg = Join-Path $_.FullName "node_modules" "sensorium-mcp"
+        if (Test-Path $pkg) {
+            Write-Log "Removing cache entry: $($_.Name)"
+            Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }

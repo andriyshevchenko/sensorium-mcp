@@ -281,7 +281,10 @@ export async function handleWaitForInstructions(
     }
 
     // ── Reaction-only wake-up ───────────────────────────────────────
-    {
+    // Guard: don't consume the reaction file if the SSE connection is
+    // already dead — readPendingReaction() is destructive (read + delete).
+    // Without this check the reaction is eaten but never delivered.
+    if (!extra.signal.aborted) {
       const reactionResult = await handleReactionOnly({
         telegram,
         getMemoryDb,
