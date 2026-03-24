@@ -14,6 +14,9 @@
  *   - Activates the Dispatcher drive after extended operator silence
  */
 
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { checkMaintenanceFlag } from "../../config.js";
 import { peekThreadMessages, readThreadMessages } from "../../dispatcher.js";
 import {
@@ -100,6 +103,36 @@ export async function handleWaitForInstructions(
   const callNumber = ++state.waitCallCount;
   const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
   const deadline = Date.now() + timeoutMs;
+
+  // ── One-shot pending task injection ──────────────────────────────────
+  // If delegate_to_thread wrote a task file for this thread, deliver it
+  // immediately on the first wait_for_instructions call and delete the
+  // file so it only fires once.
+  const PENDING_TASKS_DIR = join(homedir(), ".remote-copilot-mcp", "pending-tasks");
+  const pendingTaskPath = join(PENDING_TASKS_DIR, `${effectiveThreadId}.txt`);
+  if (existsSync(pendingTaskPath)) {
+    try {
+      const taskContent = readFileSync(pendingTaskPath, "utf-8");
+      try { unlinkSync(pendingTaskPath); } catch { /* ignore cleanup errors */ }
+      log.info(`[wait] Injecting pending task for thread ${effectiveThreadId} (${taskContent.length} chars)`);
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `<<< OPERATOR MESSAGE >>>\n` +
+              `DELEGATED TASK: ${taskContent}\n\n` +
+              `Execute this task using subagents. Report progress via send_voice or report_progress. ` +
+              `When complete, use hibernate or simply finish.\n` +
+              `<<< END OPERATOR MESSAGE >>>`,
+          },
+        ],
+      };
+    } catch (err) {
+      log.warn(`[wait] Failed to read pending task file: ${err}`);
+      // Fall through to normal polling
+    }
+  }
 
   // Poll the dispatcher's per-thread file instead of calling getUpdates
   // directly. This avoids 409 conflicts between concurrent instances.
