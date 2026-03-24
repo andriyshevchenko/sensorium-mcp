@@ -106,9 +106,8 @@ export async function handleWaitForInstructions(
   const deadline = Date.now() + timeoutMs;
 
   // ── One-shot pending task injection ──────────────────────────────────
-  // If delegate_to_thread wrote a task file for this thread, deliver it
-  // immediately on the first wait_for_instructions call and delete the
-  // file so it only fires once.
+  // If start_thread or send_message_to_thread wrote a task file for this
+  // thread, deliver it immediately and delete the file so it only fires once.
   const PENDING_TASKS_DIR = join(homedir(), ".remote-copilot-mcp", "pending-tasks");
   const pendingTaskPath = join(PENDING_TASKS_DIR, `${effectiveThreadId}.txt`);
   try {

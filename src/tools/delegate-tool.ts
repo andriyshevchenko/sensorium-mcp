@@ -1,12 +1,15 @@
 /**
- * delegate_to_thread tool handler.
+ * Thread management tools: start_thread and send_message_to_thread.
  *
- * Spawns a background Claude Code process connected to sensorium via MCP,
- * isolated in its own Telegram forum topic.
+ * Refactored from the original delegate_to_thread — the delegation workflow
+ * is now: start_thread(name) → send_message_to_thread(threadId, task).
+ *
+ * start_thread: ensures an agent session is running on a named thread.
+ * send_message_to_thread: queues a message for the target thread's agent.
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setThreadAgentType, getClaudeMcpConfigPath, type AgentType } from "../config.js";
@@ -42,6 +45,34 @@ const spawnedThreads: SpawnedThread[] = [];
 /** Return a snapshot of all spawned thread processes. */
 export function getSpawnedThreads(): readonly SpawnedThread[] {
   return spawnedThreads;
+}
+
+/**
+ * Check if a process with the given PID is still running.
+ */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0); // signal 0 = check existence
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Find a spawned thread entry by threadId whose process is still alive.
+ */
+function findAliveThread(threadId: number): SpawnedThread | undefined {
+  const entry = spawnedThreads.find(t => t.threadId === threadId);
+  if (entry && isProcessAlive(entry.pid)) return entry;
+  return undefined;
+}
+
+/**
+ * Check if any tracked process is running for this threadId.
+ */
+export function isThreadRunning(threadId: number): boolean {
+  return findAliveThread(threadId) !== undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,10 +131,106 @@ function resolveClaudePath(): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Handler
+// Spawn agent process (extracted helper)
 // ---------------------------------------------------------------------------
 
-export async function handleDelegateToThread(
+function spawnAgentProcess(
+  claudePath: string,
+  mcpConfigPath: string,
+  name: string,
+  threadId: number,
+  agentType: AgentType,
+): { pid: number; logFile: string } | { error: string } {
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const logFileName = `${safeName}_${dateStr}.json`;
+  const logFilePath = join(LOGS_DIR, logFileName);
+
+  const logFd = openSync(logFilePath, "a");
+
+  const prompt = `Start remote session with sensorium. Thread name = '${safeName}'`;
+
+  const cliArgs = [
+    "--verbose",
+    "--dangerously-skip-permissions",
+    "--mcp-config", mcpConfigPath,
+    "-p", prompt,
+    "--output-format", "stream-json",
+    "--include-partial-messages",
+  ];
+
+  // Use shell only when the resolved path is a Windows batch script (.cmd/.bat)
+  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath);
+
+  // On Windows, ensure CLAUDE_CODE_GIT_BASH_PATH is set for the child process.
+  const spawnEnv = { ...process.env };
+  if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) {
+    const gitBashCandidates = [
+      join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"),
+      "C:\\Program Files\\Git\\bin\\bash.exe",
+      "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+    ];
+    for (const candidate of gitBashCandidates) {
+      if (existsSync(candidate)) {
+        spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate;
+        log.info(`[start_thread] Auto-detected git-bash at ${candidate}`);
+        break;
+      }
+    }
+  }
+
+  let child;
+  try {
+    child = spawn(claudePath, cliArgs, {
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+      shell: needsShell,
+      windowsHide: true,
+      env: spawnEnv,
+    });
+  } catch (err) {
+    closeSync(logFd);
+    return { error: `Failed to spawn Claude process: ${errorMessage(err)}` };
+  }
+
+  // Release the parent's copy of the log file descriptor
+  closeSync(logFd);
+
+  const pid = child.pid;
+  if (pid === undefined) {
+    return { error: "Claude process spawned but PID is undefined — spawn may have failed." };
+  }
+
+  // Track spawned process
+  const entry: SpawnedThread = {
+    pid,
+    threadId,
+    name,
+    startedAt: Date.now(),
+    logFile: logFilePath,
+  };
+  spawnedThreads.push(entry);
+
+  // Monitor process exit — clean up stale entries and log health info
+  child.on("exit", (code) => {
+    const idx = spawnedThreads.indexOf(entry);
+    if (idx !== -1) spawnedThreads.splice(idx, 1);
+    log.info(`[start_thread] Claude process PID=${pid} for thread ${threadId} exited with code ${code}`);
+  });
+
+  // Unref so the parent process can exit without waiting for this child.
+  child.unref();
+
+  log.info(`[start_thread] Spawned Claude process PID=${pid} for thread ${threadId} ("${name}")`);
+
+  return { pid, logFile: logFilePath };
+}
+
+// ---------------------------------------------------------------------------
+// start_thread handler
+// ---------------------------------------------------------------------------
+
+export async function handleStartThread(
   args: Record<string, unknown>,
   ctx: DelegateToolContext,
 ): Promise<ToolResult> {
@@ -111,11 +238,9 @@ export async function handleDelegateToThread(
 
   // ── Validate args ─────────────────────────────────────────────────────
   const name = typeof args.name === "string" ? args.name.trim() : "";
-  const task = typeof args.task === "string" ? args.task.trim() : "";
   const rawAgentType = typeof args.agentType === "string" ? args.agentType.trim() : "claude";
 
-  if (!name) return errorResult("Error: 'name' parameter is required for delegate_to_thread.");
-  if (!task) return errorResult("Error: 'task' parameter is required for delegate_to_thread.");
+  if (!name) return errorResult("Error: 'name' parameter is required for start_thread.");
 
   const agentType: AgentType =
     rawAgentType === "copilot" || rawAgentType === "claude" || rawAgentType === "cursor"
@@ -142,6 +267,7 @@ export async function handleDelegateToThread(
 
   // ── 1. Resolve or create Telegram forum topic ─────────────────────────
   let threadId: number;
+  let topicExisted = false;
   const existingThreadId = lookupSession(telegramChatId, name);
 
   if (existingThreadId !== undefined) {
@@ -149,14 +275,15 @@ export async function handleDelegateToThread(
     const stillValid = await telegram.validateForumTopic(telegramChatId, existingThreadId);
     if (stillValid) {
       threadId = existingThreadId;
-      log.info(`[delegate] Reusing existing forum topic "${name}" → thread ${threadId}`);
+      topicExisted = true;
+      log.info(`[start_thread] Reusing existing forum topic "${name}" → thread ${threadId}`);
     } else {
-      log.info(`[delegate] Stored topic "${name}" (thread ${existingThreadId}) is stale, creating new one`);
+      log.info(`[start_thread] Stored topic "${name}" (thread ${existingThreadId}) is stale, creating new one`);
       try {
         const topic = await telegram.createForumTopic(telegramChatId, name);
         threadId = topic.message_thread_id;
         persistSession(telegramChatId, name, threadId);
-        log.info(`[delegate] Created forum topic "${name}" → thread ${threadId}`);
+        log.info(`[start_thread] Created forum topic "${name}" → thread ${threadId}`);
       } catch (err) {
         return errorResult(
           `Error: Could not create forum topic "${name}": ${errorMessage(err)}. ` +
@@ -169,7 +296,7 @@ export async function handleDelegateToThread(
       const topic = await telegram.createForumTopic(telegramChatId, name);
       threadId = topic.message_thread_id;
       persistSession(telegramChatId, name, threadId);
-      log.info(`[delegate] Created forum topic "${name}" → thread ${threadId}`);
+      log.info(`[start_thread] Created forum topic "${name}" → thread ${threadId}`);
     } catch (err) {
       return errorResult(
         `Error: Could not create forum topic "${name}": ${errorMessage(err)}. ` +
@@ -181,103 +308,28 @@ export async function handleDelegateToThread(
   // ── 2. Set per-thread agent type ──────────────────────────────────────
   setThreadAgentType(threadId, agentType);
 
-  // ── 3. Store pending task ─────────────────────────────────────────────
+  // ── 3. Check if already running ───────────────────────────────────────
+  const alive = findAliveThread(threadId);
+  if (alive) {
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({ threadId, status: "already_running", name, pid: alive.pid }),
+      }],
+    };
+  }
+
+  // ── 4. Dormant (topic existed, process dead) → restart ────────────────
   ensureDirs();
-  const taskFilePath = join(PENDING_TASKS_DIR, `${threadId}.txt`);
-  writeFileSync(taskFilePath, task, "utf-8");
-  log.info(`[delegate] Wrote pending task for thread ${threadId}: ${task.slice(0, 120)}`);
+  const result = spawnAgentProcess(claudePath, mcpConfigPath, name, threadId, agentType);
+  if ("error" in result) return errorResult(`Error: ${result.error}`);
 
-  // ── 4. Spawn background Claude process ────────────────────────────────
-  const dateStr = new Date().toISOString().slice(0, 10);
-  const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const logFileName = `${safeName}_${dateStr}.json`;
-  const logFilePath = join(LOGS_DIR, logFileName);
+  const status = topicExisted ? "restarted" : "created";
 
-  const logFd = openSync(logFilePath, "a");
-
-  const prompt = `Start remote session with sensorium. Thread name = '${safeName}'`;
-
-  const cliArgs = [
-    "--verbose",
-    "--dangerously-skip-permissions",
-    "--mcp-config", mcpConfigPath,
-    "-p", prompt,
-    "--output-format", "stream-json",
-    "--include-partial-messages",
-  ];
-
-  // Use shell only when the resolved path is a Windows batch script (.cmd/.bat)
-  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath);
-
-  // On Windows, ensure CLAUDE_CODE_GIT_BASH_PATH is set for the child process.
-  // The parent Node.js process may not have inherited this env var even though
-  // it's set at the user level (e.g. if sensorium was started before the var
-  // was added or from a service context).
-  const spawnEnv = { ...process.env };
-  if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) {
-    const gitBashCandidates = [
-      join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"),
-      "C:\\Program Files\\Git\\bin\\bash.exe",
-      "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
-    ];
-    for (const candidate of gitBashCandidates) {
-      if (existsSync(candidate)) {
-        spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate;
-        log.info(`[delegate] Auto-detected git-bash at ${candidate}`);
-        break;
-      }
-    }
-  }
-
-  let child;
-  try {
-    child = spawn(claudePath, cliArgs, {
-      detached: true,
-      stdio: ["ignore", logFd, logFd],
-      shell: needsShell,
-      windowsHide: true,
-      env: spawnEnv,
-    });
-  } catch (err) {
-    closeSync(logFd);
-    return errorResult(`Error: Failed to spawn Claude process: ${errorMessage(err)}`);
-  }
-
-  // Release the parent's copy of the log file descriptor
-  closeSync(logFd);
-
-  const pid = child.pid;
-  if (pid === undefined) {
-    return errorResult("Error: Claude process spawned but PID is undefined — spawn may have failed.");
-  }
-
-  // ── 5. Track spawned process ──────────────────────────────────────────
-  const entry: SpawnedThread = {
-    pid,
-    threadId,
-    name,
-    startedAt: Date.now(),
-    logFile: logFilePath,
-  };
-  spawnedThreads.push(entry);
-
-  // Monitor process exit — clean up stale entries and log health info
-  child.on("exit", (code) => {
-    const idx = spawnedThreads.indexOf(entry);
-    if (idx !== -1) spawnedThreads.splice(idx, 1);
-    log.info(`[delegate] Claude process PID=${pid} for thread ${threadId} exited with code ${code}`);
-  });
-
-  // Unref so the parent process can exit without waiting for this child.
-  child.unref();
-
-  log.info(`[delegate] Spawned Claude process PID=${pid} for thread ${threadId} ("${name}")`);
-
-  // ── 6. Notify operator in the new thread ──────────────────────────────
   try {
     await telegram.sendMessage(
       telegramChatId,
-      `🧵 Delegated thread started.\nTask: ${task.slice(0, 200)}\nAgent: ${agentType} (PID ${pid})`,
+      `🧵 Thread ${status}.\nAgent: ${agentType} (PID ${result.pid})`,
       undefined,
       threadId,
     );
@@ -286,18 +338,62 @@ export async function handleDelegateToThread(
   }
 
   return {
-    content: [
-      {
-        type: "text",
-        text:
-          `Delegated thread created successfully.\n` +
-          `Thread ID: ${threadId}\n` +
-          `Thread name: ${name}\n` +
-          `Agent type: ${agentType}\n` +
-          `PID: ${pid}\n` +
-          `Log file: ${logFilePath}\n` +
-          `Pending task stored at: ${taskFilePath}`,
-      },
-    ],
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        threadId,
+        status,
+        name,
+        pid: result.pid,
+        logFile: result.logFile,
+      }),
+    }],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// send_message_to_thread handler
+// ---------------------------------------------------------------------------
+
+export function handleSendMessageToThread(
+  args: Record<string, unknown>,
+): ToolResult {
+  const threadId = typeof args.threadId === "number"
+    ? args.threadId
+    : typeof args.threadId === "string" ? Number(args.threadId) : undefined;
+  const message = typeof args.message === "string" ? args.message.trim() : "";
+
+  if (threadId === undefined || !Number.isFinite(threadId)) {
+    return errorResult("Error: 'threadId' is required and must be a number.");
+  }
+  if (!message) {
+    return errorResult("Error: 'message' is required.");
+  }
+
+  ensureDirs();
+  const taskFilePath = join(PENDING_TASKS_DIR, `${threadId}.txt`);
+
+  // Append (with newline separator) instead of overwriting
+  try {
+    appendFileSync(taskFilePath, message + "\n", "utf-8");
+  } catch (err) {
+    return errorResult(`Error: Failed to write message to pending tasks: ${errorMessage(err)}`);
+  }
+
+  log.info(`[send_message_to_thread] → thread ${threadId}: ${message.slice(0, 120)}`);
+
+  const alive = isThreadRunning(threadId);
+  const warning = alive
+    ? undefined
+    : `Thread ${threadId} is dormant. Message queued but won't be processed until the thread is started via start_thread.`;
+
+  const responseObj: Record<string, unknown> = { delivered: alive, threadId };
+  if (warning) responseObj.warning = warning;
+
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify(responseObj),
+    }],
   };
 }

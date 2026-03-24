@@ -32,7 +32,7 @@ import { handleUtilityTool, type UtilityToolContext } from "../tools/utility-too
 import { handleSessionTool, type SessionToolContext } from "../tools/session-tools.js";
 import { handleStartSession, type StartSessionContext } from "../tools/start-session-tool.js";
 import { handleWaitForInstructions, type WaitToolContext, type WaitToolExtra } from "../tools/wait/index.js";
-import { handleDelegateToThread, type DelegateToolContext } from "../tools/delegate-tool.js";
+import { handleStartThread, handleSendMessageToThread as handleSendMessageToThreadFile, type DelegateToolContext } from "../tools/delegate-tool.js";
 import type { CreateMcpServerFn } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -319,7 +319,7 @@ function createMcpServer(
     }
 
     // ── send_file / send_voice / schedule_wake_up ───────────────────────────
-    if (["send_file", "send_voice", "schedule_wake_up", "send_sticker", "send_message_to_thread"].includes(name)) {
+    if (["send_file", "send_voice", "schedule_wake_up", "send_sticker"].includes(name)) {
       const typedArgs = (args ?? {}) as Record<string, unknown>;
       const utilityCtx: UtilityToolContext = {
         resolveThreadId,
@@ -337,14 +337,20 @@ function createMcpServer(
       return handleMemoryTool(name, (args ?? {}) as Record<string, unknown>, memoryToolCtx);
     }
 
-    // ── delegate_to_thread ─────────────────────────────────────────────────
-    if (name === "delegate_to_thread") {
+    // ── start_thread ───────────────────────────────────────────────────────
+    if (name === "start_thread") {
       const typedArgs = (args ?? {}) as Record<string, unknown>;
       const delegateCtx: DelegateToolContext = {
         telegram,
         telegramChatId,
       };
-      return handleDelegateToThread(typedArgs, delegateCtx);
+      return handleStartThread(typedArgs, delegateCtx);
+    }
+
+    // ── send_message_to_thread ─────────────────────────────────────────────
+    if (name === "send_message_to_thread") {
+      const typedArgs = (args ?? {}) as Record<string, unknown>;
+      return handleSendMessageToThreadFile(typedArgs);
     }
 
     // ── get_version ────────────────────────────────────────────────────────
