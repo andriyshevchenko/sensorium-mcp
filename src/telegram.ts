@@ -397,40 +397,64 @@ export class TelegramClient {
 
   /**
    * Set an emoji reaction on a message ("seen" indicator).
-   * Non-throwing: silently ignores errors since reactions are non-critical UX.
-   * Logs only the first failure to avoid flooding stderr in busy sessions.
+   * Retries on 429 rate-limit responses. Logs the first failure per
+   * 60-second window to avoid flooding stderr in busy sessions.
    */
   private reactionWarned = false;
+  private reactionWarnedAt = 0;
 
   async setMessageReaction(
     chatId: string,
     messageId: number,
     emoji: string = "\uD83D\uDC40",
   ): Promise<void> {
-    try {
-      const url = `${this.baseUrl}/setMessageReaction`;
-      const response = await this.safeFetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          message_id: messageId,
-          reaction: [{ type: "emoji", emoji }],
-        }),
-      });
-      if (!response.ok && !this.reactionWarned) {
-        this.reactionWarned = true;
-        const data = await this.tryParseJson<{ description?: string }>(response);
-        log.warn(
-          `[telegram] setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText} (further failures suppressed)`,
-        );
-      }
-    } catch (err) {
-      if (!this.reactionWarned) {
-        this.reactionWarned = true;
-        log.warn(
-          `[telegram] setMessageReaction error: ${err instanceof Error ? err.message : String(err)} (further errors suppressed)`,
-        );
+    // Reset warning suppression after 60 s so new failures are visible.
+    if (this.reactionWarned && Date.now() - this.reactionWarnedAt > 60_000) {
+      this.reactionWarned = false;
+    }
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const url = `${this.baseUrl}/setMessageReaction`;
+        const response = await this.safeFetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            message_id: messageId,
+            reaction: [{ type: "emoji", emoji }],
+          }),
+        });
+        if (response.ok) return;
+
+        // Retry on 429 Too Many Requests.
+        if (response.status === 429 && attempt < MAX_RETRIES) {
+          const data = await this.tryParseJson<{ parameters?: { retry_after?: number }; description?: string }>(response);
+          const retryAfter = data?.parameters?.retry_after ?? 1;
+          log.info(`[telegram] setMessageReaction 429 on msg ${messageId} — retrying in ${retryAfter}s (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise<void>(r => setTimeout(r, retryAfter * 1000));
+          continue;
+        }
+
+        if (!this.reactionWarned) {
+          this.reactionWarned = true;
+          this.reactionWarnedAt = Date.now();
+          const data = await this.tryParseJson<{ description?: string }>(response);
+          log.warn(
+            `[telegram] setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText} (further failures suppressed for 60s)`,
+          );
+        }
+        return;
+      } catch (err) {
+        if (!this.reactionWarned) {
+          this.reactionWarned = true;
+          this.reactionWarnedAt = Date.now();
+          log.warn(
+            `[telegram] setMessageReaction error: ${err instanceof Error ? err.message : String(err)} (further errors suppressed for 60s)`,
+          );
+        }
+        return;
       }
     }
   }

@@ -185,12 +185,13 @@ export async function handleWaitForInstructions(
       }
 
       // React with 👀 on each consumed message to signal "seen" to the operator.
-      for (const msg of stored) {
-        void telegram.setMessageReaction(
-          telegramChatId,
-          msg.message.message_id,
-        ).catch(() => {});
-      }
+      // Stagger calls to avoid Telegram 429 rate-limits on large batches.
+      void (async () => {
+        for (const msg of stored) {
+          try { await telegram.setMessageReaction(telegramChatId, msg.message.message_id); } catch { /* non-critical */ }
+          if (stored.length > 1) await new Promise<void>(r => setTimeout(r, 100));
+        }
+      })();
 
       const contentBlocks: Array<TextBlock | ImageBlock> = [];
       let hasVoiceMessages = false;
