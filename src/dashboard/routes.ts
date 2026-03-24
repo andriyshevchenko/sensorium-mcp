@@ -31,7 +31,7 @@ import {
     type SemanticNote
 } from "../memory.js";
 
-import { DEFAULT_REMINDERS_TEMPLATE, DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "./presets.js";
+import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "./presets.js";
 import { getAgentType, setAgentType, type AgentType } from "../config.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────

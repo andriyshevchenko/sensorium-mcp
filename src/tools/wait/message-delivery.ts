@@ -27,7 +27,7 @@ import { extractSearchKeywords, getReminders, getMediumReminder } from "../../re
 import type { TelegramClient } from "../../telegram.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../../utils.js";
 
-import type { TextBlock, ImageBlock, ContentBlock, ToolResult } from "../../types.js";
+import type { ContentBlock, ToolResult } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Types

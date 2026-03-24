@@ -11,7 +11,7 @@ import { saveEpisode, type initMemoryDb } from "../../memory.js";
 import type { TelegramClient } from "../../telegram.js";
 import { log } from "../../logger.js";
 import { getMediumReminder } from "../../response-builders.js";
-import type { TextBlock, ImageBlock, ContentBlock, ToolResult } from "../../types.js";
+import type { TextBlock, ImageBlock, ToolResult } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Types
