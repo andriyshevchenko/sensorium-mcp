@@ -5,8 +5,8 @@
  * isolated in its own Telegram forum topic.
  */
 
-import { spawn, execSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setThreadAgentType, type AgentType } from "../config.js";
@@ -79,15 +79,18 @@ function resolveMcpConfigPath(): string | null {
 }
 
 /**
- * Check whether the `claude` CLI is available on the system.
+ * Resolve the absolute path to the `claude` CLI executable.
+ * Returns null if not found.  Uses where/which instead of execSync (L3).
  */
-function isClaudeAvailable(): boolean {
+function resolveClaudePath(): string | null {
   try {
-    execSync("claude --version", { stdio: "ignore", timeout: 10_000 });
-    return true;
-  } catch {
-    return false;
-  }
+    const cmd = process.platform === "win32" ? "where" : "which";
+    const result = spawnSync(cmd, ["claude"], { timeout: 5000, encoding: "utf-8" });
+    if (result.status === 0 && result.stdout) {
+      return result.stdout.trim().split(/\r?\n/)[0];
+    }
+  } catch { /* not found */ }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +117,8 @@ export async function handleDelegateToThread(
       : "claude";
 
   // ── Verify CLI availability ───────────────────────────────────────────
-  if (!isClaudeAvailable()) {
+  const claudePath = resolveClaudePath();
+  if (!claudePath) {
     return errorResult(
       "Error: 'claude' CLI is not installed or not on PATH. " +
       "Install it with: npm install -g @anthropic-ai/claude-code",
@@ -161,7 +165,7 @@ export async function handleDelegateToThread(
 
   const logFd = openSync(logFilePath, "a");
 
-  const prompt = `Start remote session with sensorium. Thread name = '${name}'`;
+  const prompt = `Start remote session with sensorium. Thread name = '${safeName}'`;
 
   const cliArgs = [
     "--verbose",
@@ -172,25 +176,29 @@ export async function handleDelegateToThread(
     "--include-partial-messages",
   ];
 
+  // Use shell only when the resolved path is a Windows batch script (.cmd/.bat)
+  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath);
+
   let child;
   try {
-    child = spawn("claude", cliArgs, {
+    child = spawn(claudePath, cliArgs, {
       detached: true,
       stdio: ["ignore", logFd, logFd],
-      shell: true,               // Needed on Windows to resolve claude from PATH
+      shell: needsShell,
       windowsHide: true,
     });
   } catch (err) {
+    closeSync(logFd);
     return errorResult(`Error: Failed to spawn Claude process: ${errorMessage(err)}`);
   }
+
+  // Release the parent's copy of the log file descriptor
+  closeSync(logFd);
 
   const pid = child.pid;
   if (pid === undefined) {
     return errorResult("Error: Claude process spawned but PID is undefined — spawn may have failed.");
   }
-
-  // Unref so the parent process can exit without waiting for this child.
-  child.unref();
 
   // ── 5. Track spawned process ──────────────────────────────────────────
   const entry: SpawnedThread = {
@@ -201,6 +209,16 @@ export async function handleDelegateToThread(
     logFile: logFilePath,
   };
   spawnedThreads.push(entry);
+
+  // Monitor process exit — clean up stale entries and log health info
+  child.on("exit", (code) => {
+    const idx = spawnedThreads.indexOf(entry);
+    if (idx !== -1) spawnedThreads.splice(idx, 1);
+    log.info(`[delegate] Claude process PID=${pid} for thread ${threadId} exited with code ${code}`);
+  });
+
+  // Unref so the parent process can exit without waiting for this child.
+  child.unref();
 
   log.info(`[delegate] Spawned Claude process PID=${pid} for thread ${threadId} ("${name}")`);
 
