@@ -8,6 +8,7 @@ import { convertMarkdown, splitMessage } from "../markdown.js";
 import type { TelegramClient } from "../telegram.js";
 import type { peekThreadMessages } from "../dispatcher.js";
 import type { checkMaintenanceFlag } from "../config.js";
+import { getAgentType } from "../config.js";
 import type { checkDueTasks } from "../scheduler.js";
 import { log } from "../logger.js";
 import type { ToolResult } from "../types.js";
@@ -265,13 +266,20 @@ async function handleHibernate(
     // gets no guidance on how to reconnect.
     const maintenanceInfo = checkMaintenanceFlag();
     if (maintenanceInfo) {
-      log.info(`[hibernate] Maintenance flag detected — returning to let agent use Start-Sleep: ${maintenanceInfo}`);
+      log.info(`[hibernate] Maintenance flag detected — returning to let agent sleep externally: ${maintenanceInfo}`);
+      const sleepCmd = {
+        copilot: "Use Desktop Commander to run: Start-Sleep -Seconds 600",
+        claude: "Run in Bash: sleep 600",
+        cursor: "Run in terminal: sleep 600",
+      }[getAgentType()];
+
       return {
         content: [{
           type: "text",
-          text: `⚠️ **Server update pending** (${maintenanceInfo}). ` +
-            `The MCP server will restart shortly. Use Desktop Commander to run: ` +
-            `Start-Sleep -Seconds 600 — then call start_session with threadId=${effectiveThreadId} to reconnect.` +
+          text: `⚠️ Server update in progress. STOP.\n\n` +
+            `Do NOT call start_session, wait_for_instructions, or any other tool.\n\n` +
+            `Your only next action: ${sleepCmd}. Do nothing else until it completes.\n\n` +
+            `After the sleep completes, call start_session with threadId=${effectiveThreadId} to reconnect.` +
             getShortReminder(effectiveThreadId),
         }],
       };
