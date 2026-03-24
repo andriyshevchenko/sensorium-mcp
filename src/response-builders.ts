@@ -6,7 +6,7 @@
  * time, uptime, operating-mode reminders, etc.).
  */
 
-import { config, getAgentType } from "./config.js";
+import { config, getEffectiveAgentType } from "./config.js";
 import { describeADV } from "./utils.js";
 import { loadTemplate, renderTemplate } from "./data/templates.js";
 import type { VoiceAnalysisResult } from "./openai.js";
@@ -107,7 +107,7 @@ export function getReminders(
   }
 
   // ── Fallback: use agent-specific default template ────────────────────
-  const defaultTpl = getDefaultRemindersTemplate(getAgentType());
+  const defaultTpl = getDefaultRemindersTemplate(getEffectiveAgentType(threadId));
   const fallbackVars: Record<string, string> = {
     OPERATOR_MESSAGE: "",
     THREAD_ID: String(threadId ?? "?"),
@@ -192,7 +192,7 @@ export function buildMaintenanceResponse(
     copilot: "Use Desktop Commander to run: Start-Sleep -Seconds 600",
     claude: "Run in Bash: sleep 600",
     cursor: "Run in terminal: sleep 600",
-  }[getAgentType()];
+  }[getEffectiveAgentType(effectiveThreadId)];
 
   return {
     content: [{
