@@ -25,6 +25,7 @@ import {
     removeLock,
     tryAcquireLock,
 } from "./lock.js";
+import { registerTopic } from "../../sessions.js";
 
 // ---------------------------------------------------------------------------
 // Poller state
@@ -114,10 +115,19 @@ async function pollOnce(
                 continue;
             }
 
-            // Skip Telegram service messages (forum_topic_created, pinned_message,
-            // new_chat_members, etc.) — they have no user content and would be
-            // delivered as "unsupported message type" to the agent.
             const m = u.message;
+
+            // Auto-register topics from forum_topic_created service messages
+            if (m.forum_topic_created && m.message_thread_id) {
+                try {
+                    registerTopic(chatId, m.forum_topic_created.name, m.message_thread_id);
+                    log.info(`[dispatcher] Auto-registered topic "${m.forum_topic_created.name}" → ${m.message_thread_id}`);
+                } catch { /* non-fatal */ }
+            }
+
+            // Skip Telegram service messages (pinned_message, new_chat_members,
+            // etc.) — they have no user content and would be delivered as
+            // "unsupported message type" to the agent.
             const hasContent = m.text || m.caption || m.photo || m.document || m.voice || m.video_note || m.sticker || m.animation;
             if (!hasContent) {
                 committedOffset = u.update_id + 1;

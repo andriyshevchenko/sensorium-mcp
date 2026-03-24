@@ -40,6 +40,7 @@ export interface TelegramMessage {
   video_note?: TelegramVideoNote;
   sticker?: TelegramSticker;
   animation?: TelegramAnimation;
+  forum_topic_created?: { name: string };
 }
 
 export interface PhotoSize {

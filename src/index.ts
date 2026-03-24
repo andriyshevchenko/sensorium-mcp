@@ -14,6 +14,7 @@ import { TelegramClient } from "./telegram.js";
 import { startHttpServer } from "./http-server.js";
 import { startStdioServer } from "./stdio-server.js";
 import { buildMcpServerFactory } from "./server/factory.js";
+import { setTopicRegistryDb, registerTopic } from "./sessions.js";
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -35,6 +36,11 @@ function getMemoryDb() {
 // Wire up lazy DB access for per-thread reaction routing
 telegram.setMessageDb(getMemoryDb);
 setBrokerDb(getMemoryDb);
+
+// Wire up lazy DB access for SQLite-backed topic registry
+setTopicRegistryDb(getMemoryDb);
+// Seed known topic mapping: SecureVault → 2314
+registerTopic(TELEGRAM_CHAT_ID, "SecureVault", 2314);
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)
