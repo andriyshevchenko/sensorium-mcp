@@ -32,7 +32,7 @@ import {
 } from "../memory.js";
 
 import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "./presets.js";
-import { getAgentType, setAgentType, getEffectiveAgentType, setThreadAgentType, getAllThreadAgentTypes, type AgentType } from "../config.js";
+import { getAgentType, setAgentType, getEffectiveAgentType, setThreadAgentType, getAllThreadAgentTypes, getClaudeMcpConfigPath, setClaudeMcpConfigPath, type AgentType } from "../config.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -241,6 +241,29 @@ function handleApiRoute(
         if (path === "/api/settings/dmn-activation-hours" && req.method === "GET") {
             const rawVal = parseFloat(process.env.DMN_ACTIVATION_HOURS ?? "");
             json({ value: Math.max(0.5, Number.isFinite(rawVal) ? rawVal : 4) });
+            return true;
+        }
+
+        if (path === "/api/settings/claude-mcp-config" && req.method === "GET") {
+            json({ path: getClaudeMcpConfigPath() });
+            return true;
+        }
+
+        if (path === "/api/settings/claude-mcp-config" && req.method === "POST") {
+            void (async () => {
+                try {
+                    const body = await readBody(req);
+                    const parsed = JSON.parse(body) as { path?: string };
+                    if (typeof parsed.path !== "string" || !parsed.path.trim()) {
+                        json({ error: "Missing or empty path" }, 400);
+                        return;
+                    }
+                    setClaudeMcpConfigPath(parsed.path.trim());
+                    json({ ok: true, path: parsed.path.trim() });
+                } catch (err) {
+                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                }
+            })();
             return true;
         }
 

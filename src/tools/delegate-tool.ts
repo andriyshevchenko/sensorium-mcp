@@ -9,7 +9,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { setThreadAgentType, type AgentType } from "../config.js";
+import { setThreadAgentType, getClaudeMcpConfigPath, type AgentType } from "../config.js";
 import { persistSession } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import type { ToolResult } from "../types.js";
@@ -61,14 +61,20 @@ function ensureDirs(): void {
  * Resolve the MCP config path for the spawned Claude process.
  * Priority:
  *   1. CLAUDE_MCP_CONFIG env var
- *   2. ~/.claude/mcp_config.json
- *   3. ~/.claude/.mcp.json
+ *   2. Dashboard setting (claudeMcpConfigPath in settings.json)
+ *   3. ~/.claude/settings.json
+ *   4. ~/.claude/mcp_config.json
+ *   5. ~/.claude/.mcp.json
  */
 function resolveMcpConfigPath(): string | null {
   const envPath = process.env.CLAUDE_MCP_CONFIG;
   if (envPath && existsSync(envPath)) return envPath;
 
+  const dashboardPath = getClaudeMcpConfigPath();
+  if (dashboardPath && existsSync(dashboardPath)) return dashboardPath;
+
   const candidates = [
+    join(homedir(), ".claude", "settings.json"),
     join(homedir(), ".claude", "mcp_config.json"),
     join(homedir(), ".claude", ".mcp.json"),
   ];
