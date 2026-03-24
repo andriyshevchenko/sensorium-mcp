@@ -10,7 +10,7 @@ import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from "node:
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setThreadAgentType, getClaudeMcpConfigPath, type AgentType } from "../config.js";
-import { persistSession } from "../sessions.js";
+import { lookupSession, persistSession } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import type { ToolResult } from "../types.js";
 import { log } from "../logger.js";
@@ -140,18 +140,42 @@ export async function handleDelegateToThread(
     );
   }
 
-  // ── 1. Create Telegram forum topic ────────────────────────────────────
+  // ── 1. Resolve or create Telegram forum topic ─────────────────────────
   let threadId: number;
-  try {
-    const topic = await telegram.createForumTopic(telegramChatId, name);
-    threadId = topic.message_thread_id;
-    persistSession(telegramChatId, name, threadId);
-    log.info(`[delegate] Created forum topic "${name}" → thread ${threadId}`);
-  } catch (err) {
-    return errorResult(
-      `Error: Could not create forum topic "${name}": ${errorMessage(err)}. ` +
-      "Ensure the Telegram chat is a forum supergroup with the bot as admin.",
-    );
+  const existingThreadId = lookupSession(telegramChatId, name);
+
+  if (existingThreadId !== undefined) {
+    // Validate the topic still exists by attempting a no-op edit
+    const stillValid = await telegram.validateForumTopic(telegramChatId, existingThreadId);
+    if (stillValid) {
+      threadId = existingThreadId;
+      log.info(`[delegate] Reusing existing forum topic "${name}" → thread ${threadId}`);
+    } else {
+      log.info(`[delegate] Stored topic "${name}" (thread ${existingThreadId}) is stale, creating new one`);
+      try {
+        const topic = await telegram.createForumTopic(telegramChatId, name);
+        threadId = topic.message_thread_id;
+        persistSession(telegramChatId, name, threadId);
+        log.info(`[delegate] Created forum topic "${name}" → thread ${threadId}`);
+      } catch (err) {
+        return errorResult(
+          `Error: Could not create forum topic "${name}": ${errorMessage(err)}. ` +
+          "Ensure the Telegram chat is a forum supergroup with the bot as admin.",
+        );
+      }
+    }
+  } else {
+    try {
+      const topic = await telegram.createForumTopic(telegramChatId, name);
+      threadId = topic.message_thread_id;
+      persistSession(telegramChatId, name, threadId);
+      log.info(`[delegate] Created forum topic "${name}" → thread ${threadId}`);
+    } catch (err) {
+      return errorResult(
+        `Error: Could not create forum topic "${name}": ${errorMessage(err)}. ` +
+        "Ensure the Telegram chat is a forum supergroup with the bot as admin.",
+      );
+    }
   }
 
   // ── 2. Set per-thread agent type ──────────────────────────────────────
