@@ -131,6 +131,26 @@ export function getEffectiveAgentType(threadId?: number): AgentType {
   return getAgentType();
 }
 
+// ─── Claude MCP config path setting ─────────────────────────────────────────
+
+/** Returns the dashboard-configured Claude MCP config path, or null if unset. */
+export function getClaudeMcpConfigPath(): string | null {
+  try {
+    const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
+    const p = raw.claudeMcpConfigPath;
+    if (typeof p === "string" && p.length > 0) return p;
+  } catch { /* missing or invalid settings file */ }
+  return null;
+}
+
+/** Persists the Claude MCP config path override. */
+export function setClaudeMcpConfigPath(path: string): void {
+  let settings: Record<string, unknown> = {};
+  try { settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>; } catch { /* ok */ }
+  settings.claudeMcpConfigPath = path;
+  atomicWriteSettings(settings);
+}
+
 // ─── Exported config object ─────────────────────────────────────────────────
 
 export const config: AppConfig = {
