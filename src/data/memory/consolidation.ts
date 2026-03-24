@@ -1,4 +1,5 @@
 import type { Database } from "./schema.js";
+import { cleanupOldSentMessages } from "./schema.js";
 import { getUnconsolidatedEpisodes, markConsolidated } from "./episodes.js";
 import {
   saveSemanticNote,
@@ -321,6 +322,9 @@ Rules:
     log.error(`[memory] Intelligent consolidation failed (episodes NOT marked): ${msg}`);
     details.push(`Consolidation failed (will retry): ${msg}`);
   }
+
+  // Housekeeping: clean up old sent_messages entries (>7 days)
+  cleanupOldSentMessages(db);
 
   return {
     episodesProcessed: episodes.length,

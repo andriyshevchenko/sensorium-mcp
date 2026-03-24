@@ -3,6 +3,7 @@
  * No third-party HTTP client required.
  */
 
+import type { Database } from "better-sqlite3";
 import { log } from "./logger.js";
 import type {
   TelegramUpdate,
@@ -51,15 +52,35 @@ export class TelegramClient {
   private sentMessages: Array<{ messageId: number; snippet: string; timestamp: number }> = [];
   private static readonly MAX_SENT_MESSAGES = 50;
 
+  /** Optional lazy DB getter for persisting message_id → thread_id mapping. */
+  private dbGetter: (() => Database) | null = null;
+
   constructor(private readonly token: string) {
     this.baseUrl = `https://api.telegram.org/bot${token}`;
   }
 
+  /**
+   * Wire up a lazy database accessor so sent message_id → thread_id
+   * mappings can be persisted for per-thread reaction routing.
+   */
+  setMessageDb(getter: () => Database): void {
+    this.dbGetter = getter;
+  }
+
   /** Record a sent message for later lookup (e.g. when a reaction arrives). */
-  private recordSentMessage(messageId: number, snippet: string): void {
+  private recordSentMessage(messageId: number, snippet: string, threadId?: number): void {
     this.sentMessages.push({ messageId, snippet, timestamp: Date.now() });
     if (this.sentMessages.length > TelegramClient.MAX_SENT_MESSAGES) {
       this.sentMessages.splice(0, this.sentMessages.length - TelegramClient.MAX_SENT_MESSAGES);
+    }
+    // Persist message_id → thread_id mapping for per-thread reaction routing
+    if (threadId !== undefined && this.dbGetter) {
+      try {
+        const db = this.dbGetter();
+        db.prepare(
+          `INSERT OR REPLACE INTO sent_messages (message_id, thread_id) VALUES (?, ?)`
+        ).run(messageId, threadId);
+      } catch { /* non-fatal — must never break message sending */ }
     }
   }
 
@@ -270,7 +291,7 @@ export class TelegramClient {
       throw new Error(`Telegram API error in sendMessage: ${description}`);
     }
     if (data.result?.message_id) {
-      this.recordSentMessage(data.result.message_id, text.slice(0, 80));
+      this.recordSentMessage(data.result.message_id, text.slice(0, 80), threadId);
     }
   }
 
@@ -335,7 +356,7 @@ export class TelegramClient {
     const msgId = await this.sendMedia("sendDocument", chatId, "document",
       new Blob([new Uint8Array(fileBuffer)]), filename, { caption, threadId });
     if (msgId) {
-      this.recordSentMessage(msgId, caption?.slice(0, 80) ?? `[document: ${filename}]`);
+      this.recordSentMessage(msgId, caption?.slice(0, 80) ?? `[document: ${filename}]`, threadId);
     }
   }
 
@@ -350,7 +371,7 @@ export class TelegramClient {
     const msgId = await this.sendMedia("sendPhoto", chatId, "photo",
       new Blob([new Uint8Array(imageBuffer)]), filename, { caption, threadId });
     if (msgId) {
-      this.recordSentMessage(msgId, caption?.slice(0, 80) ?? "[photo]");
+      this.recordSentMessage(msgId, caption?.slice(0, 80) ?? "[photo]", threadId);
     }
   }
 
@@ -365,7 +386,7 @@ export class TelegramClient {
       new Blob([new Uint8Array(audioBuffer)]), "voice.ogg", { threadId });
     if (msgId) {
       const snippet = textSnippet ? textSnippet.slice(0, 80) : "[voice message]";
-      this.recordSentMessage(msgId, snippet);
+      this.recordSentMessage(msgId, snippet, threadId);
     }
   }
 
@@ -390,7 +411,7 @@ export class TelegramClient {
       throw new Error(`Telegram sendSticker failed: ${response.status} ${description}`);
     }
     if (data?.result?.message_id) {
-      this.recordSentMessage(data.result.message_id, `[sticker: ${stickerId.slice(0, 20)}...]`);
+      this.recordSentMessage(data.result.message_id, `[sticker: ${stickerId.slice(0, 20)}...]`, threadId);
     }
   }
 
