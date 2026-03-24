@@ -182,67 +182,75 @@ export function getDashboardSessions(): DashboardSessionInfo[] {
 export const WAIT_LIVENESS_MS = 5 * 60 * 1000;
 
 // ─── Topic registry (operator-managed name → threadId mapping) ──────────────
-// Persisted at ~/.remote-copilot-mcp/topic-registry.json
-// Used to resolve threads created outside the MCP server (e.g. manually in Telegram).
+// Backed by the shared SQLite memory database (topic_registry table).
+// Call setTopicRegistryDb() once at startup to wire up the DB accessor.
 
-import { mkdirSync } from "node:fs";
+import type { Database } from "better-sqlite3";
 
-const TOPIC_REGISTRY_DIR = join(homedir(), ".remote-copilot-mcp");
-const TOPIC_REGISTRY_PATH = join(TOPIC_REGISTRY_DIR, "topic-registry.json");
+let topicDbGetter: (() => Database) | null = null;
 
-type TopicRegistryMap = Record<string, Record<string, number>>;
-
-function loadTopicRegistry(): TopicRegistryMap {
-  try {
-    const raw = readFileSync(TOPIC_REGISTRY_PATH, "utf8");
-    return JSON.parse(raw) as TopicRegistryMap;
-  } catch {
-    return {};
-  }
+/** Wire up a lazy database accessor for the topic registry. */
+export function setTopicRegistryDb(getter: () => Database): void {
+  topicDbGetter = getter;
 }
 
-function saveTopicRegistry(map: TopicRegistryMap): void {
-  try {
-    mkdirSync(TOPIC_REGISTRY_DIR, { recursive: true });
-    const tmp = TOPIC_REGISTRY_PATH + `.tmp.${process.pid}`;
-    writeFileSync(tmp, JSON.stringify(map, null, 2), "utf8");
-    renameSync(tmp, TOPIC_REGISTRY_PATH);
-  } catch (err) {
-    log.warn(
-      `Warning: Could not save topic registry to ${TOPIC_REGISTRY_PATH}: ${errorMessage(err)}`,
-    );
-  }
+function getTopicDb(): Database {
+  if (!topicDbGetter) throw new Error("Topic registry DB not initialized — call setTopicRegistryDb() first");
+  return topicDbGetter();
 }
 
 /** Look up a thread ID from the operator-managed topic registry. */
 export function lookupTopicRegistry(chatId: string, name: string): number | undefined {
-  const map = loadTopicRegistry();
-  return map[chatId]?.[name.toLowerCase()];
+  try {
+    const db = getTopicDb();
+    const row = db.prepare(
+      `SELECT thread_id FROM topic_registry WHERE chat_id = ? AND name = ?`
+    ).get(chatId, name.toLowerCase()) as { thread_id: number } | undefined;
+    return row?.thread_id;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Register a topic name → threadId mapping in the registry. */
 export function registerTopic(chatId: string, name: string, threadId: number): void {
-  const map = loadTopicRegistry();
-  if (!map[chatId]) map[chatId] = {};
-  map[chatId][name.toLowerCase()] = threadId;
-  saveTopicRegistry(map);
+  try {
+    const db = getTopicDb();
+    db.prepare(
+      `INSERT OR REPLACE INTO topic_registry (chat_id, name, thread_id, registered_at) VALUES (?, ?, ?, datetime('now'))`
+    ).run(chatId, name.toLowerCase(), threadId);
+  } catch (err) {
+    log.warn(`[topic-registry] Failed to register topic: ${errorMessage(err)}`);
+  }
 }
 
 /** Remove a topic from the registry. */
 export function unregisterTopic(chatId: string, name: string): void {
-  const map = loadTopicRegistry();
-  if (map[chatId]) {
-    delete map[chatId][name.toLowerCase()];
-    if (Object.keys(map[chatId]).length === 0) delete map[chatId];
-    saveTopicRegistry(map);
+  try {
+    const db = getTopicDb();
+    db.prepare(
+      `DELETE FROM topic_registry WHERE chat_id = ? AND name = ?`
+    ).run(chatId, name.toLowerCase());
+  } catch (err) {
+    log.warn(`[topic-registry] Failed to unregister topic: ${errorMessage(err)}`);
   }
 }
 
 /** Get all registered topics for a chat (or all chats if chatId is omitted). */
-export function getAllRegisteredTopics(chatId?: string): TopicRegistryMap {
-  const map = loadTopicRegistry();
-  if (chatId) {
-    return map[chatId] ? { [chatId]: map[chatId] } : {};
+export function getAllRegisteredTopics(chatId?: string): Record<string, Record<string, number>> {
+  try {
+    const db = getTopicDb();
+    const rows = chatId
+      ? db.prepare(`SELECT chat_id, name, thread_id FROM topic_registry WHERE chat_id = ?`).all(chatId) as Array<{ chat_id: string; name: string; thread_id: number }>
+      : db.prepare(`SELECT chat_id, name, thread_id FROM topic_registry`).all() as Array<{ chat_id: string; name: string; thread_id: number }>;
+
+    const result: Record<string, Record<string, number>> = {};
+    for (const row of rows) {
+      if (!result[row.chat_id]) result[row.chat_id] = {};
+      result[row.chat_id][row.name] = row.thread_id;
+    }
+    return result;
+  } catch {
+    return {};
   }
-  return map;
 }
