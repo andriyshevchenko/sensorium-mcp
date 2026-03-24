@@ -429,26 +429,21 @@ export function getToolDefinitions(): ToolDefinition[] {
         required: ["stickerId"],
       },
     },
-    // ── Delegation Tool ─────────────────────────────────────────────
+    // ── Thread Management ────────────────────────────────────────────
     {
-      name: "delegate_to_thread",
+      name: "start_thread",
       description:
-        "Spawn a background Claude Code process in its own Telegram thread, connected to sensorium via MCP. " +
-        "Use this to delegate a self-contained task to a parallel agent that runs independently. " +
-        "The spawned agent will pick up the task on its first wait_for_instructions call.",
+        "Ensure an agent session is running on a named thread. " +
+        "Creates the thread if it doesn't exist. Restarts if dormant. No-op if already active. " +
+        "Use this before send_message_to_thread.",
       inputSchema: {
         type: "object",
         properties: {
           name: {
             type: "string",
             description:
-              "Thread name for the new session (e.g. 'Azure-WorkItems'). " +
-              "A new Telegram forum topic will be created with this name.",
-          },
-          task: {
-            type: "string",
-            description:
-              "Task description to inject on the spawned thread's first wait_for_instructions call.",
+              "Thread name for the session (e.g. 'Azure-WorkItems'). " +
+              "Resolved case-insensitively against persisted sessions.",
           },
           agentType: {
             type: "string",
@@ -457,28 +452,28 @@ export function getToolDefinitions(): ToolDefinition[] {
             enum: ["copilot", "claude", "cursor"],
           },
         },
-        required: ["name", "task"],
+        required: ["name"],
       },
     },
-    // ── Inter-agent Messaging ──────────────────────────────────────────
     {
       name: "send_message_to_thread",
       description:
-        "Send a text message to another agent running on a different Telegram thread. " +
-        "The message will be delivered on the target thread's next wait_for_instructions cycle.",
+        "Send a task or message to another thread's agent. " +
+        "The agent receives it on their next poll. " +
+        "If the thread is dormant, the message is queued but not processed until start_thread is called.",
       inputSchema: {
         type: "object",
         properties: {
-          targetThreadId: {
+          threadId: {
             type: "number",
             description: "The Telegram thread ID to send the message to.",
           },
           message: {
             type: "string",
-            description: "The message content to send.",
+            description: "The task or message content to send.",
           },
         },
-        required: ["targetThreadId", "message"],
+        required: ["threadId", "message"],
       },
     },
     // ── Server Info Tools ─────────────────────────────────────────────
