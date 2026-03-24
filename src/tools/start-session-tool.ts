@@ -200,6 +200,7 @@ export async function handleStartSession(
       memoryBriefing = "\n\n" + assembleBootstrap(db, session.currentThreadId);
     }
   } catch (e) {
+    log.warn(`[start_session] Memory bootstrap failed: ${e instanceof Error ? e.message : String(e)}`);
     memoryBriefing = "\n\n_Memory system unavailable._";
   }
 
