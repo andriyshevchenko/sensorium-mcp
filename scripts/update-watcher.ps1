@@ -140,7 +140,7 @@ function Clear-NpxCache {
     if (-not (Test-Path $NPX_CACHE_DIR)) { return }
     Write-Log "Clearing sensorium-mcp from npx cache..."
     Get-ChildItem -Path $NPX_CACHE_DIR -Directory -Force | ForEach-Object {
-        $pkg = Join-Path $_.FullName "node_modules" "sensorium-mcp"
+        $pkg = Join-Path $_.FullName "node_modules\sensorium-mcp"
         if (Test-Path $pkg) {
             Write-Log "Removing cache entry: $($_.Name)"
             Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
