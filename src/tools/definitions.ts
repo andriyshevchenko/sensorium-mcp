@@ -460,6 +460,27 @@ export function getToolDefinitions(): ToolDefinition[] {
         required: ["name", "task"],
       },
     },
+    // ── Inter-agent Messaging ──────────────────────────────────────────
+    {
+      name: "send_message_to_thread",
+      description:
+        "Send a text message to another agent running on a different Telegram thread. " +
+        "The message will be delivered on the target thread's next wait_for_instructions cycle.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          targetThreadId: {
+            type: "number",
+            description: "The Telegram thread ID to send the message to.",
+          },
+          message: {
+            type: "string",
+            description: "The message content to send.",
+          },
+        },
+        required: ["targetThreadId", "message"],
+      },
+    },
     // ── Server Info Tools ─────────────────────────────────────────────
     {
       name: "get_version",
