@@ -18,6 +18,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { log } from "../../logger.js";
 import { isPidAlive } from "./lock.js";
+import type { Database } from "better-sqlite3";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -26,6 +27,37 @@ import { isPidAlive } from "./lock.js";
 const BASE_DIR = join(homedir(), ".remote-copilot-mcp");
 const THREADS_DIR = join(BASE_DIR, "threads");
 export const OFFSET_FILE = join(BASE_DIR, "offset");
+
+// ---------------------------------------------------------------------------
+// Lazy DB access for per-thread reaction routing
+// ---------------------------------------------------------------------------
+
+let brokerDbGetter: (() => Database) | null = null;
+
+/**
+ * Wire up a lazy database accessor so the broker can look up
+ * message_id → thread_id in the sent_messages table.
+ */
+export function setBrokerDb(getter: () => Database): void {
+    brokerDbGetter = getter;
+}
+
+/**
+ * Look up which thread a message belongs to via sent_messages.
+ * Returns undefined if the lookup fails or the message isn't tracked.
+ */
+function lookupThreadForMessage(messageId: number): number | undefined {
+    if (!brokerDbGetter) return undefined;
+    try {
+        const db = brokerDbGetter();
+        const row = db.prepare(
+            `SELECT thread_id FROM sent_messages WHERE message_id = ?`
+        ).get(messageId) as { thread_id: number } | undefined;
+        return row?.thread_id;
+    } catch {
+        return undefined; // non-fatal — fall back to global file
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Reaction file helpers
@@ -40,27 +72,55 @@ export interface StoredReaction {
 
 const REACTION_FILE = join(BASE_DIR, "pending_reaction.json");
 
+function reactionFileForThread(threadId: number): string {
+    return join(BASE_DIR, `pending_reaction_${threadId}.json`);
+}
+
 export function writeReactionFile(reaction: StoredReaction): void {
     try {
-        writeFileSync(REACTION_FILE, JSON.stringify(reaction), "utf8");
+        // Try to route the reaction to the correct thread's file
+        const threadId = lookupThreadForMessage(reaction.messageId);
+        const file = threadId !== undefined
+            ? reactionFileForThread(threadId)
+            : REACTION_FILE;
+        writeFileSync(file, JSON.stringify(reaction), "utf8");
+        if (threadId !== undefined) {
+            log.info(`[dispatcher] Reaction routed to thread ${threadId}`);
+        }
     } catch { /* non-fatal */ }
 }
 
 /**
  * Read and clear the pending reaction (if any).
+ * When threadId is provided, reads from the per-thread file first,
+ * falling back to the global file for backwards compatibility.
  * Returns null if no reaction is pending.
  */
-export function readPendingReaction(): StoredReaction | null {
+export function readPendingReaction(threadId?: number): StoredReaction | null {
+    // Try per-thread file first if threadId is provided
+    if (threadId !== undefined) {
+        const threadFile = reactionFileForThread(threadId);
+        const threadResult = readAndClearReactionFile(threadFile);
+        if (threadResult) return threadResult;
+    }
+    // Fall back to global file
+    return readAndClearReactionFile(REACTION_FILE);
+}
+
+/**
+ * Read and clear a single reaction file. Returns null if not found/corrupt.
+ */
+function readAndClearReactionFile(filePath: string): StoredReaction | null {
     let raw: string;
     try {
-        raw = readFileSync(REACTION_FILE, "utf8");
+        raw = readFileSync(filePath, "utf8");
     } catch {
         return null; // File doesn't exist — no pending reaction.
     }
     // Delete the file *after* a successful read.  If unlinkSync fails
     // (e.g. another process already consumed it) we still have `raw`
     // and can parse + return the reaction instead of discarding it.
-    try { unlinkSync(REACTION_FILE); } catch { /* already gone — fine */ }
+    try { unlinkSync(filePath); } catch { /* already gone — fine */ }
     try {
         return JSON.parse(raw) as StoredReaction;
     } catch {

@@ -39,7 +39,7 @@ export async function handleReactionWithMessages(
   contentBlocks: Array<TextBlock | ImageBlock>,
   ctx: ReactionContext,
 ): Promise<void> {
-  const pendingReaction = readPendingReaction() ?? ctx.telegram.lastReaction;
+  const pendingReaction = readPendingReaction(ctx.effectiveThreadId) ?? ctx.telegram.lastReaction;
   if (!pendingReaction) return;
 
   const emoji = "emoji" in pendingReaction ? pendingReaction.emoji : "";
@@ -97,7 +97,7 @@ export async function handleReactionWithMessages(
 export async function handleReactionOnly(
   ctx: ReactionContext & { autonomousMode: boolean },
 ): Promise<ToolResult | null> {
-  const pendingReactionOnly = readPendingReaction() ?? ctx.telegram.lastReaction;
+  const pendingReactionOnly = readPendingReaction(ctx.effectiveThreadId) ?? ctx.telegram.lastReaction;
   if (!pendingReactionOnly) return null;
 
   const rEmoji = "emoji" in pendingReactionOnly ? pendingReactionOnly.emoji : "";

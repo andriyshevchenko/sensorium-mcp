@@ -8,7 +8,7 @@
  */
 
 import { config } from "./config.js";
-import { startDispatcher } from "./dispatcher.js";
+import { startDispatcher, setBrokerDb } from "./dispatcher.js";
 import { initMemoryDb } from "./memory.js";
 import { TelegramClient } from "./telegram.js";
 import { startHttpServer } from "./http-server.js";
@@ -31,6 +31,10 @@ function getMemoryDb() {
   if (!memoryDb) memoryDb = initMemoryDb();
   return memoryDb;
 }
+
+// Wire up lazy DB access for per-thread reaction routing
+telegram.setMessageDb(getMemoryDb);
+setBrokerDb(getMemoryDb);
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)

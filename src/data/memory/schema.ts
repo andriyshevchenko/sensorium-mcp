@@ -23,7 +23,7 @@ function nowISO(): string {
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -112,6 +112,17 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       CREATE INDEX IF NOT EXISTS idx_ep_thread_time ON episodes(thread_id, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_ep_importance ON episodes(importance DESC);
       CREATE INDEX IF NOT EXISTS idx_ep_uncons ON episodes(consolidated) WHERE consolidated = 0;
+    `);
+  },
+  6: (db) => {
+    // Per-thread reaction routing: track which message_id belongs to which thread_id
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sent_messages (
+        message_id INTEGER PRIMARY KEY,
+        thread_id  INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_sent_messages_thread ON sent_messages(thread_id);
     `);
   },
 };
@@ -273,6 +284,14 @@ CREATE TABLE IF NOT EXISTS note_embeddings (
 
 CREATE INDEX IF NOT EXISTS idx_emb_note ON note_embeddings(note_id);
 
+CREATE TABLE IF NOT EXISTS sent_messages (
+  message_id INTEGER PRIMARY KEY,
+  thread_id  INTEGER NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sent_messages_thread ON sent_messages(thread_id);
+
 CREATE TABLE IF NOT EXISTS schema_version (
   version     INTEGER PRIMARY KEY,
   applied_at  TEXT NOT NULL
@@ -342,4 +361,21 @@ export function initMemoryDb(): Database {
   }
 
   return db;
+}
+
+/**
+ * Delete sent_messages entries older than 7 days.
+ * Safe to call periodically (e.g. during consolidation).
+ */
+export function cleanupOldSentMessages(db: Database): void {
+  try {
+    const result = db.prepare(
+      `DELETE FROM sent_messages WHERE created_at < datetime('now', '-7 days')`
+    ).run();
+    if (result.changes > 0) {
+      log.info(`[memory] Cleaned up ${result.changes} old sent_messages entries.`);
+    }
+  } catch (err) {
+    log.warn(`[memory] sent_messages cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
