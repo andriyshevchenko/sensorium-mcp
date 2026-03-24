@@ -11,6 +11,7 @@ import { describeADV } from "./utils.js";
 import { loadTemplate, renderTemplate } from "./data/templates.js";
 import type { VoiceAnalysisResult } from "./openai.js";
 import { getDefaultRemindersTemplate } from "./dashboard/presets.js";
+import type { ToolResult } from "./types.js";
 
 export { loadTemplate, renderTemplate } from "./data/templates.js";
 
@@ -173,4 +174,34 @@ export function getShortReminder(threadId: number | undefined, sessionStartedAt:
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
   return threadHint + `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`;
+}
+
+/**
+ * Build the standardised maintenance-mode response returned when a server
+ * update is in progress.  Both the poll-loop and hibernate handlers use
+ * this, so it lives here to avoid duplication.
+ *
+ * @param effectiveThreadId  Current Telegram thread ID.
+ * @param shortReminder      Pre-computed short reminder suffix.
+ */
+export function buildMaintenanceResponse(
+  effectiveThreadId: number,
+  shortReminder: string,
+): ToolResult {
+  const sleepCmd = {
+    copilot: "Use Desktop Commander to run: Start-Sleep -Seconds 600",
+    claude: "Run in Bash: sleep 600",
+    cursor: "Run in terminal: sleep 600",
+  }[getAgentType()];
+
+  return {
+    content: [{
+      type: "text",
+      text: `⚠️ Server update in progress. STOP.\n\n` +
+        `Do NOT call start_session, wait_for_instructions, or any other tool.\n\n` +
+        `Your only next action: ${sleepCmd}. Do nothing else until it completes.\n\n` +
+        `After the sleep completes, call start_session with threadId=${effectiveThreadId} to reconnect.` +
+        shortReminder,
+    }],
+  };
 }
