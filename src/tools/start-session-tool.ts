@@ -33,7 +33,6 @@ export interface StartSessionContext {
     sessionStartedAt: number;
     waitCallCount: number;
     lastToolCallAt: number;
-    deadSessionAlerted: boolean;
     toolCallsSinceLastDelivery: number;
     previewedUpdateIds: Set<number>;
     lastOperatorMessageAt: number;

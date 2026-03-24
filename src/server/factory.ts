@@ -17,7 +17,6 @@ import { peekThreadMessages } from "../dispatcher.js";
 import { formatDrivePrompt } from "../drive.js";
 import { checkDueTasks } from "../scheduler.js";
 import {
-  DEAD_SESSION_TIMEOUT_MS,
   updateDashboardActivity,
   updateDashboardThreadId,
   updateLastWaitCall,
@@ -71,9 +70,6 @@ function createMcpServer(
   let sessionStartedAt = Date.now();
   let currentThreadId: number | undefined;
   let lastToolCallAt = Date.now();
-  let deadSessionAlerted = false;
-  let deadSessionAlertedAt = 0;
-  let waitInProgress = false;
   let lastOperatorMessageAt = Date.now();
   let lastOperatorMessageText = "";
   let lastConsolidationAt = 0;
@@ -145,37 +141,6 @@ function createMcpServer(
     { capabilities: { tools: {} } },
   );
 
-  // Dead session detector — per-session, runs every 2 minutes
-  const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // 60 min between alerts
-  const deadSessionInterval = setInterval(async () => {
-    if (!currentThreadId) return;
-    // Skip check when wait_for_instructions is actively running — the session
-    // is definitively alive even if lastToolCallAt hasn't been refreshed.
-    if (waitInProgress) return;
-    // Consider both tool calls and operator messages as session activity.
-    const lastActivity = Math.max(lastToolCallAt, lastOperatorMessageAt);
-    const elapsed = Date.now() - lastActivity;
-    const cooldownOk = Date.now() - deadSessionAlertedAt > ALERT_COOLDOWN_MS;
-    if (elapsed > DEAD_SESSION_TIMEOUT_MS && cooldownOk) {
-      deadSessionAlerted = true;
-      deadSessionAlertedAt = Date.now();
-      try {
-        const minutes = Math.round(elapsed / 60000);
-        await telegram.sendMessage(
-          telegramChatId,
-          `⚠️ *Session appears down* — no tool calls in ${minutes} minutes\\. The agent may have crashed or the VS Code window compacted the context\\. Please check and restart if needed\\.`,
-          "MarkdownV2",
-          currentThreadId,
-        );
-      } catch (_) { /* non-fatal */ }
-    }
-  }, 2 * 60 * 1000);
-
-  // Clean up the interval when the server closes
-  srv.onclose = () => {
-    clearInterval(deadSessionInterval);
-  };
-
   // ── Tool definitions ──────────────────────────────────────────────────────
 
   srv.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -191,9 +156,6 @@ function createMcpServer(
     const argsSummary = args ? JSON.stringify(args).slice(0, 200) : "{}";
     log.verbose("dispatch", `Tool call: ${name} args=${argsSummary}`);
 
-    // Dead session detection — update timestamp on any tool call.
-    // Only reset the alert flag when wait_for_instructions is called,
-    // as that's the primary health signal (agent is actively polling).
     lastToolCallAt = Date.now();
 
     // Track tool calls for activity monitoring
@@ -211,8 +173,6 @@ function createMcpServer(
           set waitCallCount(v) { waitCallCount = v; },
           get lastToolCallAt() { return lastToolCallAt; },
           set lastToolCallAt(v) { lastToolCallAt = v; },
-          get deadSessionAlerted() { return deadSessionAlerted; },
-          set deadSessionAlerted(v) { deadSessionAlerted = v; },
           get toolCallsSinceLastDelivery() { return toolCallsSinceLastDelivery; },
           set toolCallsSinceLastDelivery(v) { toolCallsSinceLastDelivery = v; },
           previewedUpdateIds,
@@ -258,8 +218,6 @@ function createMcpServer(
           set waitCallCount(v) { waitCallCount = v; },
           get lastToolCallAt() { return lastToolCallAt; },
           set lastToolCallAt(v) { lastToolCallAt = v; },
-          get deadSessionAlerted() { return deadSessionAlerted; },
-          set deadSessionAlerted(v) { deadSessionAlerted = v; },
           get toolCallsSinceLastDelivery() { return toolCallsSinceLastDelivery; },
           set toolCallsSinceLastDelivery(v) { toolCallsSinceLastDelivery = v; },
           get lastOperatorMessageAt() { return lastOperatorMessageAt; },
@@ -283,16 +241,11 @@ function createMcpServer(
         config,
         errorResult,
       };
-      waitInProgress = true;
-      try {
-        return await handleWaitForInstructions(
-          (args ?? {}) as Record<string, unknown>,
-          waitCtx,
-          extra as unknown as WaitToolExtra,
-        );
-      } finally {
-        waitInProgress = false;
-      }
+      return handleWaitForInstructions(
+        (args ?? {}) as Record<string, unknown>,
+        waitCtx,
+        extra as unknown as WaitToolExtra,
+      );
     }
 
     // ── report_progress / hibernate ─────────────────────────────────────────

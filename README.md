@@ -93,10 +93,6 @@ Schedule tasks that fire during `wait_for_instructions`.
 - **One-shot**: `runAt` — trigger at a specific time
 - **Idle-triggered**: `afterIdleMinutes` — trigger after N minutes of inactivity
 
-### Dead Session Detection
-
-Automatic alert when no tool calls arrive for 60 minutes. Single alert per downtime — no spam. Replaces annoying keep-alive pings.
-
 ## Tools
 
 | Tool | Description |
