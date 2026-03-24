@@ -180,3 +180,69 @@ export function getDashboardSessions(): DashboardSessionInfo[] {
 
 /** Grace period: a session is "truly alive" if lastWaitCallAt is within this. */
 export const WAIT_LIVENESS_MS = 5 * 60 * 1000;
+
+// ─── Topic registry (operator-managed name → threadId mapping) ──────────────
+// Persisted at ~/.remote-copilot-mcp/topic-registry.json
+// Used to resolve threads created outside the MCP server (e.g. manually in Telegram).
+
+import { mkdirSync } from "node:fs";
+
+const TOPIC_REGISTRY_DIR = join(homedir(), ".remote-copilot-mcp");
+const TOPIC_REGISTRY_PATH = join(TOPIC_REGISTRY_DIR, "topic-registry.json");
+
+type TopicRegistryMap = Record<string, Record<string, number>>;
+
+function loadTopicRegistry(): TopicRegistryMap {
+  try {
+    const raw = readFileSync(TOPIC_REGISTRY_PATH, "utf8");
+    return JSON.parse(raw) as TopicRegistryMap;
+  } catch {
+    return {};
+  }
+}
+
+function saveTopicRegistry(map: TopicRegistryMap): void {
+  try {
+    mkdirSync(TOPIC_REGISTRY_DIR, { recursive: true });
+    const tmp = TOPIC_REGISTRY_PATH + `.tmp.${process.pid}`;
+    writeFileSync(tmp, JSON.stringify(map, null, 2), "utf8");
+    renameSync(tmp, TOPIC_REGISTRY_PATH);
+  } catch (err) {
+    log.warn(
+      `Warning: Could not save topic registry to ${TOPIC_REGISTRY_PATH}: ${errorMessage(err)}`,
+    );
+  }
+}
+
+/** Look up a thread ID from the operator-managed topic registry. */
+export function lookupTopicRegistry(chatId: string, name: string): number | undefined {
+  const map = loadTopicRegistry();
+  return map[chatId]?.[name.toLowerCase()];
+}
+
+/** Register a topic name → threadId mapping in the registry. */
+export function registerTopic(chatId: string, name: string, threadId: number): void {
+  const map = loadTopicRegistry();
+  if (!map[chatId]) map[chatId] = {};
+  map[chatId][name.toLowerCase()] = threadId;
+  saveTopicRegistry(map);
+}
+
+/** Remove a topic from the registry. */
+export function unregisterTopic(chatId: string, name: string): void {
+  const map = loadTopicRegistry();
+  if (map[chatId]) {
+    delete map[chatId][name.toLowerCase()];
+    if (Object.keys(map[chatId]).length === 0) delete map[chatId];
+    saveTopicRegistry(map);
+  }
+}
+
+/** Get all registered topics for a chat (or all chats if chatId is omitted). */
+export function getAllRegisteredTopics(chatId?: string): TopicRegistryMap {
+  const map = loadTopicRegistry();
+  if (chatId) {
+    return map[chatId] ? { [chatId]: map[chatId] } : {};
+  }
+  return map;
+}

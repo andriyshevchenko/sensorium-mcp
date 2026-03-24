@@ -15,6 +15,8 @@ import {
   purgeOtherSessions,
   registerMcpSession,
   removeSession,
+  lookupTopicRegistry,
+  registerTopic,
 } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig, ToolResult } from "../types.js";
@@ -105,6 +107,15 @@ export async function handleStartSession(
     if (stored !== undefined) {
       session.currentThreadId = stored;
       resolvedPreexisting = true;
+    } else {
+      // Fallback: check the operator-managed topic registry
+      const registryId = lookupTopicRegistry(TELEGRAM_CHAT_ID, customName);
+      if (registryId !== undefined) {
+        session.currentThreadId = registryId;
+        // Promote to session store for future fast lookups
+        persistSession(TELEGRAM_CHAT_ID, customName, registryId);
+        resolvedPreexisting = true;
+      }
     }
   }
 
@@ -166,6 +177,7 @@ export async function handleStartSession(
       session.currentThreadId = topic.message_thread_id;
       // Persist so the same name resumes this thread next time.
       persistSession(TELEGRAM_CHAT_ID, topicName, session.currentThreadId);
+      registerTopic(TELEGRAM_CHAT_ID, topicName, session.currentThreadId);
     } catch (err) {
       // Forum topics not available (e.g. plain group or DM) — cannot proceed
       // without thread isolation. Return an error so the agent knows.

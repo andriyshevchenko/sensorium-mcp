@@ -31,6 +31,8 @@ import {
     type SemanticNote
 } from "../memory.js";
 
+import { getAllRegisteredTopics, registerTopic, unregisterTopic } from "../sessions.js";
+
 import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "./presets.js";
 import { getAgentType, setAgentType, getEffectiveAgentType, setThreadAgentType, getAllThreadAgentTypes, getClaudeMcpConfigPath, setClaudeMcpConfigPath, type AgentType } from "../config.js";
 
@@ -349,6 +351,66 @@ function handleApiRoute(
                     try {
                         const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
                         try { await unlink(join(templatesDir, `${name}.md`)); } catch { /* ok if missing */ }
+                        json({ ok: true });
+                    } catch (err) {
+                        json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                    }
+                })();
+                return true;
+            }
+        }
+
+        // ── Topic registry endpoints ────────────────────────────────
+        // GET  /api/topic-registry          → list all registered topics
+        // POST /api/topic-registry          → register name → threadId
+        // DELETE /api/topic-registry        → remove a mapping
+        if (path === "/api/topic-registry") {
+            if (req.method === "GET") {
+                const chatId = url.searchParams.get("chatId") ?? undefined;
+                json(getAllRegisteredTopics(chatId));
+                return true;
+            }
+
+            if (req.method === "POST") {
+                void (async () => {
+                    try {
+                        const body = await readBody(req);
+                        const parsed = JSON.parse(body) as { chatId?: string; name?: string; threadId?: number };
+                        if (!parsed.chatId || typeof parsed.chatId !== "string") {
+                            json({ error: "Missing or invalid chatId" }, 400);
+                            return;
+                        }
+                        if (!parsed.name || typeof parsed.name !== "string") {
+                            json({ error: "Missing or invalid name" }, 400);
+                            return;
+                        }
+                        if (parsed.threadId == null || !Number.isFinite(parsed.threadId)) {
+                            json({ error: "Missing or invalid threadId (must be a number)" }, 400);
+                            return;
+                        }
+                        registerTopic(parsed.chatId, parsed.name.trim(), parsed.threadId);
+                        json({ ok: true, chatId: parsed.chatId, name: parsed.name.trim().toLowerCase(), threadId: parsed.threadId });
+                    } catch (err) {
+                        json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                    }
+                })();
+                return true;
+            }
+
+            if (req.method === "DELETE") {
+                void (async () => {
+                    try {
+                        const body = await readBody(req);
+                        const parsed = JSON.parse(body) as { chatId?: string; name?: string };
+                        if (!parsed.chatId || typeof parsed.chatId !== "string") {
+                            json({ error: "Missing or invalid chatId" }, 400);
+                            return;
+                        }
+                        if (!parsed.name || typeof parsed.name !== "string") {
+                            json({ error: "Missing or invalid name" }, 400);
+                            return;
+                        }
+                        unregisterTopic(parsed.chatId, parsed.name.trim());
                         json({ ok: true });
                     } catch (err) {
                         json({ error: err instanceof Error ? err.message : String(err) }, 500);
