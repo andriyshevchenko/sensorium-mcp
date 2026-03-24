@@ -31,7 +31,7 @@ import { handleReactionWithMessages, handleReactionOnly } from "./reaction-handl
 import { checkForDueTasks } from "./task-handler.js";
 import { runAutoConsolidation, checkDriveActivation } from "./drive-handler.js";
 import { processSimpleMessage, handleEmptyContent, autoIngestEpisodes, buildSmartContext, assembleOperatorResponse } from "./message-delivery.js";
-import type { ContentBlock, ToolResult, TextBlock, ImageBlock } from "../../types.js";
+import type { ToolResult, TextBlock, ImageBlock } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -315,15 +315,12 @@ export async function handleWaitForInstructions(
   }
 
   // Timeout elapsed with no actionable message.
-  const now = new Date().toISOString();
 
   // Check for scheduled wake-up tasks.
   if (effectiveThreadId !== undefined) {
     const taskResult = checkForDueTasks(ctx, effectiveThreadId);
     if (taskResult) return taskResult;
   }
-
-  const idleMinutes = Math.round((Date.now() - state.lastOperatorMessageAt) / 60000);
 
   // Show pending scheduled tasks if any exist.
   let scheduleHint = "";
