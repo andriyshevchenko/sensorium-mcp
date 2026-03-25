@@ -27,17 +27,31 @@ type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 // Internals
 // ---------------------------------------------------------------------------
 
+/** Track current log file size in memory to avoid stat calls on every write. */
+let trackedFileSize = 0;
+let logDirEnsured = false;
+
 function ensureLogDir(): void {
+  if (logDirEnsured) return;
   mkdirSync(LOG_DIR, { recursive: true });
+  // Seed trackedFileSize from disk if the file already exists.
+  try {
+    if (existsSync(LOG_FILE)) {
+      trackedFileSize = statSync(LOG_FILE).size;
+    }
+  } catch { /* non-fatal */ }
+  logDirEnsured = true;
 }
+
+// Ensure log directory exists once at module init.
+ensureLogDir();
 
 /** Rotate log file if it exceeds MAX_LOG_SIZE. */
 function rotateIfNeeded(): void {
   try {
-    if (!existsSync(LOG_FILE)) return;
-    const { size } = statSync(LOG_FILE);
-    if (size >= MAX_LOG_SIZE) {
+    if (trackedFileSize >= MAX_LOG_SIZE) {
       renameSync(LOG_FILE, LOG_FILE_BACKUP);
+      trackedFileSize = 0;
     }
   } catch {
     // Non-fatal — if rotation fails we keep appending.
@@ -54,9 +68,9 @@ function write(level: LogLevel, message: string): void {
   process.stderr.write(line);
   // Write to log file.
   try {
-    ensureLogDir();
     rotateIfNeeded();
     appendFileSync(LOG_FILE, line, "utf8");
+    trackedFileSize += Buffer.byteLength(line, "utf8");
   } catch {
     // If file write fails we still wrote to stderr — don't crash.
   }
