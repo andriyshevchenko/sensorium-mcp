@@ -44,17 +44,25 @@ function unregisterTempFile(path: string): void {
     try { unlinkSync(path); } catch { /* ignore */ }
 }
 
-// Clean up in-flight temp files on graceful/forced shutdown.
-for (const sig of ["exit", "SIGINT", "SIGTERM"] as const) {
-    process.on(sig, () => {
-        for (const f of activeTempFiles) {
-            try { unlinkSync(f); } catch { /* ignore */ }
-        }
-    });
-}
+/**
+ * Register process-exit handlers that clean up in-flight temp files,
+ * and run an initial sweep of stale files in TEMP_DIR.
+ *
+ * Call once during application bootstrap (not at import time).
+ */
+export function initVideoTempCleanup(): void {
+    // Clean up in-flight temp files on graceful/forced shutdown.
+    for (const sig of ["exit", "SIGINT", "SIGTERM"] as const) {
+        process.on(sig, () => {
+            for (const f of activeTempFiles) {
+                try { unlinkSync(f); } catch { /* ignore */ }
+            }
+        });
+    }
 
-// Run once when the module loads.
-cleanupTempDir();
+    // Run once to purge stale crash-leftover files.
+    cleanupTempDir();
+}
 
 // ---------------------------------------------------------------------------
 // Frame extraction
