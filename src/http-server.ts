@@ -374,9 +374,11 @@ export function startHttpServer(
     }
 
     // 3. Tear down transports and HTTP server.
-    for (const [sid, t] of transports) {
-      try { t.close(); } catch (_) { /* best-effort */ }
-      transports.delete(sid);
+    for (const [sid, entry] of sessions) {
+      if (entry.transport) {
+        try { entry.transport.close(); } catch (_) { /* best-effort */ }
+      }
+      sessions.delete(sid);
     }
     httpServer.close();
     closeMemoryDb();
