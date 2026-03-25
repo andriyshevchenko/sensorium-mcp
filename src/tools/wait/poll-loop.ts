@@ -14,7 +14,7 @@
  *   - Activates the Dispatcher drive after extended operator silence
  */
 
-import { readFileSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { checkMaintenanceFlag } from "../../config.js";
@@ -35,6 +35,45 @@ import { checkForDueTasks } from "./task-handler.js";
 import { runAutoConsolidation, checkDriveActivation } from "./drive-handler.js";
 import { processSimpleMessage, handleEmptyContent, autoIngestEpisodes, buildSmartContext, assembleOperatorResponse } from "./message-delivery.js";
 import type { ToolResult, TextBlock, ImageBlock } from "../../types.js";
+
+// ---------------------------------------------------------------------------
+// Pending-task file helper
+// ---------------------------------------------------------------------------
+
+const PENDING_TASKS_DIR = join(homedir(), ".remote-copilot-mcp", "pending-tasks");
+
+/**
+ * Check for a pending task file written by send_message_to_thread.
+ * If one exists, atomically consume it and return a ToolResult.
+ * Returns null when no pending task is available.
+ */
+function consumePendingTask(threadId: number): ToolResult | null {
+  const pendingTaskPath = join(PENDING_TASKS_DIR, `${threadId}.txt`);
+  // Fast pre-check to avoid unnecessary rename attempts every 2s
+  if (!existsSync(pendingTaskPath)) return null;
+  try {
+    const tmpPath = pendingTaskPath + '.processing';
+    renameSync(pendingTaskPath, tmpPath);
+    const taskContent = readFileSync(tmpPath, "utf-8");
+    try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
+    log.info(`[wait] Injecting pending task for thread ${threadId} (${taskContent.length} chars)`);
+    return {
+      content: [
+        {
+          type: "text",
+          text:
+            `<<< OPERATOR MESSAGE >>>\n` +
+            `DELEGATED TASK: ${taskContent}\n\n` +
+            `Execute this task using subagents. Report progress via send_voice or report_progress. ` +
+            `When complete, use hibernate or simply finish.\n` +
+            `<<< END OPERATOR MESSAGE >>>`,
+        },
+      ],
+    };
+  } catch {
+    return null; // File doesn't exist or read error
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,33 +138,11 @@ export async function handleWaitForInstructions(
   const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
   const deadline = Date.now() + timeoutMs;
 
-  // ── One-shot pending task injection ──────────────────────────────────
+  // ── Pending task injection (pre-loop check) ────────────────────────────
   // If start_thread or send_message_to_thread wrote a task file for this
-  // thread, deliver it immediately and delete the file so it only fires once.
-  const PENDING_TASKS_DIR = join(homedir(), ".remote-copilot-mcp", "pending-tasks");
-  const pendingTaskPath = join(PENDING_TASKS_DIR, `${effectiveThreadId}.txt`);
-  try {
-    const tmpPath = pendingTaskPath + '.processing';
-    renameSync(pendingTaskPath, tmpPath);
-    const taskContent = readFileSync(tmpPath, "utf-8");
-    try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
-    log.info(`[wait] Injecting pending task for thread ${effectiveThreadId} (${taskContent.length} chars)`);
-    return {
-      content: [
-        {
-          type: "text",
-          text:
-            `<<< OPERATOR MESSAGE >>>\n` +
-            `DELEGATED TASK: ${taskContent}\n\n` +
-            `Execute this task using subagents. Report progress via send_voice or report_progress. ` +
-            `When complete, use hibernate or simply finish.\n` +
-            `<<< END OPERATOR MESSAGE >>>`,
-        },
-      ],
-    };
-  } catch {
-    // File doesn't exist or read error — fall through to normal polling
-  }
+  // thread, deliver it immediately.
+  const preLoopTask = consumePendingTask(effectiveThreadId);
+  if (preLoopTask) return preLoopTask;
 
   // Poll the dispatcher's per-thread file instead of calling getUpdates
   // directly. This avoids 409 conflicts between concurrent instances.
@@ -289,6 +306,15 @@ export async function handleWaitForInstructions(
         autonomousMode: AUTONOMOUS_MODE,
       });
       if (reactionResult) return reactionResult;
+    }
+
+    // ── Pending task injection (in-loop) ───────────────────────────────
+    // Check for tasks sent via send_message_to_thread while we're already
+    // polling.  Without this, messages arrive only on the NEXT
+    // wait_for_instructions call, causing a "no instructions" gap.
+    if (!extra.signal.aborted) {
+      const inLoopTask = consumePendingTask(effectiveThreadId);
+      if (inLoopTask) return inLoopTask;
     }
 
     // Check scheduled tasks every ~60s during idle polling.
