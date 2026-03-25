@@ -17,6 +17,8 @@ import type { Database } from "better-sqlite3";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import { config } from "./config.js";
+import { checkMaintenanceFlag } from "./data/file-storage.js";
+import { abortPendingSpeech, pendingSpeechCount } from "./integrations/openai/speech.js";
 import { log } from "./logger.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
 import {
@@ -356,11 +358,29 @@ export function startHttpServer(
     }
   }, 10 * 60 * 1000);
 
-  // Simple shutdown — close transports, DB, and exit.
-  const shutdown = () => {
+  // ── Graceful shutdown — abort in-flight TTS, drain, then exit ──────────
+  let shuttingDown = false;
+  const shutdown = async (reason: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log.info(`[shutdown] Graceful shutdown initiated (${reason}) — aborting in-flight TTS…`);
+
     clearInterval(ttlSweeperInterval);
     clearInterval(sessionGcInterval);
     clearInterval(sessionReaperInterval);
+    clearInterval(maintenancePollInterval);
+
+    // 1. Abort any pending TTS / transcription requests so they fail fast.
+    abortPendingSpeech();
+
+    // 2. Brief drain: wait up to 3 s for in-flight speech handlers to
+    //    propagate their abort errors back through the HTTP response.
+    const deadline = Date.now() + 3_000;
+    while (pendingSpeechCount() > 0 && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    // 3. Tear down transports and HTTP server.
     for (const [sid, t] of transports) {
       try { t.close(); } catch (_) { /* best-effort */ }
       transports.delete(sid);
@@ -369,10 +389,19 @@ export function startHttpServer(
     closeMemoryDb();
     process.exit(0);
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT",  () => { void shutdown("SIGINT"); });
+  process.on("SIGTERM", () => { void shutdown("SIGTERM"); });
   if (process.platform === "win32") {
-    process.on("SIGBREAK", shutdown);
+    process.on("SIGBREAK", () => { void shutdown("SIGBREAK"); });
   }
   process.on("exit", () => { closeMemoryDb(); });
+
+  // ── Maintenance flag poller — self-terminate before the update watcher
+  //    force-kills us, giving in-flight requests a chance to complete. ────
+  const maintenancePollInterval = setInterval(() => {
+    if (shuttingDown) return;
+    if (checkMaintenanceFlag()) {
+      void shutdown("maintenance flag detected");
+    }
+  }, 2_000);
 }
