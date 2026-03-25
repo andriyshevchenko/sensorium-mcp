@@ -19,26 +19,6 @@ import type {
 export * from "./integrations/telegram/types.js";
 
 // ---------------------------------------------------------------------------
-// Extension → MIME type mapping (used by downloadFileAsBase64)
-// ---------------------------------------------------------------------------
-
-const MIME_MAP: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  gif: "image/gif",
-  webp: "image/webp",
-  bmp: "image/bmp",
-  pdf: "application/pdf",
-  txt: "text/plain",
-  json: "application/json",
-  xml: "application/xml",
-  csv: "text/csv",
-  zip: "application/zip",
-  svg: "image/svg+xml",
-};
-
-// ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
 
@@ -353,20 +333,6 @@ export class TelegramClient {
     }
     const buffer = Buffer.from(await response.arrayBuffer());
     return { buffer, filePath: file.file_path };
-  }
-
-  /**
-   * Download a file from Telegram by file_id and return it as base64 with MIME type.
-   */
-  async downloadFileAsBase64(
-    fileId: string,
-  ): Promise<{ base64: string; mimeType: string }> {
-    const { buffer, filePath } = await this.downloadFileAsBuffer(fileId);
-    const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-    return {
-      base64: buffer.toString("base64"),
-      mimeType: MIME_MAP[ext] ?? "application/octet-stream",
-    };
   }
 
   /** Send a document (file) to a chat. */
