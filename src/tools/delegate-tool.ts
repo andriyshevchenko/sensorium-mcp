@@ -276,12 +276,11 @@ function cleanupStalePidFiles(): void {
  * Attempt to resolve an existing Telegram forum topic by name.
  *
  * Resolution order:
- *   1. Session store (threads previously used by this MCP server)
- *   2. Topic registry (SQLite topic_registry table) —
- *      operator-managed mapping for manually-created threads
+ *   1. Topic registry (SQLite topic_registry table — source of truth)
+ *   2. Session store (fallback for topics not in the registry)
  *
- * If a match is found in the registry but not yet in the session store,
- * the mapping is promoted there for faster future lookups.
+ * If a match is found in the registry, the session store is synced
+ * so future lookups stay consistent.
  *
  * Returns the thread ID if found, or undefined.
  */
@@ -289,17 +288,17 @@ function resolveExistingTopic(
   chatId: string,
   name: string,
 ): number | undefined {
-  // 1. Session store
-  const sessionId = lookupSession(chatId, name);
-  if (sessionId !== undefined) return sessionId;
-
-  // 2. Topic registry (operator-managed)
+  // 1. Topic registry (SQLite – source of truth)
   const registryId = lookupTopicRegistry(chatId, name);
   if (registryId !== undefined) {
-    // Promote to session store for future fast lookups
+    // Sync session store so it never holds a stale mapping
     persistSession(chatId, name, registryId);
     return registryId;
   }
+
+  // 2. Session store (fallback for topics not yet in the registry)
+  const sessionId = lookupSession(chatId, name);
+  if (sessionId !== undefined) return sessionId;
 
   return undefined;
 }
@@ -357,8 +356,8 @@ export async function handleStartThread(
   // ── 1. Resolve or create Telegram forum topic ─────────────────────────
   // Resolution order:
   //   0. Explicit threadId parameter (beats everything)
-  //   1. Session store (threads previously used by this server)
-  //   2. Topic registry (operator-managed mapping in SQLite)
+  //   1. Topic registry (SQLite – source of truth)
+  //   2. Session store (fallback for topics not in the registry)
   //   3. Create new topic via Telegram API (only if no match above)
   let threadId: number;
   let topicExisted = false;
