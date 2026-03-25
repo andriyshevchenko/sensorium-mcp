@@ -128,6 +128,22 @@ function createMcpServer(
     return currentThreadId;
   }
 
+  /**
+   * Reject tool calls that try to target a thread other than the session's own.
+   * Returns an error string if the scope is violated, or null if OK.
+   */
+  function enforceThreadScope(args: Record<string, unknown>): string | null {
+    if (currentThreadId === undefined) return null;
+    const raw = args?.threadId;
+    const requested = typeof raw === "number" ? raw
+      : typeof raw === "string" ? Number(raw)
+        : undefined;
+    if (requested !== undefined && Number.isFinite(requested) && requested !== currentThreadId) {
+      return `Cannot send to thread ${requested} — you are on thread ${currentThreadId}. Use send_message_to_thread for cross-thread communication.`;
+    }
+    return null;
+  }
+
   const memoryToolCtx: ToolContext = {
     resolveThreadId,
     getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
@@ -251,6 +267,10 @@ function createMcpServer(
     // ── report_progress / hibernate ─────────────────────────────────────────
     if (name === "report_progress" || name === "hibernate") {
       const typedArgs = (args ?? {}) as Record<string, unknown>;
+      if (name === "report_progress") {
+        const scopeErr = enforceThreadScope(typedArgs);
+        if (scopeErr) return errorResult(scopeErr);
+      }
       const sessionToolCtx: SessionToolContext = {
         resolveThreadId,
         getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
@@ -276,6 +296,10 @@ function createMcpServer(
     // ── send_file / send_voice / schedule_wake_up ───────────────────────────
     if (["send_file", "send_voice", "schedule_wake_up", "send_sticker"].includes(name)) {
       const typedArgs = (args ?? {}) as Record<string, unknown>;
+      if (name === "send_file" || name === "send_voice" || name === "send_sticker") {
+        const scopeErr = enforceThreadScope(typedArgs);
+        if (scopeErr) return errorResult(scopeErr);
+      }
       const utilityCtx: UtilityToolContext = {
         resolveThreadId,
         getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
