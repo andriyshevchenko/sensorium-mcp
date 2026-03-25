@@ -46,7 +46,6 @@ export type ContentBlock = TextBlock | ImageBlock;
  * Standard return shape for every MCP tool handler.
  */
 export interface ToolResult {
-  [key: string]: unknown;
   content: ContentBlock[];
   isError?: boolean;
 }
