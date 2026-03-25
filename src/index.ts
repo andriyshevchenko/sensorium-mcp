@@ -14,7 +14,7 @@ import { TelegramClient } from "./telegram.js";
 import { startHttpServer } from "./http-server.js";
 import { startStdioServer } from "./stdio-server.js";
 import { buildMcpServerFactory } from "./server/factory.js";
-import { setTopicRegistryDb, registerTopic } from "./sessions.js";
+import { setTopicRegistryDb, lookupTopicRegistry } from "./sessions.js";
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -39,8 +39,13 @@ setBrokerDb(getMemoryDb);
 
 // Wire up lazy DB access for SQLite-backed topic registry
 setTopicRegistryDb(getMemoryDb);
-// Seed known topic mapping: SecureVault → 2314
-registerTopic(TELEGRAM_CHAT_ID, "SecureVault", 2314);
+
+// Ensure SecureVault topic exists in the registry (resolved dynamically, not hardcoded).
+// If no entry exists yet, the operator should register it via the topic-registry tools.
+const secureVaultThreadId = lookupTopicRegistry(TELEGRAM_CHAT_ID, "SecureVault");
+if (secureVaultThreadId === undefined) {
+  console.warn("[init] SecureVault topic not found in registry — register it via topic-registry tools or start_session.");
+}
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)
