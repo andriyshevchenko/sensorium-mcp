@@ -42,6 +42,31 @@ export interface DriveContext {
 // ---------------------------------------------------------------------------
 
 /**
+ * Fire-and-forget helper: runs intelligent consolidation + embedding backfill.
+ * Logs results under the given `label` (e.g. "Idle-based", "Episode-count").
+ */
+function fireConsolidation(
+  db: ReturnType<typeof initMemoryDb>,
+  threadId: number,
+  label: string,
+): void {
+  void runIntelligentConsolidation(db, threadId)
+    .then(async (report) => {
+      if (report.episodesProcessed > 0) {
+        log.info(
+          `[memory] ${label} consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`,
+        );
+      }
+      await backfillEmbeddings(db);
+    })
+    .catch((err) => {
+      log.error(
+        `[memory] ${label} consolidation error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+}
+
+/**
  * Checks three consolidation strategies and fires runIntelligentConsolidation
  * + backfillEmbeddings as fire-and-forget when conditions are met.
  *
@@ -58,15 +83,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
     const idleMs = Date.now() - state.lastOperatorMessageAt;
     if (idleMs > 15 * 60 * 1000 && effectiveThreadId !== undefined && Date.now() - state.lastConsolidationAt > 30 * 60 * 1000) {
       state.lastConsolidationAt = Date.now();
-      const db = getMemoryDb();
-      void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
-        if (report.episodesProcessed > 0) {
-          log.info(`[memory] Consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`);
-        }
-        await backfillEmbeddings(db);
-      }).catch(err => {
-        log.error(`[memory] Consolidation error: ${err instanceof Error ? err.message : String(err)}`);
-      });
+      fireConsolidation(getMemoryDb(), effectiveThreadId, "Idle-based");
     }
   } catch (_) { /* consolidation failure is non-fatal */ }
 
@@ -79,14 +96,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
       const uncons = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0 AND thread_id = ?").get(effectiveThreadId) as { c: number };
       if (uncons.c >= 15) {
         state.lastConsolidationAt = Date.now();
-        void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
-          if (report.episodesProcessed > 0) {
-            log.info(`[memory] Episode-count consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`);
-          }
-          await backfillEmbeddings(db);
-        }).catch(err => {
-          log.error(`[memory] Episode-count consolidation error: ${err instanceof Error ? err.message : String(err)}`);
-        });
+        fireConsolidation(db, effectiveThreadId, "Episode-count");
       }
     }
   } catch (_) { /* non-fatal */ }
@@ -99,14 +109,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
       state.lastConsolidationAt = Date.now();
       const db = getMemoryDb();
       log.info(`[memory] Time-based consolidation triggered (4h since last)`);
-      void runIntelligentConsolidation(db, effectiveThreadId).then(async report => {
-        if (report.episodesProcessed > 0) {
-          log.info(`[memory] Time-based consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`);
-        }
-        await backfillEmbeddings(db);
-      }).catch(err => {
-        log.error(`[memory] Time-based consolidation error: ${err instanceof Error ? err.message : String(err)}`);
-      });
+      fireConsolidation(db, effectiveThreadId, "Time-based");
     }
   } catch (_) { /* non-fatal */ }
 }
