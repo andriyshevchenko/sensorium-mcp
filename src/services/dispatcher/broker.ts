@@ -87,7 +87,7 @@ export function writeReactionFile(reaction: StoredReaction): void {
         if (threadId !== undefined) {
             log.info(`[dispatcher] Reaction routed to thread ${threadId}`);
         }
-    } catch { /* non-fatal */ }
+    } catch (err) { log.debug(`[dispatcher] writeReactionFile failed: ${err instanceof Error ? err.message : String(err)}`); }
 }
 
 /**
@@ -157,11 +157,11 @@ function recoverOrphanedReads(): void {
                         writeFileSync(original, content, { flag: "a", encoding: "utf8" });
                         unlinkSync(orphan);
                         log.info(`[dispatcher] Recovered orphaned file: ${f}`);
-                    } catch { /* best effort */ }
+                    } catch (err) { log.debug(`[dispatcher] Failed to recover orphaned file ${f}: ${err instanceof Error ? err.message : String(err)}`); }
                 }
             }
         }
-    } catch { /* non-fatal */ }
+    } catch (err) { log.debug(`[dispatcher] recoverOrphanedReads scan failed: ${err instanceof Error ? err.message : String(err)}`); }
 }
 
 // ---------------------------------------------------------------------------
@@ -183,8 +183,8 @@ export function writeOffset(offset: number): void {
         const tmp = OFFSET_FILE + `.tmp.${process.pid}`;
         writeFileSync(tmp, String(offset), "utf8");
         renameSync(tmp, OFFSET_FILE); // atomic replace
-    } catch {
-        // Non-fatal.
+    } catch (err) {
+        log.debug(`[dispatcher] writeOffset failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 

@@ -209,7 +209,7 @@ function spawnAgentProcess(
   const pidFilePath = join(PIDS_DIR, `${threadId}.pid`);
   try {
     writeFileSync(pidFilePath, String(pid), "utf-8");
-  } catch { /* non-fatal */ }
+  } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
 
   // Track spawned process
   const entry: SpawnedThread = {

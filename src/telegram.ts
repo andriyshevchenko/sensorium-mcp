@@ -80,7 +80,7 @@ export class TelegramClient {
         db.prepare(
           `INSERT OR REPLACE INTO sent_messages (message_id, thread_id) VALUES (?, ?)`
         ).run(messageId, threadId);
-      } catch { /* non-fatal — must never break message sending */ }
+      } catch (err) { log.debug(`[telegram] recordSentMessage DB write failed: ${err instanceof Error ? err.message : String(err)}`); }
     }
   }
 
