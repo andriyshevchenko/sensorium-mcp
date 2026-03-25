@@ -7,7 +7,7 @@
 import { convertMarkdown, splitMessage } from "../markdown.js";
 import type { TelegramClient } from "../telegram.js";
 import type { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
-import type { checkMaintenanceFlag } from "../config.js";
+import type { checkMaintenanceFlag } from "../data/file-storage.js";
 import type { checkDueTasks } from "../scheduler.js";
 import { log } from "../logger.js";
 import type { ToolResult } from "../types.js";
