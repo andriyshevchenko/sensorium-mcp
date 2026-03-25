@@ -10,7 +10,7 @@ export { chatCompletion, cosineSimilarity, generateEmbedding } from "./integrati
 export type { ChatMessage } from "./integrations/openai/chat.js";
 
 // Re-export TTS & transcription
-export { TTS_VOICES, type TTSVoice, textToSpeech, transcribeAudio } from "./integrations/openai/speech.js";
+export { TTS_VOICES, type TTSVoice, textToSpeech, transcribeAudio, abortPendingSpeech, pendingSpeechCount } from "./integrations/openai/speech.js";
 
 // Re-export voice emotion analysis
 export { analyzeVoiceEmotion } from "./integrations/openai/voice-emotion.js";
