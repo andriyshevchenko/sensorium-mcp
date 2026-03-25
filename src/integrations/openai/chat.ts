@@ -44,9 +44,9 @@ export async function chatCompletion(
             throw new Error(`OpenAI chat API error: ${response.status} ${response.statusText}`);
         }
         const json = await response.json() as {
-            choices: [{ message: { content: string } }];
+            choices?: { message?: { content?: string } }[];
         };
-        return json.choices[0]?.message?.content ?? "";
+        return json.choices?.[0]?.message?.content ?? "";
     } finally {
         clearTimeout(timer);
     }
@@ -77,8 +77,12 @@ export async function generateEmbedding(text: string, apiKey: string): Promise<F
         if (!response.ok) {
             throw new Error(`OpenAI embedding API error: ${response.status} ${response.statusText}`);
         }
-        const json = await response.json() as { data: [{ embedding: number[] }] };
-        return new Float32Array(json.data[0].embedding);
+        const json = await response.json() as { data?: { embedding?: number[] }[] };
+        const embedding = json.data?.[0]?.embedding;
+        if (!embedding) {
+            throw new Error("OpenAI embedding response missing data[0].embedding");
+        }
+        return new Float32Array(embedding);
     } finally {
         clearTimeout(timer);
     }
