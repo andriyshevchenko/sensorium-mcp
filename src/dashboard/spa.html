@@ -460,7 +460,7 @@
             '<div class="flex items-center gap-3">' +
               '<span class="w-2.5 h-2.5 rounded-full bg-' + statusColor + '"></span>' +
               '<div>' +
-                '<div class="font-medium">Thread ' + s.threadId + '</div>' +
+                '<div class="font-medium">' + (s.topicName ? '<span class="text-accentLight">' + escapeHtml(s.topicName) + '</span> <span class="text-textSecondary text-xs">(thread ' + s.threadId + ')</span>' : 'Thread ' + s.threadId) + '</div>' +
                 '<div class="text-xs text-textSecondary font-mono">' + s.mcpSessionId.slice(0, 12) + '...</div>' +
               '</div>' +
             '</div>' +

@@ -36,6 +36,24 @@ import { getAllRegisteredTopics, registerTopic, unregisterTopic } from "../sessi
 import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "./presets.js";
 import { getAgentType, setAgentType, getEffectiveAgentType, setThreadAgentType, getAllThreadAgentTypes, getClaudeMcpConfigPath, setClaudeMcpConfigPath, type AgentType } from "../config.js";
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Enrich session objects with topic names by reverse-looking up threadId
+ * in the topic registry.
+ */
+function enrichSessionsWithTopicNames<T extends { threadId: number }>(sessions: T[]): (T & { topicName: string | null })[] {
+    const allTopics = getAllRegisteredTopics();
+    // Build reverse map: threadId → topic name
+    const threadToName = new Map<number, string>();
+    for (const chatId of Object.keys(allTopics)) {
+        for (const [name, tid] of Object.entries(allTopics[chatId])) {
+            threadToName.set(tid, name);
+        }
+    }
+    return sessions.map(s => ({ ...s, topicName: threadToName.get(s.threadId) ?? null }));
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface DashboardContext {
@@ -127,7 +145,7 @@ function handleApiRoute(
             const lastConso = db.prepare(`SELECT run_at FROM meta_consolidation_log ORDER BY run_at DESC LIMIT 1`).get() as { run_at: string } | undefined;
             const topTopics = getTopicIndex(db).slice(0, 10);
             const dbSizeRow = db.prepare(`SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()`).get() as { size: number } | undefined;
-            const sessions = ctx.getActiveSessions();
+            const sessions = enrichSessionsWithTopicNames(ctx.getActiveSessions());
             json({
                 memory: { totalEpisodes, unconsolidatedEpisodes, totalSemanticNotes, totalProcedures, totalVoiceSignatures, lastConsolidation: lastConso?.run_at ?? null, topTopics, dbSizeBytes: dbSizeRow?.size ?? 0 },
                 activeSessions: sessions.length,
@@ -139,7 +157,7 @@ function handleApiRoute(
         }
 
         if (path === "/api/sessions") {
-            json(ctx.getActiveSessions());
+            json(enrichSessionsWithTopicNames(ctx.getActiveSessions()));
             return true;
         }
 
