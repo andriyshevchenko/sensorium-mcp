@@ -312,6 +312,23 @@ export function getTopSemanticNotes(
   return rows.map(rowToSemanticNote);
 }
 
+/**
+ * Guardrail notes: priority-1 preference notes that represent critical decisions
+ * the LLM must always follow. Capped at 10, ordered by access_count DESC.
+ */
+export function getGuardrailNotes(db: Database): SemanticNote[] {
+  const rows = db
+    .prepare(
+      `SELECT * FROM semantic_notes
+       WHERE valid_to IS NULL AND superseded_by IS NULL
+         AND type = 'preference' AND priority >= 1
+       ORDER BY access_count DESC, confidence DESC
+       LIMIT 10`
+    )
+    .all() as Record<string, unknown>[];
+  return rows.map(rowToSemanticNote);
+}
+
 export function updateSemanticNote(
   db: Database,
   noteId: string,

@@ -13,11 +13,13 @@ import type { Database } from "./schema.js";
 import { getRecentEpisodes } from "./episodes.js";
 import {
   getTopSemanticNotes,
+  getGuardrailNotes,
   decrementTopicIndexForKeywords,
 } from "./semantic.js";
 import { rowToProcedure } from "./procedures.js";
 import { getVoiceBaseline } from "./voice-sig.js";
 import { parseJsonArray } from "./utils.js";
+import { getGuardrailsEnabled } from "../../config.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -164,6 +166,19 @@ export function assembleBootstrap(db: Database, threadId: number): string {
       lines.push(`- [${ep.type}/${ep.modality}] ${summary} (${ep.timestamp})`);
     }
     lines.push("");
+  }
+
+  // Active Decisions (guardrails)
+  if (getGuardrailsEnabled()) {
+    const guardrails = getGuardrailNotes(db);
+    if (guardrails.length > 0) {
+      lines.push("## Active Decisions (always enforced)");
+      for (const g of guardrails) {
+        const line = g.content.length > 120 ? g.content.slice(0, 117) + "..." : g.content;
+        lines.push(`- ${line}`);
+      }
+      lines.push("");
+    }
   }
 
   // Key knowledge

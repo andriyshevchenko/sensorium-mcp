@@ -144,6 +144,19 @@ export function setClaudeMcpConfigPath(path: string): void {
   updateSettings(s => { s.claudeMcpConfigPath = path; });
 }
 
+// ─── Guardrails setting ─────────────────────────────────────────────────────
+
+/** Whether guardrail (Active Decisions) notes are injected into memory briefings. */
+export function getGuardrailsEnabled(): boolean {
+  const v = readSettings().guardrailsEnabled;
+  if (typeof v === "boolean") return v;
+  return true; // default: enabled
+}
+
+export function setGuardrailsEnabled(enabled: boolean): void {
+  updateSettings(s => { s.guardrailsEnabled = enabled; });
+}
+
 // ─── Exported config object ─────────────────────────────────────────────────
 
 export const config: AppConfig = {

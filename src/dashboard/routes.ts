@@ -37,6 +37,8 @@ import {
     handlePostAgentType,
     handleGetThreadAgentTypes,
     handlePostThreadAgentType,
+    handleGetGuardrailsEnabled,
+    handlePostGuardrailsEnabled,
 } from "./routes/settings.js";
 
 // Domain handlers — templates
@@ -84,6 +86,8 @@ const routeTable: Record<string, RouteHandler> = {
     "POST /api/settings/agent-type":           handlePostAgentType,
     "GET /api/settings/thread-agent-types":    handleGetThreadAgentTypes,
     "POST /api/settings/thread-agent-type":    handlePostThreadAgentType,
+    "GET /api/settings/guardrails":               handleGetGuardrailsEnabled,
+    "POST /api/settings/guardrails":              handlePostGuardrailsEnabled,
 
     // Topic registry
     "GET /api/topic-registry":    handleGetTopicRegistry,
