@@ -60,60 +60,61 @@ function atomicWriteSettings(settings: Record<string, unknown>): void {
   renameSync(SETTINGS_TMP_PATH, SETTINGS_PATH);
 }
 
-export function getAgentType(): AgentType {
+/** Read and parse the settings file, returning an empty object on any failure. */
+function readSettings(): Record<string, unknown> {
   try {
-    const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
-    const t = raw.agentType;
-    if (t === "copilot" || t === "claude" || t === "cursor") return t;
-  } catch { /* missing or invalid settings file */ }
+    return JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
+  } catch { return {}; }
+}
+
+/** Read settings, apply a mutator, and atomically persist the result. */
+function updateSettings(mutator: (s: Record<string, unknown>) => void): void {
+  const settings = readSettings();
+  mutator(settings);
+  atomicWriteSettings(settings);
+}
+
+export function getAgentType(): AgentType {
+  const t = readSettings().agentType;
+  if (t === "copilot" || t === "claude" || t === "cursor") return t;
   return "copilot";
 }
 
 export function setAgentType(type: AgentType): void {
-  let settings: Record<string, unknown> = {};
-  try { settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>; } catch { /* ok */ }
-  settings.agentType = type;
-  atomicWriteSettings(settings);
+  updateSettings(s => { s.agentType = type; });
 }
 
 // ─── Per-thread agent-type overrides ────────────────────────────────────────
 
 /** Returns the per-thread agent-type override, or null if none is set. */
 export function getThreadAgentType(threadId: number): AgentType | null {
-  try {
-    const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
-    const map = raw.threadAgentTypes as Record<string, unknown> | undefined;
-    if (map) {
-      const t = map[String(threadId)];
-      if (t === "copilot" || t === "claude" || t === "cursor") return t;
-    }
-  } catch { /* missing or invalid */ }
+  const map = readSettings().threadAgentTypes as Record<string, unknown> | undefined;
+  if (map) {
+    const t = map[String(threadId)];
+    if (t === "copilot" || t === "claude" || t === "cursor") return t;
+  }
   return null;
 }
 
 /** Persists a per-thread agent-type override. */
 export function setThreadAgentType(threadId: number, agentType: AgentType): void {
-  let settings: Record<string, unknown> = {};
-  try { settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>; } catch { /* ok */ }
-  const map = (settings.threadAgentTypes ?? {}) as Record<string, unknown>;
-  map[String(threadId)] = agentType;
-  settings.threadAgentTypes = map;
-  atomicWriteSettings(settings);
+  updateSettings(s => {
+    const map = (s.threadAgentTypes ?? {}) as Record<string, unknown>;
+    map[String(threadId)] = agentType;
+    s.threadAgentTypes = map;
+  });
 }
 
 /** Returns all per-thread agent-type overrides. */
 export function getAllThreadAgentTypes(): Record<string, AgentType> {
-  try {
-    const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
-    const map = raw.threadAgentTypes as Record<string, string> | undefined;
-    if (map && typeof map === "object") {
-      const result: Record<string, AgentType> = {};
-      for (const [k, v] of Object.entries(map)) {
-        if (v === "copilot" || v === "claude" || v === "cursor") result[k] = v;
-      }
-      return result;
+  const map = readSettings().threadAgentTypes as Record<string, string> | undefined;
+  if (map && typeof map === "object") {
+    const result: Record<string, AgentType> = {};
+    for (const [k, v] of Object.entries(map)) {
+      if (v === "copilot" || v === "claude" || v === "cursor") result[k] = v;
     }
-  } catch { /* missing or invalid */ }
+    return result;
+  }
   return {};
 }
 
@@ -133,20 +134,14 @@ export function getEffectiveAgentType(threadId?: number): AgentType {
 
 /** Returns the dashboard-configured Claude MCP config path, or null if unset. */
 export function getClaudeMcpConfigPath(): string | null {
-  try {
-    const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
-    const p = raw.claudeMcpConfigPath;
-    if (typeof p === "string" && p.length > 0) return p;
-  } catch { /* missing or invalid settings file */ }
+  const p = readSettings().claudeMcpConfigPath;
+  if (typeof p === "string" && p.length > 0) return p;
   return null;
 }
 
 /** Persists the Claude MCP config path override. */
 export function setClaudeMcpConfigPath(path: string): void {
-  let settings: Record<string, unknown> = {};
-  try { settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>; } catch { /* ok */ }
-  settings.claudeMcpConfigPath = path;
-  atomicWriteSettings(settings);
+  updateSettings(s => { s.claudeMcpConfigPath = path; });
 }
 
 // ─── Exported config object ─────────────────────────────────────────────────
