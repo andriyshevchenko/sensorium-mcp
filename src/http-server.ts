@@ -18,8 +18,6 @@ import type { Database } from "better-sqlite3";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import { config } from "./config.js";
-import { checkMaintenanceFlag } from "./data/file-storage.js";
-import { abortPendingSpeech, pendingSpeechCount } from "./integrations/openai/speech.js";
 import { log } from "./logger.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
 import {
@@ -355,22 +353,11 @@ export function startHttpServer(
   const shutdown = async (reason: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    log.info(`[shutdown] Graceful shutdown initiated (${reason}) — aborting in-flight TTS…`);
+    log.info(`[shutdown] Graceful shutdown initiated (${reason})…`);
 
     clearInterval(sessionSweepInterval);
-    clearInterval(maintenancePollInterval);
 
-    // 1. Abort any pending TTS / transcription requests so they fail fast.
-    abortPendingSpeech();
-
-    // 2. Brief drain: wait up to 3 s for in-flight speech handlers to
-    //    propagate their abort errors back through the HTTP response.
-    const deadline = Date.now() + 3_000;
-    while (pendingSpeechCount() > 0 && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 100));
-    }
-
-    // 3. Tear down transports and HTTP server.
+    // Tear down transports and HTTP server.
     for (const [sid, entry] of sessions) {
       if (entry.transport) {
         try { entry.transport.close(); } catch (_) { /* best-effort */ }
@@ -390,13 +377,4 @@ export function startHttpServer(
     process.on("SIGBREAK", () => { void shutdown("SIGBREAK"); });
   }
   process.on("exit", () => { closeMemoryDb(); });
-
-  // ── Maintenance flag poller — self-terminate before the update watcher
-  //    force-kills us, giving in-flight requests a chance to complete. ────
-  const maintenancePollInterval = setInterval(() => {
-    if (shuttingDown) return;
-    if (checkMaintenanceFlag()) {
-      void shutdown("maintenance flag detected");
-    }
-  }, 2_000);
 }

@@ -91,32 +91,9 @@ function Stop-McpServer {
         Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
 
     if ($processes) {
-        # The maintenance flag was already written before this function is
-        # called.  The server polls for it every 2 s and self-terminates
-        # (aborting in-flight TTS first) when it appears.  Give it up to
-        # 15 seconds to exit on its own before resorting to force-kill.
-        $waited = 0
-        $gracePeriod = 15
-        while ($waited -lt $gracePeriod) {
-            Start-Sleep -Seconds 2
-            $waited += 2
-
-            $alive = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
-                Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
-
-            if (-not $alive) {
-                Write-Log "Server exited gracefully after ${waited}s."
-                return
-            }
-        }
-
-        # Grace period expired — force-kill any survivors.
-        $remaining = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
-
-        foreach ($proc in $remaining) {
+        foreach ($proc in $processes) {
             try {
-                Write-Log "Force-stopping PID=$($proc.ProcessId) (did not exit within ${gracePeriod}s)"
+                Write-Log "Stopping PID=$($proc.ProcessId)"
                 Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
             }
             catch {

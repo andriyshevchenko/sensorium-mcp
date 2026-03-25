@@ -6,8 +6,6 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { randomUUID } from "node:crypto";
-import { checkMaintenanceFlag } from "./data/file-storage.js";
-import { abortPendingSpeech, pendingSpeechCount } from "./integrations/openai/speech.js";
 import { log } from "./logger.js";
 import {
   registerDashboardSession,
@@ -37,21 +35,11 @@ export async function startStdioServer(
   const stdioShutdown = async (reason: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    log.info(`[shutdown] Graceful stdio shutdown (${reason}) — aborting in-flight TTS…`);
+    log.info(`[shutdown] Graceful stdio shutdown (${reason})…`);
 
-    clearInterval(maintenancePollInterval);
-
-    // 1. Abort pending TTS / transcription requests.
-    abortPendingSpeech();
-
-    // 2. Brief drain: wait up to 3 s for abort errors to propagate.
-    const deadline = Date.now() + 3_000;
-    while (pendingSpeechCount() > 0 && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 100));
-    }
-
-    markDashboardSessionDisconnected(stdioSessionId);
+    // Close memory DB and exit.
     closeMemoryDb();
+    markDashboardSessionDisconnected(stdioSessionId);
     process.exit(0);
   };
   process.on("SIGINT",  () => { void stdioShutdown("SIGINT"); });
@@ -63,13 +51,4 @@ export async function startStdioServer(
     markDashboardSessionDisconnected(stdioSessionId);
     closeMemoryDb();
   });
-
-  // ── Maintenance flag poller — self-terminate before the update watcher
-  //    force-kills us, giving in-flight requests a chance to complete. ────
-  const maintenancePollInterval = setInterval(() => {
-    if (shuttingDown) return;
-    if (checkMaintenanceFlag()) {
-      void stdioShutdown("maintenance flag detected");
-    }
-  }, 2_000);
 }
