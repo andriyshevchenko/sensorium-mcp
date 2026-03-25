@@ -7,7 +7,7 @@
  */
 
 import BetterSqlite3 from "better-sqlite3";
-import { existsSync, mkdirSync, readFileSync } from "fs";
+import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { log } from "../../logger.js";
@@ -121,7 +121,7 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     `);
   },
   7: (db) => {
-    // Topic registry: migrate from JSON file to SQLite
+    // Topic registry table
     db.exec(`
       CREATE TABLE IF NOT EXISTS topic_registry (
         chat_id       TEXT NOT NULL,
@@ -131,27 +131,6 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
         PRIMARY KEY (chat_id, name)
       );
     `);
-
-    // Migrate existing data from topic-registry.json
-    const jsonPath = join(homedir(), ".remote-copilot-mcp", "topic-registry.json");
-    if (existsSync(jsonPath)) {
-      try {
-        const raw = readFileSync(jsonPath, "utf8");
-        const data = JSON.parse(raw) as Record<string, Record<string, number>>;
-        const insert = db.prepare(
-          `INSERT OR IGNORE INTO topic_registry (chat_id, name, thread_id, registered_at) VALUES (?, ?, ?, ?)`
-        );
-        const now = nowISO();
-        for (const [chatId, topics] of Object.entries(data)) {
-          for (const [name, threadId] of Object.entries(topics)) {
-            insert.run(chatId, name.toLowerCase(), threadId, now);
-          }
-        }
-        log.info(`[migration-7] Migrated topic registry from JSON to SQLite.`);
-      } catch (err) {
-        log.warn(`[migration-7] Failed to migrate topic-registry.json: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
   },
   8: (db) => {
     // Add is_guardrail flag to semantic_notes for explicit guardrail tagging
