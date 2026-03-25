@@ -42,9 +42,24 @@ export function saveFileToDisk(buffer: Buffer, filename: string): string {
   return filePath;
 }
 
-// ─── Maintenance flag ───────────────────────────────────────────────────────
+// ─── Activity heartbeat ─────────────────────────────────────────────────────
 
 const DATA_DIR = join(homedir(), ".remote-copilot-mcp");
+const HEARTBEAT_PATH = join(DATA_DIR, "last-activity.txt");
+
+/**
+ * Write the current epoch timestamp to a heartbeat file.
+ * The update watcher checks this before force-killing the server —
+ * if a tool call happened recently, the kill is deferred.
+ */
+export function writeActivityHeartbeat(): void {
+  try {
+    writeFileSync(HEARTBEAT_PATH, String(Date.now()), "utf-8");
+  } catch { /* non-fatal — watcher just won't see activity */ }
+}
+
+// ─── Maintenance flag ───────────────────────────────────────────────────────
+
 const MAINTENANCE_FLAG_PATH = join(DATA_DIR, "maintenance.flag");
 
 /** Maximum age of a maintenance flag before it is considered stale (5 minutes). */
