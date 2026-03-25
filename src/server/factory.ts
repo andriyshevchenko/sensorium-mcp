@@ -33,7 +33,7 @@ import { handleSessionTool, type SessionToolContext } from "../tools/session-too
 import { handleStartSession, type StartSessionContext } from "../tools/start-session-tool.js";
 import { handleWaitForInstructions, type WaitToolContext, type WaitToolExtra } from "../tools/wait/index.js";
 import { handleStartThread, handleSendMessageToThread as handleSendMessageToThreadFile, type DelegateToolContext } from "../tools/delegate-tool.js";
-import type { CreateMcpServerFn } from "../types.js";
+import type { CreateMcpServerFn, ToolResult } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Public factory builder
@@ -154,37 +154,51 @@ function createMcpServer(
     onConsolidation: () => { lastConsolidationAt = Date.now(); },
   };
 
-  const srv = new Server(
-    { name: "sensorium-mcp", version: PKG_VERSION },
-    { capabilities: { tools: {} } },
-  );
+  // ── Context builder helpers (capture current mutable state per-call) ────
 
-  // ── Tool definitions ──────────────────────────────────────────────────────
+  function buildUtilityCtx(): UtilityToolContext {
+    return {
+      resolveThreadId,
+      getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
+      errorResult,
+      telegram,
+      config,
+      sessionStartedAt,
+    };
+  }
 
-  srv.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: getToolDefinitions(),
-  }));
+  function buildSessionToolCtx(): SessionToolContext {
+    return {
+      resolveThreadId,
+      getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
+      errorResult,
+      telegram,
+      telegramChatId,
+      peekThreadMessages,
+      readThreadMessages,
+      appendToThread,
+      checkMaintenanceFlag,
+      checkDueTasks,
+      generateDmnReflection,
+      get lastOperatorMessageAt() { return lastOperatorMessageAt; },
+      set lastOperatorMessageAt(v) { lastOperatorMessageAt = v; },
+      get lastOperatorMessageText() { return lastOperatorMessageText; },
+      set lastOperatorMessageText(v) { lastOperatorMessageText = v; },
+      previewedUpdateIds,
+      addPreviewedId,
+    };
+  }
 
-  // ── Tool implementations ──────────────────────────────────────────────────
+  // ── Dispatch table ────────────────────────────────────────────────────
+  // Maps tool names to handler functions. Each receives typed args and the
+  // SDK `extra` object, returning a ToolResult (or Promise thereof).
 
-  // ToolResult intentionally omits `[key: string]: unknown` for internal type
-  // safety; assert structural compatibility at the SDK boundary.
-  // @ts-expect-error — ToolResult is structurally compatible but lacks index signature
-  srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const { name, arguments: args } = request.params;
+  const delegateCtx: DelegateToolContext = { telegram, telegramChatId };
 
-    // Verbose logging: tool call dispatch
-    const argsSummary = args ? JSON.stringify(args).slice(0, 200) : "{}";
-    log.verbose("dispatch", `Tool call: ${name} args=${argsSummary}`);
-
-    lastToolCallAt = Date.now();
-
-    // Track tool calls for activity monitoring
-    toolCallsSinceLastDelivery++;
-
-    // ── start_session ───────────────────────────────────────────────────────
-    if (name === "start_session") {
-      const startSessionCtx: StartSessionContext = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toolHandlers: Record<string, (typedArgs: Record<string, unknown>, extra: any) => Promise<ToolResult> | ToolResult> = {
+    start_session: (typedArgs) => {
+      const ctx: StartSessionContext = {
         session: {
           get currentThreadId() { return currentThreadId; },
           set currentThreadId(v) { currentThreadId = v; },
@@ -212,8 +226,7 @@ function createMcpServer(
         getMcpSessionId,
         closeTransport,
       };
-      return handleStartSession((args ?? {}) as Record<string, unknown>, startSessionCtx).then(result => {
-        // Update the dashboard registry with the resolved threadId
+      return handleStartSession(typedArgs, ctx).then(result => {
         const sid = getMcpSessionId?.();
         if (sid && currentThreadId !== undefined) {
           updateDashboardThreadId(sid, currentThreadId);
@@ -221,14 +234,11 @@ function createMcpServer(
         }
         return result;
       });
-    }
+    },
 
-    // ── remote_copilot_wait_for_instructions ────────────────────────────────
-    if (name === "remote_copilot_wait_for_instructions") {
-      // Update wait heartbeat for dashboard liveness tracking
+    remote_copilot_wait_for_instructions: (typedArgs, extra) => {
       const waitSid = getMcpSessionId?.();
       if (waitSid) updateLastWaitCall(waitSid);
-
       const waitCtx: WaitToolContext = {
         state: {
           get currentThreadId() { return currentThreadId; },
@@ -262,96 +272,87 @@ function createMcpServer(
         config,
         errorResult,
       };
-      return handleWaitForInstructions(
-        (args ?? {}) as Record<string, unknown>,
-        waitCtx,
-        extra as unknown as WaitToolExtra,
-      );
-    }
+      return handleWaitForInstructions(typedArgs, waitCtx, extra as unknown as WaitToolExtra);
+    },
 
-    // ── report_progress / hibernate ─────────────────────────────────────────
-    if (name === "report_progress" || name === "hibernate") {
-      const typedArgs = (args ?? {}) as Record<string, unknown>;
-      if (name === "report_progress") {
-        const scopeErr = enforceThreadScope(typedArgs);
-        if (scopeErr) return errorResult(scopeErr);
-      }
-      const sessionToolCtx: SessionToolContext = {
-        resolveThreadId,
-        getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
-        errorResult,
-        telegram,
-        telegramChatId,
-        peekThreadMessages,
-        readThreadMessages,
-        appendToThread,
-        checkMaintenanceFlag,
-        checkDueTasks,
-        generateDmnReflection,
-        get lastOperatorMessageAt() { return lastOperatorMessageAt; },
-        set lastOperatorMessageAt(v) { lastOperatorMessageAt = v; },
-        get lastOperatorMessageText() { return lastOperatorMessageText; },
-        set lastOperatorMessageText(v) { lastOperatorMessageText = v; },
-        previewedUpdateIds,
-        addPreviewedId,
-      };
-      return handleSessionTool(name, typedArgs, sessionToolCtx, extra);
-    }
+    report_progress: (typedArgs, extra) => {
+      const scopeErr = enforceThreadScope(typedArgs);
+      if (scopeErr) return errorResult(scopeErr);
+      return handleSessionTool("report_progress", typedArgs, buildSessionToolCtx(), extra);
+    },
 
-    // ── send_file / send_voice / schedule_wake_up ───────────────────────────
-    if (["send_file", "send_voice", "schedule_wake_up", "send_sticker"].includes(name)) {
-      const typedArgs = (args ?? {}) as Record<string, unknown>;
-      if (name === "send_file" || name === "send_voice" || name === "send_sticker") {
-        const scopeErr = enforceThreadScope(typedArgs);
-        if (scopeErr) return errorResult(scopeErr);
-      }
-      const utilityCtx: UtilityToolContext = {
-        resolveThreadId,
-        getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
-        errorResult,
-        telegram,
-        config,
-        sessionStartedAt,
-      };
-      return handleUtilityTool(name, typedArgs, utilityCtx);
-    }
+    hibernate: (typedArgs, extra) =>
+      handleSessionTool("hibernate", typedArgs, buildSessionToolCtx(), extra),
 
-    // ── memory_* tools ────────────────────────────────────────────────────
+    send_file: (typedArgs) => {
+      const scopeErr = enforceThreadScope(typedArgs);
+      if (scopeErr) return errorResult(scopeErr);
+      return handleUtilityTool("send_file", typedArgs, buildUtilityCtx());
+    },
+
+    send_voice: (typedArgs) => {
+      const scopeErr = enforceThreadScope(typedArgs);
+      if (scopeErr) return errorResult(scopeErr);
+      return handleUtilityTool("send_voice", typedArgs, buildUtilityCtx());
+    },
+
+    send_sticker: (typedArgs) => {
+      const scopeErr = enforceThreadScope(typedArgs);
+      if (scopeErr) return errorResult(scopeErr);
+      return handleUtilityTool("send_sticker", typedArgs, buildUtilityCtx());
+    },
+
+    schedule_wake_up: (typedArgs) =>
+      handleUtilityTool("schedule_wake_up", typedArgs, buildUtilityCtx()),
+
+    start_thread: (typedArgs) =>
+      handleStartThread(typedArgs, delegateCtx),
+
+    send_message_to_thread: (typedArgs) =>
+      handleSendMessageToThreadFile(typedArgs),
+
+    get_version: (typedArgs) =>
+      handleUtilityTool("get_version", typedArgs, buildUtilityCtx()),
+  };
+
+  const srv = new Server(
+    { name: "sensorium-mcp", version: PKG_VERSION },
+    { capabilities: { tools: {} } },
+  );
+
+  // ── Tool definitions ──────────────────────────────────────────────────────
+
+  srv.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: getToolDefinitions(),
+  }));
+
+  // ── Tool implementations ──────────────────────────────────────────────────
+
+  // ToolResult intentionally omits `[key: string]: unknown` for internal type
+  // safety; assert structural compatibility at the SDK boundary.
+  // @ts-expect-error — ToolResult is structurally compatible but lacks index signature
+  srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const { name, arguments: args } = request.params;
+
+    // Verbose logging: tool call dispatch
+    const argsSummary = args ? JSON.stringify(args).slice(0, 200) : "{}";
+    log.verbose("dispatch", `Tool call: ${name} args=${argsSummary}`);
+
+    lastToolCallAt = Date.now();
+
+    // Track tool calls for activity monitoring
+    toolCallsSinceLastDelivery++;
+
+    // ── Dispatch ─────────────────────────────────────────────────────────
+    const typedArgs = (args ?? {}) as Record<string, unknown>;
+    const handler = toolHandlers[name];
+    if (handler) return handler(typedArgs, extra);
+
+    // Prefix-based fallback for memory_* tools
     if (name.startsWith("memory_")) {
-      return handleMemoryTool(name, (args ?? {}) as Record<string, unknown>, memoryToolCtx);
+      return handleMemoryTool(name, typedArgs, memoryToolCtx);
     }
 
-    // ── start_thread ───────────────────────────────────────────────────────
-    if (name === "start_thread") {
-      const typedArgs = (args ?? {}) as Record<string, unknown>;
-      const delegateCtx: DelegateToolContext = {
-        telegram,
-        telegramChatId,
-      };
-      return handleStartThread(typedArgs, delegateCtx);
-    }
-
-    // ── send_message_to_thread ─────────────────────────────────────────────
-    if (name === "send_message_to_thread") {
-      const typedArgs = (args ?? {}) as Record<string, unknown>;
-      return handleSendMessageToThreadFile(typedArgs);
-    }
-
-    // ── get_version ────────────────────────────────────────────────────────
-    if (name === "get_version") {
-      const typedArgs = (args ?? {}) as Record<string, unknown>;
-      const utilityCtx: UtilityToolContext = {
-        resolveThreadId,
-        getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
-        errorResult,
-        telegram,
-        config,
-        sessionStartedAt,
-      };
-      return handleUtilityTool(name, typedArgs, utilityCtx);
-    }
-
-    // Unknown tool
     return errorResult(`Unknown tool: ${name}`);
   });
 
