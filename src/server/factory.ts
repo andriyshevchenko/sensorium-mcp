@@ -165,6 +165,9 @@ function createMcpServer(
 
   // ── Tool implementations ──────────────────────────────────────────────────
 
+  // ToolResult intentionally omits `[key: string]: unknown` for internal type
+  // safety; assert structural compatibility at the SDK boundary.
+  // @ts-expect-error — ToolResult is structurally compatible but lacks index signature
   srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;
 
