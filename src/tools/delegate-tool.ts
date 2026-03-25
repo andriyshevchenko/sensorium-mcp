@@ -277,39 +277,28 @@ function cleanupStalePidFiles(): void {
  *
  * Resolution order:
  *   1. Session store (threads previously used by this MCP server)
- *   2. Topic registry (~/.remote-copilot-mcp/topic-registry.json) —
+ *   2. Topic registry (SQLite topic_registry table) —
  *      operator-managed mapping for manually-created threads
  *
- * Any match is validated via `editForumTopic` (no-op edit) to confirm the
- * topic still exists in the Telegram group.  If found in the registry but
- * not yet in the session store, the mapping is persisted there too for
- * faster future lookups.
+ * If a match is found in the registry but not yet in the session store,
+ * the mapping is promoted there for faster future lookups.
  *
- * Returns the thread ID if found and valid, or undefined.
+ * Returns the thread ID if found, or undefined.
  */
-async function resolveExistingTopic(
-  telegram: TelegramClient,
+function resolveExistingTopic(
   chatId: string,
   name: string,
-): Promise<number | undefined> {
+): number | undefined {
   // 1. Session store
   const sessionId = lookupSession(chatId, name);
-  if (sessionId !== undefined) {
-    const valid = await telegram.validateForumTopic(chatId, sessionId);
-    if (valid) return sessionId;
-    log.info(`[start_thread] Session-stored topic "${name}" (thread ${sessionId}) is stale`);
-  }
+  if (sessionId !== undefined) return sessionId;
 
   // 2. Topic registry (operator-managed)
   const registryId = lookupTopicRegistry(chatId, name);
-  if (registryId !== undefined && registryId !== sessionId) {
-    const valid = await telegram.validateForumTopic(chatId, registryId);
-    if (valid) {
-      // Promote to session store for future fast lookups
-      persistSession(chatId, name, registryId);
-      return registryId;
-    }
-    log.info(`[start_thread] Registry topic "${name}" (thread ${registryId}) is stale`);
+  if (registryId !== undefined) {
+    // Promote to session store for future fast lookups
+    persistSession(chatId, name, registryId);
+    return registryId;
   }
 
   return undefined;
@@ -327,9 +316,16 @@ export async function handleStartThread(
 
   // ── Validate args ─────────────────────────────────────────────────────
   const name = typeof args.name === "string" ? args.name.trim() : "";
+  const rawThreadId = args.threadId;
+  const explicitThreadId = typeof rawThreadId === "number" ? rawThreadId
+    : typeof rawThreadId === "string" ? (Number.isFinite(Number(rawThreadId)) ? Number(rawThreadId) : undefined)
+    : undefined;
   const rawAgentType = typeof args.agentType === "string" ? args.agentType.trim() : "claude";
 
-  if (!name) return errorResult("Error: 'name' parameter is required for start_thread.");
+  // name is required unless an explicit threadId is provided
+  if (!name && explicitThreadId === undefined) {
+    return errorResult("Error: 'name' parameter is required for start_thread (unless threadId is provided).");
+  }
 
   const agentType: AgentType =
     rawAgentType === "copilot" || rawAgentType === "claude" || rawAgentType === "cursor"
@@ -360,29 +356,39 @@ export async function handleStartThread(
 
   // ── 1. Resolve or create Telegram forum topic ─────────────────────────
   // Resolution order:
+  //   0. Explicit threadId parameter (beats everything)
   //   1. Session store (threads previously used by this server)
-  //   2. Topic registry (operator-managed mapping for manually-created threads)
-  //   3. Create new topic via Telegram API
+  //   2. Topic registry (operator-managed mapping in SQLite)
+  //   3. Create new topic via Telegram API (only if no match above)
   let threadId: number;
   let topicExisted = false;
 
-  const resolvedId = await resolveExistingTopic(telegram, telegramChatId, name);
-  if (resolvedId !== undefined) {
-    threadId = resolvedId;
+  if (explicitThreadId !== undefined) {
+    threadId = explicitThreadId;
     topicExisted = true;
-    log.info(`[start_thread] Resolved existing forum topic "${name}" → thread ${threadId}`);
-  } else {
-    try {
-      const topic = await telegram.createForumTopic(telegramChatId, name);
-      threadId = topic.message_thread_id;
+    if (name) {
       persistSession(telegramChatId, name, threadId);
-      registerTopic(telegramChatId, name, threadId);
-      log.info(`[start_thread] Created forum topic "${name}" → thread ${threadId}`);
-    } catch (err) {
-      return errorResult(
-        `Error: Could not create forum topic "${name}": ${errorMessage(err)}. ` +
-        "Ensure the Telegram chat is a forum supergroup with the bot as admin.",
-      );
+    }
+    log.info(`[start_thread] Using explicit threadId ${threadId}` + (name ? ` ("${name}")` : ""));
+  } else {
+    const resolvedId = resolveExistingTopic(telegramChatId, name);
+    if (resolvedId !== undefined) {
+      threadId = resolvedId;
+      topicExisted = true;
+      log.info(`[start_thread] Resolved existing forum topic "${name}" → thread ${threadId}`);
+    } else {
+      try {
+        const topic = await telegram.createForumTopic(telegramChatId, name);
+        threadId = topic.message_thread_id;
+        persistSession(telegramChatId, name, threadId);
+        registerTopic(telegramChatId, name, threadId);
+        log.info(`[start_thread] Created forum topic "${name}" → thread ${threadId}`);
+      } catch (err) {
+        return errorResult(
+          `Error: Could not create forum topic "${name}": ${errorMessage(err)}. ` +
+          "Ensure the Telegram chat is a forum supergroup with the bot as admin.",
+        );
+      }
     }
   }
 
@@ -415,8 +421,8 @@ export async function handleStartThread(
       undefined,
       threadId,
     );
-  } catch {
-    // Non-fatal — the thread was created, process is running.
+  } catch (err) {
+    log.warn(`[start_thread] Notification to thread ${threadId} failed: ${errorMessage(err)}`);
   }
 
   return {

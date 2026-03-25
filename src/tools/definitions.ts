@@ -443,7 +443,14 @@ export function getToolDefinitions(): ToolDefinition[] {
             type: "string",
             description:
               "Thread name for the session (e.g. 'Azure-WorkItems'). " +
-              "Resolved case-insensitively against persisted sessions.",
+              "Resolved case-insensitively against persisted sessions. " +
+              "Required unless threadId is provided.",
+          },
+          threadId: {
+            type: "number",
+            description:
+              "Explicit Telegram thread ID to use. Bypasses name-based resolution. " +
+              "If both name and threadId are provided, threadId takes priority.",
           },
           agentType: {
             type: "string",
@@ -452,7 +459,7 @@ export function getToolDefinitions(): ToolDefinition[] {
             enum: ["copilot", "claude", "cursor"],
           },
         },
-        required: ["name"],
+        required: [],
       },
     },
     {
