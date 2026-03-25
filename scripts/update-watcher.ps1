@@ -91,6 +91,42 @@ function Stop-McpServer {
         Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
 
     if ($processes) {
+        # Wait until the server is idle (no tool call in the last 30s)
+        # to avoid killing mid-request and crashing the agent session.
+        $heartbeatFile = "$DATA_DIR\last-activity.txt"
+        $maxWait = 120  # absolute max wait (seconds)
+        $idleThreshold = 30  # seconds since last tool call
+        $waited = 0
+
+        while ($waited -lt $maxWait) {
+            $idle = $true
+            if (Test-Path $heartbeatFile) {
+                try {
+                    $lastActivity = [long](Get-Content $heartbeatFile -Raw).Trim()
+                    $nowMs = [long]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+                    $ageSec = ($nowMs - $lastActivity) / 1000
+                    if ($ageSec -lt $idleThreshold) {
+                        $idle = $false
+                    }
+                } catch {
+                    # Can't read — assume idle
+                }
+            }
+
+            if ($idle) {
+                Write-Log "Server idle (no tool call in ${idleThreshold}s) — safe to kill."
+                break
+            }
+
+            Write-Log "Server active (tool call ${ageSec}s ago) — waiting..."
+            Start-Sleep -Seconds 5
+            $waited += 5
+        }
+
+        if ($waited -ge $maxWait) {
+            Write-Log "Max wait (${maxWait}s) exceeded — force-killing." -Level "WARN"
+        }
+
         foreach ($proc in $processes) {
             try {
                 Write-Log "Stopping PID=$($proc.ProcessId)"

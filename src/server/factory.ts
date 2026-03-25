@@ -12,7 +12,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { checkMaintenanceFlag } from "../data/file-storage.js";
+import { checkMaintenanceFlag, writeActivityHeartbeat } from "../data/file-storage.js";
 import { config } from "../config.js";
 import { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
 import { formatDrivePrompt } from "../drive.js";
@@ -339,6 +339,7 @@ function createMcpServer(
     log.verbose("dispatch", `Tool call: ${name} args=${argsSummary}`);
 
     lastToolCallAt = Date.now();
+    writeActivityHeartbeat();
 
     // Track tool calls for activity monitoring
     toolCallsSinceLastDelivery++;
