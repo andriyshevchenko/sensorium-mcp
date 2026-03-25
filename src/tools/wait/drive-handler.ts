@@ -27,6 +27,8 @@ export interface DriveContext {
   };
   effectiveThreadId: number | undefined;
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
+  /** OpenAI API key from config (used for embedding backfill). */
+  apiKey: string | undefined;
   config: {
     DMN_ACTIVATION_HOURS: number;
     AUTONOMOUS_MODE: boolean;
@@ -49,15 +51,16 @@ function fireConsolidation(
   db: ReturnType<typeof initMemoryDb>,
   threadId: number,
   label: string,
+  apiKey?: string,
 ): void {
   void runIntelligentConsolidation(db, threadId)
     .then(async (report) => {
       if (report.episodesProcessed > 0) {
         log.info(
-          `[memory] ${label} consolidation: ${report.episodesProcessed} episodes → ${report.notesCreated} notes`,
+          `[memory] ${label} consolidation: ${report.episodesProcessed} episodes \u2192 ${report.notesCreated} notes`,
         );
       }
-      await backfillEmbeddings(db);
+      await backfillEmbeddings(db, apiKey);
     })
     .catch((err) => {
       log.error(
@@ -76,14 +79,14 @@ function fireConsolidation(
  *   3. Time-based  — every 4 hours regardless
  */
 export function runAutoConsolidation(ctx: DriveContext): void {
-  const { state, effectiveThreadId, getMemoryDb } = ctx;
+  const { state, effectiveThreadId, getMemoryDb, apiKey } = ctx;
 
   // Strategy 1: Idle-based consolidation
   try {
     const idleMs = Date.now() - state.lastOperatorMessageAt;
     if (idleMs > 15 * 60 * 1000 && effectiveThreadId !== undefined && Date.now() - state.lastConsolidationAt > 30 * 60 * 1000) {
       state.lastConsolidationAt = Date.now();
-      fireConsolidation(getMemoryDb(), effectiveThreadId, "Idle-based");
+      fireConsolidation(getMemoryDb(), effectiveThreadId, "Idle-based", apiKey);
     }
   } catch (_) { /* consolidation failure is non-fatal */ }
 
@@ -96,7 +99,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
       const uncons = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0 AND thread_id = ?").get(effectiveThreadId) as { c: number };
       if (uncons.c >= 15) {
         state.lastConsolidationAt = Date.now();
-        fireConsolidation(db, effectiveThreadId, "Episode-count");
+        fireConsolidation(db, effectiveThreadId, "Episode-count", apiKey);
       }
     }
   } catch (_) { /* non-fatal */ }
@@ -109,7 +112,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
       state.lastConsolidationAt = Date.now();
       const db = getMemoryDb();
       log.info(`[memory] Time-based consolidation triggered (4h since last)`);
-      fireConsolidation(db, effectiveThreadId, "Time-based");
+      fireConsolidation(db, effectiveThreadId, "Time-based", apiKey);
     }
   } catch (_) { /* non-fatal */ }
 }

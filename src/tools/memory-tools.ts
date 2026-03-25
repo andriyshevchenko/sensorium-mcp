@@ -38,6 +38,8 @@ export interface ToolContext {
   getShortReminder: (threadId: number | undefined) => string;
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
   errorResult: (msg: string) => ToolResult & { isError: true };
+  /** OpenAI API key from config (used for embeddings). */
+  apiKey: string | undefined;
   /** Called when consolidation completes so the caller can update its timestamp. */
   onConsolidation?: () => void;
 }
@@ -50,8 +52,7 @@ export interface ToolContext {
  * Backfill embeddings for any semantic notes that don't have them yet.
  * Used after consolidation to ensure all notes are searchable by embedding.
  */
-export async function backfillEmbeddings(db: ReturnType<typeof initMemoryDb>): Promise<void> {
-  const apiKey = process.env.OPENAI_API_KEY;
+export async function backfillEmbeddings(db: ReturnType<typeof initMemoryDb>, apiKey?: string): Promise<void> {
   if (!apiKey) return;
   const missing = getNotesWithoutEmbeddings(db);
   for (const { noteId, content } of missing) {
@@ -369,10 +370,9 @@ export async function handleMemoryTool(
   args: Record<string, unknown>,
   ctx: ToolContext,
 ): Promise<ToolResult> {
-  const { resolveThreadId, getShortReminder, getMemoryDb, errorResult } = ctx;
+  const { resolveThreadId, getShortReminder, getMemoryDb, errorResult, apiKey } = ctx;
   const threadId = resolveThreadId(args);
   const reminder = getShortReminder(threadId);
-  const apiKey = process.env.OPENAI_API_KEY;
 
   switch (name) {
     case "memory_search":
