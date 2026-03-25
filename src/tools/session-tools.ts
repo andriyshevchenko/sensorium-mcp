@@ -205,9 +205,10 @@ async function handleReportProgress(
       }
       log.info(`[report_progress] Consumed ${consumed.length} messages (re-queued ${consumed.filter(m => !!((m.message.photo && m.message.photo.length > 0) || m.message.document || m.message.voice || m.message.video_note || m.message.animation || m.message.sticker)).length} with media)`);
     }
-  } catch {
+  } catch (err) {
     // Non-fatal: pending messages will still be picked up by the next
     // remote_copilot_wait_for_instructions call.
+    log.debug(`[report_progress] Failed to peek/consume pending messages: ${err instanceof Error ? (err as Error).message : String(err)}`);
   }
 
   const baseStatus =
