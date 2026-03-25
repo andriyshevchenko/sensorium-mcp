@@ -224,7 +224,7 @@ export function assembleBootstrap(db: Database, threadId: number): string {
  * Compact memory refresh — a condensed briefing for injection during long sessions.
  * Much shorter than full bootstrap. Designed to re-ground the agent after context compaction.
  */
-export function assembleCompactRefresh(db: Database, threadId: number): string {
+export function assembleCompactRefresh(db: Database, _threadId: number): string {
   const topNotes = getTopSemanticNotes(db, { limit: 6, sortBy: "access_count" });
   if (topNotes.length === 0) return "";
 
@@ -241,7 +241,7 @@ export function assembleCompactRefresh(db: Database, threadId: number): string {
 export function forgetMemory(
   db: Database,
   memoryId: string,
-  reason: string
+  _reason: string
 ): { layer: string; deleted: boolean } {
   // Determine layer by prefix
   if (memoryId.startsWith("ep_")) {
