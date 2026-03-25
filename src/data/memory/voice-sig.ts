@@ -1,4 +1,5 @@
 import type { Database } from "./schema.js";
+import { nowISO, jsonOrNull } from "./utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -13,17 +14,6 @@ export interface VoiceBaseline {
   avgShimmer: number | null;
   avgHnrDb: number | null;
   sampleCount: number;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function nowISO(): string {
-  return new Date().toISOString();
-}
-
-function jsonOrNull(val: unknown): string | null {
-  if (val === undefined || val === null) return null;
-  return JSON.stringify(val);
 }
 
 // ─── Voice Signatures ────────────────────────────────────────────────────────

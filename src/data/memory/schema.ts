@@ -11,15 +11,10 @@ import { existsSync, mkdirSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { log } from "../../logger.js";
+import { nowISO } from "./utils.js";
 
 // Re-export the Database type so consumers don't need better-sqlite3 directly
 export type Database = BetterSqlite3.Database;
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function nowISO(): string {
-  return new Date().toISOString();
-}
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 

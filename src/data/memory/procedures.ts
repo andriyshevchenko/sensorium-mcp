@@ -5,6 +5,7 @@
  */
 
 import type { Database } from "./schema.js";
+import { nowISO, parseJsonArray } from "./utils.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -24,21 +25,6 @@ export interface Procedure {
   confidence: number;
   createdAt: string;
   updatedAt: string;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function nowISO(): string {
-  return new Date().toISOString();
-}
-
-function parseJsonArray(val: string | null | undefined): string[] {
-  if (!val) return [];
-  try {
-    return JSON.parse(val);
-  } catch {
-    return [];
-  }
 }
 
 // ─── Row → Interface mapper ─────────────────────────────────────────────────

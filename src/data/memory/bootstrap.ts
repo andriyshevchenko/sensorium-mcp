@@ -17,6 +17,7 @@ import {
 } from "./semantic.js";
 import { rowToProcedure } from "./procedures.js";
 import { getVoiceBaseline } from "./voice-sig.js";
+import { parseJsonArray } from "./utils.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -41,15 +42,6 @@ interface MemoryStatus {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function parseJsonArray(val: string | null | undefined): string[] {
-  if (!val) return [];
-  try {
-    return JSON.parse(val);
-  } catch {
-    return [];
-  }
-}
 
 function rowToTopicEntry(row: Record<string, unknown>): TopicEntry {
   return {

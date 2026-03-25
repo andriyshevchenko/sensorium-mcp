@@ -7,6 +7,7 @@ import {
   supersedeNote,
 } from "./semantic.js";
 import { log } from "../../logger.js";
+import { nowISO } from "./utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -24,10 +25,6 @@ interface ConsolidationLog {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function nowISO(): string {
-  return new Date().toISOString();
-}
 
 function logConsolidation(db: Database, entry: ConsolidationLog): void {
   db.prepare(
