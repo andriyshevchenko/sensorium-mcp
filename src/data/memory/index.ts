@@ -5,6 +5,7 @@
  * a single path: `./data/memory/index.js`.
  */
 
+export * from './utils.js';
 export * from './schema.js';
 export * from './episodes.js';
 export * from './semantic.js';

@@ -4,8 +4,8 @@
  * Extracted from memory.ts — episodic memory layer.
  */
 
-import { randomUUID } from "crypto";
 import type { Database } from "./schema.js";
+import { generateId, nowISO, jsonOrNull, parseJsonArray, parseJsonObject } from "./utils.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -26,37 +26,6 @@ export interface Episode {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function generateId(prefix: string): string {
-  return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-}
-
-function nowISO(): string {
-  return new Date().toISOString();
-}
-
-function jsonOrNull(val: unknown): string | null {
-  if (val === undefined || val === null) return null;
-  return JSON.stringify(val);
-}
-
-function parseJsonArray(val: string | null | undefined): string[] {
-  if (!val) return [];
-  try {
-    return JSON.parse(val);
-  } catch {
-    return [];
-  }
-}
-
-function parseJsonObject(val: string | null | undefined): Record<string, unknown> {
-  if (!val) return {};
-  try {
-    return JSON.parse(val);
-  } catch {
-    return {};
-  }
-}
 
 // ─── Row → Interface mapper ─────────────────────────────────────────────────
 
