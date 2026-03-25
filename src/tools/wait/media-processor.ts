@@ -13,6 +13,7 @@ import {
   saveVoiceSignature,
   type Database,
 } from "../../memory.js";
+import type { VoiceAnalysisResult } from "../../openai.js";
 import {
   analyzeVideoFrames,
   analyzeVoiceEmotion,
@@ -38,6 +39,37 @@ export interface MediaContext {
   effectiveThreadId: number;
   sessionStartedAt: number;
   getMemoryDb: () => Database;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Map VANPY analysis fields to a voice signature record and save it.
+ * Shared by processVoice() and processVideoNote().
+ */
+function saveVoiceAnalysis(
+  db: Database,
+  epId: string,
+  analysis: VoiceAnalysisResult,
+  duration: number,
+): void {
+  saveVoiceSignature(db, {
+    episodeId: epId,
+    emotion: analysis.emotion ?? undefined,
+    arousal: analysis.arousal ?? undefined,
+    dominance: analysis.dominance ?? undefined,
+    valence: analysis.valence ?? undefined,
+    speechRate: analysis.paralinguistics?.speech_rate ?? undefined,
+    meanPitchHz: analysis.paralinguistics?.mean_pitch_hz ?? undefined,
+    pitchStdHz: analysis.paralinguistics?.pitch_std_hz ?? undefined,
+    jitter: analysis.paralinguistics?.jitter ?? undefined,
+    shimmer: analysis.paralinguistics?.shimmer ?? undefined,
+    hnrDb: analysis.paralinguistics?.hnr_db ?? undefined,
+    audioEvents: analysis.audio_events?.map(e => ({ label: e.label, confidence: e.score })),
+    durationSec: duration,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -103,21 +135,7 @@ export async function processVoice(
           content: { text: transcript ?? "", duration: voice.duration },
           importance: 0.6,
         });
-        saveVoiceSignature(db, {
-          episodeId: epId,
-          emotion: analysis.emotion ?? undefined,
-          arousal: analysis.arousal ?? undefined,
-          dominance: analysis.dominance ?? undefined,
-          valence: analysis.valence ?? undefined,
-          speechRate: analysis.paralinguistics?.speech_rate ?? undefined,
-          meanPitchHz: analysis.paralinguistics?.mean_pitch_hz ?? undefined,
-          pitchStdHz: analysis.paralinguistics?.pitch_std_hz ?? undefined,
-          jitter: analysis.paralinguistics?.jitter ?? undefined,
-          shimmer: analysis.paralinguistics?.shimmer ?? undefined,
-          hnrDb: analysis.paralinguistics?.hnr_db ?? undefined,
-          audioEvents: analysis.audio_events?.map(e => ({ label: e.label, confidence: e.score })),
-          durationSec: voice.duration,
-        });
+        saveVoiceAnalysis(db, epId, analysis, voice.duration);
         episodeSaved = true;
       } catch (_) { /* non-fatal */ }
     }
@@ -283,21 +301,7 @@ export async function processVideoNote(
           content: { text: transcript ?? "", scene: sceneDescription ?? "", duration: vn.duration },
           importance: 0.6,
         });
-        saveVoiceSignature(db, {
-          episodeId: epId,
-          emotion: analysis.emotion ?? undefined,
-          arousal: analysis.arousal ?? undefined,
-          dominance: analysis.dominance ?? undefined,
-          valence: analysis.valence ?? undefined,
-          speechRate: analysis.paralinguistics?.speech_rate ?? undefined,
-          meanPitchHz: analysis.paralinguistics?.mean_pitch_hz ?? undefined,
-          pitchStdHz: analysis.paralinguistics?.pitch_std_hz ?? undefined,
-          jitter: analysis.paralinguistics?.jitter ?? undefined,
-          shimmer: analysis.paralinguistics?.shimmer ?? undefined,
-          hnrDb: analysis.paralinguistics?.hnr_db ?? undefined,
-          audioEvents: analysis.audio_events?.map(e => ({ label: e.label, confidence: e.score })),
-          durationSec: vn.duration,
-        });
+        saveVoiceAnalysis(db, epId, analysis, vn.duration);
         episodeSaved = true;
       } catch (_) { /* non-fatal */ }
     }
