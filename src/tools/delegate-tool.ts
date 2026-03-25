@@ -42,11 +42,6 @@ export interface SpawnedThread {
 
 const spawnedThreads: SpawnedThread[] = [];
 
-/** Return a snapshot of all spawned thread processes. */
-export function getSpawnedThreads(): readonly SpawnedThread[] {
-  return spawnedThreads;
-}
-
 /**
  * Check if a process with the given PID is still running.
  */
