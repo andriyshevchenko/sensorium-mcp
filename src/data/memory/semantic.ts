@@ -26,6 +26,7 @@ export interface SemanticNote {
   supersededBy: string | null;
   accessCount: number;
   lastAccessed: string | null;
+  isGuardrail: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -51,6 +52,7 @@ function rowToSemanticNote(row: Record<string, unknown>): SemanticNote {
     supersededBy: (row.superseded_by as string) ?? null,
     accessCount: row.access_count as number,
     lastAccessed: (row.last_accessed as string) ?? null,
+    isGuardrail: (row.is_guardrail as number) === 1,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -127,6 +129,7 @@ export function saveSemanticNote(
     confidence?: number;
     priority?: number;
     threadId?: number | null;
+    isGuardrail?: boolean;
     sourceEpisodes?: string[];
   }
 ): string {
@@ -135,8 +138,8 @@ export function saveSemanticNote(
 
   db.prepare(
     `INSERT INTO semantic_notes
-       (note_id, type, content, keywords, confidence, priority, thread_id, source_episodes, linked_notes, link_reasons, valid_from, access_count, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+       (note_id, type, content, keywords, confidence, priority, thread_id, is_guardrail, source_episodes, linked_notes, link_reasons, valid_from, access_count, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
   ).run(
     id,
     note.type,
@@ -145,6 +148,7 @@ export function saveSemanticNote(
     Math.max(0, Math.min(1, note.confidence ?? 0.5)),
     Math.max(0, Math.min(2, note.priority ?? 0)),
     note.threadId ?? null,
+    note.isGuardrail ? 1 : 0,
     jsonOrNull(note.sourceEpisodes),
     null,
     null,
@@ -313,20 +317,29 @@ export function getTopSemanticNotes(
 }
 
 /**
- * Guardrail notes: priority-1 preference notes that represent critical decisions
- * the LLM must always follow. Capped at 10, ordered by access_count DESC.
+ * Guardrail notes: explicitly flagged decision constraints the LLM must always
+ * follow. Capped at 5, ordered by priority DESC then access_count DESC.
  */
 export function getGuardrailNotes(db: Database): SemanticNote[] {
   const rows = db
     .prepare(
       `SELECT * FROM semantic_notes
        WHERE valid_to IS NULL AND superseded_by IS NULL
-         AND type = 'preference' AND priority >= 1
-       ORDER BY access_count DESC, confidence DESC
-       LIMIT 10`
+         AND is_guardrail = 1
+       ORDER BY priority DESC, access_count DESC, confidence DESC
+       LIMIT 5`
     )
     .all() as Record<string, unknown>[];
   return rows.map(rowToSemanticNote);
+}
+
+/**
+ * Mark (or unmark) an existing semantic note as a guardrail constraint.
+ */
+export function markAsGuardrail(db: Database, noteId: string, guardrail = true): void {
+  db.prepare(
+    `UPDATE semantic_notes SET is_guardrail = ?, updated_at = ? WHERE note_id = ?`
+  ).run(guardrail ? 1 : 0, nowISO(), noteId);
 }
 
 export function updateSemanticNote(
@@ -386,8 +399,8 @@ export function supersedeNote(
     sourceEpisodes?: string[];
   }
 ): string {
-  // Inherit thread_id from the old note being superseded
-  const oldRow = db.prepare(`SELECT thread_id FROM semantic_notes WHERE note_id = ?`).get(oldNoteId) as { thread_id: number | null } | undefined;
+  // Inherit thread_id and is_guardrail from the old note being superseded
+  const oldRow = db.prepare(`SELECT thread_id, is_guardrail FROM semantic_notes WHERE note_id = ?`).get(oldNoteId) as { thread_id: number | null; is_guardrail: number } | undefined;
   const newId = saveSemanticNote(db, {
     type: newNote.type as SemanticNote["type"],
     content: newNote.content,
@@ -395,6 +408,7 @@ export function supersedeNote(
     confidence: newNote.confidence,
     priority: newNote.priority,
     threadId: oldRow?.thread_id ?? null,
+    isGuardrail: (oldRow?.is_guardrail ?? 0) === 1,
     sourceEpisodes: newNote.sourceEpisodes,
   });
 
