@@ -460,7 +460,9 @@ export function getToolDefinitions(): ToolDefinition[] {
       description:
         "Send a task or message to another thread's agent. " +
         "The agent receives it on their next poll. " +
-        "If the thread is dormant, the message is queued but not processed until start_thread is called.",
+        "If the thread is dormant, the message is queued but not processed until start_thread is called. " +
+        "Use 'mode' to control how the receiving thread should behave: " +
+        "'one-shot' (default) for fire-and-forget tasks, 'manager-worker' for collaborative back-and-forth.",
       inputSchema: {
         type: "object",
         properties: {
@@ -471,6 +473,21 @@ export function getToolDefinitions(): ToolDefinition[] {
           message: {
             type: "string",
             description: "The task or message content to send.",
+          },
+          mode: {
+            type: "string",
+            description:
+              "Delegation mode: 'one-shot' (default) — receiver reports to operator only, does not message sender back. " +
+              "'manager-worker' — receiver reports back to sender thread when complete.",
+            enum: ["one-shot", "manager-worker"],
+          },
+          senderName: {
+            type: "string",
+            description: "Name of the sending thread (so the receiver knows who delegated the task).",
+          },
+          senderThreadId: {
+            type: "number",
+            description: "Thread ID of the sender (used in manager-worker mode for reply routing).",
           },
         },
         required: ["threadId", "message"],
