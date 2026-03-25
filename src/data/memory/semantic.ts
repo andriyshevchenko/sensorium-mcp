@@ -239,15 +239,15 @@ export function searchSemanticNotesRanked(
 ): SemanticNote[] {
   const maxResults = options?.maxResults ?? 10;
   const minMatchRatio = options?.minMatchRatio ?? 0.4; // require at least 40% of terms to match
-  const terms = query.toLowerCase().split(/\\s+/).filter(t => t.length > 1);
+  const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
   if (terms.length === 0) return [];
 
   // Use OR to get broad recall
   const conditions: string[] = [];
   const params: unknown[] = [];
   for (const term of terms) {
-    const escaped = term.replace(/%/g, "\\\\%").replace(/_/g, "\\\\_");
-    conditions.push(`(LOWER(content) LIKE ? ESCAPE '\\\\' OR LOWER(keywords) LIKE ? ESCAPE '\\\\')`);
+    const escaped = term.replace(/%/g, "\\%").replace(/_/g, "\\_");
+    conditions.push(`(LOWER(content) LIKE ? ESCAPE '\\' OR LOWER(keywords) LIKE ? ESCAPE '\\')`);
     params.push(`%${escaped}%`, `%${escaped}%`);
   }
 
