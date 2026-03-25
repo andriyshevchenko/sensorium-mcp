@@ -152,7 +152,10 @@ function spawnAgentProcess(
 
   const logFd = openSync(logFilePath, "a");
 
-  const prompt = `Start remote session with sensorium. Thread name = '${safeName}'`;
+  // Use the original name (not safeName) in the prompt so the spawned agent
+  // calls start_session with the exact name stored in the session registry.
+  // safeName is only for filesystem-safe log filenames.
+  const prompt = `Start remote session with sensorium. Thread name = '${name}'`;
 
   const cliArgs = [
     "--verbose",
