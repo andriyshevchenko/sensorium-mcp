@@ -22,6 +22,7 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { timingSafeEqual } from "node:crypto";
 
 import {
     getRecentEpisodes,
@@ -96,7 +97,15 @@ export function handleDashboardRequest(
         if (authToken) {
             const auth = req.headers.authorization;
             const providedToken = auth?.startsWith("Bearer ") ? auth.slice(7) : url.searchParams.get("token");
-            if (!providedToken || providedToken !== authToken) {
+            if (!providedToken) {
+                res.writeHead(401, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Unauthorized" }));
+                return true;
+            }
+            // Use constant-time comparison to prevent timing attacks.
+            const providedBuf = Buffer.from(providedToken);
+            const expectedBuf = Buffer.from(authToken);
+            if (providedBuf.length !== expectedBuf.length || !timingSafeEqual(providedBuf, expectedBuf)) {
                 res.writeHead(401, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ error: "Unauthorized" }));
                 return true;
