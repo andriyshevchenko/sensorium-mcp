@@ -6,7 +6,7 @@
 
 import { convertMarkdown, splitMessage } from "../markdown.js";
 import type { TelegramClient } from "../telegram.js";
-import type { peekThreadMessages } from "../dispatcher.js";
+import type { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
 import type { checkMaintenanceFlag } from "../config.js";
 import type { checkDueTasks } from "../scheduler.js";
 import { log } from "../logger.js";
@@ -26,6 +26,8 @@ export interface SessionToolContext {
   telegram: TelegramClient;
   telegramChatId: string;
   peekThreadMessages: typeof peekThreadMessages;
+  readThreadMessages: typeof readThreadMessages;
+  appendToThread: typeof appendToThread;
   checkMaintenanceFlag: typeof checkMaintenanceFlag;
   checkDueTasks: typeof checkDueTasks;
   generateDmnReflection: (threadId: number) => string;
@@ -71,7 +73,8 @@ async function handleReportProgress(
 ): Promise<ToolResult> {
   const {
     resolveThreadId, getShortReminder, errorResult, telegram, telegramChatId,
-    peekThreadMessages, previewedUpdateIds, addPreviewedId,
+    peekThreadMessages, readThreadMessages, appendToThread,
+    previewedUpdateIds, addPreviewedId,
   } = ctx;
 
   const effectiveThreadId = resolveThreadId(args);
@@ -140,14 +143,17 @@ async function handleReportProgress(
   }
 
   // Peek at any messages the operator sent while the agent was working.
-  // Uses non-destructive peek so media is preserved for full delivery
-  // via remote_copilot_wait_for_instructions. Tracks previewed update_ids
-  // to prevent the same messages from appearing on repeated calls.
+  // Tracks previewed update_ids to prevent duplicate previews across calls.
+  // After building the steering preview, we consume messages to prevent
+  // re-delivery after a server restart. Messages with media are re-queued
+  // so wait_for_instructions can still fully process them.
   let pendingMessages: string[] = [];
+  let hasNewPreviews = false;
   try {
     const pendingStored = peekThreadMessages(effectiveThreadId);
     for (const msg of pendingStored) {
       if (previewedUpdateIds.has(msg.update_id)) continue;
+      hasNewPreviews = true;
       addPreviewedId(msg.update_id);
 
       if (msg.message.photo && msg.message.photo.length > 0) {
@@ -175,6 +181,29 @@ async function handleReportProgress(
       } else {
         pendingMessages.push("[Unsupported message type — will be shown on next wait]");
       }
+    }
+
+    // Advance the offset: consume all pending messages so they aren't
+    // re-delivered if the server restarts before wait_for_instructions
+    // runs.  Messages with media (photo, voice, document, video_note,
+    // animation, sticker) are re-queued so wait_for_instructions can
+    // still download / transcribe / vision-analyze them.
+    if (hasNewPreviews && effectiveThreadId !== undefined) {
+      const consumed = readThreadMessages(effectiveThreadId);
+      for (const msg of consumed) {
+        const hasMedia = !!(
+          (msg.message.photo && msg.message.photo.length > 0) ||
+          msg.message.document ||
+          msg.message.voice ||
+          msg.message.video_note ||
+          msg.message.animation ||
+          msg.message.sticker
+        );
+        if (hasMedia) {
+          appendToThread(effectiveThreadId, msg);
+        }
+      }
+      log.info(`[report_progress] Consumed ${consumed.length} messages (re-queued ${consumed.filter(m => !!((m.message.photo && m.message.photo.length > 0) || m.message.document || m.message.voice || m.message.video_note || m.message.animation || m.message.sticker)).length} with media)`);
     }
   } catch {
     // Non-fatal: pending messages will still be picked up by the next

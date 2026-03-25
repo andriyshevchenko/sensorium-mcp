@@ -13,7 +13,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { checkMaintenanceFlag, config } from "../config.js";
-import { peekThreadMessages } from "../dispatcher.js";
+import { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
 import { formatDrivePrompt } from "../drive.js";
 import { checkDueTasks } from "../scheduler.js";
 import {
@@ -258,6 +258,8 @@ function createMcpServer(
         telegram,
         telegramChatId,
         peekThreadMessages,
+        readThreadMessages,
+        appendToThread,
         checkMaintenanceFlag,
         checkDueTasks,
         generateDmnReflection,
