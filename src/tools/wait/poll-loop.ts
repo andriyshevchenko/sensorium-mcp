@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { checkMaintenanceFlag } from "../../data/file-storage.js";
+import { checkMaintenanceFlag, writeActivityHeartbeat } from "../../data/file-storage.js";
 import { peekThreadMessages } from "../../dispatcher.js";
 import type { initMemoryDb } from "../../memory.js";
 import type { TelegramClient } from "../../telegram.js";
@@ -238,6 +238,7 @@ export async function handleWaitForInstructions(
       }
     }
     await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    writeActivityHeartbeat();
   }
 
   // Timeout elapsed with no actionable message.
