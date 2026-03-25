@@ -385,7 +385,7 @@ export async function handleWaitForInstructions(
   }
 
   // ── Auto-consolidation during idle (fire-and-forget) ────────────────────
-  runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, config, memoryRefresh: "", scheduleHint: "" });
+  runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, apiKey: OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
 
   // Periodic memory refresh — re-ground the agent every 10 polls (~5h)
   // (reduced from 5 since auto-inject now handles per-message context)
@@ -399,7 +399,7 @@ export async function handleWaitForInstructions(
   }
 
   // ── 3-Phase Probabilistic Autonomous Drive ──────────────────────────────
-  const driveActivationResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, config, memoryRefresh, scheduleHint });
+  const driveActivationResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, apiKey: OPENAI_API_KEY || undefined, config, memoryRefresh, scheduleHint });
   if (driveActivationResult) return driveActivationResult;
 
   return {

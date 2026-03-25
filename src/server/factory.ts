@@ -150,6 +150,7 @@ function createMcpServer(
     getShortReminder: (threadId) => getShortReminder(threadId, sessionStartedAt),
     getMemoryDb,
     errorResult,
+    apiKey: config.OPENAI_API_KEY || undefined,
     onConsolidation: () => { lastConsolidationAt = Date.now(); },
   };
 
