@@ -11,8 +11,6 @@ import { log } from "./logger.js";
 import type { AppConfig } from "./types.js";
 import { FILES_DIR } from "./data/file-storage.js";
 
-export { saveFileToDisk, checkMaintenanceFlag } from "./data/file-storage.js";
-
 const esmRequire = createRequire(import.meta.url);
 const { version: PKG_VERSION } = esmRequire("../package.json") as { version: string };
 

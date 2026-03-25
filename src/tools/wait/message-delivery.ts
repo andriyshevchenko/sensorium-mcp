@@ -9,7 +9,7 @@
  */
 
 import { basename } from "node:path";
-import { saveFileToDisk } from "../../config.js";
+import { saveFileToDisk } from "../../data/file-storage.js";
 import type { StoredMessage } from "../../dispatcher.js";
 import { classifyIntent } from "../../intent.js";
 import { log } from "../../logger.js";

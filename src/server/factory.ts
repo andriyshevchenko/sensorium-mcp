@@ -12,7 +12,8 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { checkMaintenanceFlag, config } from "../config.js";
+import { checkMaintenanceFlag } from "../data/file-storage.js";
+import { config } from "../config.js";
 import { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
 import { formatDrivePrompt } from "../drive.js";
 import { checkDueTasks } from "../scheduler.js";

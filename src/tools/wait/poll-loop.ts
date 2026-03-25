@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { checkMaintenanceFlag } from "../../config.js";
+import { checkMaintenanceFlag } from "../../data/file-storage.js";
 import { peekThreadMessages, readThreadMessages } from "../../dispatcher.js";
 import {
   assembleCompactRefresh,

@@ -6,7 +6,7 @@
 
 import { readFile } from "fs/promises";
 import { basename } from "node:path";
-import { checkMaintenanceFlag } from "../config.js";
+import { checkMaintenanceFlag } from "../data/file-storage.js";
 import { textToSpeech, TTS_VOICES, type TTSVoice } from "../openai.js";
 import { addSchedule, generateTaskId, listSchedules, removeSchedule, type ScheduledTask } from "../scheduler.js";
 import type { TelegramClient } from "../telegram.js";

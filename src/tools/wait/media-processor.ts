@@ -5,7 +5,7 @@
  * downloading, transcribing, analyzing, and building content blocks.
  */
 
-import { saveFileToDisk } from "../../config.js";
+import { saveFileToDisk } from "../../data/file-storage.js";
 import type { StoredMessage } from "../../dispatcher.js";
 import { log } from "../../logger.js";
 import {
