@@ -207,7 +207,8 @@ export function lookupTopicRegistry(chatId: string, name: string): number | unde
       `SELECT thread_id FROM topic_registry WHERE chat_id = ? AND name = ?`
     ).get(chatId, name.toLowerCase()) as { thread_id: number } | undefined;
     return row?.thread_id;
-  } catch {
+  } catch (err) {
+    log.debug(`[topic-registry] lookupTopicRegistry failed: ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
 }
@@ -250,7 +251,8 @@ export function getAllRegisteredTopics(chatId?: string): Record<string, Record<s
       result[row.chat_id][row.name] = row.thread_id;
     }
     return result;
-  } catch {
+  } catch (err) {
+    log.debug(`[topic-registry] getAllRegisteredTopics failed: ${err instanceof Error ? err.message : String(err)}`);
     return {};
   }
 }
