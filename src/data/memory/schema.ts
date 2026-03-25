@@ -363,54 +363,10 @@ export function initMemoryDb(): Database {
   if (versionCount === 0) {
     // New database — record version 1 as the base, then run all migrations up to SCHEMA_VERSION
     db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (1, ?)").run(nowISO());
-  } else {
-    // Repair: older code may have recorded SCHEMA_VERSION prematurely without running migrations.
-    // Detect by checking if version 3 was recorded but the priority column is missing.
-    const hasV3 = db.prepare("SELECT version FROM schema_version WHERE version = 3").get();
-    if (hasV3) {
-      const cols = db.prepare("PRAGMA table_info(semantic_notes)").all() as Array<{ name: string }>;
-      const hasPriority = cols.some(c => c.name === "priority");
-      if (!hasPriority) {
-        // Version 3 was recorded but migration never ran — reset to version 2
-        db.prepare("DELETE FROM schema_version WHERE version >= 3").run();
-        log.warn("[memory] Repaired: schema_version was ahead of actual migrations, reset to v2");
-      }
-    }
-    const hasV4 = db.prepare("SELECT version FROM schema_version WHERE version = 4").get();
-    if (hasV4) {
-      const cols = db.prepare("PRAGMA table_info(semantic_notes)").all() as Array<{ name: string }>;
-      const hasThreadId = cols.some(c => c.name === "thread_id");
-      if (!hasThreadId) {
-        db.prepare("DELETE FROM schema_version WHERE version >= 4").run();
-        log.warn("[memory] Repaired: schema_version was ahead of actual migrations, reset to v3");
-      }
-    }
   }
 
   // Run any pending migrations (will upgrade from stored version to SCHEMA_VERSION)
   runMigrations(db);
-
-  // Direct repair: ensure priority column exists regardless of migration state.
-  // This handles edge cases where migrations fail silently or the migration system
-  // recorded a version without actually applying the schema change.
-  {
-    const cols = db.prepare("PRAGMA table_info(semantic_notes)").all() as Array<{ name: string }>;
-    if (!cols.some(c => c.name === "priority")) {
-      log.info("[memory] Direct repair: adding missing priority column");
-      db.exec(`ALTER TABLE semantic_notes ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL`);
-    }
-    if (!cols.some(c => c.name === "thread_id")) {
-      log.info("[memory] Direct repair: adding missing thread_id column");
-      db.exec(`ALTER TABLE semantic_notes ADD COLUMN thread_id INTEGER`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL`);
-    }
-    if (!cols.some(c => c.name === "is_guardrail")) {
-      log.info("[memory] Direct repair: adding missing is_guardrail column");
-      db.exec(`ALTER TABLE semantic_notes ADD COLUMN is_guardrail INTEGER NOT NULL DEFAULT 0`);
-      db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL`);
-    }
-  }
 
   return db;
 }
