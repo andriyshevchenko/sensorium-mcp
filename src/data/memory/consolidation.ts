@@ -8,6 +8,7 @@ import {
 } from "./semantic.js";
 import { log } from "../../logger.js";
 import { nowISO } from "./utils.js";
+import { chatCompletion, type ChatMessage } from "../../integrations/openai/chat.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -185,36 +186,17 @@ Rules:
       throw new Error("OPENAI_API_KEY not set");
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60_000);
-    try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: "Extract knowledge from the episodes above." },
-        ],
-        response_format: { type: "json_object" },
-      }),
-      signal: controller.signal,
+    const messages: ChatMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: "Extract knowledge from the episodes above." },
+    ];
+
+    const raw = await chatCompletion(messages, apiKey, {
+      model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o-mini",
+      responseFormat: { type: "json_object" },
+      timeoutMs: 60_000,
     });
-    clearTimeout(timer);
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => response.statusText);
-      throw new Error(`OpenAI API error: ${response.status} ${errText}`);
-    }
-
-    const result = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const raw = result.choices?.[0]?.message?.content ?? "{}";
     const parsed = JSON.parse(raw) as {
       notes?: Array<{
         type: string;
@@ -309,7 +291,6 @@ Rules:
         details.push(`[dry-run] [supersede] ${action.oldNoteId} → ${action.reason}`);
       }
     }
-    } finally { clearTimeout(timer); }
   } catch (err) {
     // Do NOT mark episodes as consolidated on failure — they should be
     // retried on the next consolidation run.  Previously this was a silent

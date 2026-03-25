@@ -21,23 +21,33 @@ export interface ChatMessage {
 export async function chatCompletion(
     messages: ChatMessage[],
     apiKey: string,
-    options?: { maxTokens?: number; temperature?: number; timeoutMs?: number },
+    options?: {
+        maxTokens?: number;
+        temperature?: number;
+        timeoutMs?: number;
+        model?: string;
+        responseFormat?: { type: string };
+    },
 ): Promise<string> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? 15_000);
     try {
+        const body: Record<string, unknown> = {
+            model: options?.model ?? "gpt-4o-mini",
+            messages,
+            max_completion_tokens: options?.maxTokens ?? 300,
+            temperature: options?.temperature ?? 0,
+        };
+        if (options?.responseFormat) {
+            body.response_format = options.responseFormat;
+        }
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${apiKey}`,
             },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                messages,
-                max_completion_tokens: options?.maxTokens ?? 300,
-                temperature: options?.temperature ?? 0,
-            }),
+            body: JSON.stringify(body),
             signal: controller.signal,
         });
         if (!response.ok) {
