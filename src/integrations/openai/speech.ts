@@ -12,23 +12,7 @@ export const TTS_VOICES = [
 ] as const;
 export type TTSVoice = typeof TTS_VOICES[number];
 
-/**
- * Module-level AbortController for graceful shutdown.
- * When aborted, all in-flight TTS (and transcription) requests are cancelled
- * so that error responses reach the agent before the process exits.
- */
-let shutdownController = new AbortController();
-let inFlightSpeechCount = 0;
 
-/** Abort all pending TTS / transcription requests (called during graceful shutdown). */
-export function abortPendingSpeech(): void {
-    shutdownController.abort();
-}
-
-/** Number of speech API requests currently in flight. */
-export function pendingSpeechCount(): number {
-    return inFlightSpeechCount;
-}
 
 /**
  * Convert text to speech using OpenAI TTS API.
@@ -39,11 +23,7 @@ export async function textToSpeech(
     apiKey: string,
     voice: TTSVoice = "nova",
 ): Promise<Buffer> {
-    const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), 60_000);
-    // Abort on either timeout or process shutdown.
-    const signal = AbortSignal.any([timeoutController.signal, shutdownController.signal]);
-    inFlightSpeechCount++;
+    const signal = AbortSignal.timeout(60_000);
     try {
         const response = await fetch("https://api.openai.com/v1/audio/speech", {
             method: "POST",
@@ -67,8 +47,7 @@ export async function textToSpeech(
 
         return Buffer.from(await response.arrayBuffer());
     } finally {
-        inFlightSpeechCount--;
-        clearTimeout(timer);
+        /* no-op */
     }
 }
 
@@ -85,10 +64,7 @@ export async function transcribeAudio(
 ): Promise<string> {
     // Telegram stores voice as .oga (OGG Opus). Whisper accepts .ogg but
     // not .oga, so we hardcode the extension.
-    const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), 60_000);
-    const signal = AbortSignal.any([timeoutController.signal, shutdownController.signal]);
-    inFlightSpeechCount++;
+    const signal = AbortSignal.timeout(60_000);
     try {
         const formData = new FormData();
         formData.append(
@@ -118,7 +94,6 @@ export async function transcribeAudio(
         const result = (await response.json()) as { text?: string };
         return result.text ?? "";
     } finally {
-        inFlightSpeechCount--;
-        clearTimeout(timer);
+        /* no-op */
     }
 }
