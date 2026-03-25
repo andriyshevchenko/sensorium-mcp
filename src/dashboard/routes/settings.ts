@@ -10,6 +10,8 @@ import {
     getAllThreadAgentTypes,
     getClaudeMcpConfigPath,
     setClaudeMcpConfigPath,
+    getGuardrailsEnabled,
+    setGuardrailsEnabled,
     type AgentType,
 } from "../../config.js";
 
@@ -97,6 +99,31 @@ export const handlePostThreadAgentType: RouteHandler = ({ req, json }) => {
             }
             setThreadAgentType(parsed.threadId, parsed.agentType as AgentType);
             json({ ok: true, threadId: parsed.threadId, agentType: parsed.agentType });
+        } catch (err) {
+            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+        }
+    })();
+    return true;
+};
+
+// ─── Guardrails enabled toggle ──────────────────────────────────────────────
+
+export const handleGetGuardrailsEnabled: RouteHandler = ({ json }) => {
+    json({ enabled: getGuardrailsEnabled() });
+    return true;
+};
+
+export const handlePostGuardrailsEnabled: RouteHandler = ({ req, json }) => {
+    void (async () => {
+        try {
+            const body = await readBody(req);
+            const parsed = JSON.parse(body) as { enabled?: boolean };
+            if (typeof parsed.enabled !== "boolean") {
+                json({ error: "Missing or invalid 'enabled' (must be a boolean)" }, 400);
+                return;
+            }
+            setGuardrailsEnabled(parsed.enabled);
+            json({ ok: true, enabled: parsed.enabled });
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
         }
