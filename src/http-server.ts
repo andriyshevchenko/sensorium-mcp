@@ -11,6 +11,7 @@
  *   - Graceful shutdown (SIGINT/SIGTERM/SIGBREAK)
  */
 
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { Database } from "better-sqlite3";
@@ -42,6 +43,7 @@ export function startHttpServer(
   /** Consolidated per-session state. */
   interface SessionEntry {
     transport: StreamableHTTPServerTransport | null;
+    server: Server | null;
     lastActivity: number;
     status: "active" | "disconnected";
     disconnectedAt?: number;
@@ -171,7 +173,7 @@ export function startHttpServer(
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (sid) => {
             capturedSid = sid;
-            sessions.set(sid, { transport, lastActivity: Date.now(), status: "active" });
+            sessions.set(sid, { transport, server: null, lastActivity: Date.now(), status: "active" });
             registerDashboardSession(sid, "http");
           },
         });
@@ -197,6 +199,11 @@ export function startHttpServer(
           () => { try { transport.close(); } catch (_) { /* best-effort */ } },
         );
         await sessionServer.connect(transport);
+        // Store server reference so it can be closed during shutdown
+        if (capturedSid) {
+          const entry = sessions.get(capturedSid);
+          if (entry) entry.server = sessionServer;
+        }
         await transport.handleRequest(req, res, body);
         return;
       }
@@ -275,81 +282,73 @@ export function startHttpServer(
     log.info(`Remote Copilot MCP server running on http://${httpBind}:${httpPort}/mcp`);
   });
 
-  // ── TTL sweeper — mark idle active sessions as disconnected every 5 min ──
-  // Use the configured wait timeout so sessions waiting up to WAIT_TIMEOUT_MINUTES aren't prematurely marked dead
+  // ── Unified session sweep — runs every 60 s ────────────────────────────
+  // Combines the former TTL sweeper, Session GC, and Session reaper into a
+  // single pass so there is only one interval to manage.
   const SESSION_IDLE_TTL_MS = config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
-  const ttlSweeperInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [sid, entry] of sessions) {
-      if (entry.status === "active" && !entry.transport) {
-        // Transport already gone but status wasn't updated — fix it
-        entry.status = "disconnected";
-        if (entry.disconnectedAt == null) {
-          entry.disconnectedAt = now;
-        }
-        markDashboardSessionDisconnected(sid);
-      } else if (entry.status === "active") {
-        if (now - entry.lastActivity > SESSION_IDLE_TTL_MS) {
-          log.info(`[session-ttl] Marking session ${sid.slice(0, 8)} as disconnected (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
-          entry.status = "disconnected";
-          entry.disconnectedAt = now;
-          markDashboardSessionDisconnected(sid);
-        }
-      }
-    }
-  }, 5 * 60 * 1000);
-
-  // ── Session GC — remove disconnected sessions after grace period ─────────
-  // Sessions with a recent lastWaitCallAt (within WAIT_LIVENESS_MS) are
-  // considered "truly alive" even if the transport shows disconnected.
-  // Grace period matches wait timeout so long-polling sessions aren't reaped.
   const SESSION_GC_GRACE_MS = config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
-  const sessionGcInterval = setInterval(() => {
+  const STALE_SESSION_MS   = 2 * config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
+
+  function sweepSessions(): void {
     const now = Date.now();
-    let removed = 0;
-    // Check global dashboard sessions for wait-liveness before GC
+
+    // Build wait-liveness set so GC doesn't reap sessions still polling
     const liveByWait = new Set<string>();
     for (const ds of getDashboardSessions()) {
       if (ds.lastWaitCallAt && now - ds.lastWaitCallAt < WAIT_LIVENESS_MS) {
         liveByWait.add(ds.mcpSessionId);
       }
     }
-    for (const [sid, entry] of sessions) {
-      if (entry.disconnectedAt != null && now - entry.disconnectedAt > SESSION_GC_GRACE_MS) {
-        // Skip GC if session is still alive via wait heartbeat
-        if (liveByWait.has(sid)) continue;
-        // Only GC if actually disconnected (safety check)
-        if (entry.status !== "active" && !entry.transport) {
-          sessions.delete(sid);
-          removeDashboardSession(sid);
-          removed++;
-        }
-      }
-    }
-    if (removed > 0) {
-      log.info(`[session-gc] Removed ${removed} disconnected session(s)`);
-    }
-  }, 60 * 1000);
 
-  // ── Session reaper — close abandoned SSE sessions every 10 minutes ──────
-  const STALE_SESSION_MS = 2 * config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
-  const sessionReaperInterval = setInterval(() => {
-    const now = Date.now();
+    let marked = 0;
+    let removed = 0;
+    let reaped = 0;
+
     for (const [sid, entry] of sessions) {
+      // 1. Close truly stale transports (was session-reaper)
       if (entry.transport && now - entry.lastActivity > STALE_SESSION_MS) {
-        log.info(`[session-reaper] Closing stale session ${sid} (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
+        log.info(`[session-sweep] Closing stale session ${sid.slice(0, 8)}… (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
         try { entry.transport.close(); } catch (_) { /* best-effort */ }
         sessions.delete(sid);
         removeDashboardSession(sid);
-      } else if (entry.status === "disconnected" && !entry.transport) {
-        // Also purge long-disconnected sessions from tracking
-        if (now - entry.lastActivity > STALE_SESSION_MS) {
-          sessions.delete(sid);
-          removeDashboardSession(sid);
-        }
+        reaped++;
+        continue;
+      }
+
+      // 2. Mark idle active sessions as disconnected (was TTL sweeper)
+      if (entry.status === "active" && !entry.transport) {
+        entry.status = "disconnected";
+        if (entry.disconnectedAt == null) entry.disconnectedAt = now;
+        markDashboardSessionDisconnected(sid);
+        marked++;
+      } else if (entry.status === "active" && now - entry.lastActivity > SESSION_IDLE_TTL_MS) {
+        log.info(`[session-sweep] Marking session ${sid.slice(0, 8)}… as disconnected (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
+        entry.status = "disconnected";
+        entry.disconnectedAt = now;
+        markDashboardSessionDisconnected(sid);
+        marked++;
+      }
+
+      // 3. GC disconnected sessions past grace period (was session-gc)
+      if (
+        entry.disconnectedAt != null &&
+        now - entry.disconnectedAt > SESSION_GC_GRACE_MS &&
+        !liveByWait.has(sid) &&
+        entry.status !== "active" &&
+        !entry.transport
+      ) {
+        sessions.delete(sid);
+        removeDashboardSession(sid);
+        removed++;
       }
     }
-  }, 10 * 60 * 1000);
+
+    if (marked > 0 || removed > 0 || reaped > 0) {
+      log.info(`[session-sweep] marked=${marked} removed=${removed} reaped=${reaped}`);
+    }
+  }
+
+  const sessionSweepInterval = setInterval(sweepSessions, 60 * 1000);
 
   // ── Graceful shutdown — abort in-flight TTS, drain, then exit ──────────
   let shuttingDown = false;
@@ -358,9 +357,7 @@ export function startHttpServer(
     shuttingDown = true;
     log.info(`[shutdown] Graceful shutdown initiated (${reason}) — aborting in-flight TTS…`);
 
-    clearInterval(ttlSweeperInterval);
-    clearInterval(sessionGcInterval);
-    clearInterval(sessionReaperInterval);
+    clearInterval(sessionSweepInterval);
     clearInterval(maintenancePollInterval);
 
     // 1. Abort any pending TTS / transcription requests so they fail fast.
@@ -377,6 +374,9 @@ export function startHttpServer(
     for (const [sid, entry] of sessions) {
       if (entry.transport) {
         try { entry.transport.close(); } catch (_) { /* best-effort */ }
+      }
+      if (entry.server) {
+        try { await entry.server.close(); } catch (_) { /* best-effort */ }
       }
       sessions.delete(sid);
     }
