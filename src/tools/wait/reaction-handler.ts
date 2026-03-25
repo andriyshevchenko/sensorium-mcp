@@ -39,7 +39,13 @@ export async function handleReactionWithMessages(
   contentBlocks: Array<TextBlock | ImageBlock>,
   ctx: ReactionContext,
 ): Promise<void> {
-  const pendingReaction = readPendingReaction(ctx.effectiveThreadId) ?? ctx.telegram.lastReaction;
+  // Only fall back to the global in-memory lastReaction when there is no
+  // thread context. With a thread ID, readPendingReaction already checks
+  // per-thread and guarded-global files — falling back to the unscoped
+  // lastReaction would let the wrong thread consume someone else's reaction.
+  const pendingReaction = ctx.effectiveThreadId !== undefined
+    ? readPendingReaction(ctx.effectiveThreadId)
+    : (readPendingReaction() ?? ctx.telegram.lastReaction);
   if (!pendingReaction) return;
 
   const emoji = "emoji" in pendingReaction ? pendingReaction.emoji : "";
@@ -97,7 +103,11 @@ export async function handleReactionWithMessages(
 export async function handleReactionOnly(
   ctx: ReactionContext & { autonomousMode: boolean },
 ): Promise<ToolResult | null> {
-  const pendingReactionOnly = readPendingReaction(ctx.effectiveThreadId) ?? ctx.telegram.lastReaction;
+  // Same guard as handleReactionWithMessages — only use the global
+  // in-memory lastReaction when no thread context is available.
+  const pendingReactionOnly = ctx.effectiveThreadId !== undefined
+    ? readPendingReaction(ctx.effectiveThreadId)
+    : (readPendingReaction() ?? ctx.telegram.lastReaction);
   if (!pendingReactionOnly) return null;
 
   const rEmoji = "emoji" in pendingReactionOnly ? pendingReactionOnly.emoji : "";
