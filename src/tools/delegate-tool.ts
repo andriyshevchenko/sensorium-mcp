@@ -444,6 +444,13 @@ export function handleSendMessageToThread(
     ? args.threadId
     : typeof args.threadId === "string" ? Number(args.threadId) : undefined;
   const message = typeof args.message === "string" ? args.message.trim() : "";
+  const mode = typeof args.mode === "string" && args.mode === "manager-worker"
+    ? "manager-worker"
+    : "one-shot";
+  const senderName = typeof args.senderName === "string" ? args.senderName.trim() : "";
+  const senderThreadId = typeof args.senderThreadId === "number"
+    ? args.senderThreadId
+    : typeof args.senderThreadId === "string" ? Number(args.senderThreadId) : undefined;
 
   if (threadId === undefined || !Number.isFinite(threadId)) {
     return errorResult("Error: 'threadId' is required and must be a number.");
@@ -455,24 +462,48 @@ export function handleSendMessageToThread(
     return errorResult("Error: 'message' is required.");
   }
 
+  // Build structured message based on delegation mode
+  const senderLabel = senderName || "another thread";
+  let structuredMessage: string;
+
+  if (mode === "manager-worker") {
+    structuredMessage =
+      `Thread "${senderLabel}" sent you a message:\n` +
+      `---\n` +
+      `${message}\n` +
+      `---\n` +
+      `Report progress and message "${senderLabel}"` +
+      (senderThreadId !== undefined && Number.isFinite(senderThreadId)
+        ? ` (thread ${senderThreadId})`
+        : "") +
+      ` when complete.`;
+  } else {
+    structuredMessage =
+      `Thread "${senderLabel}" sent you a task:\n` +
+      `---\n` +
+      `${message}\n` +
+      `---\n` +
+      `This is a one-shot task. Report progress to the operator via report_progress or send_voice. Do NOT message the sender back.`;
+  }
+
   ensureDirs();
   const taskFilePath = join(PENDING_TASKS_DIR, `${threadId}.txt`);
 
   // Append (with newline separator) instead of overwriting
   try {
-    appendFileSync(taskFilePath, message + "\n", "utf-8");
+    appendFileSync(taskFilePath, structuredMessage + "\n", "utf-8");
   } catch (err) {
     return errorResult(`Error: Failed to write message to pending tasks: ${errorMessage(err)}`);
   }
 
-  log.info(`[send_message_to_thread] → thread ${threadId}: ${message.slice(0, 120)}`);
+  log.info(`[send_message_to_thread] → thread ${threadId} (${mode}): ${message.slice(0, 120)}`);
 
   const alive = isThreadRunning(threadId);
   const warning = alive
     ? undefined
     : `Thread ${threadId} is dormant. Message queued but won't be processed until the thread is started via start_thread.`;
 
-  const responseObj: Record<string, unknown> = { delivered: alive, threadId };
+  const responseObj: Record<string, unknown> = { delivered: alive, threadId, mode };
   if (warning) responseObj.warning = warning;
 
   return {

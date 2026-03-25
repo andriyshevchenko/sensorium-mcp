@@ -45,6 +45,8 @@ const PENDING_TASKS_DIR = join(homedir(), ".remote-copilot-mcp", "pending-tasks"
 /**
  * Check for a pending task file written by send_message_to_thread.
  * If one exists, atomically consume it and return a ToolResult.
+ * The file now contains pre-formatted structured messages (one-shot or
+ * manager-worker), so we pass the content through as-is.
  * Returns null when no pending task is available.
  */
 function consumePendingTask(threadId: number): ToolResult | null {
@@ -54,7 +56,7 @@ function consumePendingTask(threadId: number): ToolResult | null {
   try {
     const tmpPath = pendingTaskPath + '.processing';
     renameSync(pendingTaskPath, tmpPath);
-    const taskContent = readFileSync(tmpPath, "utf-8");
+    const taskContent = readFileSync(tmpPath, "utf-8").trim();
     try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
     log.info(`[wait] Injecting pending task for thread ${threadId} (${taskContent.length} chars)`);
     return {
@@ -63,7 +65,7 @@ function consumePendingTask(threadId: number): ToolResult | null {
           type: "text",
           text:
             `<<< OPERATOR MESSAGE >>>\n` +
-            `DELEGATED TASK: ${taskContent}\n\n` +
+            `${taskContent}\n\n` +
             `Execute this task using subagents. Report progress via send_voice or report_progress. ` +
             `When complete, use hibernate or simply finish.\n` +
             `<<< END OPERATOR MESSAGE >>>`,
