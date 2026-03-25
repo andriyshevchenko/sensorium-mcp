@@ -15,6 +15,7 @@ import { startHttpServer } from "./http-server.js";
 import { startStdioServer } from "./stdio-server.js";
 import { buildMcpServerFactory } from "./server/factory.js";
 import { setTopicRegistryDb, lookupTopicRegistry } from "./sessions.js";
+import { initVideoTempCleanup } from "./integrations/openai/video.js";
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -46,6 +47,9 @@ const secureVaultThreadId = lookupTopicRegistry(TELEGRAM_CHAT_ID, "SecureVault")
 if (secureVaultThreadId === undefined) {
   console.warn("[init] SecureVault topic not found in registry — register it via topic-registry tools or start_session.");
 }
+
+// Initialize video temp-file cleanup handlers (registers process exit hooks).
+initVideoTempCleanup();
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)
