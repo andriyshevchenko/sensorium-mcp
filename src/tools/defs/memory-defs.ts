@@ -68,6 +68,10 @@ export const memoryToolDefs: ToolDefinition[] = [
           type: "number",
           description: "0=normal, 1=notable, 2=high importance. Infer from operator's emotional investment: 'important'/'I really need' \u2192 2, 'would be nice'/'should' \u2192 1, else 0.",
         },
+        guardrail: {
+          type: "boolean",
+          description: "Set true to mark as an always-enforced guardrail constraint (e.g. \"NEVER do X\", \"ALWAYS do Y\"). Only for critical decision rules.",
+        },
         threadId: {
           type: "number",
           description: "Active thread ID.",

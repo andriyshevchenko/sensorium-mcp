@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -153,6 +153,15 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       }
     }
   },
+  8: (db) => {
+    // Add is_guardrail flag to semantic_notes for explicit guardrail tagging
+    try {
+      db.exec(`ALTER TABLE semantic_notes ADD COLUMN is_guardrail INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      // Column already exists — safe to ignore
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL`);
+  },
 };
 
 /**
@@ -234,6 +243,7 @@ CREATE TABLE IF NOT EXISTS semantic_notes (
   last_accessed   TEXT,
   priority        INTEGER NOT NULL DEFAULT 0,
   thread_id       INTEGER,
+  is_guardrail    INTEGER NOT NULL DEFAULT 0,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
@@ -243,6 +253,7 @@ CREATE INDEX IF NOT EXISTS idx_sem_conf ON semantic_notes(confidence DESC);
 CREATE INDEX IF NOT EXISTS idx_sem_valid ON semantic_notes(valid_to) WHERE valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL;
 
 CREATE TABLE IF NOT EXISTS procedures (
   procedure_id       TEXT PRIMARY KEY,
@@ -393,6 +404,11 @@ export function initMemoryDb(): Database {
       log.info("[memory] Direct repair: adding missing thread_id column");
       db.exec(`ALTER TABLE semantic_notes ADD COLUMN thread_id INTEGER`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL`);
+    }
+    if (!cols.some(c => c.name === "is_guardrail")) {
+      log.info("[memory] Direct repair: adding missing is_guardrail column");
+      db.exec(`ALTER TABLE semantic_notes ADD COLUMN is_guardrail INTEGER NOT NULL DEFAULT 0`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL`);
     }
   }
 
