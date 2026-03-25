@@ -96,6 +96,7 @@ export async function handleStartSession(
   // 2. A known name looks up the persisted mapping — resume if found.
   // 3. Otherwise create a new topic.
   let resolvedPreexisting = false;
+  let startupNotificationSent = false;
 
   if (explicitThreadId !== undefined) {
     session.currentThreadId = explicitThreadId;
@@ -143,6 +144,7 @@ export async function handleStartSession(
     try {
       // Use plain text for probe — avoids MarkdownV2 parsing failures being mistaken for dead threads
       await telegram.sendMessage(TELEGRAM_CHAT_ID, "\u{1F504} Session resumed. Continuing in this thread.", undefined, session.currentThreadId);
+      startupNotificationSent = true;
     } catch (err) {
       const errMsg = errorMessage(err);
       log.warn(
@@ -194,9 +196,24 @@ export async function handleStartSession(
         "I'll keep you posted on progress as I go.",
       );
       await telegram.sendMessage(TELEGRAM_CHAT_ID, greeting, "MarkdownV2", session.currentThreadId);
+      startupNotificationSent = true;
     } catch {
       // Non-fatal.
     }
+  }
+
+  // Fallback: if no notification was successfully sent to Telegram (e.g. network
+  // error during probe or greeting), send a lightweight "alive" message so the
+  // operator has visibility that the session is running.
+  if (!startupNotificationSent && session.currentThreadId !== undefined) {
+    try {
+      await telegram.sendMessage(
+        TELEGRAM_CHAT_ID,
+        "\u2705 Session active.",
+        undefined,
+        session.currentThreadId,
+      );
+    } catch { /* best-effort */ }
   }
 
   const threadNote = session.currentThreadId !== undefined
