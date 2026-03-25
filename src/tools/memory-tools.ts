@@ -10,6 +10,7 @@ import {
   getMemoryStatus,
   getNotesWithoutEmbeddings,
   getRecentEpisodes,
+  getSemanticNoteById,
   getTopicIndex,
   type initMemoryDb,
   runIntelligentConsolidation,
@@ -215,16 +216,16 @@ export async function handleMemoryTool(
         const reason = String(args.reason ?? "");
 
         if (action === "supersede" && memId.startsWith("sn_")) {
-          const origRow = db.prepare("SELECT type, keywords FROM semantic_notes WHERE note_id = ?").get(memId) as { type: string; keywords: string } | undefined;
-          if (!origRow) {
+          const origNote = getSemanticNoteById(db, memId);
+          if (!origNote) {
             return errorResult(`Note ${memId} not found — cannot supersede a non-existent note.`);
           }
           const newContent = String(args.newContent ?? "");
           if (!newContent.trim()) return errorResult("Error: 'newContent' is required when superseding a note. The original note would be destroyed with no replacement.");
           const newId = supersedeNote(db, memId, {
-            type: origRow.type as "fact" | "preference" | "pattern" | "entity" | "relationship",
+            type: origNote.type as "fact" | "preference" | "pattern" | "entity" | "relationship",
             content: newContent,
-            keywords: origRow.keywords ? JSON.parse(origRow.keywords) : [],
+            keywords: origNote.keywords,
             confidence: typeof args.newConfidence === "number" ? args.newConfidence : 0.8,
             priority: typeof args.newPriority === "number" ? args.newPriority : undefined,
           });

@@ -106,6 +106,18 @@ export function decrementTopicIndexForKeywords(db: Database, keywords: string[],
 
 // ─── Semantic Memory CRUD ────────────────────────────────────────────────────
 
+/** Look up a single semantic note by ID (returns type + keywords only, or undefined). */
+export function getSemanticNoteById(
+  db: Database,
+  noteId: string,
+): { type: string; keywords: string[] } | undefined {
+  const row = db.prepare(
+    "SELECT type, keywords FROM semantic_notes WHERE note_id = ?"
+  ).get(noteId) as { type: string; keywords: string } | undefined;
+  if (!row) return undefined;
+  return { type: row.type, keywords: row.keywords ? JSON.parse(row.keywords) : [] };
+}
+
 export function saveSemanticNote(
   db: Database,
   note: {
