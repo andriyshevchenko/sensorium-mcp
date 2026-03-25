@@ -1,76 +1,97 @@
 /**
- * Dashboard — API route handlers and SPA serving.
+ * Dashboard — API route dispatcher and SPA serving.
  *
  * Architecture:
  *   GET /                → Serve the SPA (single-page HTML with embedded CSS/JS)
- *   GET /api/status      → Memory stats + session overview
- *   GET /api/sessions    → Active MCP sessions
- *   GET /api/notes       → Browse semantic notes (query params: type, limit, sort)
- *   GET /api/episodes    → Recent episodes (query params: threadId, limit)
- *   GET /api/topics      → Topic index
- *   GET /api/search      → Search notes (query param: q)
+ *   GET /api/*           → Route table dispatch to domain handlers
+ *
+ * Domain handler modules:
+ *   routes/settings.ts   — agent-type, dmn-activation-hours, claude-mcp-config
+ *   routes/templates.ts  — template CRUD, drive templates, drive presets
+ *   routes/data.ts       — status, sessions, notes, episodes, topics, search, topic-registry
  *
  * All /api/* routes require Bearer token auth (same as MCP_HTTP_SECRET).
  * The dashboard page itself is served without auth — API token entered in the UI.
  */
 
-import type { Database } from "better-sqlite3";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { timingSafeEqual } from "node:crypto";
 
+// Re-export types for downstream consumers (http-server.ts → dashboard.ts → here)
+export type { DashboardContext } from "./routes/types.js";
+export type { RouteHandler, RouteArgs, JsonFn } from "./routes/types.js";
+
+import type { DashboardContext } from "./routes/types.js";
+import type { RouteHandler } from "./routes/types.js";
+
+// Domain handlers — settings
 import {
-    getRecentEpisodes,
-    getTopicIndex,
-    getTopSemanticNotes,
-    searchSemanticNotesRanked,
-    type SemanticNote
-} from "../memory.js";
+    handleGetDmnActivationHours,
+    handleGetClaudeMcpConfig,
+    handlePostClaudeMcpConfig,
+    handleGetAgentType,
+    handlePostAgentType,
+    handleGetThreadAgentTypes,
+    handlePostThreadAgentType,
+} from "./routes/settings.js";
 
-import { getAllRegisteredTopics, registerTopic, unregisterTopic } from "../sessions.js";
+// Domain handlers — templates
+import {
+    handleGetTemplates,
+    handleGetDriveTemplate,
+    handleGetDrivePresets,
+    handleTemplateCrud,
+} from "./routes/templates.js";
 
-import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "./presets.js";
-import { getAgentType, setAgentType, getEffectiveAgentType, setThreadAgentType, getAllThreadAgentTypes, getClaudeMcpConfigPath, setClaudeMcpConfigPath, type AgentType } from "../config.js";
+// Domain handlers — data
+import {
+    handleGetStatus,
+    handleGetSessions,
+    handleGetNotes,
+    handleGetEpisodes,
+    handleGetTopics,
+    handleGetSearch,
+    handleGetTopicRegistry,
+    handlePostTopicRegistry,
+    handleDeleteTopicRegistry,
+} from "./routes/data.js";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Route table ────────────────────────────────────────────────────────────
 
-/**
- * Enrich session objects with topic names by reverse-looking up threadId
- * in the topic registry.
- */
-function enrichSessionsWithTopicNames<T extends { threadId: number }>(sessions: T[]): (T & { topicName: string | null })[] {
-    const allTopics = getAllRegisteredTopics();
-    // Build reverse map: threadId → topic name
-    const threadToName = new Map<number, string>();
-    for (const chatId of Object.keys(allTopics)) {
-        for (const [name, tid] of Object.entries(allTopics[chatId])) {
-            threadToName.set(tid, name);
-        }
-    }
-    return sessions.map(s => ({ ...s, topicName: threadToName.get(s.threadId) ?? null }));
-}
+const routeTable: Record<string, RouteHandler> = {
+    // Data
+    "GET /api/status":       handleGetStatus,
+    "GET /api/sessions":     handleGetSessions,
+    "GET /api/notes":        handleGetNotes,
+    "GET /api/episodes":     handleGetEpisodes,
+    "GET /api/topics":       handleGetTopics,
+    "GET /api/search":       handleGetSearch,
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+    // Templates
+    "GET /api/templates":              handleGetTemplates,
+    "GET /api/templates/drive":        handleGetDriveTemplate,
+    "GET /api/templates/drive-presets": handleGetDrivePresets,
 
-export interface DashboardContext {
-    getDb: () => Database;
-    getActiveSessions: () => Array<{
-        threadId: number;
-        mcpSessionId: string;
-        lastActivity: number;
-        transportType: string;
-        status: "active" | "disconnected";
-        lastWaitCallAt: number | null;
-    }>;
-    serverStartTime: number;
-}
+    // Settings
+    "GET /api/settings/dmn-activation-hours":  handleGetDmnActivationHours,
+    "GET /api/settings/claude-mcp-config":     handleGetClaudeMcpConfig,
+    "POST /api/settings/claude-mcp-config":    handlePostClaudeMcpConfig,
+    "GET /api/settings/agent-type":            handleGetAgentType,
+    "POST /api/settings/agent-type":           handlePostAgentType,
+    "GET /api/settings/thread-agent-types":    handleGetThreadAgentTypes,
+    "POST /api/settings/thread-agent-type":    handlePostThreadAgentType,
 
-// ─── Route handler ───────────────────────────────────────────────────────────
+    // Topic registry
+    "GET /api/topic-registry":    handleGetTopicRegistry,
+    "POST /api/topic-registry":   handlePostTopicRegistry,
+    "DELETE /api/topic-registry": handleDeleteTopicRegistry,
+};
+
+// ─── Public entry point ─────────────────────────────────────────────────────
 
 /**
  * Handle a dashboard or API request. Returns true if handled, false if not a dashboard route.
@@ -79,7 +100,7 @@ export function handleDashboardRequest(
     req: IncomingMessage,
     res: ServerResponse,
     ctx: DashboardContext,
-    authToken?: string
+    authToken?: string,
 ): boolean {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
@@ -111,27 +132,20 @@ export function handleDashboardRequest(
                 return true;
             }
         }
-        return handleApiRoute(req, path, url, res, ctx);
+        return dispatchApiRoute(req, path, url, res, ctx);
     }
 
     return false;
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        req.on("data", (chunk: Buffer) => chunks.push(chunk));
-        req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-        req.on("error", reject);
-    });
-}
+// ─── API route dispatcher ───────────────────────────────────────────────────
 
-function handleApiRoute(
+function dispatchApiRoute(
     req: IncomingMessage,
     path: string,
     url: URL,
     res: ServerResponse,
-    ctx: DashboardContext
+    ctx: DashboardContext,
 ): boolean {
     const json = (data: unknown, status = 200) => {
         const body = JSON.stringify(data);
@@ -144,307 +158,19 @@ function handleApiRoute(
 
     try {
         const db = ctx.getDb();
+        const method = req.method ?? "GET";
+        const key = `${method} ${path}`;
+        const args = { req, url, json, db, ctx };
 
-        if (path === "/api/status") {
-            const totalEpisodes = (db.prepare(`SELECT COUNT(*) as cnt FROM episodes`).get() as { cnt: number }).cnt;
-            const unconsolidatedEpisodes = (db.prepare(`SELECT COUNT(*) as cnt FROM episodes WHERE consolidated = 0`).get() as { cnt: number }).cnt;
-            const totalSemanticNotes = (db.prepare(`SELECT COUNT(*) as cnt FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL`).get() as { cnt: number }).cnt;
-            const totalProcedures = (db.prepare(`SELECT COUNT(*) as cnt FROM procedures`).get() as { cnt: number }).cnt;
-            const totalVoiceSignatures = (db.prepare(`SELECT COUNT(*) as cnt FROM voice_signatures`).get() as { cnt: number }).cnt;
-            const lastConso = db.prepare(`SELECT run_at FROM meta_consolidation_log ORDER BY run_at DESC LIMIT 1`).get() as { run_at: string } | undefined;
-            const topTopics = getTopicIndex(db).slice(0, 10);
-            const dbSizeRow = db.prepare(`SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()`).get() as { size: number } | undefined;
-            const sessions = enrichSessionsWithTopicNames(ctx.getActiveSessions());
-            json({
-                memory: { totalEpisodes, unconsolidatedEpisodes, totalSemanticNotes, totalProcedures, totalVoiceSignatures, lastConsolidation: lastConso?.run_at ?? null, topTopics, dbSizeBytes: dbSizeRow?.size ?? 0 },
-                activeSessions: sessions.length,
-                sessions,
-                uptime: Math.floor((Date.now() - ctx.serverStartTime) / 1000),
-                serverTime: new Date().toISOString(),
-            });
-            return true;
-        }
+        // 1. Exact match in route table
+        const handler = routeTable[key];
+        if (handler) return handler(args);
 
-        if (path === "/api/sessions") {
-            json(enrichSessionsWithTopicNames(ctx.getActiveSessions()));
-            return true;
-        }
-
-        if (path === "/api/notes") {
-            const type = url.searchParams.get("type") || undefined;
-            const limit = parseInt(url.searchParams.get("limit") ?? "50", 10);
-            const sort = (url.searchParams.get("sort") ?? "created_at") as "created_at" | "confidence" | "access_count";
-            const validTypes = ["fact", "preference", "pattern", "entity", "relationship"];
-            const notes = getTopSemanticNotes(db, {
-                type: type && validTypes.includes(type) ? type as SemanticNote["type"] : undefined,
-                limit: Math.min(limit, 200),
-                sortBy: sort,
-            });
-            json(notes);
-            return true;
-        }
-
-        if (path === "/api/episodes") {
-            const threadId = url.searchParams.get("threadId") ? parseInt(url.searchParams.get("threadId")!, 10) : undefined;
-            const limit = parseInt(url.searchParams.get("limit") ?? "30", 10);
-            const cappedLimit = Math.min(limit, 200);
-            if (threadId) {
-                json(getRecentEpisodes(db, threadId, cappedLimit));
-            } else {
-                const rows = db.prepare(`SELECT * FROM episodes ORDER BY timestamp DESC LIMIT ?`).all(cappedLimit) as Record<string, unknown>[];
-                json(rows.map((r) => ({
-                    episodeId: r.episode_id, threadId: r.thread_id, type: r.type, modality: r.modality,
-                    content: typeof r.content === "string" ? safeParseJSON(r.content) : r.content,
-                    importance: r.importance, consolidated: !!r.consolidated, createdAt: r.timestamp,
-                })));
-            }
-            return true;
-        }
-
-        if (path === "/api/topics") {
-            json(getTopicIndex(db));
-            return true;
-        }
-
-        if (path === "/api/search") {
-            const q = url.searchParams.get("q")?.trim();
-            if (!q) { json({ error: "Missing ?q= parameter" }, 400); return true; }
-            json(searchSemanticNotesRanked(db, q, { maxResults: parseInt(url.searchParams.get("limit") ?? "20", 10) }));
-            return true;
-        }
-
-        // ── Template API endpoints ──────────────────────────────────
-        if (path === "/api/templates" && req.method === "GET") {
-            void (async () => {
-                try {
-                    const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
-                    const userFile = join(templatesDir, "reminders.md");
-                    let content: string;
-                    let isDefault = false;
-                    try {
-                        content = await readFile(userFile, "utf-8");
-                    } catch {
-                        content = getDefaultRemindersTemplate(getEffectiveAgentType());
-                        isDefault = true;
-                    }
-                    json({ templates: [{ name: "reminders", content, isDefault }] });
-                } catch (err) {
-                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                }
-            })();
-            return true;
-        }
-
-        // ── Drive template endpoints ────────────────────────────────
-        if (path === "/api/templates/drive" && req.method === "GET") {
-            void (async () => {
-                try {
-                    const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
-                    const userFile = join(templatesDir, "drive.md");
-                    let custom: string | null = null;
-                    try {
-                        custom = await readFile(userFile, "utf-8");
-                    } catch {
-                        custom = null;
-                    }
-                    json({ custom, default: DEFAULT_DRIVE_PROMPT });
-                } catch (err) {
-                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                }
-            })();
-            return true;
-        }
-
-        if (path === "/api/templates/drive-presets" && req.method === "GET") {
-            void (async () => {
-                try {
-                    const presets = await loadDrivePresets();
-                    json({ presets });
-                } catch (err) {
-                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                }
-            })();
-            return true;
-        }
-
-        if (path === "/api/settings/dmn-activation-hours" && req.method === "GET") {
-            const rawVal = parseFloat(process.env.DMN_ACTIVATION_HOURS ?? "");
-            json({ value: Math.max(0.5, Number.isFinite(rawVal) ? rawVal : 4) });
-            return true;
-        }
-
-        if (path === "/api/settings/claude-mcp-config" && req.method === "GET") {
-            json({ path: getClaudeMcpConfigPath() });
-            return true;
-        }
-
-        if (path === "/api/settings/claude-mcp-config" && req.method === "POST") {
-            void (async () => {
-                try {
-                    const body = await readBody(req);
-                    const parsed = JSON.parse(body) as { path?: string };
-                    if (typeof parsed.path !== "string" || !parsed.path.trim()) {
-                        json({ error: "Missing or empty path" }, 400);
-                        return;
-                    }
-                    setClaudeMcpConfigPath(parsed.path.trim());
-                    json({ ok: true, path: parsed.path.trim() });
-                } catch (err) {
-                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                }
-            })();
-            return true;
-        }
-
-        if (path === "/api/settings/agent-type" && req.method === "GET") {
-            json({ agentType: getAgentType() });
-            return true;
-        }
-
-        if (path === "/api/settings/agent-type" && req.method === "POST") {
-            void (async () => {
-                try {
-                    const body = await readBody(req);
-                    const parsed = JSON.parse(body) as { agentType?: string };
-                    const valid = ["copilot", "claude", "cursor"];
-                    if (!parsed.agentType || !valid.includes(parsed.agentType)) {
-                        json({ error: "Invalid agent type. Must be: copilot, claude, cursor" }, 400);
-                        return;
-                    }
-                    setAgentType(parsed.agentType as AgentType);
-                    json({ ok: true, agentType: parsed.agentType });
-                } catch (err) {
-                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                }
-            })();
-            return true;
-        }
-
-        // ── Per-thread agent-type overrides ──────────────────────────
-        if (path === "/api/settings/thread-agent-types" && req.method === "GET") {
-            json({ threadAgentTypes: getAllThreadAgentTypes() });
-            return true;
-        }
-
-        if (path === "/api/settings/thread-agent-type" && req.method === "POST") {
-            void (async () => {
-                try {
-                    const body = await readBody(req);
-                    const parsed = JSON.parse(body) as { threadId?: number; agentType?: string };
-                    const valid = ["copilot", "claude", "cursor"];
-                    if (parsed.threadId == null || !Number.isFinite(parsed.threadId)) {
-                        json({ error: "Missing or invalid threadId (must be a number)" }, 400);
-                        return;
-                    }
-                    if (!parsed.agentType || !valid.includes(parsed.agentType)) {
-                        json({ error: "Invalid agent type. Must be: copilot, claude, cursor" }, 400);
-                        return;
-                    }
-                    setThreadAgentType(parsed.threadId, parsed.agentType as AgentType);
-                    json({ ok: true, threadId: parsed.threadId, agentType: parsed.agentType });
-                } catch (err) {
-                    json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                }
-            })();
-            return true;
-        }
-
+        // 2. Dynamic template route: POST/DELETE /api/templates/:name
         const templateMatch = path.match(/^\/api\/templates\/([a-zA-Z0-9-]+)$/);
         if (templateMatch) {
-            const name = templateMatch[1];
-
-            if (req.method === "POST") {
-                void (async () => {
-                    try {
-                        const body = await readBody(req);
-                        const parsed = JSON.parse(body) as { content?: string };
-                        if (typeof parsed.content !== "string") {
-                            json({ error: "Missing content field" }, 400);
-                            return;
-                        }
-                        const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
-                        await mkdir(templatesDir, { recursive: true });
-                        await writeFile(join(templatesDir, `${name}.md`), parsed.content, "utf-8");
-                        json({ ok: true });
-                    } catch (err) {
-                        json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                    }
-                })();
-                return true;
-            }
-
-            if (req.method === "DELETE") {
-                void (async () => {
-                    try {
-                        const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
-                        try { await unlink(join(templatesDir, `${name}.md`)); } catch { /* ok if missing */ }
-                        json({ ok: true });
-                    } catch (err) {
-                        json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                    }
-                })();
-                return true;
-            }
-        }
-
-        // ── Topic registry endpoints ────────────────────────────────
-        // GET  /api/topic-registry          → list all registered topics
-        // POST /api/topic-registry          → register name → threadId
-        // DELETE /api/topic-registry        → remove a mapping
-        if (path === "/api/topic-registry") {
-            if (req.method === "GET") {
-                const chatId = url.searchParams.get("chatId") ?? undefined;
-                json(getAllRegisteredTopics(chatId));
-                return true;
-            }
-
-            if (req.method === "POST") {
-                void (async () => {
-                    try {
-                        const body = await readBody(req);
-                        const parsed = JSON.parse(body) as { chatId?: string; name?: string; threadId?: number };
-                        if (!parsed.chatId || typeof parsed.chatId !== "string") {
-                            json({ error: "Missing or invalid chatId" }, 400);
-                            return;
-                        }
-                        if (!parsed.name || typeof parsed.name !== "string") {
-                            json({ error: "Missing or invalid name" }, 400);
-                            return;
-                        }
-                        if (parsed.threadId == null || !Number.isFinite(parsed.threadId)) {
-                            json({ error: "Missing or invalid threadId (must be a number)" }, 400);
-                            return;
-                        }
-                        registerTopic(parsed.chatId, parsed.name.trim(), parsed.threadId);
-                        json({ ok: true, chatId: parsed.chatId, name: parsed.name.trim().toLowerCase(), threadId: parsed.threadId });
-                    } catch (err) {
-                        json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                    }
-                })();
-                return true;
-            }
-
-            if (req.method === "DELETE") {
-                void (async () => {
-                    try {
-                        const body = await readBody(req);
-                        const parsed = JSON.parse(body) as { chatId?: string; name?: string };
-                        if (!parsed.chatId || typeof parsed.chatId !== "string") {
-                            json({ error: "Missing or invalid chatId" }, 400);
-                            return;
-                        }
-                        if (!parsed.name || typeof parsed.name !== "string") {
-                            json({ error: "Missing or invalid name" }, 400);
-                            return;
-                        }
-                        unregisterTopic(parsed.chatId, parsed.name.trim());
-                        json({ ok: true });
-                    } catch (err) {
-                        json({ error: err instanceof Error ? err.message : String(err) }, 500);
-                    }
-                })();
-                return true;
-            }
+            const result = handleTemplateCrud(args, templateMatch[1]);
+            if (result) return true;
         }
 
         json({ error: "Not found" }, 404);
@@ -455,11 +181,7 @@ function handleApiRoute(
     }
 }
 
-function safeParseJSON(s: string): unknown {
-    try { return JSON.parse(s); } catch { return s; }
-}
-
-// ─── Dashboard SPA HTML ──────────────────────────────────────────────────────
+// ─── Dashboard SPA HTML ─────────────────────────────────────────────────────
 
 let _dashboardHtmlCache: string | null = null;
 

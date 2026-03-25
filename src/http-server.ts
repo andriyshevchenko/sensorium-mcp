@@ -39,13 +39,15 @@ export function startHttpServer(
   const httpPort = parseInt(process.env.MCP_HTTP_PORT!, 10);
   const httpBind = process.env.MCP_HTTP_BIND ?? "127.0.0.1";
 
-  const transports = new Map<string, StreamableHTTPServerTransport>();
-  /** Tracks the last time each HTTP session received any request (epoch ms). */
-  const sessionLastActivity = new Map<string, number>();
-  /** Tracks session lifecycle status for dashboard visibility. */
-  const sessionStatus = new Map<string, "active" | "disconnected">();
-  /** Records the epoch ms when a session became disconnected (for GC). */
-  const sessionDisconnectedAt = new Map<string, number>();
+  /** Consolidated per-session state. */
+  interface SessionEntry {
+    transport: StreamableHTTPServerTransport | null;
+    lastActivity: number;
+    status: "active" | "disconnected";
+    disconnectedAt?: number;
+  }
+
+  const sessions = new Map<string, SessionEntry>();
 
   const MCP_HTTP_SECRET = process.env.MCP_HTTP_SECRET;
   const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
@@ -139,12 +141,13 @@ export function startHttpServer(
       }
 
       // Existing session
-      if (sessionId && transports.has(sessionId)) {
-        sessionLastActivity.set(sessionId, Date.now());
-        sessionStatus.set(sessionId, "active");
-        sessionDisconnectedAt.delete(sessionId);
-        updateDashboardActivity(sessionId);
-        await transports.get(sessionId)!.handleRequest(req, res, body);
+      const existing = sessionId ? sessions.get(sessionId) : undefined;
+      if (existing?.transport) {
+        existing.lastActivity = Date.now();
+        existing.status = "active";
+        delete existing.disconnectedAt;
+        updateDashboardActivity(sessionId!);
+        await existing.transport.handleRequest(req, res, body);
         return;
       }
 
@@ -159,9 +162,7 @@ export function startHttpServer(
         // tracking state from the previous incarnation.
         if (sessionId) {
           log.info(`[http] Session adoption: stale session ${sessionId.slice(0, 8)}… re-initializing`);
-          sessionLastActivity.delete(sessionId);
-          sessionStatus.delete(sessionId);
-          sessionDisconnectedAt.delete(sessionId);
+          sessions.delete(sessionId);
           removeDashboardSession(sessionId);
         }
 
@@ -170,9 +171,7 @@ export function startHttpServer(
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (sid) => {
             capturedSid = sid;
-            transports.set(sid, transport);
-            sessionLastActivity.set(sid, Date.now());
-            sessionStatus.set(sid, "active");
+            sessions.set(sid, { transport, lastActivity: Date.now(), status: "active" });
             registerDashboardSession(sid, "http");
           },
         });
@@ -180,10 +179,13 @@ export function startHttpServer(
         transport.onclose = () => {
           const sid = transport.sessionId;
           if (sid) {
-            transports.delete(sid);
-            // Keep in sessionLastActivity & sessionStatus for dashboard visibility
-            sessionStatus.set(sid, "disconnected");
-            sessionDisconnectedAt.set(sid, Date.now());
+            const entry = sessions.get(sid);
+            if (entry) {
+              // Keep entry for dashboard visibility but clear transport
+              entry.transport = null;
+              entry.status = "disconnected";
+              entry.disconnectedAt = Date.now();
+            }
             markDashboardSessionDisconnected(sid);
           }
         };
@@ -223,35 +225,38 @@ export function startHttpServer(
     }
 
     if (req.method === "GET") {
-      if (!sessionId || !transports.has(sessionId)) {
+      const getEntry = sessionId ? sessions.get(sessionId) : undefined;
+      if (!getEntry?.transport) {
         res.writeHead(400, { "Content-Type": "text/plain" });
         res.end("Invalid or missing session ID");
         return;
       }
-      sessionLastActivity.set(sessionId, Date.now());
+      getEntry.lastActivity = Date.now();
       // Detect SSE stream close — mark session as disconnected
-      const sseSid = sessionId;
+      const sseSid = sessionId!;
       res.on("close", () => {
-        if (sessionStatus.has(sseSid)) {
-          sessionStatus.set(sseSid, "disconnected");
-          if (!sessionDisconnectedAt.has(sseSid)) {
-            sessionDisconnectedAt.set(sseSid, Date.now());
+        const sseEntry = sessions.get(sseSid);
+        if (sseEntry) {
+          sseEntry.status = "disconnected";
+          if (sseEntry.disconnectedAt == null) {
+            sseEntry.disconnectedAt = Date.now();
           }
           markDashboardSessionDisconnected(sseSid);
         }
       });
-      await transports.get(sessionId)!.handleRequest(req, res);
+      await getEntry.transport.handleRequest(req, res);
       return;
     }
 
     if (req.method === "DELETE") {
-      if (!sessionId || !transports.has(sessionId)) {
+      const delEntry = sessionId ? sessions.get(sessionId) : undefined;
+      if (!delEntry?.transport) {
         res.writeHead(400, { "Content-Type": "text/plain" });
         res.end("Invalid or missing session ID");
         return;
       }
-      sessionLastActivity.set(sessionId, Date.now());
-      await transports.get(sessionId)!.handleRequest(req, res);
+      delEntry.lastActivity = Date.now();
+      await delEntry.transport.handleRequest(req, res);
       return;
     }
 
@@ -275,20 +280,19 @@ export function startHttpServer(
   const SESSION_IDLE_TTL_MS = config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
   const ttlSweeperInterval = setInterval(() => {
     const now = Date.now();
-    for (const [sid, status] of sessionStatus) {
-      if (status === "active" && !transports.has(sid)) {
+    for (const [sid, entry] of sessions) {
+      if (entry.status === "active" && !entry.transport) {
         // Transport already gone but status wasn't updated — fix it
-        sessionStatus.set(sid, "disconnected");
-        if (!sessionDisconnectedAt.has(sid)) {
-          sessionDisconnectedAt.set(sid, now);
+        entry.status = "disconnected";
+        if (entry.disconnectedAt == null) {
+          entry.disconnectedAt = now;
         }
         markDashboardSessionDisconnected(sid);
-      } else if (status === "active") {
-        const lastActive = sessionLastActivity.get(sid) ?? 0;
-        if (now - lastActive > SESSION_IDLE_TTL_MS) {
-          log.info(`[session-ttl] Marking session ${sid.slice(0, 8)} as disconnected (idle ${Math.round((now - lastActive) / 60000)}m)`);
-          sessionStatus.set(sid, "disconnected");
-          sessionDisconnectedAt.set(sid, now);
+      } else if (entry.status === "active") {
+        if (now - entry.lastActivity > SESSION_IDLE_TTL_MS) {
+          log.info(`[session-ttl] Marking session ${sid.slice(0, 8)} as disconnected (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
+          entry.status = "disconnected";
+          entry.disconnectedAt = now;
           markDashboardSessionDisconnected(sid);
         }
       }
@@ -310,15 +314,13 @@ export function startHttpServer(
         liveByWait.add(ds.mcpSessionId);
       }
     }
-    for (const [sid, disconnectTime] of sessionDisconnectedAt) {
-      if (now - disconnectTime > SESSION_GC_GRACE_MS) {
+    for (const [sid, entry] of sessions) {
+      if (entry.disconnectedAt != null && now - entry.disconnectedAt > SESSION_GC_GRACE_MS) {
         // Skip GC if session is still alive via wait heartbeat
         if (liveByWait.has(sid)) continue;
         // Only GC if actually disconnected (safety check)
-        if (sessionStatus.get(sid) !== "active" && !transports.has(sid)) {
-          sessionStatus.delete(sid);
-          sessionLastActivity.delete(sid);
-          sessionDisconnectedAt.delete(sid);
+        if (entry.status !== "active" && !entry.transport) {
+          sessions.delete(sid);
           removeDashboardSession(sid);
           removed++;
         }
@@ -333,25 +335,16 @@ export function startHttpServer(
   const STALE_SESSION_MS = 2 * config.WAIT_TIMEOUT_MINUTES * 60 * 1000;
   const sessionReaperInterval = setInterval(() => {
     const now = Date.now();
-    for (const [sid, transport] of transports) {
-      const lastActive = sessionLastActivity.get(sid) ?? 0;
-      if (now - lastActive > STALE_SESSION_MS) {
-        log.info(`[session-reaper] Closing stale session ${sid} (idle ${Math.round((now - lastActive) / 60000)}m)`);
-        try { transport.close(); } catch (_) { /* best-effort */ }
-        transports.delete(sid);
-        sessionLastActivity.delete(sid);
-        sessionStatus.delete(sid);
+    for (const [sid, entry] of sessions) {
+      if (entry.transport && now - entry.lastActivity > STALE_SESSION_MS) {
+        log.info(`[session-reaper] Closing stale session ${sid} (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
+        try { entry.transport.close(); } catch (_) { /* best-effort */ }
+        sessions.delete(sid);
         removeDashboardSession(sid);
-      }
-    }
-    // Also purge long-disconnected sessions from tracking maps
-    for (const [sid, status] of sessionStatus) {
-      if (status === "disconnected" && !transports.has(sid)) {
-        const lastActive = sessionLastActivity.get(sid) ?? 0;
-        if (now - lastActive > STALE_SESSION_MS) {
-          sessionLastActivity.delete(sid);
-          sessionStatus.delete(sid);
-          sessionDisconnectedAt.delete(sid);
+      } else if (entry.status === "disconnected" && !entry.transport) {
+        // Also purge long-disconnected sessions from tracking
+        if (now - entry.lastActivity > STALE_SESSION_MS) {
+          sessions.delete(sid);
           removeDashboardSession(sid);
         }
       }
