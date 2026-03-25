@@ -94,8 +94,8 @@ function Stop-McpServer {
         # Wait until the server is idle (no tool call in the last 30s)
         # to avoid killing mid-request and crashing the agent session.
         $heartbeatFile = "$DATA_DIR\last-activity.txt"
-        $maxWait = 120  # absolute max wait (seconds)
-        $idleThreshold = 30  # seconds since last tool call
+        $maxWait = 300  # absolute max wait (seconds)
+        $idleThreshold = 300  # seconds since last tool call (5 min — agent may be doing subagent work via other MCP servers)
         $waited = 0
 
         while ($waited -lt $maxWait) {
