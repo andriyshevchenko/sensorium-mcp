@@ -131,7 +131,7 @@ export async function runIntelligentConsolidation(
         existingNotesSection = `\n\nExisting memory notes (potentially related):
 ${related.map(n => `[${n.noteId}] (${n.type}, conf: ${n.confidence}) ${n.content}`).join("\n")}`;
       }
-    } catch (_) { /* non-fatal — proceed without existing notes */ }
+    } catch (err) { log.warn(`[consolidation] searchSemanticNotesRanked failed during contradiction scan: ${err instanceof Error ? err.message : String(err)}`); }
   }
 
   const systemPrompt = `You are a memory consolidation agent. Analyze these conversation episodes and extract knowledge that should be remembered across sessions.
