@@ -93,7 +93,8 @@ export function writeReactionFile(reaction: StoredReaction): void {
 /**
  * Read and clear the pending reaction (if any).
  * When threadId is provided, reads from the per-thread file first,
- * falling back to the global file for backwards compatibility.
+ * falling back to the global file only when the reaction belongs to
+ * the requesting thread (or has no known thread mapping).
  * Returns null if no reaction is pending.
  */
 export function readPendingReaction(threadId?: number): StoredReaction | null {
@@ -103,8 +104,42 @@ export function readPendingReaction(threadId?: number): StoredReaction | null {
         const threadResult = readAndClearReactionFile(threadFile);
         if (threadResult) return threadResult;
     }
-    // Fall back to global file
-    return readAndClearReactionFile(REACTION_FILE);
+    // Fall back to global file — but guard against cross-thread consumption.
+    // Read without deleting first, verify ownership, then consume.
+    return readGlobalReactionGuarded(threadId);
+}
+
+/**
+ * Read the global reaction file with thread-ownership guard.
+ * If `requestingThreadId` is provided, the reaction is only consumed when
+ * its messageId maps to the requesting thread or has no known mapping.
+ * Reactions that belong to a *different* thread are left untouched.
+ */
+function readGlobalReactionGuarded(requestingThreadId?: number): StoredReaction | null {
+    let raw: string;
+    try { raw = readFileSync(REACTION_FILE, "utf8"); }
+    catch { return null; }
+
+    let reaction: StoredReaction;
+    try { reaction = JSON.parse(raw) as StoredReaction; }
+    catch {
+        // Corrupt JSON — discard the file.
+        try { unlinkSync(REACTION_FILE); } catch { /* already gone */ }
+        return null;
+    }
+
+    // When a specific thread is asking, verify the reaction belongs to it.
+    if (requestingThreadId !== undefined) {
+        const ownerThread = lookupThreadForMessage(reaction.messageId);
+        if (ownerThread !== undefined && ownerThread !== requestingThreadId) {
+            // Reaction belongs to a different thread — don't consume.
+            return null;
+        }
+    }
+
+    // Ownership confirmed (or no mapping) — consume the file.
+    try { unlinkSync(REACTION_FILE); } catch { /* already gone */ }
+    return reaction;
 }
 
 /**
