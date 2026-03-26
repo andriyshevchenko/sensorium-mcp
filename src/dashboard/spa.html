@@ -85,7 +85,7 @@
       <button onclick="authenticate()" class="w-full mt-4 px-4 py-3 rounded-xl bg-accent hover:bg-accentLight text-white font-medium transition">
         Connect
       </button>
-      <p id="auth-error" class="mt-3 text-sm text-danger hidden">Invalid token</p>
+      <p id="auth-error" class="mt-3 text-sm text-danger hidden"></p>
     </div>
   </div>
 
@@ -308,6 +308,8 @@
 
     // ─── Auth ──────────────────────────────────────────────────────────
     async function authenticate() {
+      var authErr = document.getElementById('auth-error');
+      authErr.classList.add('hidden');
       const input = document.getElementById('token-input');
       token = input.value.trim();
       if (!token) { token = 'no-auth'; } // allow no-auth mode
@@ -320,7 +322,14 @@
           startRefresh();
         }
       } catch (e) {
-        document.getElementById('auth-error').classList.remove('hidden');
+        var msg = 'Connection failed';
+        if (e && e.message) {
+          if (e.message === 'Unauthorized' || e.status === 401) msg = 'Invalid token';
+          else if (/5\d\d|Internal/.test(e.message)) msg = 'Server error — try again in a moment';
+          else msg = e.message;
+        }
+        authErr.textContent = msg;
+        authErr.classList.remove('hidden');
       }
     }
 
@@ -334,6 +343,7 @@
 
     // Auto-connect if token saved
     if (token) {
+      var savedToken = token;
       api('/api/status').then(data => {
         if (data) {
           document.getElementById('auth-overlay').classList.add('hidden');
@@ -341,8 +351,11 @@
           startRefresh();
         }
       }).catch(() => {
-        localStorage.removeItem('sensorium_token');
-        token = '';
+        // Only clear if token hasn't been changed by a manual authenticate()
+        if (token === savedToken) {
+          localStorage.removeItem('sensorium_token');
+          token = '';
+        }
       });
     }
 
@@ -356,7 +369,7 @@
       const res = await fetch(path, {
         headers: { 'Authorization': 'Bearer ' + token },
       });
-      if (!res.ok) throw new Error(res.statusText);
+      if (!res.ok) { var err = new Error(res.statusText); err.status = res.status; throw err; }
       return res.json();
     }
 
@@ -460,7 +473,7 @@
             '<div class="flex items-center gap-3">' +
               '<span class="w-2.5 h-2.5 rounded-full bg-' + statusColor + '"></span>' +
               '<div>' +
-                '<div class="font-medium">' + (s.topicName ? '<span class="text-accentLight">' + escapeHtml(s.topicName) + '</span> <span class="text-textSecondary text-xs">(thread ' + s.threadId + ')</span>' : 'Thread ' + s.threadId) + '</div>' +
+                '<div class="font-medium">' + (s.topicName ? '<span class="text-accentLight">' + escapeHtml(s.topicName) + '</span> <span class="text-textSecondary text-xs">(thread ' + s.threadId + ')</span>' : (s.threadId != null ? 'Thread ' + s.threadId : '<span class="text-muted italic">Awaiting start_session\u2026</span>')) + '</div>' +
                 '<div class="text-xs text-textSecondary font-mono">' + s.mcpSessionId.slice(0, 12) + '...</div>' +
               '</div>' +
             '</div>' +
