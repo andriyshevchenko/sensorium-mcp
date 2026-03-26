@@ -7,11 +7,11 @@
  * creation and tool dispatch logic lives in ./server/factory.ts.
  */
 
-// --watcher mode: lightweight standby server used during updates.
+// --watcher mode: update watcher + standby MCP server (replaces PowerShell script).
 // Checked before heavy initialisation so the watcher stays self-contained.
 if (process.argv.includes("--watcher")) {
-  const { startWatcherServer } = await import("./watcher-server.js");
-  await startWatcherServer();
+  const { startWatcherService } = await import("./watcher-service.js");
+  await startWatcherService();
 } else {
 
 // Normal server startup ─────────────────────────────────────────────────────
