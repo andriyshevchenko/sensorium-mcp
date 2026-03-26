@@ -7,15 +7,24 @@
  * creation and tool dispatch logic lives in ./server/factory.ts.
  */
 
-import { config } from "./config.js";
-import { startDispatcher, setBrokerDb } from "./dispatcher.js";
-import { initMemoryDb } from "./memory.js";
-import { TelegramClient } from "./telegram.js";
-import { startHttpServer } from "./http-server.js";
-import { startStdioServer } from "./stdio-server.js";
-import { buildMcpServerFactory } from "./server/factory.js";
-import { setTopicRegistryDb, lookupTopicRegistry } from "./sessions.js";
-import { initVideoTempCleanup } from "./integrations/openai/video.js";
+// --watcher mode: lightweight standby server used during updates.
+// Checked before heavy initialisation so the watcher stays self-contained.
+if (process.argv.includes("--watcher")) {
+  const { startWatcherServer } = await import("./watcher-server.js");
+  await startWatcherServer();
+} else {
+
+// Normal server startup ─────────────────────────────────────────────────────
+
+const { config } = await import("./config.js");
+const { startDispatcher, setBrokerDb } = await import("./dispatcher.js");
+const { initMemoryDb } = await import("./memory.js");
+const { TelegramClient } = await import("./telegram.js");
+const { startHttpServer } = await import("./http-server.js");
+const { startStdioServer } = await import("./stdio-server.js");
+const { buildMcpServerFactory } = await import("./server/factory.js");
+const { setTopicRegistryDb, lookupTopicRegistry } = await import("./sessions.js");
+const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -73,4 +82,6 @@ if (httpPort) {
   startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb);
 } else {
   await startStdioServer(createMcpServer, closeMemoryDb);
+}
+
 }
