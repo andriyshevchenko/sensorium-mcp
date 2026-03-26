@@ -10,7 +10,7 @@ import type { IncomingMessage } from "node:http";
 export interface DashboardContext {
     getDb: () => Database;
     getActiveSessions: () => Array<{
-        threadId: number;
+        threadId: number | null;
         mcpSessionId: string;
         lastActivity: number;
         transportType: string;

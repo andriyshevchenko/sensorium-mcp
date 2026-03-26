@@ -103,7 +103,7 @@ export function purgeOtherSessions(threadId: number, keepMcpSessionId?: string):
 
 interface DashboardSessionInfo {
   mcpSessionId: string;
-  threadId: number;
+  threadId: number | null;
   transportType: "http" | "stdio";
   status: "active" | "disconnected";
   lastActivity: number;
@@ -117,7 +117,7 @@ const dashboardSessions = new Map<string, DashboardSessionInfo>();
 export function registerDashboardSession(
   mcpSessionId: string,
   transportType: "http" | "stdio",
-  threadId = 0,
+  threadId: number | null = null,
 ): void {
   dashboardSessions.set(mcpSessionId, {
     mcpSessionId,
@@ -141,7 +141,7 @@ export function updateDashboardActivity(mcpSessionId: string): void {
 }
 
 /** Update the threadId for a session (called after start_session resolves). */
-export function updateDashboardThreadId(mcpSessionId: string, threadId: number): void {
+export function updateDashboardThreadId(mcpSessionId: string, threadId: number | null): void {
   const entry = dashboardSessions.get(mcpSessionId);
   if (entry) {
     entry.threadId = threadId;

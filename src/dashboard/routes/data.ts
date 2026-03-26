@@ -21,7 +21,7 @@ import { readBody, safeParseJSON, type RouteHandler } from "./types.js";
  * Enrich session objects with topic names by reverse-looking up threadId
  * in the topic registry.
  */
-function enrichSessionsWithTopicNames<T extends { threadId: number }>(
+function enrichSessionsWithTopicNames<T extends { threadId: number | null }>(
     sessions: T[],
 ): (T & { topicName: string | null })[] {
     const allTopics = getAllRegisteredTopics();
@@ -32,7 +32,7 @@ function enrichSessionsWithTopicNames<T extends { threadId: number }>(
             threadToName.set(tid, name);
         }
     }
-    return sessions.map((s) => ({ ...s, topicName: threadToName.get(s.threadId) ?? null }));
+    return sessions.map((s) => ({ ...s, topicName: s.threadId != null ? (threadToName.get(s.threadId) ?? null) : null }));
 }
 
 // ─── GET /api/status — memory stats + session overview ──────────────────────
