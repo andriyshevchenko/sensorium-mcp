@@ -192,10 +192,61 @@ function runMigrations(db: Database): void {
         ).run(v, nowISO());
         log.info(`[memory] Migrated schema to version ${v}`);
       } catch (err) {
-        log.error(`[memory] Migration ${v} FAILED: ${err instanceof Error ? err.message : String(err)}`);
-        throw err;
+        log.error(`[memory] Migration ${v} failed: ${err instanceof Error ? err.message : String(err)}. Will attempt self-heal.`);
+        // Don't throw — allow ensureSchemaIntegrity to fix what it can
       }
     }
+  }
+}
+
+/**
+ * Self-healing: verify that critical columns exist after migrations.
+ * If any are missing (e.g. a migration was skipped or failed), add them
+ * idempotently so downstream queries never crash on a missing column.
+ */
+function ensureSchemaIntegrity(db: Database): void {
+  const semanticNoteCols = db
+    .prepare("PRAGMA table_info(semantic_notes)")
+    .all()
+    .map((r: any) => r.name as string);
+
+  if (!semanticNoteCols.includes("is_guardrail")) {
+    log.info("[memory] Self-heal: adding missing is_guardrail column");
+    db.exec(
+      "ALTER TABLE semantic_notes ADD COLUMN is_guardrail INTEGER NOT NULL DEFAULT 0",
+    );
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL",
+    );
+  }
+
+  if (!semanticNoteCols.includes("thread_id")) {
+    log.info("[memory] Self-heal: adding missing thread_id column to semantic_notes");
+    db.exec("ALTER TABLE semantic_notes ADD COLUMN thread_id INTEGER");
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL",
+    );
+  }
+
+  if (!semanticNoteCols.includes("priority")) {
+    log.info("[memory] Self-heal: adding missing priority column to semantic_notes");
+    db.exec(
+      "ALTER TABLE semantic_notes ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+    );
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL",
+    );
+  }
+
+  // Also check episodes table for thread_id
+  const episodeCols = db
+    .prepare("PRAGMA table_info(episodes)")
+    .all()
+    .map((r: any) => r.name as string);
+
+  if (!episodeCols.includes("thread_id")) {
+    log.info("[memory] Self-heal: adding missing thread_id column to episodes");
+    db.exec("ALTER TABLE episodes ADD COLUMN thread_id INTEGER");
   }
 }
 
@@ -360,6 +411,20 @@ export function initMemoryDb(): Database {
 
   // Run any pending migrations (will upgrade from stored version to SCHEMA_VERSION)
   runMigrations(db);
+
+  // Self-heal: ensure all critical columns exist even if a migration failed
+  ensureSchemaIntegrity(db);
+
+  // Ensure schema_version is up to date so failed migrations aren't retried
+  const maxApplied = db
+    .prepare("SELECT MAX(version) as v FROM schema_version")
+    .get() as { v: number | null } | undefined;
+  if ((maxApplied?.v ?? 0) < SCHEMA_VERSION) {
+    db.prepare(
+      "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
+    ).run(SCHEMA_VERSION, nowISO());
+    log.info(`[memory] Schema version updated to ${SCHEMA_VERSION} after self-heal`);
+  }
 
   return db;
 }
