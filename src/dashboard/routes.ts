@@ -62,6 +62,12 @@ import {
     handleDeleteTopicRegistry,
 } from "./routes/data.js";
 
+// Domain handlers — skills
+import {
+    handleGetSkills,
+    handleSkillPut,
+} from "./routes/skills.js";
+
 // ─── Route table ────────────────────────────────────────────────────────────
 
 const routeTable: Record<string, RouteHandler> = {
@@ -93,6 +99,9 @@ const routeTable: Record<string, RouteHandler> = {
     "GET /api/topic-registry":    handleGetTopicRegistry,
     "POST /api/topic-registry":   handlePostTopicRegistry,
     "DELETE /api/topic-registry": handleDeleteTopicRegistry,
+
+    // Skills
+    "GET /api/skills":            handleGetSkills,
 };
 
 // ─── Public entry point ─────────────────────────────────────────────────────
@@ -174,6 +183,13 @@ function dispatchApiRoute(
         const templateMatch = path.match(/^\/api\/templates\/([a-zA-Z0-9-]+)$/);
         if (templateMatch) {
             const result = handleTemplateCrud(args, templateMatch[1]);
+            if (result) return true;
+        }
+
+        // 3. Dynamic skill route: PUT /api/skills/:name
+        const skillMatch = path.match(/^\/api\/skills\/([a-zA-Z0-9-]+)$/);
+        if (skillMatch) {
+            const result = handleSkillPut(args, skillMatch[1]);
             if (result) return true;
         }
 
