@@ -12,6 +12,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { log } from "./logger.js";
 
 // ── Skill types & loading ─────────────────────────────────────────────────
 
@@ -42,20 +43,26 @@ function parseSkillFile(filePath: string): Skill | null {
   // Minimal YAML parsing — no deps
   let name = "";
   const triggers: string[] = [];
+  // NOTE: replacesOrchestrator: false is reserved for future use (partial-inject skills)
   let replacesOrchestrator = false;
+  let currentKey = "";
 
   for (const line of yaml.split("\n")) {
     const trimmed = line.trim();
+    if (trimmed.endsWith(":") || (/^(\w+):/.test(trimmed) && !trimmed.startsWith("- "))) {
+      currentKey = trimmed.split(":")[0].trim();
+    }
     if (trimmed.startsWith("name:")) {
       name = trimmed.slice(5).trim().replace(/^["']|["']$/g, "");
     } else if (trimmed.startsWith("replaces_orchestrator:")) {
       replacesOrchestrator = trimmed.slice(22).trim() === "true";
-    } else if (trimmed.startsWith("- ") && triggers !== undefined) {
+    } else if (trimmed.startsWith("- ") && currentKey === "triggers") {
       triggers.push(trimmed.slice(2).trim().replace(/^["']|["']$/g, ""));
     }
   }
 
   if (!name || triggers.length === 0) return null;
+  if (replacesOrchestrator && !body) return null;
   return { name, triggers, replacesOrchestrator, content: body, source: filePath };
 }
 
@@ -74,7 +81,9 @@ export function loadSkills(): Skill[] {
       const sk = parseSkillFile(join(userDir, f));
       if (sk) { skills.push(sk); seen.add(sk.name); }
     }
-  } catch { /* dir may not exist */ }
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") log.warn(`[skills] Failed to read dir: ${err}`);
+  }
 
   // 2. Default skills: templates/*.default.md (only those with frontmatter)
   const __dir = dirname(fileURLToPath(import.meta.url));
@@ -83,9 +92,11 @@ export function loadSkills(): Skill[] {
     for (const f of readdirSync(defaultDir)) {
       if (!f.endsWith(".default.md")) continue;
       const sk = parseSkillFile(join(defaultDir, f));
-      if (sk && !seen.has(sk.name)) skills.push(sk);
+      if (sk && !seen.has(sk.name)) { skills.push(sk); seen.add(sk.name); }
     }
-  } catch { /* dir may not exist */ }
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") log.warn(`[skills] Failed to read dir: ${err}`);
+  }
 
   // 3. Project skills: workspace root *.skill.md
   const projectDir = process.cwd();
@@ -95,12 +106,31 @@ export function loadSkills(): Skill[] {
       const sk = parseSkillFile(join(projectDir, f));
       if (sk && !seen.has(sk.name)) { skills.push(sk); seen.add(sk.name); }
     }
-  } catch { /* ignore */ }
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") log.warn(`[skills] Failed to read dir: ${err}`);
+  }
+
+  // Warn on duplicate/shadowed triggers across skills (L3)
+  const triggerOwner = new Map<string, string>();
+  for (const sk of skills) {
+    for (const t of sk.triggers) {
+      const key = t.toLowerCase();
+      const existing = triggerOwner.get(key);
+      if (existing && existing !== sk.name) {
+        log.warn(`[skills] Trigger "${t}" in skill "${sk.name}" shadows same trigger in "${existing}"`);
+      } else {
+        triggerOwner.set(key, sk.name);
+      }
+    }
+  }
 
   skillCache = skills;
   skillCacheTime = Date.now();
   return skills;
 }
+
+/** Invalidate the skill cache so the next loadSkills() re-reads from disk. */
+export function invalidateSkillCache(): void { skillCacheTime = 0; }
 
 /** Match operator message against skill trigger phrases. */
 export function matchSkill(message: string): Skill | null {

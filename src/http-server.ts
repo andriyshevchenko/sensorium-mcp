@@ -104,7 +104,7 @@ export function startHttpServer(
     const isDashboardPage = dashUrl.pathname === "/" || dashUrl.pathname === "/dashboard";
     const isDashboardApi = dashUrl.pathname.startsWith("/api/");
     if (isDashboardPage || isDashboardApi) {
-      const handled = handleDashboardRequest(req, res, dashCtx, MCP_HTTP_SECRET);
+      const handled = await handleDashboardRequest(req, res, dashCtx, MCP_HTTP_SECRET);
       if (handled) return;
     }
 
