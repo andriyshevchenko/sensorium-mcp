@@ -58,13 +58,13 @@ export function removeSession(chatId: string, name: string): void {
 
 // ─── MCP session registry (in-memory tracking of active transports) ─────────
 
-export interface SessionRegistryEntry {
+interface SessionRegistryEntry {
   mcpSessionId: string;
   closeTransport: () => void;
 }
 
 /** Thread → active MCP transport sessions */
-export const threadSessionRegistry = new Map<number, SessionRegistryEntry[]>();
+const threadSessionRegistry = new Map<number, SessionRegistryEntry[]>();
 
 export function registerMcpSession(
   threadId: number,
@@ -101,7 +101,7 @@ export function purgeOtherSessions(threadId: number, keepMcpSessionId?: string):
 // ─── Global dashboard session registry ──────────────────────────────────────
 // Tracks ALL sessions (HTTP + STDIO) for dashboard visibility and GC.
 
-export interface DashboardSessionInfo {
+interface DashboardSessionInfo {
   mcpSessionId: string;
   threadId: number;
   transportType: "http" | "stdio";

@@ -9,7 +9,7 @@ import { nowISO, parseJsonArray } from "./utils.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
-export interface Procedure {
+interface Procedure {
   procedureId: string;
   name: string;
   type: "workflow" | "habit" | "tool_pattern" | "template";

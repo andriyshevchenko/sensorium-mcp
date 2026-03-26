@@ -17,7 +17,7 @@ export interface ToolDefinition {
   };
 }
 
-export const ALL_TOOL_DEFINITIONS: ToolDefinition[] = [
+const ALL_TOOL_DEFINITIONS: ToolDefinition[] = [
   ...sessionToolDefs,
   ...waitToolDefs,
   ...utilityToolDefs,

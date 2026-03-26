@@ -42,7 +42,7 @@ const MIN_SIMILARITY = 0.25;
 // Types
 // ---------------------------------------------------------------------------
 
-export interface MessageDeliveryContext {
+interface MessageDeliveryContext {
   telegram: TelegramClient;
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
   effectiveThreadId: number;

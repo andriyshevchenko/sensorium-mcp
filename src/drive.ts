@@ -35,7 +35,7 @@ export const PHASE3_APPROVAL_PROMPT =
 /**
  * Result from the drive probability check.
  */
-export interface DriveResult {
+interface DriveResult {
   activated: boolean;
   prompt: string | null;
   probability: number;
