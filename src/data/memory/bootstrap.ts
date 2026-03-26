@@ -70,7 +70,7 @@ export function getMemoryStatus(db: Database, threadId: number): MemoryStatus {
   ).cnt;
 
   const totalSemanticNotes = (
-    db.prepare(`SELECT COUNT(*) as cnt FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (thread_id IS NULL OR thread_id = ?)`).get(threadId) as {
+    db.prepare(`SELECT COUNT(*) as cnt FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND thread_id = ?`).get(threadId) as {
       cnt: number;
     }
   ).cnt;

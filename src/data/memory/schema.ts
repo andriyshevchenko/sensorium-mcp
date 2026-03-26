@@ -141,6 +141,20 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     }
     db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL`);
   },
+  9: (db) => {
+    // Backfill orphan NULL thread_id notes: assign to the earliest (most-used) thread.
+    // These notes were created before thread_id tracking and have no source_episodes to infer from.
+    const oldest = db.prepare(
+      `SELECT thread_id FROM semantic_notes WHERE thread_id IS NOT NULL GROUP BY thread_id ORDER BY MIN(created_at) ASC LIMIT 1`
+    ).get() as { thread_id: number } | undefined;
+    if (!oldest) return;
+    const result = db.prepare(
+      `UPDATE semantic_notes SET thread_id = ? WHERE thread_id IS NULL`
+    ).run(oldest.thread_id);
+    if (result.changes > 0) {
+      log.info(`[migration-9] Assigned ${result.changes} orphan notes to thread ${oldest.thread_id}`);
+    }
+  },
 };
 
 /**
