@@ -266,7 +266,11 @@ export async function buildSmartContext(
           const jsonMatch = filterResponse.match(/\[.*\]/s);
           let selectedCount = 0;
           if (jsonMatch) {
-            const filtered = JSON.parse(jsonMatch[0]) as { i: number; s: string }[];
+            const parsed: unknown = JSON.parse(jsonMatch[0]);
+            if (!Array.isArray(parsed) || !parsed.every((p: Record<string, unknown>) => typeof p.i === "number" && typeof p.s === "string")) {
+              throw new Error("Invalid LLM filter response shape");
+            }
+            const filtered = parsed as { i: number; s: string }[];
             selectedCount = filtered.length;
             if (filtered.length > 0) {
               const lines = filtered
