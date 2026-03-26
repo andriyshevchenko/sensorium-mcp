@@ -1,6 +1,6 @@
 /** Watcher Service — Node.js replacement for update-watcher.ps1. Run: npx sensorium-mcp --watcher */
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, unlinkSync } from "node:fs";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -23,14 +23,17 @@ const CONFIG = {
 const P = {
   flag: join(CONFIG.dataDir, "maintenance.flag"), ver: join(CONFIG.dataDir, "current-version.txt"),
   activity: join(CONFIG.dataDir, "last-activity.txt"), pid: join(CONFIG.dataDir, "server.pid"),
+  lock: join(CONFIG.dataDir, "watcher.lock"),
 };
 let startTime = Date.now();
 let managedChild: ChildProcess | null = null;
 let httpSrv: HttpServer | null = null;
+let updateInProgress = false;
 
 // Helpers ---------------------------------------------------------------------
-function log(level: string, msg: unknown): void {
-  console.log(`[${new Date().toISOString().replace("T", " ").slice(0, 19)}] [${level}] ${String(msg)}`);
+function log(level: "INFO" | "WARN" | "ERROR", msg: unknown): void {
+  const text = msg instanceof Error ? `${msg.message}\n${msg.stack}` : String(msg);
+  console.log(`[${new Date().toISOString().replace("T", " ").slice(0, 19)}] [${level}] ${text}`);
 }
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
 function ensureDir(): void { if (!existsSync(CONFIG.dataDir)) mkdirSync(CONFIG.dataDir, { recursive: true }); }
@@ -44,14 +47,42 @@ function msUntilHour(h: number): number {
 function safeRead(p: string): string | null {
   try { return existsSync(p) ? readFileSync(p, "utf-8").trim() || null : null; } catch { return null; }
 }
-function alive(pid: number): boolean { try { process.kill(pid, 0); return true; } catch { return false; } }
+function alive(pid: number): boolean {
+  if (process.platform === "win32") {
+    try {
+      const out = execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: "utf-8", timeout: 5000 });
+      return out.includes(String(pid));
+    } catch { return false; }
+  }
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+async function killPid(pid: number): Promise<void> {
+  if (process.platform === "win32") {
+    try { execSync(`taskkill /PID ${pid} /T`, { timeout: 5000 }); } catch { /**/ }
+    await sleep(2000);
+    if (alive(pid)) {
+      try { execSync(`taskkill /PID ${pid} /T /F`, { timeout: 5000 }); } catch { /**/ }
+    }
+  } else {
+    try { process.kill(pid, "SIGTERM"); } catch { /**/ }
+    await sleep(2000);
+    if (alive(pid)) { try { process.kill(pid, "SIGKILL"); } catch { /**/ } }
+  }
+}
+
+function atomicWrite(path: string, data: string): void {
+  const tmp = path + ".tmp";
+  writeFileSync(tmp, data, "utf-8");
+  renameSync(tmp, path);
+}
 
 // Version & flag management ---------------------------------------------------
 function getLocalVersion(): string | null { return safeRead(P.ver); }
-function setLocalVersion(v: string): void { ensureDir(); writeFileSync(P.ver, v, "utf-8"); }
+function setLocalVersion(v: string): void { ensureDir(); atomicWrite(P.ver, v); }
 function writeMaintenanceFlag(v: string): void {
   ensureDir();
-  writeFileSync(P.flag, JSON.stringify({ version: v, timestamp: new Date().toISOString() }), "utf-8");
+  atomicWrite(P.flag, JSON.stringify({ version: v, timestamp: new Date().toISOString() }));
   log("INFO", `Maintenance flag written for v${v}`);
 }
 function removeMaintenanceFlag(): void {
@@ -74,19 +105,23 @@ function readPid(): number | null {
   const n = parseInt(raw, 10);
   return Number.isNaN(n) ? null : n;
 }
-function writePid(pid: number): void { ensureDir(); writeFileSync(P.pid, String(pid), "utf-8"); }
+function writePid(pid: number): void { ensureDir(); atomicWrite(P.pid, String(pid)); }
 function rmPid(): void { try { if (existsSync(P.pid)) unlinkSync(P.pid); } catch { /**/ } }
 
-function startMcpServer(): ChildProcess | null {
-  const [cmd, ...args] = CONFIG.mcpStartCommand.split(" ");
+function startMcpServer(): void {
+  const parts = CONFIG.mcpStartCommand.split(/\s+/);
+  const cmd = parts[0];
+  const args = parts.slice(1);
   log("INFO", `Starting MCP server: ${CONFIG.mcpStartCommand}`);
   try {
-    const child = spawn(cmd, args, { detached: true, stdio: "ignore", shell: true, windowsHide: true });
-    child.unref();
-    if (child.pid) { writePid(child.pid); log("INFO", `MCP server PID ${child.pid}`); }
-    managedChild = child;
-    return child;
-  } catch (err) { log("ERROR", `Failed to start MCP server: ${err}`); return null; }
+    const child = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true });
+    if (child.pid) {
+      writePid(child.pid);
+      managedChild = child;
+      child.unref();
+      log("INFO", `MCP server started (PID ${child.pid})`);
+    }
+  } catch (err) { log("ERROR", `Failed to start MCP server: ${err}`); }
 }
 
 async function stopMcpServer(): Promise<void> {
@@ -101,7 +136,7 @@ async function stopMcpServer(): Promise<void> {
     await sleep(5000); waited += 5;
   }
   if (waited >= CONFIG.maxIdleWaitSeconds) log("WARN", "Max idle wait exceeded — force-killing.");
-  try { process.kill(pid, "SIGTERM"); await sleep(2000); if (alive(pid)) process.kill(pid, "SIGKILL"); } catch { /**/ }
+  await killPid(pid);
   rmPid(); managedChild = null;
   log("INFO", `PID ${pid} stopped.`);
 }
@@ -114,14 +149,15 @@ function clearNpxCache(): void {
   if (!existsSync(base)) return;
   log("INFO", "Clearing sensorium-mcp from npx cache...");
   try {
-    for (const e of readdirSync(base))
-      if (existsSync(join(base, e, "node_modules", "sensorium-mcp")))
-        rmSync(join(base, e), { recursive: true, force: true });
+    for (const e of readdirSync(base)) {
+      const pkgDir = join(base, e, "node_modules", "sensorium-mcp");
+      if (existsSync(pkgDir)) rmSync(pkgDir, { recursive: true, force: true });
+    }
   } catch (err) { log("WARN", `Cache clear error: ${err}`); }
 }
 
 // Stale process cleanup -------------------------------------------------------
-function killStale(): void {
+async function killStale(): Promise<void> {
   const pid = readPid();
   if (!pid) return;
   if (!alive(pid)) { rmPid(); return; }
@@ -129,50 +165,67 @@ function killStale(): void {
     if (!existsSync(P.ver) || !existsSync(P.pid)) return;
     if (statSync(P.pid).mtimeMs < statSync(P.ver).mtimeMs - 60_000) {
       log("WARN", `Killing stale PID ${pid}`);
-      try { process.kill(pid, "SIGKILL"); } catch { /**/ }
+      await killPid(pid);
       rmPid();
     }
   } catch { /**/ }
 }
 
 // Registry check --------------------------------------------------------------
+const REGISTRY_URL = "https://registry.npmjs.org/sensorium-mcp/latest";
 async function getRemoteVersion(): Promise<string | null> {
   try {
-    const r = await fetch("https://registry.npmjs.org/sensorium-mcp/latest");
+    const r = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) { log("WARN", `Registry returned HTTP ${r.status}`); return null; }
     return ((await r.json()) as { version?: string }).version ?? null;
   } catch (err) { log("ERROR", `Registry check failed: ${err}`); return null; }
 }
 
 // Update orchestration --------------------------------------------------------
 async function checkAndUpdate(): Promise<void> {
-  if (uptimeS() > 120) {
-    const pid = readPid();
-    if (!pid || !alive(pid)) { log("WARN", "Server not running — restarting..."); startMcpServer(); startTime = Date.now(); }
+  if (updateInProgress) { log("INFO", "Update already in progress, skipping"); return; }
+  updateInProgress = true;
+  try {
+    if (uptimeS() > 120) {
+      const pid = readPid();
+      if (!pid || !alive(pid)) { log("WARN", "Server not running — restarting..."); startMcpServer(); startTime = Date.now(); }
+    }
+    const remote = await getRemoteVersion();
+    if (!remote) return;
+    const local = getLocalVersion();
+    if (!local) { setLocalVersion(remote); return; }
+    if (remote === local) { log("INFO", `Up to date: v${local}`); return; }
+    if (uptimeS() < CONFIG.minUptimeSeconds) { log("INFO", "Deferring update — too early."); return; }
+    log("INFO", `Update: v${local} → v${remote}`);
+    writeMaintenanceFlag(remote);
+    log("INFO", `Grace period ${CONFIG.gracePeriodSeconds}s...`);
+    await sleep(CONFIG.gracePeriodSeconds * 1000);
+    await stopMcpServer();
+    clearNpxCache();
+    setLocalVersion(remote);
+    startMcpServer(); startTime = Date.now();
+    await sleep(10_000);
+    await killStale();
+    removeMaintenanceFlag();
+    log("INFO", `Update to v${remote} complete.`);
+  } finally {
+    updateInProgress = false;
   }
-  const remote = await getRemoteVersion();
-  if (!remote) return;
-  const local = getLocalVersion();
-  if (!local) { setLocalVersion(remote); return; }
-  if (remote === local) { log("INFO", `Up to date: v${local}`); return; }
-  if (uptimeS() < CONFIG.minUptimeSeconds) { log("INFO", "Deferring update — too early."); return; }
-  log("INFO", `Update: v${local} → v${remote}`);
-  writeMaintenanceFlag(remote);
-  log("INFO", `Grace period ${CONFIG.gracePeriodSeconds}s...`);
-  await sleep(CONFIG.gracePeriodSeconds * 1000);
-  await stopMcpServer();
-  clearNpxCache();
-  setLocalVersion(remote);
-  startMcpServer(); startTime = Date.now();
-  await sleep(10_000);
-  killStale();
-  removeMaintenanceFlag();
-  log("INFO", `Update to v${remote} complete.`);
 }
 
 // Main loop -------------------------------------------------------------------
 async function runLoop(): Promise<void> {
   log("INFO", `Watcher starting in ${CONFIG.mode} mode.`);
   ensureDir();
+  // Clear stale maintenance flag left by a previous crash
+  if (flagExists()) {
+    const stalePid = readPid();
+    const local = getLocalVersion();
+    if (local && stalePid && alive(stalePid)) {
+      log("WARN", "Stale maintenance.flag found — server already running at current version. Removing.");
+      removeMaintenanceFlag();
+    }
+  }
   const pid = readPid();
   if (!pid || !alive(pid)) startMcpServer();
   if (CONFIG.mode === "production") {
@@ -184,13 +237,13 @@ async function runLoop(): Promise<void> {
     }
   } else {
     while (true) {
-      try { killStale(); await checkAndUpdate(); } catch (err) { log("ERROR", err); removeMaintenanceFlag(); }
+      try { await killStale(); await checkAndUpdate(); } catch (err) { log("ERROR", err); removeMaintenanceFlag(); }
       await sleep(CONFIG.pollIntervalSeconds * 1000);
     }
   }
 }
 
-// MCP server (await_server_ready) — in-process HTTP ----------------------------
+// MCP server (await_server_ready) — in-process HTTP ---------------------------
 function createWatcherMcp(): Server {
   const srv = new Server({ name: "sensorium-watcher", version: "1.0.0" }, { capabilities: { tools: {} } });
   srv.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [{
@@ -214,9 +267,15 @@ function createWatcherMcp(): Server {
 }
 
 function parseBody(req: IncomingMessage): Promise<unknown> {
+  const MAX_BODY = 1_048_576; // 1 MB
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY) { req.destroy(new Error("Request body exceeds 1 MB limit")); return; }
+      chunks.push(c);
+    });
     req.on("end", () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch (e) { reject(e); } });
     req.on("error", reject);
   });
@@ -224,6 +283,16 @@ function parseBody(req: IncomingMessage): Promise<unknown> {
 
 function startHttpMcp(port: number): void {
   const transports = new Map<string, StreamableHTTPServerTransport>();
+  const sessionCreated = new Map<string, number>();
+  setInterval(() => {
+    for (const [sid, ts] of sessionCreated) {
+      if (Date.now() - ts > 600_000) {
+        transports.get(sid)?.close?.();
+        transports.delete(sid);
+        sessionCreated.delete(sid);
+      }
+    }
+  }, 60_000);
   httpSrv = createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
@@ -240,9 +309,9 @@ function startHttpMcp(port: number): void {
         if (isInitializeRequest(body)) {
           const t = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
-            onsessioninitialized: (s) => { transports.set(s, t); },
+            onsessioninitialized: (s) => { transports.set(s, t); sessionCreated.set(s, Date.now()); },
           });
-          t.onclose = () => { const s = t.sessionId; if (s) transports.delete(s); };
+          t.onclose = () => { const s = t.sessionId; if (s) { transports.delete(s); sessionCreated.delete(s); } };
           await (createWatcherMcp()).connect(t);
           await t.handleRequest(req, res, body); return;
         }
@@ -255,23 +324,62 @@ function startHttpMcp(port: number): void {
         return;
       }
       res.writeHead(405); res.end("Method Not Allowed");
-    } catch {
+    } catch (err) {
+      log("ERROR", `HTTP handler error: ${err}`);
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null })); }
     }
   });
   httpSrv.listen(port, "127.0.0.1", () => log("INFO", `Watcher MCP on http://127.0.0.1:${port}/mcp`));
 }
 
+// Lockfile — prevent two watcher instances --------------------------------------
+let lockFd: number | null = null;
+function acquireLock(): boolean {
+  try {
+    ensureDir();
+    lockFd = openSync(P.lock, "wx");
+    writeFileSync(lockFd, String(process.pid));
+    return true;
+  } catch {
+    // Check if the existing lock holder is still alive
+    const raw = safeRead(P.lock);
+    if (raw) {
+      const pid = parseInt(raw, 10);
+      if (!Number.isNaN(pid) && alive(pid)) {
+        log("ERROR", `Another watcher is already running (PID ${pid}). Exiting.`);
+        return false;
+      }
+    }
+    // Stale lock — reclaim
+    try { unlinkSync(P.lock); } catch { /**/ }
+    try {
+      lockFd = openSync(P.lock, "wx");
+      writeFileSync(lockFd, String(process.pid));
+      log("WARN", "Reclaimed stale watcher lockfile.");
+      return true;
+    } catch {
+      log("ERROR", "Failed to acquire watcher lockfile.");
+      return false;
+    }
+  }
+}
+function releaseLock(): void {
+  if (lockFd !== null) { try { closeSync(lockFd); } catch { /**/ } lockFd = null; }
+  try { if (existsSync(P.lock)) unlinkSync(P.lock); } catch { /**/ }
+}
+
 // Signal handling & entry point -----------------------------------------------
 export async function startWatcherService(): Promise<void> {
-  const shutdown = () => {
+  if (!acquireLock()) { process.exit(1); return; }
+  const shutdown = async () => {
     log("INFO", "Shutting down watcher...");
-    if (managedChild?.pid && alive(managedChild.pid)) try { process.kill(managedChild.pid, "SIGTERM"); } catch { /**/ }
+    await stopMcpServer();
     httpSrv?.close();
+    releaseLock();
     process.exit(0);
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => void shutdown());
+  process.on("SIGTERM", () => void shutdown());
   startHttpMcp(CONFIG.httpPort);
   await runLoop();
 }
