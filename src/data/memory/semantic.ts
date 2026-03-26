@@ -31,7 +31,27 @@ export interface SemanticNote {
   updatedAt: string;
 }
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+/** Maximum guardrail notes returned by getGuardrailNotes. */
+const GUARDRAIL_LIMIT = 5;
+
+/** Minimum shared keywords required to flag a note as a potential conflict. */
+const MIN_KEYWORD_OVERLAP = 2;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Increment access_count and update last_accessed for a batch of note IDs. */
+function bumpAccessCounts(db: Database, noteIds: string[]): void {
+  if (noteIds.length === 0) return;
+  const now = nowISO();
+  const stmt = db.prepare(
+    `UPDATE semantic_notes SET access_count = access_count + 1, last_accessed = ? WHERE note_id = ?`
+  );
+  db.transaction(() => {
+    for (const id of noteIds) stmt.run(now, id);
+  })();
+}
 
 // ─── Row → Interface mappers ─────────────────────────────────────────────────
 
@@ -117,7 +137,7 @@ export function getSemanticNoteById(
     "SELECT type, keywords FROM semantic_notes WHERE note_id = ?"
   ).get(noteId) as { type: string; keywords: string } | undefined;
   if (!row) return undefined;
-  return { type: row.type, keywords: row.keywords ? JSON.parse(row.keywords) : [] };
+  return { type: row.type, keywords: parseJsonArray(row.keywords) };
 }
 
 export function saveSemanticNote(
@@ -202,16 +222,7 @@ export function searchSemanticNotes(
 
   // Update access counts
   if (!options?.skipAccessTracking) {
-    const now = nowISO();
-    const updateStmt = db.prepare(
-      `UPDATE semantic_notes SET access_count = access_count + 1, last_accessed = ? WHERE note_id = ?`
-    );
-    const txn = db.transaction(() => {
-      for (const row of rows) {
-        updateStmt.run(now, row.note_id);
-      }
-    });
-    txn();
+    bumpAccessCounts(db, rows.map(r => r.note_id as string));
   }
 
   return rows.map(rowToSemanticNote);
@@ -275,13 +286,7 @@ export function searchSemanticNotesRanked(
 
   // Update access counts
   if (!options?.skipAccessTracking) {
-    const now = nowISO();
-    const updateStmt = db.prepare(
-      `UPDATE semantic_notes SET access_count = access_count + 1, last_accessed = ? WHERE note_id = ?`
-    );
-    db.transaction(() => {
-      for (const note of notes) updateStmt.run(now, note.noteId);
-    })();
+    bumpAccessCounts(db, notes.map(n => n.noteId));
   }
 
   return notes;
@@ -327,9 +332,9 @@ export function getGuardrailNotes(db: Database): SemanticNote[] {
        WHERE valid_to IS NULL AND superseded_by IS NULL
          AND is_guardrail = 1
        ORDER BY priority DESC, access_count DESC, confidence DESC
-       LIMIT 5`
+       LIMIT ?`
     )
-    .all() as Record<string, unknown>[];
+    .all(GUARDRAIL_LIMIT) as Record<string, unknown>[];
   return rows.map(rowToSemanticNote);
 }
 
@@ -510,13 +515,7 @@ export function searchByEmbedding(
 
     // Update access counts
     if (!options?.skipAccessTracking) {
-        const now = nowISO();
-        const updateStmt = db.prepare(
-            `UPDATE semantic_notes SET access_count = access_count + 1, last_accessed = ? WHERE note_id = ?`
-        );
-        db.transaction(() => {
-            for (const s of topIds) updateStmt.run(now, s.noteId);
-        })();
+        bumpAccessCounts(db, topIds.map(s => s.noteId));
     }
 
     // Return in similarity order
@@ -552,7 +551,7 @@ export function findPotentialConflicts(
   if (!row) return [];
 
   const noteKeywords: string[] = row.keywords ? JSON.parse(row.keywords) : [];
-  if (noteKeywords.length < 2) return [];
+  if (noteKeywords.length < MIN_KEYWORD_OVERLAP) return [];
 
   // Fetch all active notes of the same type (excluding this note and superseded ones)
   const candidates = db.prepare(
@@ -566,7 +565,7 @@ export function findPotentialConflicts(
     .filter(c => {
       const cKeywords: string[] = c.keywords ? JSON.parse(c.keywords as string) : [];
       const overlap = cKeywords.filter(k => lowerKeywords.has(k.toLowerCase())).length;
-      return overlap >= 2;
+      return overlap >= MIN_KEYWORD_OVERLAP;
     })
     .map(rowToSemanticNote);
 }
