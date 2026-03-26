@@ -130,6 +130,14 @@ function safeParseArray(val: string | null): string[] {
 
 // ─── JSON repair (minimal — shared pattern with consolidation.ts) ────────────
 
+/** Return true if the character at `pos` is preceded by an odd number of backslashes (i.e. it is escaped). */
+function isEscaped(text: string, pos: number): boolean {
+  let count = 0;
+  let i = pos - 1;
+  while (i >= 0 && text[i] === "\\") { count++; i--; }
+  return count % 2 !== 0;
+}
+
 function repairAndParseJSON(raw: string): unknown {
   try { return JSON.parse(raw); } catch { /* continue */ }
 
@@ -146,8 +154,7 @@ function repairAndParseJSON(raw: string): unknown {
   let inStr = false;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    const prev = i > 0 ? text[i - 1] : "";
-    if (ch === '"' && prev !== "\\") { inStr = !inStr; chars.push(ch); continue; }
+    if (ch === '"' && !isEscaped(text, i)) { inStr = !inStr; chars.push(ch); continue; }
     if (inStr) {
       if (ch === "\n") { chars.push("\\n"); continue; }
       if (ch === "\r") { chars.push("\\r"); continue; }
@@ -161,7 +168,7 @@ function repairAndParseJSON(raw: string): unknown {
   // Close truncated structures
   let quoteCount = 0;
   for (let i = 0; i < text.length; i++) {
-    if (text[i] === '"' && (i === 0 || text[i - 1] !== "\\")) quoteCount++;
+    if (text[i] === '"' && !isEscaped(text, i)) quoteCount++;
   }
   if (quoteCount % 2 !== 0) text += '"';
 
@@ -172,7 +179,7 @@ function repairAndParseJSON(raw: string): unknown {
   let scanning = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    if (c === '"' && (i === 0 || text[i - 1] !== "\\")) { scanning = !scanning; continue; }
+    if (c === '"' && !isEscaped(text, i)) { scanning = !scanning; continue; }
     if (scanning) continue;
     if (c === "{" || c === "[") opens.push(c);
     else if (c === "}" || c === "]") opens.pop();
