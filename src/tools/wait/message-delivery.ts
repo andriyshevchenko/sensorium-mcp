@@ -30,6 +30,15 @@ import { errorMessage, IMAGE_EXTENSIONS } from "../../utils.js";
 import type { ContentBlock, ToolResult } from "../../types.js";
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const MIN_CONTEXT_TEXT_LENGTH = 10;
+const MAX_EPISODE_CONTENT_LENGTH = 2000;
+const SMART_CONTEXT_MAX_RESULTS = 10;
+const MIN_SIMILARITY = 0.25;
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -189,7 +198,7 @@ export function autoIngestEpisodes(
           .map(m => m.message.text ?? m.message.caption ?? "")
           .filter(Boolean)
           .join("\n")
-          .slice(0, 2000);
+          .slice(0, MAX_EPISODE_CONTENT_LENGTH);
         if (textContent) {
           saveEpisode(db, {
             sessionId,
@@ -224,19 +233,19 @@ export async function buildSmartContext(
     const db = ctx.getMemoryDb();
     const apiKey = process.env.OPENAI_API_KEY;
 
-    if (operatorText.length > 10 && apiKey) {
+    if (operatorText.length > MIN_CONTEXT_TEXT_LENGTH && apiKey) {
       // Phase 1: Broad retrieval — get 10 candidates via embedding search
       let candidates: { type: string; content: string; confidence: number; similarity?: number }[] = [];
       try {
         const queryEmb = await generateEmbedding(operatorText, apiKey);
-        const embResults = searchByEmbedding(db, queryEmb, { maxResults: 10, minSimilarity: 0.25, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
+        const embResults = searchByEmbedding(db, queryEmb, { maxResults: SMART_CONTEXT_MAX_RESULTS, minSimilarity: MIN_SIMILARITY, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
         candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, 200), confidence: n.confidence, similarity: n.similarity }));
       } catch (err) {
         // Fallback to keyword search
         log.warn(`Embedding generation failed, falling back to keyword search: ${err instanceof Error ? err.message : String(err)}`);
         const searchQuery = extractSearchKeywords(operatorText);
         if (searchQuery.trim().length > 0) {
-          const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 10, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
+          const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: SMART_CONTEXT_MAX_RESULTS, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
           candidates = kwResults.map(n => ({ type: n.type, content: n.content.slice(0, 200), confidence: n.confidence }));
         }
       }
@@ -295,7 +304,7 @@ export async function buildSmartContext(
           autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
         }
       }
-    } else if (operatorText.length > 10) {
+    } else if (operatorText.length > MIN_CONTEXT_TEXT_LENGTH) {
       // No API key — keyword search, raw top-3
       const searchQuery = extractSearchKeywords(operatorText);
       if (searchQuery.trim().length > 0) {
