@@ -14,11 +14,6 @@ import type { AgentType } from "../config.js";
 // Embedded default drive prompt — matches DEFAULT_PHASE2_PROMPT in drive.ts
 export const DEFAULT_DRIVE_PROMPT = `The operator is away. The session is yours.\nYou have all the tools, full memory access, and complete autonomy.\nDo what is interesting, useful, or creative.\nRun consolidation if unconsolidated episodes > 20.\nReport anything significant via send_voice.`;
 
-// Embedded default template — used when the file-system copy is unavailable
-// (e.g. after `npm install` where templates/ isn't in the package).
-export const DEFAULT_REMINDERS_TEMPLATE = `You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
-`;
-
 // Per-agent default reminders templates
 export const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
   copilot: `You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. This includes ALL Desktop Commander calls, ALL Playwright calls, ALL file operations. Zero exceptions \u2014 direct tool calls bloat context and trigger redacted_thinking errors. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}

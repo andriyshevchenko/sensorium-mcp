@@ -338,15 +338,6 @@ export function getGuardrailNotes(db: Database): SemanticNote[] {
   return rows.map(rowToSemanticNote);
 }
 
-/**
- * Mark (or unmark) an existing semantic note as a guardrail constraint.
- */
-export function markAsGuardrail(db: Database, noteId: string, guardrail = true): void {
-  db.prepare(
-    `UPDATE semantic_notes SET is_guardrail = ?, updated_at = ? WHERE note_id = ?`
-  ).run(guardrail ? 1 : 0, nowISO(), noteId);
-}
-
 export function updateSemanticNote(
   db: Database,
   noteId: string,
