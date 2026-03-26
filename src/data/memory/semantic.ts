@@ -294,7 +294,7 @@ export function searchSemanticNotesRanked(
 
 export function getTopSemanticNotes(
   db: Database,
-  options?: { type?: string; limit?: number; sortBy?: "confidence" | "access_count" | "created_at" }
+  options?: { type?: string; limit?: number; sortBy?: "confidence" | "access_count" | "created_at"; threadId?: number }
 ): SemanticNote[] {
   const limit = options?.limit ?? 10;
   const sortBy = options?.sortBy ?? "confidence";
@@ -308,6 +308,12 @@ export function getTopSemanticNotes(
 
   let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL`;
   const params: unknown[] = [];
+
+  // Thread filtering: show notes from this thread + global notes (thread_id IS NULL)
+  if (options?.threadId !== undefined) {
+    sql += ` AND (thread_id IS NULL OR thread_id = ?)`;
+    params.push(options.threadId);
+  }
 
   if (options?.type) {
     sql += ` AND type = ?`;
