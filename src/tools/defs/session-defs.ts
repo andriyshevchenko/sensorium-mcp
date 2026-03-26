@@ -236,8 +236,13 @@ export const sessionToolDefs: ToolDefinition[] = [
             'Which agent type to use: "copilot" | "claude" | "cursor". Defaults to "claude".',
           enum: ["copilot", "claude", "cursor"],
         },
+        workingDirectory: {
+          type: "string",
+          description:
+            "The absolute path to the working directory for the new thread. The agent will start in this directory.",
+        },
       },
-      required: [],
+      required: ["workingDirectory"],
     },
   },
   {

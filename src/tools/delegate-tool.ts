@@ -95,6 +95,7 @@ export async function handleStartThread(
     : typeof rawThreadId === "string" ? (Number.isFinite(Number(rawThreadId)) ? Number(rawThreadId) : undefined)
     : undefined;
   const rawAgentType = typeof args.agentType === "string" ? args.agentType.trim() : "claude";
+  const workingDirectory = typeof args.workingDirectory === "string" ? args.workingDirectory.trim() : undefined;
 
   // name is required unless an explicit threadId is provided
   if (!name && explicitThreadId === undefined) {
@@ -183,7 +184,7 @@ export async function handleStartThread(
 
   // ── 4. Dormant (topic existed, process dead) → restart ────────────────
   ensureDirs();
-  const result = spawnAgentProcess(claudePath, mcpConfigPath, name, threadId);
+  const result = spawnAgentProcess(claudePath, mcpConfigPath, name, threadId, workingDirectory);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
   const status = topicExisted ? "restarted" : "created";
