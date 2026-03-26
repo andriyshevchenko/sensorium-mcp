@@ -246,6 +246,15 @@ export const sessionToolDefs: ToolDefinition[] = [
     },
   },
   {
+    name: "get_threads_health",
+    description:
+      "Get health status of all known threads — shows running, dormant, and dead threads with PIDs, last activity, and session status. Use this to discover what threads exist and their current state.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
     name: "send_message_to_thread",
     description:
       "Send a task or message to another thread's agent. " +

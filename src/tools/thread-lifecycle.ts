@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
+import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "../sessions.js";
 import { errorMessage } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,13 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
  */
 export function isThreadRunning(threadId: number): boolean {
   return findAliveThread(threadId) !== undefined;
+}
+
+/**
+ * Return a shallow copy of all in-memory spawned thread entries.
+ */
+function getAllSpawnedThreads(): SpawnedThread[] {
+  return [...spawnedThreads];
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +235,35 @@ export function spawnAgentProcess(
 }
 
 // ---------------------------------------------------------------------------
+// Shared PID-file reader (used by cleanup + health report)
+// ---------------------------------------------------------------------------
+
+interface PidFileEntry {
+  threadId: number;
+  pid: number;
+  filePath: string;
+}
+
+function readPidFiles(): PidFileEntry[] {
+  const entries: PidFileEntry[] = [];
+  try {
+    const files = readdirSync(PIDS_DIR);
+    for (const file of files) {
+      if (!file.endsWith(".pid")) continue;
+      try {
+        const threadId = Number(file.replace(".pid", ""));
+        const filePath = join(PIDS_DIR, file);
+        const pid = Number(readFileSync(filePath, "utf-8").trim());
+        if (Number.isFinite(threadId) && Number.isFinite(pid)) {
+          entries.push({ threadId, pid, filePath });
+        }
+      } catch { /* skip unreadable files */ }
+    }
+  } catch { /* PIDS_DIR may not exist */ }
+  return entries;
+}
+
+// ---------------------------------------------------------------------------
 // Stale PID cleanup
 // ---------------------------------------------------------------------------
 
@@ -235,21 +272,218 @@ export function spawnAgentProcess(
  * Called on server startup / before spawning new threads.
  */
 export function cleanupStalePidFiles(): void {
-  try {
-    const files = readdirSync(PIDS_DIR);
-    for (const file of files) {
-      if (!file.endsWith(".pid")) continue;
-      const filePath = join(PIDS_DIR, file);
+  for (const { pid, filePath } of readPidFiles()) {
+    if (!isProcessAlive(pid)) {
       try {
-        const pid = Number(readFileSync(filePath, "utf-8").trim());
-        if (!isProcessAlive(pid)) {
-          unlinkSync(filePath);
-          log.info(`[cleanup] Removed stale PID file ${file} (pid ${pid})`);
-        }
-      } catch {
-        // Corrupt or unreadable — remove it
-        try { unlinkSync(filePath); } catch { /* ignore */ }
-      }
+        unlinkSync(filePath);
+        log.info(`[cleanup] Removed stale PID file ${filePath} (pid ${pid})`);
+      } catch { /* already removed */ }
     }
-  } catch { /* PIDS_DIR may not exist yet */ }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Thread health monitoring
+// ---------------------------------------------------------------------------
+
+function formatRelativeTime(ms: number): string {
+  if (ms < 0) return "just now";
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function formatUptime(startedAt: number): string {
+  const ms = Date.now() - startedAt;
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+// ---------------------------------------------------------------------------
+// Data collection & status classification (H1 decomposition)
+// ---------------------------------------------------------------------------
+
+type ThreadStatus = "running" | "dormant" | "dead" | "unknown";
+
+interface CollectedThread {
+  threadId: number;
+  name: string;
+  pid: number | undefined;
+  alive: boolean;
+  hasActiveSession: boolean;
+  hasRecentWait: boolean;
+  sessionCount: number;
+  lastActivity: number | undefined;
+  spawnedStartedAt: number | undefined;
+}
+
+/**
+ * Gather thread data from all 4 sources (topic registry, dashboard sessions,
+ * in-memory spawned processes, PID files on disk) and return merged rows.
+ */
+function collectThreadData(): CollectedThread[] {
+  const topicsByChat = getAllRegisteredTopics();
+  const sessions = getDashboardSessions();
+  const spawned = getAllSpawnedThreads();
+  const pidFiles = readPidFiles();
+  const now = Date.now();
+
+  // Build Maps for O(1) lookups
+  const spawnedByThread = new Map<number, SpawnedThread>();
+  for (const s of spawned) spawnedByThread.set(s.threadId, s);
+
+  const pidByThread = new Map<number, number>();
+  for (const p of pidFiles) pidByThread.set(p.threadId, p.pid);
+
+  // Build thread name map + collect threadIds from topic registry
+  const threadNames = new Map<number, string>();
+  const allThreadIds = new Set<number>();
+  for (const chatTopics of Object.values(topicsByChat)) {
+    for (const [name, threadId] of Object.entries(chatTopics)) {
+      threadNames.set(threadId, name);
+      allThreadIds.add(threadId);
+    }
+  }
+
+  // Add threadIds from other sources
+  for (const s of sessions) {
+    if (s.threadId != null) allThreadIds.add(s.threadId);
+  }
+  for (const s of spawned) allThreadIds.add(s.threadId);
+  for (const p of pidFiles) allThreadIds.add(p.threadId);
+
+  // Group sessions by threadId for O(1) lookup
+  const sessionsByThread = new Map<number, typeof sessions>();
+  for (const s of sessions) {
+    if (s.threadId == null) continue;
+    const arr = sessionsByThread.get(s.threadId) ?? [];
+    arr.push(s);
+    sessionsByThread.set(s.threadId, arr);
+  }
+
+  const result: CollectedThread[] = [];
+  for (const threadId of allThreadIds) {
+    const spawnedEntry = spawnedByThread.get(threadId);
+    const pid = spawnedEntry?.pid ?? pidByThread.get(threadId);
+    const alive = pid !== undefined && isProcessAlive(pid);
+
+    const threadSessions = sessionsByThread.get(threadId) ?? [];
+    const activeSession = threadSessions.find(s => s.status === "active");
+    const anySession = activeSession ?? threadSessions[0];
+
+    const hasRecentWait = anySession?.lastWaitCallAt != null
+      && (now - anySession.lastWaitCallAt) < WAIT_LIVENESS_MS;
+
+    result.push({
+      threadId,
+      name: threadNames.get(threadId) ?? "unnamed",
+      pid,
+      alive,
+      hasActiveSession: !!activeSession,
+      hasRecentWait,
+      sessionCount: threadSessions.length,
+      lastActivity: anySession?.lastActivity,
+      spawnedStartedAt: spawnedEntry?.startedAt,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Classify a thread as running / dormant / dead / unknown based on its
+ * process liveness and dashboard-session state.
+ */
+function classifyThreadStatus(t: CollectedThread): ThreadStatus {
+  if (t.alive && t.hasActiveSession && t.hasRecentWait) return "running";
+  if (t.alive) return "dormant";
+  if (t.pid !== undefined && !t.alive) return "dead";
+  return "unknown";
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Get comprehensive health status of all known threads.
+ * Merges data from topic registry, dashboard sessions, spawned processes,
+ * and PID files on disk. Returns a formatted markdown table.
+ */
+export function getThreadsHealth(): string {
+  const threads = collectThreadData();
+
+  if (threads.length === 0) {
+    return "No threads found. No topics registered, no active sessions, no PID files.";
+  }
+
+  const now = Date.now();
+
+  interface ThreadRow {
+    threadId: number;
+    name: string;
+    status: ThreadStatus;
+    pid: string;
+    lastActivity: string;
+    session: string;
+    uptime: string;
+  }
+
+  const rows: ThreadRow[] = threads.map(t => {
+    const status = classifyThreadStatus(t);
+    const safeName = t.name.replace(/\|/g, "\\|");
+
+    let sessionStr = "-";
+    if (t.hasActiveSession) sessionStr = "active";
+    else if (t.sessionCount > 0) sessionStr = "disconnected";
+
+    let lastActivityStr = "-";
+    if (t.lastActivity) lastActivityStr = formatRelativeTime(now - t.lastActivity);
+
+    let uptimeStr = "-";
+    if (t.spawnedStartedAt && t.alive) uptimeStr = formatUptime(t.spawnedStartedAt);
+
+    return {
+      threadId: t.threadId,
+      name: safeName,
+      status,
+      pid: t.pid !== undefined ? String(t.pid) : "-",
+      lastActivity: lastActivityStr,
+      session: sessionStr,
+      uptime: uptimeStr,
+    };
+  });
+
+  // Sort: running first, then dormant, dead, unknown
+  const statusOrder: Record<string, number> = { running: 0, dormant: 1, dead: 2, unknown: 3 };
+  rows.sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
+
+  // Format markdown table
+  const lines: string[] = [];
+  lines.push("## Thread Health Report");
+  lines.push("");
+  lines.push("| Thread ID | Name | Status | PID | Last Activity | Session | Uptime |");
+  lines.push("|-----------|------|--------|-----|---------------|---------|--------|");
+  for (const r of rows) {
+    lines.push(`| ${r.threadId} | ${r.name} | ${r.status} | ${r.pid} | ${r.lastActivity} | ${r.session} | ${r.uptime} |`);
+  }
+
+  // Summary
+  const running = rows.filter(r => r.status === "running").length;
+  const dormant = rows.filter(r => r.status === "dormant").length;
+  const dead = rows.filter(r => r.status === "dead").length;
+  const unknown = rows.filter(r => r.status === "unknown").length;
+  lines.push("");
+  lines.push(`**Summary:** ${rows.length} threads -- ${running} running, ${dormant} dormant, ${dead} dead, ${unknown} unknown`);
+
+  return lines.join("\n");
 }
