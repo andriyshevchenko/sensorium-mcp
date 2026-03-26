@@ -48,7 +48,7 @@ function ensureDir(): void {
     mkdirSync(SCHEDULES_DIR, { recursive: true });
 }
 
-export function loadSchedules(threadId: number): ScheduledTask[] {
+function loadSchedules(threadId: number): ScheduledTask[] {
     ensureDir();
     const file = schedulesFilePath(threadId);
     try {

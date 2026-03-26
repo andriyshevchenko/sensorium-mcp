@@ -87,7 +87,7 @@ export function setAgentType(type: AgentType): void {
 // ─── Per-thread agent-type overrides ────────────────────────────────────────
 
 /** Returns the per-thread agent-type override, or null if none is set. */
-export function getThreadAgentType(threadId: number): AgentType | null {
+function getThreadAgentType(threadId: number): AgentType | null {
   const map = readSettings().threadAgentTypes as Record<string, unknown> | undefined;
   if (map) {
     const t = map[String(threadId)];

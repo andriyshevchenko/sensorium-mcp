@@ -3,7 +3,7 @@ import { nowISO, jsonOrNull } from "./utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface VoiceBaseline {
+interface VoiceBaseline {
   avgArousal: number | null;
   avgDominance: number | null;
   avgValence: number | null;

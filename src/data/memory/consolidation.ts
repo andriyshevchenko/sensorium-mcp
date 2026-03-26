@@ -12,7 +12,7 @@ import { chatCompletion, type ChatMessage } from "../../integrations/openai/chat
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface ConsolidationReport {
+interface ConsolidationReport {
   episodesProcessed: number;
   notesCreated: number;
   durationMs: number;

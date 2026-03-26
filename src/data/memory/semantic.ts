@@ -80,7 +80,7 @@ function rowToSemanticNote(row: Record<string, unknown>): SemanticNote {
 
 // ─── Topic Index ─────────────────────────────────────────────────────────────
 
-export function updateTopicIndexForKeywords(db: Database, keywords: string[], layer: "semantic" | "procedural"): void {
+function updateTopicIndexForKeywords(db: Database, keywords: string[], layer: "semantic" | "procedural"): void {
   const now = nowISO();
   const col = layer === "semantic" ? "semantic_count" : "procedural_count";
 

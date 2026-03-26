@@ -15,7 +15,7 @@ import type { AgentType } from "../config.js";
 export const DEFAULT_DRIVE_PROMPT = `The operator is away. The session is yours.\nYou have all the tools, full memory access, and complete autonomy.\nDo what is interesting, useful, or creative.\nRun consolidation if unconsolidated episodes > 20.\nReport anything significant via send_voice.`;
 
 // Per-agent default reminders templates
-export const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
+const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
   copilot: `You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. This includes ALL Desktop Commander calls, ALL Playwright calls, ALL file operations. Zero exceptions \u2014 direct tool calls bloat context and trigger redacted_thinking errors. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
   claude: `You coordinate work via MCP tools. For complex tasks, break them into sequential steps. Keep context lean \u2014 summarize progress before starting new work. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
@@ -29,7 +29,7 @@ export function getDefaultRemindersTemplate(agentType: AgentType): string {
 }
 
 // Embedded default drive template presets — used when the on-disk files are unavailable
-export const DEFAULT_DRIVE_PRESETS: Record<string, string> = {
+const DEFAULT_DRIVE_PRESETS: Record<string, string> = {
     "operator-instruction": `The operator left this instruction before stepping away:
 
 "I'll be away for {{IDLE_HOURS}} hours. The session is yours \u2014 you have all the tools, full memory access, and complete autonomy. Pick something meaningful and go for it."
@@ -56,7 +56,7 @@ You have all the tools and full memory access. What do you want to explore?
 `,
 };
 
-export const DRIVE_PRESET_DEFS = [
+const DRIVE_PRESET_DEFS = [
     { name: "Direct Instruction", key: "operator-instruction" },
     { name: "Operator Notes", key: "operator-notes" },
     { name: "Dispatcher", key: "dispatcher" },

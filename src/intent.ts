@@ -20,7 +20,7 @@ const ACK_EXACT = new Set([
 
 const TASK_VERB_RE = /^(fix|implement|add|create|update|remove|delete|change|build|deploy|refactor|debug|test|write|configure|setup|set up|migrate|install|check|run|send|stop|start|restart|enable|disable|ship|push|publish|use|search|find|look|read|open|review|analyze|research|investigate)\b/;
 
-export type MessageIntent = "conversational" | "task";
+type MessageIntent = "conversational" | "task";
 
 export function classifyIntent(message: string): MessageIntent {
   const trimmed = message.trim();

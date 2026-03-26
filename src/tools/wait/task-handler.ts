@@ -13,7 +13,7 @@ import type { ToolResult } from "../../types.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface TaskContext {
+interface TaskContext {
   state: {
     lastOperatorMessageAt: number;
     sessionStartedAt: number;

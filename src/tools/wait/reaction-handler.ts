@@ -17,7 +17,7 @@ import type { TextBlock, ImageBlock, ToolResult } from "../../types.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface ReactionContext {
+interface ReactionContext {
   telegram: TelegramClient;
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
   effectiveThreadId: number | undefined;

@@ -17,7 +17,7 @@ import type { ToolResult } from "../../types.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface DriveContext {
+interface DriveContext {
   state: {
     lastOperatorMessageAt: number;
     lastConsolidationAt: number;
