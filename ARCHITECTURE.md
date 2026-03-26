@@ -6,24 +6,24 @@ sensorium-mcp is an MCP (Model Context Protocol) server that provides remote age
 
 ## Module Structure
 
-After the modular decomposition refactoring, the codebase is organized into a layered directory tree. Each directory corresponds to a dependency layer (Layer 0–5). Imports flow strictly downward: a module may only import from its own layer or lower layers.
+After two rounds of modular decomposition, the codebase is organized into a layered directory tree. Each directory corresponds to a dependency layer (Layer 0–5). Imports flow strictly downward: a module may only import from its own layer or lower layers. The decomposition approach uses **dispatch tables** (tool routing), **route tables** (dashboard API), and **domain handler extraction** (wait sub-handlers, thread lifecycle, delegate tool).
 
 ```
 src/
-├── index.ts                 [  46] Entrypoint: startup + transport mode selection
-├── config.ts                [  50] Env parsing, validation, AppConfig export
-├── types.ts                 [  25] Shared interfaces (AppConfig, SessionState, ToolContext, etc.)
+├── index.ts                 [  61] Entrypoint: startup + transport mode selection
+├── config.ts                [ 140] Env parsing, validation, AppConfig export
+├── types.ts                 [  42] Shared interfaces (AppConfig, SessionState, ToolContext, etc.)
 ├── utils.ts                 [  67] errorMessage, errorResult, describeADV, constants
-├── logger.ts                [  79] File + stderr logging with 5 MB rotation
+├── logger.ts                [  91] File + stderr logging with 5 MB rotation
 ├── intent.ts                [  31] Synchronous intent classifier (conversational vs task)
 ├── markdown.ts              [ 110] MD → Telegram MarkdownV2 conversion + message splitting
-├── response-builders.ts     [ 160] Reminder text builders + keyword extraction
-├── drive.ts                 [  76] 3-phase probabilistic autonomy model
+├── response-builders.ts     [ 193] Reminder text builders + keyword extraction
+├── drive.ts                 [  77] 3-phase probabilistic autonomy model
 ├── scheduler.ts             [ 259] Wake-up task scheduler (cron + delay), disk-persisted
-├── sessions.ts              [  87] Name→thread mapping + MCP session registry
-├── http-server.ts           [ 277] HTTP/SSE transport, CORS, auth, session reaper
-├── stdio-server.ts          [  27] Stdio transport bootstrap
-├── telegram.ts              [ 399] Telegram Bot API client (send, topics, media, files)
+├── sessions.ts              [ 223] Name→thread mapping + MCP session registry
+├── http-server.ts           [ 344] HTTP/SSE transport, CORS, auth, session reaper
+├── stdio-server.ts          [  47] Stdio transport bootstrap
+├── telegram.ts              [ 430] Telegram Bot API client (send, topics, media, files)
 │
 ├── memory.ts                [   8] ← barrel re-export of data/memory/*
 ├── openai.ts                [  18] ← barrel re-export of integrations/openai/*
@@ -32,62 +32,75 @@ src/
 ├── tool-definitions.ts      [   1] ← barrel re-export of tools/definitions
 │
 ├── data/                           # Layer 2: Data access + persistence
-│   ├── file-storage.ts      [  52] Binary file save/cleanup (extracted from config.ts)
+│   ├── file-storage.ts      [  84] Binary file save/cleanup (extracted from config.ts)
 │   ├── templates.ts         [  48] Template file loading, rendering, caching
 │   └── memory/                     # SQLite-backed persistent memory (better-sqlite3)
-│       ├── index.ts          [  13] Barrel re-export
-│       ├── schema.ts        [ 313] DB init, migrations, table definitions
-│       ├── episodes.ts      [ 127] Episode CRUD + batch save
-│       ├── semantic.ts      [ 457] Semantic note CRUD + ranked search + embeddings
-│       ├── procedures.ts    [ 168] Procedure CRUD + matching
-│       ├── voice-sig.ts     [  95] Voice signature storage + baseline
-│       ├── consolidation.ts [ 285] Intelligent consolidation engine
-│       └── bootstrap.ts     [ 272] Session memory briefing assembly + status
+│       ├── index.ts          [  14] Barrel re-export
+│       ├── schema.ts        [ 335] DB init, migrations (v1–v8), table definitions
+│       ├── episodes.ts      [ 101] Episode CRUD + batch save
+│       ├── semantic.ts      [ 499] Semantic note CRUD + ranked search + embeddings
+│       ├── procedures.ts    [ 111] Procedure CRUD + matching
+│       ├── voice-sig.ts     [  88] Voice signature storage + baseline
+│       ├── consolidation.ts [ 348] Intelligent consolidation engine
+│       ├── bootstrap.ts     [ 279] Session memory briefing assembly + status
+│       └── utils.ts         [  39] Shared memory helpers
 │
 ├── integrations/                   # Layer 1: External service clients
 │   ├── openai/
-│   │   ├── index.ts          [   5] Barrel re-export
-│   │   ├── chat.ts          [  92] Chat completions + embeddings + cosine similarity
-│   │   ├── speech.ts        [  90] TTS synthesis + Whisper transcription
+│   │   ├── chat.ts          [ 106] Chat completions + embeddings + cosine similarity
+│   │   ├── speech.ts        [  88] TTS synthesis + Whisper transcription
 │   │   ├── vision.ts        [ 129] Image analysis (GPT-4o vision)
-│   │   ├── video.ts         [ 125] Video frame extraction (ffmpeg)
+│   │   ├── video.ts         [ 133] Video frame extraction (ffmpeg)
 │   │   └── voice-emotion.ts [  82] Voice emotion analysis service client
 │   └── telegram/
-│       └── types.ts         [ 110] Telegram API type definitions
+│       └── types.ts         [ 111] Telegram API type definitions
 │
 ├── services/                       # Layer 3: Business logic + orchestration
 │   └── dispatcher/
 │       ├── index.ts          [   8] Barrel re-export
-│       ├── broker.ts        [ 218] File-based per-thread message routing
+│       ├── broker.ts        [ 311] File-based per-thread message routing
 │       ├── lock.ts          [ 112] File-lock acquisition + recovery
-│       └── poller.ts        [ 305] Telegram getUpdates polling loop
+│       └── poller.ts        [ 313] Telegram getUpdates polling loop
 │
 ├── server/                         # Layer 5: Server factory
-│   └── factory.ts           [ 303] createMcpServer + per-session state + tool dispatch
+│   └── factory.ts           [ 320] createMcpServer + per-session state + tool dispatch
 │
 ├── dashboard/                      # Layer 3b: Admin UI
 │   ├── spa.html                    Static SPA template
-│   ├── routes.ts            [ 290] API endpoint handlers (/api/status, /sessions, etc.)
-│   └── presets.ts           [  66] Drive template preset loading
+│   ├── presets.ts           [  67] Drive template preset loading
+│   ├── routes.ts            [ 182] Main route dispatcher (dispatch table)
+│   └── routes/                     # Decomposed dashboard API handlers
+│       ├── types.ts         [  40] Shared route types (DashboardCtx narrowing)
+│       ├── data.ts          [ 156] /api/status, /api/sessions, /api/memory data routes
+│       ├── settings.ts      [ 116] /api/settings GET + PUT handlers
+│       └── templates.ts     [ 102] /api/templates CRUD handlers
 │
 └── tools/                          # Layer 4: MCP tool handlers
-    ├── definitions.ts       [ 440] JSON schema definitions for all MCP tools
-    ├── start-session-tool.ts[ 243] start_session — topic creation, memory bootstrap
-    ├── session-tools.ts     [ 324] report_progress, hibernate
-    ├── utility-tools.ts     [ 283] send_file, send_voice, send_sticker, schedule_wake_up, etc.
-    ├── memory-tools.ts      [ 317] All memory_* tool handlers
+    ├── definitions.ts       [  26] Barrel re-export of defs/*
+    ├── defs/                       # Decomposed JSON schema definitions
+    │   ├── memory-defs.ts   [ 176] memory_* tool schemas
+    │   ├── session-defs.ts  [ 279] start_session, report_progress, hibernate schemas
+    │   ├── utility-defs.ts  [  39] send_file, send_voice, schedule_wake_up schemas
+    │   └── wait-defs.ts     [  26] wait_for_instructions + remote_copilot_wait schemas
+    ├── delegate-tool.ts     [ 260] Subagent delegation handler (runSubagent)
+    ├── thread-lifecycle.ts  [ 220] Thread creation, topic management, session bootstrap
+    ├── start-session-tool.ts[ 270] start_session — topic creation, memory bootstrap
+    ├── session-tools.ts     [ 346] report_progress, hibernate
+    ├── utility-tools.ts     [ 282] send_file, send_voice, send_sticker, schedule_wake_up, etc.
+    ├── memory-tools.ts      [ 372] All memory_* tool handlers
     ├── wait-tool.ts         [   5] ← barrel re-export of wait/*
     └── wait/                       # Decomposed wait-for-instructions handler
         ├── index.ts          [   7] Barrel re-export
-        ├── poll-loop.ts     [ 330] Main polling orchestrator + SSE keepalive
-        ├── message-delivery.ts[326] Format + deliver operator messages
-        ├── media-processor.ts[282] Voice/video/GIF/sticker/photo processing
-        ├── reaction-handler.ts[139] Reaction wake-up logic
-        ├── drive-handler.ts [ 158] Drive activation + Phase 2/3 delivery
-        └── task-handler.ts  [  57] Scheduled task firing + __DMN__ sentinel
+        ├── poll-loop.ts     [ 220] Main polling orchestrator + SSE keepalive
+        ├── message-processing.ts[216] Operator message classification + routing
+        ├── message-delivery.ts[ 329] Format + deliver operator messages
+        ├── media-processor.ts[ 283] Voice/video/GIF/sticker/photo processing
+        ├── reaction-handler.ts[ 143] Reaction wake-up logic
+        ├── drive-handler.ts [ 162] Drive activation + Phase 2/3 delivery
+        └── task-handler.ts  [  56] Scheduled task firing + __DMN__ sentinel
 ```
 
-**56 TypeScript files** (up from 24 pre-refactor), organized into 7 directories.
+**67 TypeScript files, ~10,200 lines** (up from 24 files pre-refactor), organized into 10 directories.
 
 ## Layer Hierarchy
 
@@ -135,10 +148,32 @@ This allows all existing `import { ... } from "./memory.js"` statements across t
 - `openai.ts` → `integrations/openai/*`
 - `dispatcher.ts` → `services/dispatcher/*`
 - `dashboard.ts` → `dashboard/*`
-- `tool-definitions.ts` → `tools/definitions`
+- `tool-definitions.ts` → `tools/definitions` → `tools/defs/*`
 - `tools/wait-tool.ts` → `tools/wait/*`
 
 New code should import directly from the sub-module path (e.g., `from "./data/memory/semantic.js"`) rather than through the barrel.
+
+## Decomposition Patterns
+
+The second decomposition round applied three repeatable patterns:
+
+1. **Dispatch tables** — `tools/definitions.ts` became a barrel importing from `tools/defs/*.ts`, with each file owning one tool category's JSON schemas. `dashboard/routes.ts` became a thin dispatcher delegating to `dashboard/routes/*.ts` handlers.
+
+2. **Domain handler extraction** — `tools/thread-lifecycle.ts` extracts thread creation and topic management logic previously inlined in `start-session-tool.ts`. `tools/delegate-tool.ts` extracts subagent delegation. `tools/wait/message-processing.ts` extracts operator message classification and routing from the wait poll loop.
+
+3. **Route tables** — Dashboard API endpoints are split by concern (`data.ts`, `settings.ts`, `templates.ts`) with a shared `types.ts` for context narrowing.
+
+## Memory System (Schema v8)
+
+The SQLite memory system uses auto-migrating schema (v1→v8). Key tables:
+
+- **`semantic_notes`** — Long-term knowledge with embedding vectors, ranked search, confidence scoring, and an **`is_guardrail`** column (added in v8) for explicit guardrail tagging. Guardrails are always included in memory briefings regardless of relevance score.
+- **`episodes`** — Session episode logs with tool/response pairs.
+- **`procedures`** — Reusable multi-step procedures with step lists.
+- **`voice_signatures`** — Voice baseline data for speaker identification.
+- **`consolidation_log`** — Tracks consolidation runs to prevent duplicate work.
+
+Guardrail notes are indexed separately (`idx_sem_guardrail`) for efficient retrieval during session bootstrap.
 
 ## Tool Handler Pattern
 
