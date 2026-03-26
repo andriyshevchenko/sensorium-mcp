@@ -234,7 +234,7 @@ async function checkDuplicate(
   content: string,
   apiKey: string,
   threadId: number,
-): Promise<{ isDuplicate: boolean; embedding: number[] | null }> {
+): Promise<{ isDuplicate: boolean; embedding: Float32Array | null }> {
   try {
     const embedding = await generateEmbedding(content, apiKey);
     const matches = searchByEmbedding(db, embedding, {
