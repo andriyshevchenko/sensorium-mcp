@@ -202,7 +202,7 @@ export function autoIngestEpisodes(
         }
       }
     }
-  } catch (_) { /* memory write failures should never break the main flow */ }
+  } catch (err) { log.debug(`Episode save failed during delivery: ${err instanceof Error ? err.message : String(err)}`); }
 }
 
 // ---------------------------------------------------------------------------
@@ -231,8 +231,9 @@ export async function buildSmartContext(
         const queryEmb = await generateEmbedding(operatorText, apiKey);
         const embResults = searchByEmbedding(db, queryEmb, { maxResults: 10, minSimilarity: 0.25, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
         candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, 200), confidence: n.confidence, similarity: n.similarity }));
-      } catch {
+      } catch (err) {
         // Fallback to keyword search
+        log.warn(`Embedding generation failed, falling back to keyword search: ${err instanceof Error ? err.message : String(err)}`);
         const searchQuery = extractSearchKeywords(operatorText);
         if (searchQuery.trim().length > 0) {
           const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 10, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
@@ -303,7 +304,7 @@ export async function buildSmartContext(
         }
       }
     }
-  } catch (_) { /* memory search failures should never break message delivery */ }
+  } catch (err) { log.debug(`Smart context injection failed: ${err instanceof Error ? err.message : String(err)}`); }
 
   return autoMemoryContext;
 }
