@@ -15,6 +15,15 @@ import { errorMessage } from "../utils.js";
 import { buildMaintenanceResponse } from "../response-builders.js";
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Check whether a Telegram message object contains any media attachment. */
+function hasMediaContent(msg: Record<string, unknown>): boolean {
+  return !!(msg.photo || msg.document || msg.voice || msg.video_note || msg.animation || msg.sticker);
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -191,19 +200,12 @@ async function handleReportProgress(
     if (hasNewPreviews && effectiveThreadId !== undefined) {
       const consumed = readThreadMessages(effectiveThreadId);
       for (const msg of consumed) {
-        const hasMedia = !!(
-          (msg.message.photo && msg.message.photo.length > 0) ||
-          msg.message.document ||
-          msg.message.voice ||
-          msg.message.video_note ||
-          msg.message.animation ||
-          msg.message.sticker
-        );
+        const hasMedia = hasMediaContent(msg.message as Record<string, unknown>);
         if (hasMedia) {
           appendToThread(effectiveThreadId, msg);
         }
       }
-      log.info(`[report_progress] Consumed ${consumed.length} messages (re-queued ${consumed.filter(m => !!((m.message.photo && m.message.photo.length > 0) || m.message.document || m.message.voice || m.message.video_note || m.message.animation || m.message.sticker)).length} with media)`);
+      log.info(`[report_progress] Consumed ${consumed.length} messages (re-queued ${consumed.filter(m => hasMediaContent(m.message as Record<string, unknown>)).length} with media)`);
     }
   } catch (err) {
     // Non-fatal: pending messages will still be picked up by the next
