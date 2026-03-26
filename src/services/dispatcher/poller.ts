@@ -28,6 +28,15 @@ import {
 import { registerTopic } from "../../sessions.js";
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const LOCK_REFRESH_INTERVAL_MS = 15_000;
+const ERROR_BACKOFF_MS = 5_000;
+const INTER_POLL_DELAY_MS = 500;
+const DRAIN_TIMEOUT_MS = 10_000;
+
+// ---------------------------------------------------------------------------
 // Poller state
 // ---------------------------------------------------------------------------
 
@@ -58,7 +67,7 @@ async function pollOnce(
             pollerRunning = false;
             pollAbortController?.abort();
         }
-    }, 15_000);
+    }, LOCK_REFRESH_INTERVAL_MS);
 
     try {
         pollAbortController = new AbortController();
@@ -122,7 +131,7 @@ async function pollOnce(
                 try {
                     registerTopic(chatId, m.forum_topic_created.name, m.message_thread_id);
                     log.info(`[dispatcher] Auto-registered topic "${m.forum_topic_created.name}" → ${m.message_thread_id}`);
-                } catch { /* non-fatal */ }
+                } catch (e) { log.debug(`[dispatcher] registerTopic failed: ${errorMessage(e)}`); }
             }
 
             // Skip Telegram service messages (pinned_message, new_chat_members,
@@ -282,9 +291,9 @@ export async function startDispatcher(
                     log.error(
                         `[dispatcher] Unexpected poll error: ${errorMessage(err)}`,
                     );
-                    await new Promise<void>((r) => setTimeout(r, 5000));
+                    await new Promise<void>((r) => setTimeout(r, ERROR_BACKOFF_MS));
                 }
-                await new Promise<void>((r) => setTimeout(r, 500));
+                await new Promise<void>((r) => setTimeout(r, INTER_POLL_DELAY_MS));
             }
         };
         void loop();
@@ -304,7 +313,7 @@ export async function startDispatcher(
                 // Use a short timeout to prevent blocking startup if another
                 // poller is active (409 retry loop could stall for 60+ seconds).
                 const drainAbort = new AbortController();
-                const drainTimeout = setTimeout(() => drainAbort.abort(), 10_000);
+                const drainTimeout = setTimeout(() => drainAbort.abort(), DRAIN_TIMEOUT_MS);
                 const latest = await telegram.getUpdates(-1, 0, drainAbort.signal);
                 clearTimeout(drainTimeout);
                 if (latest.length > 0) {
