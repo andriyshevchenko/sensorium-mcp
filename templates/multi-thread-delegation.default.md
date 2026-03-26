@@ -24,25 +24,25 @@ When you have work that should be delegated to a worker thread:
 1. **Create or identify the worker thread**
    ```
    start_thread(name: "Dashboard Worker")
-   → returns { threadId: 4961 }
+   → returns { threadId: <WORKER_THREAD_ID> }
    ```
 
 2. **Send a detailed task with clear acceptance criteria**
    ```
    send_message_to_thread(
-     threadId: 4961,
+     threadId: <WORKER_THREAD_ID>,
      message: "Task: Rewrite the dashboard settings page using React.
      Acceptance criteria:
      - Settings load from /api/settings
      - Form validates input
      - Save button persists changes
-     When complete, send results back to thread 1327."
+     When complete, send results back to thread <MANAGER_THREAD_ID>."
    )
    ```
 
 3. **Wait for results — do NOT duplicate the work**
    ```
-   remote_copilot_wait_for_instructions(threadId: 1327)
+   remote_copilot_wait_for_instructions(threadId: <MANAGER_THREAD_ID>)
    ```
    The worker will execute the task and send results back via send_message_to_thread.
 
@@ -56,13 +56,13 @@ For tasks that don't need a response back — the worker executes autonomously a
 1. **Create or identify the worker thread**
    ```
    start_thread(name: "Background Cleanup")
-   → returns { threadId: 5200 }
+   → returns { threadId: <WORKER_THREAD_ID> }
    ```
 
 2. **Send the task — no report-back needed**
    ```
    send_message_to_thread(
-     threadId: 5200,
+     threadId: <WORKER_THREAD_ID>,
      message: "Task: Clean up stale log files older than 30 days in ~/.remote-copilot-mcp/logs/.
      This is a one-shot task. Report progress to the operator via report_progress or send_voice.
      Do NOT message the sender back."

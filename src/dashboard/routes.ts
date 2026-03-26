@@ -109,12 +109,12 @@ const routeTable: Record<string, RouteHandler> = {
 /**
  * Handle a dashboard or API request. Returns true if handled, false if not a dashboard route.
  */
-export function handleDashboardRequest(
+export async function handleDashboardRequest(
     req: IncomingMessage,
     res: ServerResponse,
     ctx: DashboardContext,
     authToken?: string,
-): boolean {
+): Promise<boolean> {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname;
 
@@ -145,7 +145,7 @@ export function handleDashboardRequest(
                 return true;
             }
         }
-        return dispatchApiRoute(req, path, url, res, ctx);
+        return await dispatchApiRoute(req, path, url, res, ctx);
     }
 
     return false;
@@ -153,13 +153,13 @@ export function handleDashboardRequest(
 
 // ─── API route dispatcher ───────────────────────────────────────────────────
 
-function dispatchApiRoute(
+async function dispatchApiRoute(
     req: IncomingMessage,
     path: string,
     url: URL,
     res: ServerResponse,
     ctx: DashboardContext,
-): boolean {
+): Promise<boolean> {
     const json = (data: unknown, status = 200) => {
         const body = JSON.stringify(data);
         res.writeHead(status, {
@@ -180,16 +180,16 @@ function dispatchApiRoute(
         if (handler) return handler(args);
 
         // 2. Dynamic template route: POST/DELETE /api/templates/:name
-        const templateMatch = path.match(/^\/api\/templates\/([a-zA-Z0-9-]+)$/);
+        const templateMatch = path.match(/^\/api\/templates\/([\w-]+)$/);
         if (templateMatch) {
             const result = handleTemplateCrud(args, templateMatch[1]);
             if (result) return true;
         }
 
         // 3. Dynamic skill route: PUT /api/skills/:name
-        const skillMatch = path.match(/^\/api\/skills\/([a-zA-Z0-9-]+)$/);
+        const skillMatch = path.match(/^\/api\/skills\/([\w-]+)$/);
         if (skillMatch) {
-            const result = handleSkillPut(args, skillMatch[1]);
+            const result = await handleSkillPut(args, skillMatch[1]);
             if (result) return true;
         }
 
