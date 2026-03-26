@@ -39,6 +39,8 @@ interface DriveContext {
   scheduleHint: string;
 }
 
+const EPISODE_COUNT_CONSOLIDATION_THRESHOLD = 15;
+
 // ---------------------------------------------------------------------------
 // Auto-consolidation (3 strategies)
 // ---------------------------------------------------------------------------
@@ -104,7 +106,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
       state.lastConsolidationAt = Date.now();
       fireConsolidation(getMemoryDb(), effectiveThreadId, "Idle-based", apiKey);
     }
-  } catch (_) { /* consolidation failure is non-fatal */ }
+  } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`); }
 
   // Strategy 2: Episode-count consolidation — don't wait for idle.
   // If many episodes accumulated during active use, consolidate now.
@@ -113,12 +115,12 @@ export function runAutoConsolidation(ctx: DriveContext): void {
     if (effectiveThreadId !== undefined && Date.now() - state.lastConsolidationAt > 30 * 60 * 1000) {
       const db = getMemoryDb();
       const uncons = db.prepare("SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0 AND thread_id = ?").get(effectiveThreadId) as { c: number };
-      if (uncons.c >= 15) {
+      if (uncons.c >= EPISODE_COUNT_CONSOLIDATION_THRESHOLD) {
         state.lastConsolidationAt = Date.now();
         fireConsolidation(db, effectiveThreadId, "Episode-count", apiKey);
       }
     }
-  } catch (_) { /* non-fatal */ }
+  } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`); }
 
   // Strategy 3: Time-based consolidation — every 4 hours regardless.
   // Ensures stale knowledge gets cleaned up even during low-activity periods.
@@ -130,7 +132,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
       log.info(`[memory] Time-based consolidation triggered (4h since last)`);
       fireConsolidation(db, effectiveThreadId, "Time-based", apiKey);
     }
-  } catch (_) { /* non-fatal */ }
+  } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`); }
 }
 
 // ---------------------------------------------------------------------------
