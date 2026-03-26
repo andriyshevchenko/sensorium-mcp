@@ -40,6 +40,81 @@ function logConsolidation(db: Database, entry: ConsolidationLog): void {
   );
 }
 
+// ─── JSON repair ─────────────────────────────────────────────────────────────
+
+/**
+ * Attempt to parse JSON with automatic repair for common LLM output issues:
+ * - Markdown code fences wrapping the JSON
+ * - Unescaped newlines/tabs inside string values
+ * - Truncated output (unclosed strings, arrays, objects)
+ */
+function repairAndParseJSON(raw: string): unknown {
+  // 1. Direct parse
+  try { return JSON.parse(raw); } catch { /* continue */ }
+
+  let text = raw.trim();
+
+  // 2. Strip markdown code fences
+  if (text.startsWith("```")) {
+    text = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+    try { return JSON.parse(text); } catch { /* continue */ }
+  }
+
+  // 3. Fix unescaped control characters inside JSON string values
+  //    Walk character-by-character; when inside a quoted string, escape
+  //    raw \n, \r, \t that are not already escaped.
+  const chars: string[] = [];
+  let inStr = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const prev = i > 0 ? text[i - 1] : "";
+    if (ch === '"' && prev !== "\\") { inStr = !inStr; chars.push(ch); continue; }
+    if (inStr) {
+      if (ch === "\n") { chars.push("\\n"); continue; }
+      if (ch === "\r") { chars.push("\\r"); continue; }
+      if (ch === "\t") { chars.push("\\t"); continue; }
+    }
+    chars.push(ch);
+  }
+  text = chars.join("");
+  try { return JSON.parse(text); } catch { /* continue */ }
+
+  // 4. Handle truncation: close any open strings, arrays, objects
+  //    If there is an odd number of unescaped quotes, the last string is
+  //    unterminated — close it then remove any trailing partial key/value.
+  let quoteCount = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '"' && (i === 0 || text[i - 1] !== "\\")) quoteCount++;
+  }
+  if (quoteCount % 2 !== 0) {
+    // Unterminated string — close it
+    text += '"';
+  }
+
+  // Remove a trailing partial key-value (e.g. `"key": "val"` is fine,
+  // but `"key":` or `"key": ` with nothing after is not).
+  text = text.replace(/,\s*"[^"]*"\s*:\s*$/, "");
+  text = text.replace(/,\s*$/, "");
+
+  // Close open brackets / braces
+  const opens: string[] = [];
+  let scanning = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' && (i === 0 || text[i - 1] !== "\\")) { scanning = !scanning; continue; }
+    if (scanning) continue;
+    if (c === "{" || c === "[") opens.push(c);
+    else if (c === "}" || c === "]") opens.pop();
+  }
+  for (let i = opens.length - 1; i >= 0; i--) {
+    text += opens[i] === "{" ? "}" : "]";
+  }
+
+  try { return JSON.parse(text); } catch { /* continue */ }
+
+  throw new SyntaxError(`Unable to repair JSON from LLM (length=${raw.length}): ${raw.slice(0, 200)}…`);
+}
+
 // ─── Intelligent Consolidation ───────────────────────────────────────────────
 
 // PRIVACY NOTE: This function sends conversation episode excerpts to OpenAI's
@@ -193,11 +268,12 @@ Rules:
 
     const raw = await chatCompletion(messages, apiKey, {
       model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o-mini",
+      maxTokens: 4096,
       responseFormat: { type: "json_object" },
       timeoutMs: 60_000,
     });
 
-    const parsed = JSON.parse(raw) as {
+    const parsed = repairAndParseJSON(raw) as {
       notes?: Array<{
         type: string;
         content: string;
