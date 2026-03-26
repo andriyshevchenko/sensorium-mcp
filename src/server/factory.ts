@@ -24,7 +24,7 @@ import {
 } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import { getToolDefinitions } from "../tool-definitions.js";
-import { errorResult } from "../utils.js";
+import { errorMessage, errorResult } from "../utils.js";
 import { getReminders, getShortReminder } from "../response-builders.js";
 import { log } from "../logger.js";
 import { handleMemoryTool, type ToolContext } from "../tools/memory-tools.js";
@@ -33,6 +33,7 @@ import { handleSessionTool, type SessionToolContext } from "../tools/session-too
 import { handleStartSession, type StartSessionContext } from "../tools/start-session-tool.js";
 import { handleWaitForInstructions, type WaitToolContext, type WaitToolExtra } from "../tools/wait/index.js";
 import { handleStartThread, handleSendMessageToThread as handleSendMessageToThreadFile, type DelegateToolContext } from "../tools/delegate-tool.js";
+import { getThreadsHealth } from "../tools/thread-lifecycle.js";
 import type { CreateMcpServerFn, ToolResult } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -310,6 +311,15 @@ function createMcpServer(
 
     send_message_to_thread: (typedArgs) =>
       handleSendMessageToThreadFile(typedArgs),
+
+    get_threads_health: () => {
+      try {
+        const markdown = getThreadsHealth();
+        return { content: [{ type: "text", text: markdown }] };
+      } catch (err) {
+        return errorResult(`Failed to get thread health: ${errorMessage(err)}`);
+      }
+    },
 
     get_version: (typedArgs) =>
       handleUtilityTool("get_version", typedArgs, buildUtilityCtx()),
