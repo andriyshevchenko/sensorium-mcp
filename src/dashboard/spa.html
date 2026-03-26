@@ -129,6 +129,7 @@
         <button onclick="switchTab('episodes')" id="tab-episodes" class="pb-3 text-sm font-medium tab-inactive transition">Episodes</button>
         <button onclick="switchTab('topics')" id="tab-topics" class="pb-3 text-sm font-medium tab-inactive transition">Topics</button>
         <button onclick="switchTab('templates')" id="tab-templates" class="pb-3 text-sm font-medium tab-inactive transition">Templates</button>
+        <button onclick="switchTab('skills')" id="tab-skills" class="pb-3 text-sm font-medium tab-inactive transition">Skills</button>
       </nav>
     </div>
 
@@ -294,6 +295,87 @@
               <div><code class="text-accentLight">{{PROBABILITY}}</code> <span class="text-textSecondary">— drive activation probability (0.2–1.0)</span></div>
             </div>
           </details>
+        </div>
+      </div>
+
+      <!-- Skills -->
+      <div id="panel-skills" class="hidden animate-fade-in">
+        <div class="glass rounded-xl p-6 mb-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div>
+              <h3 class="text-lg font-semibold">Skill Library</h3>
+              <p class="text-sm text-textSecondary mt-1">Manage intent-routing skills — user overrides, defaults, and project skills</p>
+            </div>
+            <button onclick="showNewSkillForm()" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">+ New Skill</button>
+          </div>
+
+          <!-- New skill form (hidden by default) -->
+          <div id="skill-new-form" class="hidden glass rounded-xl p-4 mb-4 border border-accent/30">
+            <h4 class="text-sm font-semibold mb-3">Create New Skill</h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="text-xs text-textSecondary block mb-1">Name</label>
+                <input id="skill-new-name" type="text" placeholder="my-skill"
+                  class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition" />
+              </div>
+              <div>
+                <label class="text-xs text-textSecondary block mb-1">Triggers (comma-separated)</label>
+                <input id="skill-new-triggers" type="text" placeholder="trigger1, trigger2"
+                  class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary focus:outline-none focus:border-accent transition" />
+              </div>
+            </div>
+            <div class="flex items-center gap-4 mb-3">
+              <label class="flex items-center gap-2 text-sm text-textSecondary cursor-pointer">
+                <input id="skill-new-replaces" type="checkbox" class="rounded" />
+                <span>Replaces orchestrator</span>
+              </label>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="createNewSkill()" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Create</button>
+              <button onclick="hideNewSkillForm()" class="px-4 py-2 rounded-xl bg-card hover:bg-cardHover border border-gray-700 text-sm text-textSecondary hover:text-textPrimary transition">Cancel</button>
+              <span id="skill-new-status" class="text-sm"></span>
+            </div>
+          </div>
+
+          <!-- Skills list -->
+          <div id="skills-list" class="space-y-2"></div>
+          <p id="skills-empty" class="hidden text-center text-textSecondary py-12">No skills loaded</p>
+        </div>
+
+        <!-- Skill editor (hidden until a skill is selected) -->
+        <div id="skill-editor-panel" class="hidden glass rounded-xl p-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div>
+              <h3 class="text-lg font-semibold" id="skill-editor-title">Edit Skill</h3>
+              <p class="text-sm text-textSecondary mt-1" id="skill-editor-source"></p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="skill-editor-status" class="text-sm"></span>
+              <button onclick="closeSkillEditor()" class="px-4 py-2 rounded-xl bg-card hover:bg-cardHover border border-gray-700 text-sm text-textSecondary hover:text-textPrimary transition">Close</button>
+              <button onclick="saveSkill()" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Save</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div>
+              <label class="text-xs text-textSecondary block mb-1">Name</label>
+              <input id="skill-edit-name" type="text" readonly
+                class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono opacity-60 cursor-not-allowed" />
+            </div>
+            <div>
+              <label class="text-xs text-textSecondary block mb-1">Triggers (comma-separated)</label>
+              <input id="skill-edit-triggers" type="text"
+                class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary focus:outline-none focus:border-accent transition" />
+            </div>
+            <div class="flex items-end">
+              <label class="flex items-center gap-2 text-sm text-textSecondary cursor-pointer pb-2">
+                <input id="skill-edit-replaces" type="checkbox" class="rounded" />
+                <span>Replaces orchestrator</span>
+              </label>
+            </div>
+          </div>
+          <textarea id="skill-edit-content" rows="20" spellcheck="false"
+            class="w-full px-4 py-3 rounded-xl bg-surface border border-gray-700 text-textPrimary font-mono text-sm leading-relaxed focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition resize-y"
+            placeholder="Skill body (markdown)..."></textarea>
         </div>
       </div>
 
@@ -621,7 +703,7 @@
 
     // ─── Tab switching ──────────────────────────────────────────────────
     function switchTab(tab) {
-      const tabs = ['sessions', 'notes', 'episodes', 'topics', 'templates'];
+      const tabs = ['sessions', 'notes', 'episodes', 'topics', 'templates', 'skills'];
       tabs.forEach(t => {
         document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
         document.getElementById('tab-' + t).className = 'pb-3 text-sm font-medium transition ' + (t === tab ? 'tab-active' : 'tab-inactive');
@@ -686,6 +768,7 @@
         if (currentTab === 'episodes') loadEpisodes();
         if (currentTab === 'topics') loadTopics();
         if (currentTab === 'templates') { loadAgentType(); loadClaudeMcpConfig(); loadTemplates(); loadDriveTemplate(); }
+        if (currentTab === 'skills') loadSkills();
       } catch (e) {
         console.error('Tab load error:', e);
       }
@@ -936,6 +1019,173 @@
     document.getElementById('drive-tpl-editor')?.addEventListener('input', function() {
       if (driveTplPreviewOpen) updateDriveTplPreview();
     });
+
+    // ─── Skills ────────────────────────────────────────────────────────
+    let skillsData = [];
+    let editingSkillName = null;
+
+    async function loadSkills() {
+      try {
+        const data = await api('/api/skills');
+        skillsData = data.skills || [];
+        renderSkills(skillsData);
+      } catch (e) { console.error('Skills load error:', e); }
+    }
+
+    function skillSourceType(source) {
+      if (!source) return 'unknown';
+      if (source.includes('.remote-copilot-mcp') && source.includes('skills')) return 'user';
+      if (source.endsWith('.default.md')) return 'default';
+      if (source.endsWith('.skill.md')) return 'project';
+      return 'unknown';
+    }
+
+    function sourceTypeBadge(type) {
+      const styles = {
+        user: 'background:rgba(99,102,241,0.15);color:#818cf8',
+        default: 'background:rgba(107,114,128,0.15);color:#9ca3af',
+        project: 'background:rgba(34,197,94,0.15);color:#4ade80',
+        unknown: 'background:rgba(107,114,128,0.15);color:#9ca3af',
+      };
+      return '<span class="type-badge" style="' + (styles[type] || styles.unknown) + '">' + type + '</span>';
+    }
+
+    function renderSkills(skills) {
+      const list = document.getElementById('skills-list');
+      const empty = document.getElementById('skills-empty');
+      if (!skills || !skills.length) {
+        list.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+      const html = skills.map(function(sk) {
+        const sType = skillSourceType(sk.source);
+        const triggers = (sk.triggers || []).map(function(t) {
+          return '<span class="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accentLight">' + escapeHtml(t) + '</span>';
+        }).join(' ');
+        const active = editingSkillName === sk.name ? ' border-accent' : ' border-transparent';
+        return '<div class="glass rounded-xl p-4 cursor-pointer hover:bg-cardHover transition border' + active + '" onclick="openSkillEditor(\'' + escapeHtml(sk.name).replace(/'/g, "\\'") + '\')">' +
+          '<div class="flex items-start justify-between gap-3">' +
+            '<div class="flex-1 min-w-0">' +
+              '<div class="flex items-center gap-2 mb-1">' +
+                '<span class="font-medium text-sm">' + escapeHtml(sk.name) + '</span>' +
+                sourceTypeBadge(sType) +
+                (sk.replacesOrchestrator ? '<span class="type-badge" style="background:rgba(245,158,11,0.15);color:#fbbf24">REPLACES ORCH</span>' : '') +
+              '</div>' +
+              '<div class="flex flex-wrap gap-1.5 mt-1">' + triggers + '</div>' +
+            '</div>' +
+            '<div class="text-xs text-muted font-mono shrink-0 max-w-[200px] truncate" title="' + escapeHtml(sk.source || '') + '">' + escapeHtml((sk.source || '').split(/[\\/]/).pop() || '') + '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+      list.innerHTML = html;
+    }
+
+    function openSkillEditor(name) {
+      const sk = skillsData.find(function(s) { return s.name === name; });
+      if (!sk) return;
+      editingSkillName = name;
+      renderSkills(skillsData); // update highlight
+      document.getElementById('skill-editor-panel').classList.remove('hidden');
+      document.getElementById('skill-editor-title').textContent = 'Edit: ' + sk.name;
+      var sType = skillSourceType(sk.source);
+      document.getElementById('skill-editor-source').textContent = sk.source || '(unknown source)';
+      document.getElementById('skill-edit-name').value = sk.name;
+      document.getElementById('skill-edit-triggers').value = (sk.triggers || []).join(', ');
+      document.getElementById('skill-edit-replaces').checked = !!sk.replacesOrchestrator;
+      // Reconstruct full markdown content with frontmatter
+      var content = sk.content || '';
+      document.getElementById('skill-edit-content').value = content;
+    }
+
+    function closeSkillEditor() {
+      editingSkillName = null;
+      document.getElementById('skill-editor-panel').classList.add('hidden');
+      renderSkills(skillsData);
+    }
+
+    function buildSkillMarkdown(name, triggers, replacesOrchestrator, body) {
+      var fm = '---\nname: ' + name + '\ntriggers:\n';
+      triggers.forEach(function(t) { fm += '  - ' + t.trim() + '\n'; });
+      if (replacesOrchestrator) fm += 'replaces_orchestrator: true\n';
+      fm += '---\n\n';
+      return fm + body;
+    }
+
+    async function saveSkill() {
+      const status = document.getElementById('skill-editor-status');
+      const name = document.getElementById('skill-edit-name').value.trim();
+      if (!name) return;
+      try {
+        // Build full content from the editor fields
+        var triggers = document.getElementById('skill-edit-triggers').value.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+        var replaces = document.getElementById('skill-edit-replaces').checked;
+        var rawContent = document.getElementById('skill-edit-content').value;
+        // If content already has frontmatter, use as-is; otherwise reconstruct
+        var content;
+        if (rawContent.trimStart().startsWith('---')) {
+          content = rawContent;
+        } else {
+          content = buildSkillMarkdown(name, triggers, replaces, rawContent);
+        }
+        const r = await fetch('/api/skills/' + encodeURIComponent(name), {
+          method: 'PUT',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: content }),
+        });
+        if (!r.ok) throw new Error(r.statusText);
+        await r.json();
+        status.textContent = 'Saved \u2713';
+        status.className = 'text-sm text-success';
+        setTimeout(function() { status.textContent = ''; }, 3000);
+        await loadSkills();
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'text-sm text-danger';
+      }
+    }
+
+    function showNewSkillForm() {
+      document.getElementById('skill-new-form').classList.remove('hidden');
+      document.getElementById('skill-new-name').value = '';
+      document.getElementById('skill-new-triggers').value = '';
+      document.getElementById('skill-new-replaces').checked = false;
+      document.getElementById('skill-new-status').textContent = '';
+    }
+
+    function hideNewSkillForm() {
+      document.getElementById('skill-new-form').classList.add('hidden');
+    }
+
+    async function createNewSkill() {
+      const status = document.getElementById('skill-new-status');
+      const name = document.getElementById('skill-new-name').value.trim();
+      const triggersRaw = document.getElementById('skill-new-triggers').value;
+      const replaces = document.getElementById('skill-new-replaces').checked;
+      if (!name) { status.textContent = 'Name is required'; status.className = 'text-sm text-warn'; return; }
+      var triggers = triggersRaw.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+      if (!triggers.length) { status.textContent = 'At least one trigger is required'; status.className = 'text-sm text-warn'; return; }
+      var content = buildSkillMarkdown(name, triggers, replaces, '<!-- Write your skill instructions here -->\n');
+      try {
+        const r = await fetch('/api/skills/' + encodeURIComponent(name), {
+          method: 'PUT',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: content }),
+        });
+        if (!r.ok) throw new Error(r.statusText);
+        await r.json();
+        status.textContent = 'Created \u2713';
+        status.className = 'text-sm text-success';
+        hideNewSkillForm();
+        await loadSkills();
+        // Auto-open the new skill in editor
+        openSkillEditor(name);
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'text-sm text-danger';
+      }
+    }
 
     // ─── Utilities ──────────────────────────────────────────────────────
     function escapeHtml(str) {

@@ -22,6 +22,7 @@ export const handleGetSkills: RouteHandler = ({ json }) => {
             triggers: s.triggers,
             replacesOrchestrator: s.replacesOrchestrator,
             source: s.source,
+            content: s.content,
         })),
     });
     return true;
