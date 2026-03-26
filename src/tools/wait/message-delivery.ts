@@ -11,7 +11,7 @@
 import { basename } from "node:path";
 import { saveFileToDisk } from "../../data/file-storage.js";
 import type { StoredMessage } from "../../dispatcher.js";
-import { classifyIntent } from "../../intent.js";
+import { classifyIntent, matchSkill } from "../../intent.js";
 import { log } from "../../logger.js";
 import {
   saveEpisode,
@@ -339,15 +339,28 @@ export function assembleOperatorResponse(
 ): ToolResult {
   const intent = classifyIntent(operatorText);
   log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${intent}`);
+
+  // ── Skill matching: check before building the default prompt ──
+  const skill = matchSkill(operatorText);
+  if (skill) {
+    log.info(`[skill] Matched skill "${skill.name}" for message.`);
+  }
+
   const reminder = intent === "conversational"
     ? getMediumReminder(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode)
     : getReminders(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode);
+
+  // When a skill replaces the orchestrator, inject skill content instead of
+  // the default "Follow the operator's instructions below." directive.
+  const directive = skill?.replacesOrchestrator
+    ? `[Skill: ${skill.name}]\n\n${skill.content}`
+    : "Follow the operator's instructions below.";
 
   return {
     content: [
       {
         type: "text",
-        text: "Follow the operator's instructions below.",
+        text: directive,
       },
       { type: "text", text: "<<< OPERATOR MESSAGE >>>" },
       ...contentBlocks,

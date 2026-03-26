@@ -3,7 +3,118 @@
  * Determines whether a message is conversational (acknowledgment, follow-up)
  * or a task request (requiring full orchestrator context).
  * Runs synchronously in < 0.1ms. Defaults to "task" when uncertain.
+ *
+ * Also provides a skill system: markdown files with YAML frontmatter that
+ * can replace the default orchestrator prompt when trigger phrases match.
  */
+
+import { readdirSync, readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
+
+// ── Skill types & loading ─────────────────────────────────────────────────
+
+export interface Skill {
+  name: string;
+  triggers: string[];
+  replacesOrchestrator: boolean;
+  content: string;
+  source: string; // file path
+}
+
+let skillCache: Skill[] = [];
+let skillCacheTime = 0;
+const SKILL_CACHE_TTL = 60_000;
+
+/** Parse a markdown file with YAML frontmatter into a Skill (or null). */
+function parseSkillFile(filePath: string): Skill | null {
+  let raw: string;
+  try { raw = readFileSync(filePath, "utf-8"); } catch { return null; }
+  if (!raw.startsWith("---")) return null;
+
+  const endIdx = raw.indexOf("---", 3);
+  if (endIdx === -1) return null;
+
+  const yaml = raw.slice(3, endIdx);
+  const body = raw.slice(endIdx + 3).trim();
+
+  // Minimal YAML parsing — no deps
+  let name = "";
+  const triggers: string[] = [];
+  let replacesOrchestrator = false;
+
+  for (const line of yaml.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("name:")) {
+      name = trimmed.slice(5).trim().replace(/^["']|["']$/g, "");
+    } else if (trimmed.startsWith("replaces_orchestrator:")) {
+      replacesOrchestrator = trimmed.slice(22).trim() === "true";
+    } else if (trimmed.startsWith("- ") && triggers !== undefined) {
+      triggers.push(trimmed.slice(2).trim().replace(/^["']|["']$/g, ""));
+    }
+  }
+
+  if (!name || triggers.length === 0) return null;
+  return { name, triggers, replacesOrchestrator, content: body, source: filePath };
+}
+
+/** Scan skill directories and return parsed skills (cached 60 s). */
+export function loadSkills(): Skill[] {
+  if (Date.now() - skillCacheTime < SKILL_CACHE_TTL) return skillCache;
+
+  const skills: Skill[] = [];
+  const seen = new Set<string>(); // dedupe by name (user overrides default)
+
+  // 1. User skills: ~/.remote-copilot-mcp/skills/*.md
+  const userDir = join(homedir(), ".remote-copilot-mcp", "skills");
+  try {
+    for (const f of readdirSync(userDir)) {
+      if (!f.endsWith(".md")) continue;
+      const sk = parseSkillFile(join(userDir, f));
+      if (sk) { skills.push(sk); seen.add(sk.name); }
+    }
+  } catch { /* dir may not exist */ }
+
+  // 2. Default skills: templates/*.default.md (only those with frontmatter)
+  const __dir = dirname(fileURLToPath(import.meta.url));
+  const defaultDir = join(__dir, "..", "templates");
+  try {
+    for (const f of readdirSync(defaultDir)) {
+      if (!f.endsWith(".default.md")) continue;
+      const sk = parseSkillFile(join(defaultDir, f));
+      if (sk && !seen.has(sk.name)) skills.push(sk);
+    }
+  } catch { /* dir may not exist */ }
+
+  // 3. Project skills: workspace root *.skill.md
+  const projectDir = process.cwd();
+  try {
+    for (const f of readdirSync(projectDir)) {
+      if (!f.endsWith(".skill.md")) continue;
+      const sk = parseSkillFile(join(projectDir, f));
+      if (sk && !seen.has(sk.name)) { skills.push(sk); seen.add(sk.name); }
+    }
+  } catch { /* ignore */ }
+
+  skillCache = skills;
+  skillCacheTime = Date.now();
+  return skills;
+}
+
+/** Match operator message against skill trigger phrases. */
+export function matchSkill(message: string): Skill | null {
+  const skills = loadSkills();
+  const lower = message.toLowerCase();
+  for (const skill of skills) {
+    for (const trigger of skill.triggers) {
+      if (lower.includes(trigger.toLowerCase())) return skill;
+    }
+  }
+  return null;
+}
+
+// ── Intent classification ─────────────────────────────────────────────────
 
 const ACK_EXACT = new Set([
   "ok", "okay", "k", "yes", "no", "yep", "nope", "yup",
