@@ -165,6 +165,40 @@ Start the server separately:
 MCP_HTTP_PORT=3847 TELEGRAM_TOKEN=... TELEGRAM_CHAT_ID=... node dist/index.js
 ```
 
+## Watcher MCP Server
+
+During server updates, the main `sensorium-mcp` process restarts and cannot accept tool calls. The **watcher** is a lightweight sidecar that stays alive across updates — agents call its `await_server_ready` tool and block until the new version is ready.
+
+Add it alongside `sensorium-mcp` in your agent's MCP config:
+
+**VS Code Copilot** (`mcp.json`):
+```json
+{
+  "servers": {
+    "sensorium-mcp": { "..." : "..." },
+    "sensorium-watcher": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "sensorium-mcp@latest", "--watcher"]
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "sensorium-watcher": {
+      "command": "npx",
+      "args": ["-y", "sensorium-mcp@latest", "--watcher"]
+    }
+  }
+}
+```
+
+If the watcher is not configured, the maintenance response falls back to a Desktop Commander sleep command.
+
 ## How It Works
 
 1. `start_session` creates a Telegram topic (or resumes one by name). Memory bootstrap auto-loads your context.

@@ -188,19 +188,15 @@ export function buildMaintenanceResponse(
   effectiveThreadId: number,
   shortReminder: string,
 ): ToolResult {
-  const sleepCmd = {
-    copilot: "Use Desktop Commander to run: Start-Sleep -Seconds 600",
-    claude: "Run in Bash: sleep 600",
-    cursor: "Run in terminal: sleep 600",
-  }[getEffectiveAgentType(effectiveThreadId)];
-
   return {
     content: [{
       type: "text",
       text: `⚠️ Server update in progress. STOP.\n\n` +
-        `Do NOT call start_session, wait_for_instructions, or any other tool.\n\n` +
-        `Your only next action: ${sleepCmd}. Do nothing else until it completes.\n\n` +
-        `After the sleep completes, call start_session with threadId=${effectiveThreadId} to reconnect.` +
+        `Do NOT call start_session, wait_for_instructions, or any other tool on sensorium-mcp.\n\n` +
+        `Your next action: Call the \`await_server_ready\` tool on the **sensorium-watcher** MCP server with threadId=${effectiveThreadId}. ` +
+        `It will block until the update is complete, then return.\n\n` +
+        `After it returns, call start_session with threadId=${effectiveThreadId} to reconnect.\n\n` +
+        `If the sensorium-watcher MCP server is not available, use Desktop Commander to run: Start-Sleep -Seconds 600. Do nothing else until it completes.` +
         shortReminder,
     }],
   };
