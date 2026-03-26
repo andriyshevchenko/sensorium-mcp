@@ -96,7 +96,7 @@ function Stop-McpServer {
         # to avoid killing mid-request and crashing the agent session.
         $heartbeatFile = "$DATA_DIR\last-activity.txt"
         $maxWait = 300  # absolute max wait (seconds)
-        $idleThreshold = 300  # seconds since last tool call (5 min — agent may be doing subagent work via other MCP servers)
+        $idleThreshold = 300  # seconds since last tool call (5 min -- agent may be doing subagent work via other MCP servers)
         $waited = 0
 
         while ($waited -lt $maxWait) {
@@ -110,22 +110,22 @@ function Stop-McpServer {
                         $idle = $false
                     }
                 } catch {
-                    # Can't read — assume idle
+                    # Can't read -- assume idle
                 }
             }
 
             if ($idle) {
-                Write-Log "Server idle (no tool call in ${idleThreshold}s) — safe to kill."
+                Write-Log "Server idle (no tool call in ${idleThreshold}s) -- safe to kill."
                 break
             }
 
-            Write-Log "Server active (tool call ${ageSec}s ago) — waiting..."
+                Write-Log "Server active (tool call ${ageSec}s ago) -- waiting..."
             Start-Sleep -Seconds 5
             $waited += 5
         }
 
         if ($waited -ge $maxWait) {
-            Write-Log "Max wait (${maxWait}s) exceeded — force-killing." -Level "WARN"
+                Write-Log "Max wait (${maxWait}s) exceeded -- force-killing." -Level "WARN"
         }
 
         foreach ($proc in $processes) {
@@ -244,7 +244,7 @@ function Invoke-UpdateCheck {
         return
     }
 
-    Write-Log "Updating $localVersion → $remoteVersion"
+    Write-Log "Updating $localVersion -> $remoteVersion"
 
     Write-MaintenanceFlag $remoteVersion
     Start-Sleep $GRACE_PERIOD_SECONDS
@@ -298,9 +298,18 @@ if (-not (Test-McpServerRunning)) {
     $script:lastStartTime = Get-Date
 }
 
-# Start watcher MCP server (HTTP mode — stays alive across main server restarts)
-$watcherProcess = Start-Process -FilePath "npx" -ArgumentList "-y sensorium-mcp@latest --watcher --watcher-port $WATCHER_PORT" -PassThru -NoNewWindow
-Write-Log "Watcher MCP server started on port $WATCHER_PORT (PID: $($watcherProcess.Id))"
+# Start watcher MCP server (HTTP mode -- stays alive across main server restarts)
+# Resolve the installed sensorium-mcp entry point from the npx cache instead of
+# downloading @latest (avoids re-fetching and possible version mismatch).
+$watcherEntry = (Get-ChildItem "$NPX_CACHE_DIR\*\node_modules\sensorium-mcp\dist\index.js" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+
+if ($watcherEntry) {
+    $watcherProcess = Start-Process -FilePath "node" -ArgumentList "`"$watcherEntry`" --watcher --watcher-port $WATCHER_PORT" -PassThru -NoNewWindow
+    Write-Log "Watcher MCP server started on port $WATCHER_PORT (PID: $($watcherProcess.Id)) from $watcherEntry"
+} else {
+    Write-Log "Cannot find installed sensorium-mcp in npx cache -- watcher not started" -Level "WARN"
+}
 
 # ============================================================================
 # Main Loop
