@@ -8,7 +8,7 @@
 
 import { formatDrivePrompt, PHASE3_APPROVAL_PROMPT } from "../../drive.js";
 import { log } from "../../logger.js";
-import { runIntelligentConsolidation, type initMemoryDb } from "../../memory.js";
+import { runIntelligentConsolidation, runReflection, type initMemoryDb } from "../../memory.js";
 import { getReminders } from "../../response-builders.js";
 import { backfillEmbeddings } from "../memory-tools.js";
 import type { ToolResult } from "../../types.js";
@@ -61,6 +61,22 @@ function fireConsolidation(
         );
       }
       await backfillEmbeddings(db, apiKey);
+
+      // Run reflection after consolidation if enough episodes exist
+      if (report.episodesProcessed > 0) {
+        try {
+          const reflectionResult = await runReflection(db, threadId);
+          if (reflectionResult.insights.length > 0) {
+            log.info(
+              `[memory] ${label} reflection: ${reflectionResult.processedEpisodeCount} episodes → ${reflectionResult.insights.length} insights`,
+            );
+          }
+        } catch (reflErr) {
+          log.warn(
+            `[memory] Reflection failed (non-fatal): ${reflErr instanceof Error ? reflErr.message : String(reflErr)}`,
+          );
+        }
+      }
     })
     .catch((err) => {
       log.error(
