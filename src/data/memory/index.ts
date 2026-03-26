@@ -3,6 +3,9 @@
  *
  * All memory modules are re-exported here so consumers can import from
  * a single path: `./data/memory/index.js`.
+ *
+ * Modules: utils, schema, episodes, semantic, procedures, voice-sig,
+ * consolidation, reflection (causal/pattern/counterfactual insights), bootstrap.
  */
 
 export * from './utils.js';
