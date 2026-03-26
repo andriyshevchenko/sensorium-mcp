@@ -114,7 +114,8 @@ function startMcpServer(): void {
   const args = parts.slice(1);
   log("INFO", `Starting MCP server: ${CONFIG.mcpStartCommand}`);
   try {
-    const child = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true });
+    const child = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true, shell: true });
+    child.on("error", (err) => log("ERROR", `MCP server spawn error: ${err.message}`));
     if (child.pid) {
       writePid(child.pid);
       managedChild = child;
