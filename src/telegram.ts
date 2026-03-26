@@ -19,6 +19,16 @@ import type {
 export * from "./integrations/telegram/types.js";
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Maximum length of content snippets stored for sent-message lookup. */
+const SNIPPET_MAX_LENGTH = 80;
+
+/** Duration (ms) after which the reaction-failure warning is re-emitted. */
+const REACTION_WARN_SUPPRESS_MS = 60_000;
+
+// ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
 
@@ -295,7 +305,7 @@ export class TelegramClient {
       throw new Error(`Telegram API error in sendMessage: ${description}`);
     }
     if (data.result?.message_id) {
-      this.recordSentMessage(data.result.message_id, text.slice(0, 80), threadId);
+      this.recordSentMessage(data.result.message_id, text.slice(0, SNIPPET_MAX_LENGTH), threadId);
     }
   }
 
@@ -346,7 +356,7 @@ export class TelegramClient {
     const msgId = await this.sendMedia("sendDocument", chatId, "document",
       new Blob([new Uint8Array(fileBuffer)]), filename, { caption, threadId });
     if (msgId) {
-      this.recordSentMessage(msgId, caption?.slice(0, 80) ?? `[document: ${filename}]`, threadId);
+      this.recordSentMessage(msgId, caption?.slice(0, SNIPPET_MAX_LENGTH) ?? `[document: ${filename}]`, threadId);
     }
   }
 
@@ -361,7 +371,7 @@ export class TelegramClient {
     const msgId = await this.sendMedia("sendPhoto", chatId, "photo",
       new Blob([new Uint8Array(imageBuffer)]), filename, { caption, threadId });
     if (msgId) {
-      this.recordSentMessage(msgId, caption?.slice(0, 80) ?? "[photo]", threadId);
+      this.recordSentMessage(msgId, caption?.slice(0, SNIPPET_MAX_LENGTH) ?? "[photo]", threadId);
     }
   }
 
@@ -375,7 +385,7 @@ export class TelegramClient {
     const msgId = await this.sendMedia("sendVoice", chatId, "voice",
       new Blob([new Uint8Array(audioBuffer)]), "voice.ogg", { threadId });
     if (msgId) {
-      const snippet = textSnippet ? textSnippet.slice(0, 80) : "[voice message]";
+      const snippet = textSnippet ? textSnippet.slice(0, SNIPPET_MAX_LENGTH) : "[voice message]";
       this.recordSentMessage(msgId, snippet, threadId);
     }
   }
@@ -419,7 +429,7 @@ export class TelegramClient {
     emoji: string = "\uD83D\uDC40",
   ): Promise<void> {
     // Reset warning suppression after 60 s so new failures are visible.
-    if (this.reactionWarned && Date.now() - this.reactionWarnedAt > 60_000) {
+    if (this.reactionWarned && Date.now() - this.reactionWarnedAt > REACTION_WARN_SUPPRESS_MS) {
       this.reactionWarned = false;
     }
 
