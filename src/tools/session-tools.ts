@@ -23,6 +23,9 @@ function hasMediaContent(msg: Record<string, unknown>): boolean {
   return !!(msg.photo || msg.document || msg.voice || msg.video_note || msg.animation || msg.sticker);
 }
 
+/** Keywords the operator must use to authorise hibernation. */
+const HIBERNATE_KEYWORDS = /\b(hibernate|sleep|goodnight|go\s+to\s+sleep|shut\s*down|stop|stand\s*by|pause)\b/i;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -256,7 +259,6 @@ async function handleHibernate(
   }
 
   // ── Guard: hibernate only when operator explicitly requested it ──────
-  const HIBERNATE_KEYWORDS = /\b(hibernate|sleep|goodnight|go\s+to\s+sleep|shut\s*down|stop|stand\s*by|pause)\b/i;
   if (!HIBERNATE_KEYWORDS.test(lastOperatorMessageText)) {
     return errorResult(
       "Hibernate can only be called when the operator explicitly requests it. " +
