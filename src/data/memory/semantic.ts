@@ -249,9 +249,9 @@ export function searchSemanticNotesRanked(
 
   let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (${conditions.join(" OR ")})`;
 
-  // Thread filtering: show notes from this thread + global notes
+  // Thread filtering: only show notes from the requested thread (NULL = unassigned, excluded)
   if (options?.threadId !== undefined) {
-    sql += ` AND (thread_id IS NULL OR thread_id = ?)`;
+    sql += ` AND thread_id = ?`;
     params.push(options.threadId);
   }
 
@@ -309,9 +309,9 @@ export function getTopSemanticNotes(
   let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL`;
   const params: unknown[] = [];
 
-  // Thread filtering: show notes from this thread + global notes (thread_id IS NULL)
+  // Thread filtering: only show notes from the requested thread (NULL = unassigned, excluded)
   if (options?.threadId !== undefined) {
-    sql += ` AND (thread_id IS NULL OR thread_id = ?)`;
+    sql += ` AND thread_id = ?`;
     params.push(options.threadId);
   }
 
@@ -450,13 +450,13 @@ export function saveNoteEmbedding(db: Database, noteId: string, embedding: Float
 
 /** Load all note embeddings into memory for cosine similarity search. */
 function loadAllEmbeddings(db: Database, threadId?: number): Map<string, Float32Array> {
-    // When threadId is provided, return embeddings for notes in that thread OR global notes (thread_id IS NULL)
+    // When threadId is provided, return embeddings only for notes in that thread (NULL = unassigned, excluded)
     let sql = `SELECT ne.note_id, ne.embedding FROM note_embeddings ne
        JOIN semantic_notes sn ON sn.note_id = ne.note_id
        WHERE sn.valid_to IS NULL AND sn.superseded_by IS NULL`;
     const params: unknown[] = [];
     if (threadId !== undefined) {
-      sql += ` AND (sn.thread_id IS NULL OR sn.thread_id = ?)`;
+      sql += ` AND sn.thread_id = ?`;
       params.push(threadId);
     }
     const rows = db.prepare(sql).all(...params) as { note_id: string; embedding: Buffer }[];
