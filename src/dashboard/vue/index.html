@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sensorium Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: '#0f1419',
+            card: '#1a1f2e',
+            cardHover: '#222839',
+            accent: '#6366f1',
+            accentLight: '#818cf8',
+            success: '#22c55e',
+            warn: '#f59e0b',
+            danger: '#ef4444',
+            muted: '#6b7280',
+            textPrimary: '#e5e7eb',
+            textSecondary: '#9ca3af',
+            border: '#374151',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.3s ease-out',
+            'slide-up': 'slideUp 0.4s ease-out',
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          },
+          keyframes: {
+            fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+            slideUp: { '0%': { opacity: '0', transform: 'translateY(12px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+          }
+        }
+      }
+    }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      body { background: #0f1419; }
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: #1a1f2e; }
+      ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+      .glass { background: rgba(26, 31, 46, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(99, 102, 241, 0.1); }
+      .stat-glow { box-shadow: 0 0 20px rgba(99, 102, 241, 0.08); }
+      .priority-2 { border-left: 3px solid #ef4444; }
+      .priority-1 { border-left: 3px solid #f59e0b; }
+      .priority-0 { border-left: 3px solid transparent; }
+      .type-badge { font-size: 0.65rem; padding: 2px 6px; border-radius: 9999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+      .type-fact { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+      .type-preference { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+      .type-pattern { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+      .type-entity { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+      .type-relationship { background: rgba(244, 114, 182, 0.15); color: #f472b6; }
+      .tab-active { border-bottom: 2px solid #6366f1; color: #e5e7eb; }
+      .tab-inactive { border-bottom: 2px solid transparent; color: #6b7280; }
+      .tab-inactive:hover { color: #9ca3af; }
+    </style>
+  </head>
+  <body class="font-sans text-textPrimary min-h-screen">
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
