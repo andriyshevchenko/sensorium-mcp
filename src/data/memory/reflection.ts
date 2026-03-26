@@ -189,9 +189,6 @@ function repairAndParseJSON(raw: string): unknown {
 
 const REFLECTION_SYSTEM_PROMPT = `You are a reflective reasoning system analyzing an agent's recent experiences. Your job is to extract DEEP insights — not surface-level summaries.
 
-## Episodes to reflect on:
-{narrative}
-
 ## Analysis tasks:
 
 1. CAUSAL CHAINS: What caused what? Find cause-effect relationships. "When [X happened], it led to [Y] because [Z]." Be specific — cite episode IDs.
@@ -311,12 +308,11 @@ export async function runReflection(
 
   // ── Step 2: Build narrative ───────────────────────────────────────────────
   const narrative = buildNarrative(episodes);
-  const prompt = REFLECTION_SYSTEM_PROMPT.replace("{narrative}", narrative);
 
   // ── Step 3: LLM call ─────────────────────────────────────────────────────
   const messages: ChatMessage[] = [
-    { role: "system", content: prompt },
-    { role: "user", content: "Analyze the episodes above and produce deep reflective insights." },
+    { role: "system", content: REFLECTION_SYSTEM_PROMPT },
+    { role: "user", content: `## Episodes to reflect on:\n${narrative}\n\nAnalyze the episodes above and produce deep reflective insights.` },
   ];
 
   let raw: string;
