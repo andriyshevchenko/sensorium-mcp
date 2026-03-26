@@ -148,9 +148,10 @@ export async function handleWaitForInstructions(
   let maintenanceNotified = false;
 
   while (Date.now() < deadline) {
-    // Check for pending update — tell agent to wait externally via Desktop Commander
-    // CRITICAL: Do NOT tell agents to call hibernate or any MCP tool here — the server
-    // is about to die. Agents must use an external sleep (PowerShell Start-Sleep) instead.
+    // Check for pending update — tell agent to use the watcher MCP server
+    // CRITICAL: Do NOT tell agents to call hibernate or any MCP tool on sensorium-mcp
+    // here — the server is about to die. Agents must call await_server_ready on
+    // sensorium-watcher (or fall back to an external sleep) instead.
     const maintenanceInfo = checkMaintenanceFlag();
     if (maintenanceInfo) {
       log.info(`[wait] Maintenance flag detected: ${maintenanceInfo}`);
