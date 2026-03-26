@@ -128,6 +128,7 @@ export function spawnAgentProcess(
   mcpConfigPath: string,
   name: string,
   threadId: number,
+  workingDirectory?: string,
 ): { pid: number; logFile: string } | { error: string } {
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -178,6 +179,7 @@ export function spawnAgentProcess(
       shell: needsShell,
       windowsHide: true,
       env: spawnEnv,
+      cwd: workingDirectory || undefined,
     });
   } catch (err) {
     closeSync(logFd);
