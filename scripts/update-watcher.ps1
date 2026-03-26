@@ -22,6 +22,7 @@ $MAINTENANCE_FLAG = "$DATA_DIR\maintenance.flag"
 $VERSION_FILE = "$DATA_DIR\current-version.txt"
 $NPX_CACHE_DIR = "$env:LOCALAPPDATA\npm-cache\_npx"
 $REGISTRY_URL = "https://registry.npmjs.org/sensorium-mcp/latest"
+$WATCHER_PORT = 3848
 
 # Normalize mode (safety)
 $Mode = $Mode.ToLower()
@@ -297,9 +298,15 @@ if (-not (Test-McpServerRunning)) {
     $script:lastStartTime = Get-Date
 }
 
+# Start watcher MCP server (HTTP mode — stays alive across main server restarts)
+$watcherProcess = Start-Process -FilePath "npx" -ArgumentList "-y sensorium-mcp@latest --watcher --watcher-port $WATCHER_PORT" -PassThru -NoNewWindow
+Write-Log "Watcher MCP server started on port $WATCHER_PORT (PID: $($watcherProcess.Id))"
+
 # ============================================================================
 # Main Loop
 # ============================================================================
+
+try {
 
 if ($Mode -eq "production") {
 
@@ -330,5 +337,13 @@ if ($Mode -eq "production") {
         }
 
         Start-Sleep $POLL_INTERVAL_SECONDS
+    }
+}
+
+} finally {
+    # Cleanup: stop watcher MCP server
+    if ($watcherProcess -and -not $watcherProcess.HasExited) {
+        Write-Log "Stopping watcher MCP server (PID: $($watcherProcess.Id))..."
+        Stop-Process -Id $watcherProcess.Id -Force -ErrorAction SilentlyContinue
     }
 }
