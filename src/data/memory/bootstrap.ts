@@ -70,7 +70,7 @@ export function getMemoryStatus(db: Database, threadId: number): MemoryStatus {
   ).cnt;
 
   const totalSemanticNotes = (
-    db.prepare(`SELECT COUNT(*) as cnt FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL`).get() as {
+    db.prepare(`SELECT COUNT(*) as cnt FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (thread_id IS NULL OR thread_id = ?)`).get(threadId) as {
       cnt: number;
     }
   ).cnt;
@@ -124,7 +124,7 @@ export function getTopicIndex(db: Database): TopicEntry[] {
 export function assembleBootstrap(db: Database, threadId: number): string {
   const status = getMemoryStatus(db, threadId);
   const recentEpisodes = getRecentEpisodes(db, threadId, 5);
-  const topNotes = getTopSemanticNotes(db, { limit: 10, sortBy: "access_count" });
+  const topNotes = getTopSemanticNotes(db, { limit: 10, sortBy: "access_count", threadId });
   // Preferences first
   const preferences = topNotes.filter((n) => n.type === "preference");
   const otherNotes = topNotes.filter((n) => n.type !== "preference");
@@ -231,8 +231,8 @@ export function assembleBootstrap(db: Database, threadId: number): string {
  * Compact memory refresh — a condensed briefing for injection during long sessions.
  * Much shorter than full bootstrap. Designed to re-ground the agent after context compaction.
  */
-export function assembleCompactRefresh(db: Database, _threadId: number): string {
-  const topNotes = getTopSemanticNotes(db, { limit: 6, sortBy: "access_count" });
+export function assembleCompactRefresh(db: Database, threadId: number): string {
+  const topNotes = getTopSemanticNotes(db, { limit: 6, sortBy: "access_count", threadId });
   if (topNotes.length === 0) return "";
 
   const lines: string[] = [];
