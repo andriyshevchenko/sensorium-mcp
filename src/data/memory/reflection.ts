@@ -222,16 +222,12 @@ Rules:
 
 const DEDUP_SIMILARITY_THRESHOLD = 0.85;
 
-/**
- * Check whether a near-duplicate insight already exists using embedding
- * cosine similarity.  Returns true if a duplicate was found.
- */
-async function isDuplicate(
+async function checkDuplicate(
   db: Database,
   content: string,
   apiKey: string,
   threadId: number,
-): Promise<boolean> {
+): Promise<{ isDuplicate: boolean; embedding: number[] | null }> {
   try {
     const embedding = await generateEmbedding(content, apiKey);
     const matches = searchByEmbedding(db, embedding, {
@@ -240,13 +236,13 @@ async function isDuplicate(
       skipAccessTracking: true,
       threadId,
     });
-    // Check if any match is also a reflection note
-    return matches.some(
+    const isDuplicate = matches.some(
       (m) => m.similarity >= DEDUP_SIMILARITY_THRESHOLD && m.content.startsWith("[REFLECTION]"),
     );
+    return { isDuplicate, embedding };
   } catch {
     // Embedding lookup failed — allow the insight through to avoid data loss
-    return false;
+    return { isDuplicate: false, embedding: null };
   }
 }
 
@@ -353,9 +349,9 @@ export async function runReflection(
     const confidence = Math.max(0, Math.min(1, ins.confidence ?? 0.5));
     const refs = (ins.episode_refs ?? []).filter((id) => typeof id === "string" && episodeIdSet.has(id));
 
-    // De-duplicate against existing reflections
+    // De-duplicate against existing reflections (embedding is cached for reuse)
     const prefixedContent = `[REFLECTION] [${insightType.toUpperCase()}] ${ins.content}`;
-    const duplicate = await isDuplicate(db, prefixedContent, apiKey, threadId);
+    const { isDuplicate: duplicate, embedding: cachedEmbedding } = await checkDuplicate(db, prefixedContent, apiKey, threadId);
     if (duplicate) {
       log.info(`[reflection] Skipped duplicate insight: ${ins.content.slice(0, 60)}…`);
       continue;
@@ -375,12 +371,16 @@ export async function runReflection(
       sourceEpisodes: refs,
     });
 
-    // Embed the note immediately for future de-duplication
-    try {
-      const embedding = await generateEmbedding(prefixedContent, apiKey);
-      saveNoteEmbedding(db, noteId, embedding);
-    } catch {
-      // Non-fatal — backfill will catch it later
+    // Reuse the embedding from dedup check — avoids a second API call
+    if (cachedEmbedding) {
+      saveNoteEmbedding(db, noteId, cachedEmbedding);
+    } else {
+      try {
+        const embedding = await generateEmbedding(prefixedContent, apiKey);
+        saveNoteEmbedding(db, noteId, embedding);
+      } catch {
+        // Non-fatal — backfill will catch it later
+      }
     }
 
     savedInsights.push({
