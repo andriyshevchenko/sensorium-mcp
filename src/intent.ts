@@ -132,15 +132,40 @@ export function loadSkills(): Skill[] {
 /** Invalidate the skill cache so the next loadSkills() re-reads from disk. */
 export function invalidateSkillCache(): void { skillCacheTime = 0; }
 
-/** Match operator message against skill trigger phrases. */
+/**
+ * Explicit activation patterns — the message must contain one of these
+ * for any skill to fire.  Prevents accidental triggers when a user just
+ * mentions a skill-related word in regular conversation.
+ */
+const ACTIVATION_PATTERNS = [
+  /\buse\s+(?:the\s+)?(?:[\w-]+\s+)?skill\b/i,
+  /\bapply\s+(?:the\s+)?(?:[\w-]+\s+)?skill\b/i,
+  /\bactivate\s+(?:the\s+)?(?:[\w-]+\s+)?skill\b/i,
+  /\bwith\s+(?:the\s+)?(?:[\w-]+\s+)?skill\b/i,
+  /@[\w-]+\s*skill\b/i,
+];
+
+/** Match operator message against skill trigger phrases (two-phase). */
 export function matchSkill(message: string): Skill | null {
-  const skills = loadSkills();
   const lower = message.toLowerCase();
+
+  // Phase 1: Check for explicit activation intent
+  const hasActivation = ACTIVATION_PATTERNS.some(p => p.test(message));
+  if (!hasActivation) return null;
+
+  // Phase 2: Match specific skill by trigger
+  const skills = loadSkills();
   for (const skill of skills) {
     for (const trigger of skill.triggers) {
       if (lower.includes(trigger.toLowerCase())) return skill;
     }
   }
+
+  // Phase 2b: Try matching by skill name directly
+  for (const skill of skills) {
+    if (lower.includes(skill.name.toLowerCase())) return skill;
+  }
+
   return null;
 }
 
