@@ -297,9 +297,12 @@ function startHttpMcp(port: number): void {
     }
   }, 60_000);
   httpSrv = createServer(async (req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // CORS: restrict to localhost origins (match http-server.ts pattern)
+    const origin = req.headers.origin ?? "";
+    const allowedOrigin = origin.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/) ? origin : "";
+    res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id, Authorization");
     res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
     if (req.url !== "/mcp") { res.writeHead(404); res.end("Not Found"); return; }
