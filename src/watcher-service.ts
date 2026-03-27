@@ -59,10 +59,12 @@ function alive(pid: number): boolean {
 
 async function killPid(pid: number): Promise<void> {
   if (process.platform === "win32") {
-    try { execSync(`taskkill /PID ${pid} /T`, { timeout: 5000 }); } catch { /**/ }
-    await sleep(2000);
+    // /F /T = force-kill entire process tree (parent + children).
+    // Without /F, Windows refuses to kill a parent whose children are still running.
+    try { execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10000 }); } catch { /**/ }
+    await sleep(3000);
     if (alive(pid)) {
-      try { execSync(`taskkill /PID ${pid} /T /F`, { timeout: 5000 }); } catch { /**/ }
+      try { execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10000 }); } catch { /**/ }
     }
   } else {
     try { process.kill(pid, "SIGTERM"); } catch { /**/ }
