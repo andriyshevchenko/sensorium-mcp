@@ -5,6 +5,9 @@ triggers:
   - use multi-thread
   - thread delegation
   - spawn thread
+  - multi thread
+  - multi-thread
+  - parallel threads
 replaces_orchestrator: true
 ---
 
