@@ -34,6 +34,7 @@ import { handleStartSession, type StartSessionContext } from "../tools/start-ses
 import { handleWaitForInstructions, type WaitToolContext, type WaitToolExtra } from "../tools/wait/index.js";
 import { handleStartThread, handleSendMessageToThread as handleSendMessageToThreadFile, type DelegateToolContext } from "../tools/delegate-tool.js";
 import { getThreadsHealth } from "../tools/thread-lifecycle.js";
+import { handleSearchSkills, handleGetSkill } from "../tools/skill-tools.js";
 import type { CreateMcpServerFn, ToolResult } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -326,6 +327,9 @@ function createMcpServer(
 
     get_version: (typedArgs) =>
       handleUtilityTool("get_version", typedArgs, buildUtilityCtx()),
+
+    search_skills: (args) => handleSearchSkills(args),
+    get_skill: (args) => handleGetSkill(args),
   };
 
   const srv = new Server(

@@ -4,6 +4,7 @@
 
 import { memoryToolDefs } from "./defs/memory-defs.js";
 import { sessionToolDefs } from "./defs/session-defs.js";
+import { skillToolDefs } from "./defs/skill-defs.js";
 import { utilityToolDefs } from "./defs/utility-defs.js";
 import { waitToolDefs } from "./defs/wait-defs.js";
 
@@ -22,6 +23,7 @@ const ALL_TOOL_DEFINITIONS: ToolDefinition[] = [
   ...waitToolDefs,
   ...utilityToolDefs,
   ...memoryToolDefs,
+  ...skillToolDefs,
 ];
 
 /** @deprecated Use ALL_TOOL_DEFINITIONS directly. Kept for backward compat. */

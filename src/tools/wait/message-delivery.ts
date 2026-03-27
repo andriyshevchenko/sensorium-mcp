@@ -11,7 +11,7 @@
 import { basename } from "node:path";
 import { saveFileToDisk } from "../../data/file-storage.js";
 import type { StoredMessage } from "../../dispatcher.js";
-import { classifyIntent, matchSkills, type MessageIntent, type Skill } from "../../intent.js";
+import { classifyIntent, type MessageIntent } from "../../intent.js";
 import { log } from "../../logger.js";
 import {
   saveEpisode,
@@ -336,26 +336,16 @@ export function assembleOperatorResponse(
   hasVoiceMessages: boolean,
   autoMemoryContext: string,
   ctx: Pick<MessageDeliveryContext, "effectiveThreadId" | "sessionStartedAt" | "autonomousMode">,
-  preClassified?: { intent: MessageIntent; skills: Skill[] },
+  intent?: MessageIntent,
 ): ToolResult {
-  const intent = preClassified?.intent ?? classifyIntent(operatorText);
-  log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${intent}${preClassified ? " (OpenAI)" : " (local)"}`);
+  const resolvedIntent = intent ?? classifyIntent(operatorText);
+  log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${resolvedIntent}`);
 
-  // ── Skill matching: check before building the default prompt ──
-  const skills = preClassified?.skills ?? matchSkills(operatorText);
-  if (skills.length > 0) {
-    log.info(`[skill] Matched ${skills.length} skill(s): ${skills.map(s => s.name).join(", ")}`);
-  }
-
-  const reminder = intent === "conversational"
+  const reminder = resolvedIntent === "conversational"
     ? getMediumReminder(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode)
     : getReminders(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode);
 
-  // When any matched skill replaces the orchestrator, inject skill content
-  // instead of the default "Follow the operator's instructions below." directive.
-  const directive = skills.length > 0 && skills.some(s => s.replacesOrchestrator)
-    ? skills.map(s => `[Skill: ${s.name}]\n\n${s.content}`).join('\n\n---\n\n')
-    : "Follow the operator's instructions below.";
+  const directive = "Follow the operator's instructions below.";
 
   return {
     content: [

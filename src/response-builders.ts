@@ -146,7 +146,7 @@ export function getMediumReminder(
   });
 
   const directive = autonomousMode
-    ? "\nYou are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. Non-negotiable."
+    ? "\nYou are the ORCHESTRATOR. Load the orchestrator skill via get_skill for full instructions before executing tasks."
     : "\nFollow the operator's instructions. Report results via `send_voice`.";
 
   return (

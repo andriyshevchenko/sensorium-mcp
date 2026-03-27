@@ -13,7 +13,6 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { log } from "./logger.js";
-import { chatCompletion } from "./openai.js";
 
 // ── Skill types & loading ─────────────────────────────────────────────────
 
@@ -133,52 +132,6 @@ export function loadSkills(): Skill[] {
 /** Invalidate the skill cache so the next loadSkills() re-reads from disk. */
 export function invalidateSkillCache(): void { skillCacheTime = 0; }
 
-/**
- * Explicit activation patterns — the message must contain one of these
- * for any skill to fire.  Prevents accidental triggers when a user just
- * mentions a skill-related word in regular conversation.
- */
-const ACTIVATION_PATTERNS = [
-  /\buse\s+(?:the\s+)?(?:[\w-]+\s+)?skill\b/i,
-  /\bapply\s+(?:the\s+)?(?:[\w-]+\s+)?skill\b/i,
-  /\bactivate\s+(?:the\s+)?(?:[\w-]+\s+)?skill\b/i,
-  /\bwith\s+(?:the\s+)?(?:[\w-]+\s+)?skill\b/i,
-  /@[\w-]+\s*skill\b/i,
-];
-
-/** Match operator message against skill trigger phrases (two-phase). Returns ALL matching skills, deduplicated. */
-export function matchSkills(message: string): Skill[] {
-  const normalizedMsg = message.toLowerCase().replace(/-/g, ' ');
-
-  // Phase 1: Check for explicit activation intent
-  const hasActivation = ACTIVATION_PATTERNS.some(p => p.test(message));
-  if (!hasActivation) return [];
-
-  const matched: Skill[] = [];
-  const seen = new Set<string>();
-
-  // Phase 2: Match specific skills by trigger
-  const skills = loadSkills();
-  for (const skill of skills) {
-    for (const trigger of skill.triggers) {
-      if (normalizedMsg.includes(trigger.toLowerCase().replace(/-/g, ' ')) && !seen.has(skill.name)) {
-        matched.push(skill);
-        seen.add(skill.name);
-      }
-    }
-  }
-
-  // Phase 2b: Try matching by skill name directly
-  for (const skill of skills) {
-    if (normalizedMsg.includes(skill.name.toLowerCase().replace(/-/g, ' ')) && !seen.has(skill.name)) {
-      matched.push(skill);
-      seen.add(skill.name);
-    }
-  }
-
-  return matched;
-}
-
 // ── Intent classification ─────────────────────────────────────────────────
 
 const ACK_EXACT = new Set([
@@ -197,66 +150,6 @@ const ACK_EXACT = new Set([
 const TASK_VERB_RE = /^(fix|implement|add|create|update|remove|delete|change|build|deploy|refactor|debug|test|write|configure|setup|set up|migrate|install|check|run|send|stop|start|restart|enable|disable|ship|push|publish|use|search|find|look|read|open|review|analyze|research|investigate)\b/;
 
 export type MessageIntent = "conversational" | "task";
-
-/**
- * Use GPT-4o-mini to determine intent AND which skills to activate.
- * Single roundtrip. Returns intent + list of skill names to load.
- * Falls back to local heuristic when no API key or on error.
- */
-export async function classifyIntentWithSkills(
-  message: string,
-  apiKey: string | undefined,
-): Promise<{ intent: MessageIntent; skills: Skill[] }> {
-  const skills = loadSkills();
-
-  // Fallback: no API key or very short message
-  if (!apiKey || message.trim().length < 5) {
-    return { intent: classifyIntent(message), skills: [] };
-  }
-
-  try {
-    const skillList = skills.map(s =>
-      `- ${s.name}: triggers=[${s.triggers.join(", ")}]`
-    ).join("\n");
-
-    const response = await chatCompletion([
-      {
-        role: "system",
-        content: `You classify operator messages and route to skills.
-
-Given an operator message:
-1. Classify intent as "conversational" (acknowledgment, greeting, simple yes/no) or "task" (instruction, question, request).
-2. Determine if the operator EXPLICITLY wants to activate any skills. A skill should ONLY be activated when the operator clearly references it or its purpose. Casual mentions don't count.
-
-Available skills:
-${skillList}
-
-Respond with ONLY a JSON object: {"intent": "conversational"|"task", "skills": ["SkillName1"]}
-Return empty skills array if no skill is explicitly requested.`
-      },
-      {
-        role: "user",
-        content: message.slice(0, 500)
-      }
-    ], apiKey, { maxTokens: 100, temperature: 0, responseFormat: { type: "json_object" } });
-
-    const parsed = JSON.parse(response);
-    const intent: MessageIntent = parsed.intent === "conversational" ? "conversational" : "task";
-    const matchedSkillNames: string[] = Array.isArray(parsed.skills) ? parsed.skills : [];
-
-    // Resolve skill names to actual Skill objects
-    const matchedSkills = matchedSkillNames
-      .map(name => skills.find(s => s.name.toLowerCase() === name.toLowerCase()))
-      .filter((s): s is Skill => s !== undefined);
-
-    log.info(`[intent] OpenAI classified "${message.substring(0, 40)}..." as ${intent}, skills: [${matchedSkills.map(s => s.name).join(", ")}]`);
-
-    return { intent, skills: matchedSkills };
-  } catch (err) {
-    log.warn(`[intent] OpenAI classification failed, falling back to local: ${err instanceof Error ? err.message : String(err)}`);
-    return { intent: classifyIntent(message), skills: [] };
-  }
-}
 
 export function classifyIntent(message: string): MessageIntent {
   const trimmed = message.trim();

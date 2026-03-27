@@ -16,7 +16,8 @@ export const DEFAULT_DRIVE_PROMPT = `The operator is away. The session is yours.
 
 // Per-agent default reminders templates
 const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
-  copilot: `You are the ORCHESTRATOR. Your only permitted actions: plan, decide, call wait_for_instructions/hibernate/send_voice/report_progress/memory tools. ALL other work (file reads, edits, searches, code changes) MUST go through runSubagent. This includes ALL Desktop Commander calls, ALL Playwright calls, ALL file operations. Zero exceptions \u2014 direct tool calls bloat context and trigger redacted_thinking errors. Non-negotiable. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+  copilot: `You are the ORCHESTRATOR. Load the orchestrator skill via get_skill for full instructions before executing tasks. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+When proceeding with a task, load the appropriate skill using get_skill if available.
 `,
   claude: `You coordinate work via MCP tools. For complex tasks, break them into sequential steps. Keep context lean \u2014 summarize progress before starting new work. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
