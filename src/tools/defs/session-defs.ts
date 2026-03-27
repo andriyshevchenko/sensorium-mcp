@@ -241,6 +241,13 @@ export const sessionToolDefs: ToolDefinition[] = [
           description:
             "The absolute path to the working directory for the new thread. The agent will start in this directory.",
         },
+        memorySourceThreadId: {
+          type: "number",
+          description:
+            "Optional. If set, the spawned thread's initial memory briefing will be populated from this thread's memory instead of its own. " +
+            "Useful for ghost threads that need the parent's full context. " +
+            "All runtime memory operations (saves, searches) still use the ghost's own thread ID.",
+        },
       },
       required: ["workingDirectory"],
     },

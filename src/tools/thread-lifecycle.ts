@@ -24,6 +24,7 @@ export interface SpawnedThread {
   name: string;
   startedAt: number;
   logFile: string;
+  memorySourceThreadId?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +138,7 @@ export function spawnAgentProcess(
   name: string,
   threadId: number,
   workingDirectory?: string,
+  memorySourceThreadId?: number,
 ): { pid: number; logFile: string } | { error: string } {
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -164,6 +166,9 @@ export function spawnAgentProcess(
 
   // On Windows, ensure CLAUDE_CODE_GIT_BASH_PATH is set for the child process.
   const spawnEnv = { ...process.env };
+  if (memorySourceThreadId !== undefined) {
+    spawnEnv.MEMORY_SOURCE_THREAD_ID = String(memorySourceThreadId);
+  }
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) {
     const gitBashCandidates = [
       join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"),
@@ -215,6 +220,7 @@ export function spawnAgentProcess(
     name,
     startedAt: Date.now(),
     logFile: logFilePath,
+    ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
   };
   spawnedThreads.push(entry);
 
