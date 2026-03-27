@@ -144,6 +144,19 @@ export function setClaudeMcpConfigPath(path: string): void {
   updateSettings(s => { s.claudeMcpConfigPath = path; });
 }
 
+// ─── Bootstrap message count setting ────────────────────────────────────────
+
+/** Number of recent episodes injected into the bootstrap as "Recent Conversation". */
+export function getBootstrapMessageCount(): number {
+  const v = readSettings().bootstrapMessageCount;
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  return 50; // default
+}
+
+export function setBootstrapMessageCount(count: number): void {
+  updateSettings(s => { s.bootstrapMessageCount = count; });
+}
+
 // ─── Guardrails setting ─────────────────────────────────────────────────────
 
 /** Whether guardrail (Active Decisions) notes are injected into memory briefings. */

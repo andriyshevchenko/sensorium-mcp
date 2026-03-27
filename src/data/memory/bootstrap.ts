@@ -19,7 +19,7 @@ import {
 import { rowToProcedure } from "./procedures.js";
 import { getVoiceBaseline } from "./voice-sig.js";
 import { parseJsonArray } from "./utils.js";
-import { getGuardrailsEnabled } from "../../config.js";
+import { getGuardrailsEnabled, getBootstrapMessageCount } from "../../config.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -125,7 +125,9 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   // Ghost threads: use the parent's thread ID for memory queries
   const queryThreadId = memorySourceThreadId ?? threadId;
   const status = getMemoryStatus(db, queryThreadId);
-  const recentEpisodes = getRecentEpisodes(db, queryThreadId, 5);
+  const bootstrapMessageCount = getBootstrapMessageCount();
+  const recentEpisodesDesc = getRecentEpisodes(db, queryThreadId, bootstrapMessageCount);
+  const recentEpisodes = [...recentEpisodesDesc].reverse(); // chronological order (oldest first)
   const topNotes = getTopSemanticNotes(db, { limit: 10, sortBy: "access_count", threadId: queryThreadId });
   // Preferences first
   const preferences = topNotes.filter((n) => n.type === "preference");
@@ -163,15 +165,36 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   lines.push(`- DB size: ${(status.dbSizeBytes / 1024).toFixed(1)} KB`);
   lines.push("");
 
-  // Recent episodes
+  // Recent conversation (full verbatim content, chronological order)
   if (recentEpisodes.length > 0) {
-    lines.push("## Recent Episodes");
+    lines.push("## Recent Conversation");
+    const MAX_CONVERSATION_CHARS = 100_000;
+    const conversationLines: string[] = [];
+    let totalChars = 0;
     for (const ep of recentEpisodes) {
-      const summary =
+      const textContent =
         typeof ep.content === "object" && ep.content !== null
-          ? (ep.content.text as string) ?? (ep.content.caption as string) ?? JSON.stringify(ep.content).slice(0, 120)
-          : String(ep.content).slice(0, 120);
-      lines.push(`- [${ep.type}/${ep.modality}] ${summary} (${ep.timestamp})`);
+          ? (ep.content.text as string) ?? (ep.content.caption as string) ?? JSON.stringify(ep.content)
+          : String(ep.content);
+      let line: string;
+      if (ep.type === "operator_message") {
+        line = `**Operator** (${ep.timestamp}): ${textContent}`;
+      } else if (ep.type === "agent_action") {
+        line = `**Agent** (${ep.timestamp}): ${textContent}`;
+      } else {
+        // system_event, operator_reaction, etc.
+        line = `[${ep.type}] ${textContent} (${ep.timestamp})`;
+      }
+      totalChars += line.length;
+      conversationLines.push(line);
+    }
+    // Truncate from oldest if exceeds max chars
+    while (totalChars > MAX_CONVERSATION_CHARS && conversationLines.length > 1) {
+      const removed = conversationLines.shift()!;
+      totalChars -= removed.length;
+    }
+    for (const cl of conversationLines) {
+      lines.push(cl);
     }
     lines.push("");
   }

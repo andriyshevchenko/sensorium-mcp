@@ -10,6 +10,7 @@ import type { peekThreadMessages, readThreadMessages, appendToThread } from "../
 import type { checkMaintenanceFlag } from "../data/file-storage.js";
 import type { checkDueTasks } from "../scheduler.js";
 import { log } from "../logger.js";
+import { saveEpisode, type Database } from "../memory.js";
 import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
 import { buildMaintenanceResponse } from "../response-builders.js";
@@ -47,6 +48,8 @@ export interface SessionToolContext {
   lastOperatorMessageText: string;
   previewedUpdateIds: Set<number>;
   addPreviewedId: (id: number) => void;
+  getMemoryDb: () => Database;
+  sessionStartedAt: number;
 }
 
 interface Extra {
@@ -220,6 +223,23 @@ async function handleReportProgress(
     (sentAsPlainText
       ? "Progress reported successfully (as plain text — formatting could not be applied)."
       : "Progress reported successfully.") + getShortReminder(effectiveThreadId);
+
+  // Save agent progress report as episode for warm context
+  try {
+    const db = ctx.getMemoryDb();
+    if (db && effectiveThreadId !== undefined) {
+      saveEpisode(db, {
+        sessionId: `session_${ctx.sessionStartedAt}`,
+        threadId: effectiveThreadId,
+        type: "agent_action",
+        modality: "text",
+        content: { text: rawMessage },
+        importance: 0.3,
+      });
+    }
+  } catch {
+    // Non-critical — don't fail the progress report if episode save fails
+  }
 
   const responseText =
     pendingMessages.length > 0

@@ -7,6 +7,7 @@
 import { readFile } from "fs/promises";
 import { basename } from "node:path";
 import { checkMaintenanceFlag } from "../data/file-storage.js";
+import { saveEpisode, type Database } from "../memory.js";
 import { textToSpeech, TTS_VOICES, type TTSVoice } from "../openai.js";
 import { addSchedule, generateTaskId, listSchedules, removeSchedule, type ScheduledTask } from "../scheduler.js";
 import type { TelegramClient } from "../telegram.js";
@@ -26,6 +27,7 @@ export interface UtilityToolContext {
   telegram: TelegramClient;
   config: AppConfig;
   sessionStartedAt: number;
+  getMemoryDb: () => Database;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +149,24 @@ async function handleSendVoice(
   try {
     const audioBuffer = await textToSpeech(text, config.OPENAI_API_KEY, voice);
     await telegram.sendVoice(config.TELEGRAM_CHAT_ID, audioBuffer, effectiveThreadId, text);
+
+    // Save agent voice response as episode for warm context
+    try {
+      const db = ctx.getMemoryDb();
+      if (db) {
+        saveEpisode(db, {
+          sessionId: `session_${ctx.sessionStartedAt}`,
+          threadId: effectiveThreadId,
+          type: "agent_action",
+          modality: "voice",
+          content: { text },
+          importance: 0.3,
+        });
+      }
+    } catch {
+      // Non-critical — don't fail the voice send if episode save fails
+    }
+
     return {
       content: [
         {
