@@ -29,6 +29,16 @@ export const memoryToolDefs: ToolDefinition[] = [
           items: { type: "string" },
           description: 'Filter by type: ["fact", "preference", "pattern", "workflow", ...].',
         },
+        startTime: {
+          type: "string",
+          description:
+            "Filter results after this time. ISO-8601 (e.g., '2026-03-27T00:00:00Z') or relative (e.g., 'last 24h', 'yesterday', 'last week'). Semantic notes and procedures filter on creation time; episodes filter on event time (when the event occurred). Optional.",
+        },
+        endTime: {
+          type: "string",
+          description:
+            "Filter results before this time. ISO-8601 or relative. Semantic notes and procedures filter on creation time; episodes filter on event time (when the event occurred). Optional.",
+        },
         threadId: {
           type: "number",
           description: "Active thread ID.",

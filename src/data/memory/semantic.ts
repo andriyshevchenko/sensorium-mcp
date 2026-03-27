@@ -186,7 +186,7 @@ export function saveSemanticNote(
 export function searchSemanticNotes(
   db: Database,
   query: string,
-  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean }
+  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean; startTime?: string; endTime?: string }
 ): SemanticNote[] {
   const maxResults = options?.maxResults ?? 10;
   const terms = query
@@ -208,6 +208,15 @@ export function searchSemanticNotes(
   }
 
   let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (${conditions.join(" AND ")})`;
+
+  if (options?.startTime) {
+    sql += ` AND created_at >= ?`;
+    params.push(options.startTime);
+  }
+  if (options?.endTime) {
+    sql += ` AND created_at <= ?`;
+    params.push(options.endTime);
+  }
 
   if (options?.types && options.types.length > 0) {
     const placeholders = options.types.map(() => "?").join(",");
@@ -231,7 +240,7 @@ export function searchSemanticNotes(
 export function searchSemanticNotesRanked(
   db: Database,
   query: string,
-  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean; minMatchRatio?: number; threadId?: number }
+  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean; minMatchRatio?: number; threadId?: number; startTime?: string; endTime?: string }
 ): SemanticNote[] {
   const maxResults = options?.maxResults ?? 10;
   const minMatchRatio = options?.minMatchRatio ?? 0.4; // require at least 40% of terms to match
@@ -248,6 +257,15 @@ export function searchSemanticNotesRanked(
   }
 
   let sql = `SELECT * FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND (${conditions.join(" OR ")})`;
+
+  if (options?.startTime) {
+    sql += ` AND created_at >= ?`;
+    params.push(options.startTime);
+  }
+  if (options?.endTime) {
+    sql += ` AND created_at <= ?`;
+    params.push(options.endTime);
+  }
 
   // Thread filtering: only show notes from the requested thread (NULL = unassigned, excluded)
   if (options?.threadId !== undefined) {
@@ -449,15 +467,23 @@ export function saveNoteEmbedding(db: Database, noteId: string, embedding: Float
 }
 
 /** Load all note embeddings into memory for cosine similarity search. */
-function loadAllEmbeddings(db: Database, threadId?: number): Map<string, Float32Array> {
+function loadAllEmbeddings(db: Database, options?: { threadId?: number; startTime?: string; endTime?: string }): Map<string, Float32Array> {
     // When threadId is provided, return embeddings only for notes in that thread (NULL = unassigned, excluded)
     let sql = `SELECT ne.note_id, ne.embedding FROM note_embeddings ne
        JOIN semantic_notes sn ON sn.note_id = ne.note_id
        WHERE sn.valid_to IS NULL AND sn.superseded_by IS NULL`;
     const params: unknown[] = [];
-    if (threadId !== undefined) {
+    if (options?.threadId !== undefined) {
       sql += ` AND sn.thread_id = ?`;
-      params.push(threadId);
+      params.push(options.threadId);
+    }
+    if (options?.startTime) {
+      sql += ` AND sn.created_at >= ?`;
+      params.push(options.startTime);
+    }
+    if (options?.endTime) {
+      sql += ` AND sn.created_at <= ?`;
+      params.push(options.endTime);
     }
     const rows = db.prepare(sql).all(...params) as { note_id: string; embedding: Buffer }[];
 
@@ -475,13 +501,13 @@ function loadAllEmbeddings(db: Database, threadId?: number): Map<string, Float32
 export function searchByEmbedding(
     db: Database,
     queryEmbedding: Float32Array,
-    options?: { maxResults?: number; minSimilarity?: number; skipAccessTracking?: boolean; threadId?: number }
+    options?: { maxResults?: number; minSimilarity?: number; skipAccessTracking?: boolean; threadId?: number; startTime?: string; endTime?: string }
 ): (SemanticNote & { similarity: number })[] {
     const maxResults = options?.maxResults ?? 5;
     const minSimilarity = options?.minSimilarity ?? 0.3;
 
-    // Load embeddings — filtered by thread when provided
-    const embeddings = loadAllEmbeddings(db, options?.threadId);
+    // Load embeddings — filtered by thread and time when provided
+    const embeddings = loadAllEmbeddings(db, { threadId: options?.threadId, startTime: options?.startTime, endTime: options?.endTime });
 
     // Compute similarities
     const scores: { noteId: string; similarity: number }[] = [];

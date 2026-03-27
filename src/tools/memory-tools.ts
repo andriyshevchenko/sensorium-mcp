@@ -22,6 +22,7 @@ import {
   supersedeNote,
   updateProcedure,
   updateSemanticNote,
+  parseRelativeTime,
 } from "../memory.js";
 import { generateEmbedding } from "../openai.js";
 import { log } from "../logger.js";
@@ -91,6 +92,19 @@ async function handleMemorySearch(
   try {
     const layers = Array.isArray(args.layers) ? args.layers.map(String) : typeof args.layers === 'string' ? [args.layers] : ["episodic", "semantic", "procedural"];
     const types = Array.isArray(args.types) ? args.types.map(String) : typeof args.types === 'string' ? [args.types] : undefined;
+
+    // Parse optional temporal bounds
+    const startTime = typeof args.startTime === "string" ? parseRelativeTime(args.startTime) : undefined;
+    const endTime = typeof args.endTime === "string" ? parseRelativeTime(args.endTime) : undefined;
+
+    const warnings: string[] = [];
+    if (args.startTime && !startTime) warnings.push(`Could not parse startTime: "${args.startTime}"`);
+    if (args.endTime && !endTime) warnings.push(`Could not parse endTime: "${args.endTime}"`);
+
+    if (startTime && endTime && startTime > endTime) {
+      return { content: [{ type: "text", text: `Error: startTime (${startTime}) is after endTime (${endTime}).` }] };
+    }
+
     const results: string[] = [];
 
     if (layers.includes("semantic")) {
@@ -98,7 +112,7 @@ async function handleMemorySearch(
       if (apiKey) {
         try {
           const queryEmb = await generateEmbedding(query, apiKey);
-          const embNotes = searchByEmbedding(db, queryEmb, { maxResults: 10, minSimilarity: 0.25 });
+          const embNotes = searchByEmbedding(db, queryEmb, { maxResults: 10, minSimilarity: 0.25, startTime, endTime });
           if (embNotes.length > 0) {
             results.push("### Semantic Memory (embedding search)");
             for (const n of embNotes) {
@@ -111,7 +125,7 @@ async function handleMemorySearch(
         }
       }
       if (!embeddingSearchDone) {
-        const notes = searchSemanticNotes(db, query, { types, maxResults: 10 });
+        const notes = searchSemanticNotes(db, query, { types, maxResults: 10, startTime, endTime });
         if (notes.length > 0) {
           results.push("### Semantic Memory");
           for (const n of notes) {
@@ -122,7 +136,7 @@ async function handleMemorySearch(
     }
 
     if (layers.includes("procedural")) {
-      const procs = searchProcedures(db, query, 5);
+      const procs = searchProcedures(db, query, 5, { startTime, endTime });
       if (procs.length > 0) {
         results.push("### Procedural Memory");
         for (const p of procs) {
@@ -132,7 +146,7 @@ async function handleMemorySearch(
     }
 
     if (layers.includes("episodic") && threadId !== undefined) {
-      const episodes = getRecentEpisodes(db, threadId, 10);
+      const episodes = getRecentEpisodes(db, threadId, 10, { startTime, endTime });
       const filtered = episodes.filter(ep => {
         const content = JSON.stringify(ep.content).toLowerCase();
         return query.toLowerCase().split(/\s+/).some(word => content.includes(word));
@@ -148,10 +162,11 @@ async function handleMemorySearch(
       }
     }
 
+    const warningBlock = warnings.length > 0 ? "**Warnings:**\n" + warnings.map(w => `- ${w}`).join("\n") + "\n\n" : "";
     const text = results.length > 0
       ? results.join("\n")
       : `No memories found for "${query}".`;
-    return { content: [{ type: "text", text: text + reminder }] };
+    return { content: [{ type: "text", text: warningBlock + text + reminder }] };
   } catch (err) {
     return errorResult(`Memory search error: ${errorMessage(err)}` + reminder);
   }
