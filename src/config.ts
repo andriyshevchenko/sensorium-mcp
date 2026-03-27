@@ -146,15 +146,20 @@ export function setClaudeMcpConfigPath(path: string): void {
 
 // ─── Bootstrap message count setting ────────────────────────────────────────
 
+/** Default number of episodes for the bootstrap "Recent Conversation" section. */
+const DEFAULT_BOOTSTRAP_MESSAGE_COUNT = 50;
+
 /** Number of recent episodes injected into the bootstrap as "Recent Conversation". */
 export function getBootstrapMessageCount(): number {
   const v = readSettings().bootstrapMessageCount;
-  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  return 50; // default
+  if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+  return DEFAULT_BOOTSTRAP_MESSAGE_COUNT;
 }
 
 export function setBootstrapMessageCount(count: number): void {
-  updateSettings(s => { s.bootstrapMessageCount = count; });
+  const clamped = Math.max(0, Math.round(count));
+  if (!Number.isFinite(clamped)) return;
+  updateSettings(s => { s.bootstrapMessageCount = clamped; });
 }
 
 // ─── Guardrails setting ─────────────────────────────────────────────────────

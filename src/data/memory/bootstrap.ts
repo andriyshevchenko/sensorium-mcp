@@ -21,6 +21,9 @@ import { getVoiceBaseline } from "./voice-sig.js";
 import { parseJsonArray } from "./utils.js";
 import { getGuardrailsEnabled, getBootstrapMessageCount } from "../../config.js";
 
+/** Maximum characters for the Recent Conversation section before truncation. */
+const MAX_BOOTSTRAP_CONVERSATION_CHARS = 100_000;
+
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
 interface TopicEntry {
@@ -168,14 +171,13 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   // Recent conversation (full verbatim content, chronological order)
   if (recentEpisodes.length > 0) {
     lines.push("## Recent Conversation");
-    const MAX_CONVERSATION_CHARS = 100_000;
     const conversationLines: string[] = [];
     let totalChars = 0;
     for (const ep of recentEpisodes) {
-      const textContent =
-        typeof ep.content === "object" && ep.content !== null
-          ? (ep.content.text as string) ?? (ep.content.caption as string) ?? JSON.stringify(ep.content)
-          : String(ep.content);
+      const raw = typeof ep.content === "object" && ep.content !== null
+        ? (ep.content.text ?? ep.content.caption ?? null)
+        : null;
+      const textContent = typeof raw === "string" ? raw : JSON.stringify(ep.content);
       let line: string;
       if (ep.type === "operator_message") {
         line = `**Operator** (${ep.timestamp}): ${textContent}`;
@@ -189,7 +191,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
       conversationLines.push(line);
     }
     // Truncate from oldest if exceeds max chars
-    while (totalChars > MAX_CONVERSATION_CHARS && conversationLines.length > 1) {
+    while (totalChars > MAX_BOOTSTRAP_CONVERSATION_CHARS && conversationLines.length > 1) {
       const removed = conversationLines.shift()!;
       totalChars -= removed.length;
     }

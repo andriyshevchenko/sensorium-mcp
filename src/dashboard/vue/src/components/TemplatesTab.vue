@@ -19,6 +19,10 @@ const agentTypeStatus = ref('')
 const claudeConfigPath = ref('')
 const claudeConfigStatus = ref('')
 
+// Bootstrap message count
+const bootstrapMsgCount = ref(50)
+const bootstrapMsgStatus = ref('')
+
 // Reminders template
 const remindersContent = ref('')
 const remindersIsDefault = ref(true)
@@ -37,6 +41,7 @@ async function loadAll() {
   await Promise.all([
     loadAgentType(),
     loadClaudeMcpConfig(),
+    loadBootstrapMsgCount(),
     loadTemplates(),
     loadDriveTemplate(),
   ])
@@ -53,6 +58,13 @@ async function loadClaudeMcpConfig() {
   try {
     const r = await api<{ path: string }>('/api/settings/claude-mcp-config')
     claudeConfigPath.value = r.path || ''
+  } catch {}
+}
+
+async function loadBootstrapMsgCount() {
+  try {
+    const r = await api<{ count: number }>('/api/settings/bootstrap-message-count')
+    bootstrapMsgCount.value = r.count ?? 50
   } catch {}
 }
 
@@ -99,6 +111,20 @@ async function changeAgentType() {
     await loadTemplates()
   } catch (e: unknown) {
     agentTypeStatus.value = 'Error: ' + (e as Error).message
+  }
+}
+
+async function saveBootstrapMsgCount() {
+  try {
+    await api('/api/settings/bootstrap-message-count', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: bootstrapMsgCount.value }),
+    })
+    bootstrapMsgStatus.value = 'Saved ✓'
+    setTimeout(() => { bootstrapMsgStatus.value = '' }, 3000)
+  } catch (e) {
+    bootstrapMsgStatus.value = 'Error: ' + (e as Error).message
   }
 }
 
@@ -226,6 +252,15 @@ onMounted(loadAll)
         />
         <button @click="saveClaudeConfig" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Save</button>
         <span v-if="claudeConfigStatus" class="text-sm text-success">{{ claudeConfigStatus }}</span>
+      </div>
+      <!-- Bootstrap Message Count -->
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <label class="text-sm font-medium text-textSecondary">Bootstrap Messages</label>
+        <input v-model.number="bootstrapMsgCount" type="number" min="0" max="500"
+          class="w-24 px-3 py-2 rounded-xl bg-card border border-gray-700 text-text text-sm focus:border-accent focus:outline-none"/>
+        <button @click="saveBootstrapMsgCount" class="px-4 py-2 rounded-xl bg-accent text-white text-sm font-medium hover:bg-accent/80 transition-colors">Save</button>
+        <span v-if="bootstrapMsgStatus" class="text-sm text-success">{{ bootstrapMsgStatus }}</span>
+        <span class="text-xs text-muted">Number of recent messages injected as warm context (0 = off)</span>
       </div>
     </div>
 

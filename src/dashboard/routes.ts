@@ -39,6 +39,8 @@ import {
     handlePostThreadAgentType,
     handleGetGuardrailsEnabled,
     handlePostGuardrailsEnabled,
+    handleGetBootstrapMessageCount,
+    handlePostBootstrapMessageCount,
 } from "./routes/settings.js";
 
 // Domain handlers — templates
@@ -94,6 +96,8 @@ const routeTable: Record<string, RouteHandler> = {
     "POST /api/settings/thread-agent-type":    handlePostThreadAgentType,
     "GET /api/settings/guardrails":               handleGetGuardrailsEnabled,
     "POST /api/settings/guardrails":              handlePostGuardrailsEnabled,
+    "GET /api/settings/bootstrap-message-count":  handleGetBootstrapMessageCount,
+    "POST /api/settings/bootstrap-message-count": handlePostBootstrapMessageCount,
 
     // Topic registry
     "GET /api/topic-registry":    handleGetTopicRegistry,
