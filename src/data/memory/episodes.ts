@@ -6,6 +6,7 @@
 
 import type { Database } from "./schema.js";
 import { generateId, nowISO, jsonOrNull, parseJsonArray, parseJsonObject } from "./utils.js";
+import { log } from "../../logger.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -46,6 +47,9 @@ function rowToEpisode(row: Record<string, unknown>): Episode {
     createdAt: row.created_at as string,
   };
 }
+
+/** Default importance for agent action episodes (voice, progress reports). */
+const AGENT_EPISODE_IMPORTANCE = 0.3;
 
 // ─── Episodic Memory CRUD ────────────────────────────────────────────────────
 
@@ -110,6 +114,35 @@ export function getUnconsolidatedEpisodes(db: Database, threadId: number, limit 
     )
     .all(threadId, limit) as Record<string, unknown>[];
   return rows.map(rowToEpisode);
+}
+
+/**
+ * Fire-and-forget episode save for agent actions (voice, progress reports).
+ * Wraps saveEpisode in a try/catch and logs failures instead of throwing.
+ */
+export function saveAgentEpisodeSafe(
+  getMemoryDb: () => Database,
+  params: {
+    sessionStartedAt: number;
+    threadId: number;
+    modality: "text" | "voice";
+    text: string;
+  },
+): void {
+  try {
+    const db = getMemoryDb();
+    if (!db) return;
+    saveEpisode(db, {
+      sessionId: `session_${params.sessionStartedAt}`,
+      threadId: params.threadId,
+      type: "agent_action",
+      modality: params.modality,
+      content: { text: params.text },
+      importance: AGENT_EPISODE_IMPORTANCE,
+    });
+  } catch (err) {
+    log.debug(`[episode] Failed to save agent episode: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export function markConsolidated(db: Database, episodeIds: string[]): void {

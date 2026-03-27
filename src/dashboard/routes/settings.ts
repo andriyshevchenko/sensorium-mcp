@@ -12,10 +12,12 @@ import {
     setClaudeMcpConfigPath,
     getGuardrailsEnabled,
     setGuardrailsEnabled,
+    getBootstrapMessageCount,
+    setBootstrapMessageCount,
     type AgentType,
 } from "../../config.js";
 
-import { readBody, type RouteHandler } from "./types.js";
+import { readBody, safeParseJSON, type RouteHandler } from "./types.js";
 
 // ─── DMN activation hours ───────────────────────────────────────────────────
 
@@ -124,6 +126,32 @@ export const handlePostGuardrailsEnabled: RouteHandler = ({ req, json }) => {
             }
             setGuardrailsEnabled(parsed.enabled);
             json({ ok: true, enabled: parsed.enabled });
+        } catch (err) {
+            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+        }
+    })();
+    return true;
+};
+
+// ─── Bootstrap message count ────────────────────────────────────────────────
+
+export const handleGetBootstrapMessageCount: RouteHandler = ({ json }) => {
+    json({ count: getBootstrapMessageCount() });
+    return true;
+};
+
+export const handlePostBootstrapMessageCount: RouteHandler = ({ req, json }) => {
+    void (async () => {
+        try {
+            const raw = await readBody(req);
+            const body = safeParseJSON(raw) as { count?: number } | null;
+            const count = body && typeof body === "object" ? (body as { count?: number }).count : undefined;
+            if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
+                json({ error: "count must be a non-negative number" }, 400);
+                return;
+            }
+            setBootstrapMessageCount(count);
+            json({ ok: true, count: getBootstrapMessageCount() });
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
         }
