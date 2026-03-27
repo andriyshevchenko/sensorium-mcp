@@ -26,6 +26,7 @@ import {
   buildSmartContext,
   assembleOperatorResponse,
 } from "./message-delivery.js";
+import { classifyIntentWithSkills } from "../../intent.js";
 import type { ToolResult, TextBlock, ImageBlock } from "../../types.js";
 import type { WaitToolContext, WaitToolExtra } from "./poll-loop.js";
 
@@ -151,8 +152,11 @@ export async function processIncomingMessages(
     .join(" ")
     .slice(0, 500);
 
-  // Smart context injection (GPT-4o-mini preprocessor)
-  const autoMemoryContext = await buildSmartContext(operatorText, { getMemoryDb, effectiveThreadId });
+  // Smart context injection + intent/skill classification in parallel
+  const [autoMemoryContext, intentResult] = await Promise.all([
+    buildSmartContext(operatorText, { getMemoryDb, effectiveThreadId }),
+    classifyIntentWithSkills(operatorText, OPENAI_API_KEY),
+  ]);
 
   log.info(`[wait] Returning response with ${contentBlocks.length} blocks to agent.`);
 
@@ -162,6 +166,7 @@ export async function processIncomingMessages(
     hasVoiceMessages,
     autoMemoryContext,
     { effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt, autonomousMode: AUTONOMOUS_MODE },
+    intentResult,
   );
 }
 
