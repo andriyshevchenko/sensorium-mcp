@@ -96,6 +96,11 @@ export async function handleStartThread(
     : undefined;
   const rawAgentType = typeof args.agentType === "string" ? args.agentType.trim() : "claude";
   const workingDirectory = typeof args.workingDirectory === "string" ? args.workingDirectory.trim() : undefined;
+  // NOTE: No access control — any thread can read any thread's memory via memorySourceThreadId.
+  // Acceptable in single-user architecture. Review if multi-tenant support is added.
+  const memorySourceThreadId = typeof args.memorySourceThreadId === "number" ? args.memorySourceThreadId
+    : typeof args.memorySourceThreadId === "string" ? (Number.isFinite(Number(args.memorySourceThreadId)) ? Number(args.memorySourceThreadId) : undefined)
+    : undefined;
 
   // name is required unless an explicit threadId is provided
   if (!name && explicitThreadId === undefined) {
@@ -184,7 +189,7 @@ export async function handleStartThread(
 
   // ── 4. Dormant (topic existed, process dead) → restart ────────────────
   ensureDirs();
-  const result = spawnAgentProcess(claudePath, mcpConfigPath, name, threadId, workingDirectory);
+  const result = spawnAgentProcess(claudePath, mcpConfigPath, name, threadId, workingDirectory, memorySourceThreadId);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
   const status = topicExisted ? "restarted" : "created";
@@ -209,6 +214,7 @@ export async function handleStartThread(
         name,
         pid: result.pid,
         logFile: result.logFile,
+        ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
       }),
     }],
   };

@@ -6,6 +6,7 @@
  * session greeting with reminders.
  */
 
+import { getMemorySourceThreadId } from "../config.js";
 import { convertMarkdown } from "../markdown.js";
 import { assembleBootstrap, type initMemoryDb } from "../memory.js";
 import { addSchedule, generateTaskId, listSchedules, purgeSchedules } from "../scheduler.js";
@@ -221,11 +222,13 @@ export async function handleStartSession(
     : "";
 
   // Auto-bootstrap memory
+  // Ghost threads: use the parent's thread ID for the initial memory briefing
+  const memorySourceThreadId = getMemorySourceThreadId();
   let memoryBriefing = "";
   try {
     const db = getMemoryDb();
     if (session.currentThreadId !== undefined) {
-      memoryBriefing = "\n\n" + assembleBootstrap(db, session.currentThreadId);
+      memoryBriefing = "\n\n" + assembleBootstrap(db, session.currentThreadId, memorySourceThreadId);
     }
   } catch (e) {
     log.warn(`[start_session] Memory bootstrap failed: ${e instanceof Error ? e.message : String(e)}`);

@@ -157,6 +157,20 @@ export function setGuardrailsEnabled(enabled: boolean): void {
   updateSettings(s => { s.guardrailsEnabled = enabled; });
 }
 
+// ─── Ghost thread memory source ───────────────────────────────────────────
+
+/**
+ * Read the MEMORY_SOURCE_THREAD_ID env var set by the parent process
+ * when spawning a ghost thread. Returns the parent thread ID for memory
+ * briefing, or undefined if not a ghost thread.
+ */
+export function getMemorySourceThreadId(): number | undefined {
+  const val = process.env.MEMORY_SOURCE_THREAD_ID;
+  if (!val) return undefined;
+  const n = Number(val);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 // ─── Exported config object ─────────────────────────────────────────────────
 
 export const config: AppConfig = {

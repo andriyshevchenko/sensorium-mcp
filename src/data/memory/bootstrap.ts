@@ -121,10 +121,12 @@ export function getTopicIndex(db: Database): TopicEntry[] {
 
 // ─── Bootstrap ───────────────────────────────────────────────────────────────
 
-export function assembleBootstrap(db: Database, threadId: number): string {
-  const status = getMemoryStatus(db, threadId);
-  const recentEpisodes = getRecentEpisodes(db, threadId, 5);
-  const topNotes = getTopSemanticNotes(db, { limit: 10, sortBy: "access_count", threadId });
+export function assembleBootstrap(db: Database, threadId: number, memorySourceThreadId?: number): string {
+  // Ghost threads: use the parent's thread ID for memory queries
+  const queryThreadId = memorySourceThreadId ?? threadId;
+  const status = getMemoryStatus(db, queryThreadId);
+  const recentEpisodes = getRecentEpisodes(db, queryThreadId, 5);
+  const topNotes = getTopSemanticNotes(db, { limit: 10, sortBy: "access_count", threadId: queryThreadId });
   // Preferences first
   const preferences = topNotes.filter((n) => n.type === "preference");
   const otherNotes = topNotes.filter((n) => n.type !== "preference");
@@ -141,6 +143,12 @@ export function assembleBootstrap(db: Database, threadId: number): string {
 
   const lines: string[] = [];
   lines.push("# Memory Briefing");
+  if (memorySourceThreadId !== undefined) {
+    lines.push(`> **Ghost thread** — memory sourced from parent thread ${memorySourceThreadId}. Runtime memory ops use thread ${threadId}.`);
+    if (recentEpisodes.length === 0 && sortedNotes.length === 0 && procedures.length === 0) {
+      lines.push(`> ⚠️ No memory found for source thread ${memorySourceThreadId}. The ghost thread will start without parent context.`);
+    }
+  }
   lines.push("");
 
   // Status
