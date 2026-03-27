@@ -131,13 +131,22 @@ function Stop-McpServer {
         foreach ($proc in $processes) {
             try {
                 Write-Log "Stopping PID=$($proc.ProcessId)"
-                Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+                # Use taskkill /F /T instead of Stop-Process to kill the entire process tree
+                # (securevault → npx → node chain creates 8+ levels; Stop-Process only kills the target PID)
+                & taskkill /F /T /PID $proc.ProcessId 2>&1 | Out-Null
             }
             catch {
                 Write-Log "Failed to stop PID=$($proc.ProcessId): $_" -Level "WARN"
             }
         }
-        Start-Sleep -Seconds 2
+
+        Start-Sleep -Seconds 3
+        # Verify all processes are dead
+        $remaining = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
+        if ($remaining) {
+            Write-Log "WARNING: $($remaining.Count) sensorium-mcp processes still running after kill" -Level "WARN"
+        }
     }
     else {
         Write-Log "No running sensorium-mcp processes found." -Level "WARN"
@@ -164,7 +173,9 @@ function Stop-StaleProcesses {
         if ($proc.CreationDate -lt $versionFileTime -and $ageSec -gt 60) {
             Write-Log "Killing stale process PID=$($proc.ProcessId) (started $($proc.CreationDate), version file updated $versionFileTime)" -Level "WARN"
             try {
-                Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+                # Use taskkill /F /T instead of Stop-Process to kill the entire process tree
+                # (securevault → npx → node chain creates 8+ levels; Stop-Process only kills the target PID)
+                & taskkill /F /T /PID $proc.ProcessId 2>&1 | Out-Null
             }
             catch {
                 Write-Log "Failed to kill stale PID=$($proc.ProcessId): $_" -Level "WARN"
