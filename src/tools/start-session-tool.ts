@@ -8,7 +8,7 @@
 
 import { getMemorySourceThreadId } from "../config.js";
 import { convertMarkdown } from "../markdown.js";
-import { assembleBootstrap, type initMemoryDb } from "../memory.js";
+import { assembleBootstrap, runIntelligentConsolidation, type initMemoryDb } from "../memory.js";
 import { addSchedule, generateTaskId, listSchedules, purgeSchedules } from "../scheduler.js";
 import {
   lookupSession,
@@ -58,6 +58,9 @@ export interface StartSessionContext {
   /** Close the transport — used for session registration. */
   closeTransport?: () => void;
 }
+
+/** Consolidation fires at session start when unconsolidated episodes exceed this. */
+const STARTUP_CONSOLIDATION_THRESHOLD = 20;
 
 // ---------------------------------------------------------------------------
 // Handler
@@ -233,6 +236,35 @@ export async function handleStartSession(
   } catch (e) {
     log.warn(`[start_session] Memory bootstrap failed: ${e instanceof Error ? e.message : String(e)}`);
     memoryBriefing = "\n\n_Memory system unavailable._";
+  }
+
+  // ── Startup consolidation: catch up if episodes piled up between sessions ──
+  try {
+    if (session.currentThreadId !== undefined) {
+      const db = getMemoryDb();
+      const effectiveThreadId = memorySourceThreadId ?? session.currentThreadId;
+      const uncons = db.prepare(
+        "SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0 AND thread_id = ?",
+      ).get(effectiveThreadId) as { c: number };
+      if (uncons.c > STARTUP_CONSOLIDATION_THRESHOLD) {
+        session.lastConsolidationAt = Date.now();
+        void runIntelligentConsolidation(db, effectiveThreadId)
+          .then((report) => {
+            if (report.episodesProcessed > 0) {
+              log.info(
+                `[memory] Startup consolidation: ${report.episodesProcessed} episodes \u2192 ${report.notesCreated} notes`,
+              );
+            }
+          })
+          .catch((err) => {
+            log.error(
+              `[memory] Startup consolidation error: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
+      }
+    }
+  } catch (err) {
+    log.debug(`[memory] Startup consolidation check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // Purge stale MCP sessions for this thread (from before a server restart)
