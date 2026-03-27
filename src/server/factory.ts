@@ -165,6 +165,7 @@ function createMcpServer(
       telegram,
       config,
       sessionStartedAt,
+      getMemoryDb,
     };
   }
 
@@ -187,6 +188,8 @@ function createMcpServer(
       set lastOperatorMessageText(v) { lastOperatorMessageText = v; },
       previewedUpdateIds,
       addPreviewedId,
+      getMemoryDb,
+      sessionStartedAt,
     };
   }
 
