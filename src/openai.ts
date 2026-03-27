@@ -19,5 +19,5 @@ export type { AudioEvent, Paralinguistics, VoiceAnalysisResult } from "./integra
 // Re-export video frame extraction
 export { extractVideoFrames } from "./integrations/openai/video.js";
 
-// Re-export vision analysis (image + video frame analysis)
-export { analyzeImage, analyzeVideoFrames } from "./integrations/openai/vision.js";
+// Re-export vision analysis (video frame analysis)
+export { analyzeVideoFrames } from "./integrations/openai/vision.js";
