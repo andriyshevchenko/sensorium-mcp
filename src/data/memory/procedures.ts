@@ -51,7 +51,7 @@ export function rowToProcedure(row: Record<string, unknown>): Procedure {
 
 // ─── Procedural Memory ──────────────────────────────────────────────────────
 
-export function searchProcedures(db: Database, query: string, maxResults = 10): Procedure[] {
+export function searchProcedures(db: Database, query: string, maxResults = 10, options?: { startTime?: string; endTime?: string }): Procedure[] {
   const terms = query
     .toLowerCase()
     .split(/\s+/)
@@ -68,7 +68,17 @@ export function searchProcedures(db: Database, query: string, maxResults = 10): 
     params.push(`%${escaped}%`, `%${escaped}%`, `%${escaped}%`, `%${escaped}%`);
   }
 
-  const sql = `SELECT * FROM procedures WHERE ${conditions.join(" OR ")} ORDER BY confidence DESC, success_rate DESC LIMIT ?`;
+  let sql = `SELECT * FROM procedures WHERE (${conditions.join(" OR ")})`;
+
+  if (options?.startTime) {
+    sql += ` AND created_at >= ?`;
+    params.push(options.startTime);
+  }
+  if (options?.endTime) {
+    sql += ` AND created_at <= ?`;
+    params.push(options.endTime);
+  }
+  sql += ` ORDER BY confidence DESC, success_rate DESC LIMIT ?`;
   params.push(maxResults);
 
   const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];

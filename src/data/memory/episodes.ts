@@ -84,12 +84,22 @@ export function saveEpisode(
   return id;
 }
 
-export function getRecentEpisodes(db: Database, threadId: number, limit = 20): Episode[] {
+export function getRecentEpisodes(db: Database, threadId: number, limit = 20, options?: { startTime?: string; endTime?: string }): Episode[] {
+  let sql = `SELECT * FROM episodes WHERE thread_id = ?`;
+  const params: unknown[] = [threadId];
+  if (options?.startTime) {
+    sql += ` AND timestamp >= ?`;
+    params.push(options.startTime);
+  }
+  if (options?.endTime) {
+    sql += ` AND timestamp <= ?`;
+    params.push(options.endTime);
+  }
+  sql += ` ORDER BY timestamp DESC LIMIT ?`;
+  params.push(limit);
   const rows = db
-    .prepare(
-      `SELECT * FROM episodes WHERE thread_id = ? ORDER BY timestamp DESC LIMIT ?`
-    )
-    .all(threadId, limit) as Record<string, unknown>[];
+    .prepare(sql)
+    .all(...params) as Record<string, unknown>[];
   return rows.map(rowToEpisode);
 }
 
