@@ -16,8 +16,7 @@ export const DEFAULT_DRIVE_PROMPT = `The operator is away. The session is yours.
 
 // Per-agent default reminders templates
 const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
-  copilot: `You are the ORCHESTRATOR. Load the orchestrator skill via get_skill for full instructions before executing tasks. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
-When proceeding with a task, load the appropriate skill using get_skill if available.
+  copilot: `threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
   claude: `You coordinate work via MCP tools. For complex tasks, break them into sequential steps. Keep context lean \u2014 summarize progress before starting new work. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,

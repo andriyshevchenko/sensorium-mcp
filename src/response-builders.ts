@@ -120,17 +120,15 @@ export function getReminders(
 }
 
 /**
- * Medium context — includes the orchestrator directive (or standard
- * instruction) so the agent never loses the fundamental behavioral
- * constraint, but omits memory auto-injection, drive content, and
- * template overrides to keep the payload lean.
+ * Medium context — lightweight reminder with thread ID, time, uptime,
+ * and mode. Omits memory auto-injection, drive content, and template
+ * overrides to keep the payload lean.
  *
- * Used for conversational-intent messages where full context is overkill
- * but the orchestrator guardrail must still be present.
+ * Used for conversational-intent messages where full context is overkill.
  *
  * @param threadId          Current Telegram thread ID (if any).
  * @param sessionStartedAt  Epoch ms when the current session started.
- * @param autonomousMode    Whether the agent is in autonomous orchestrator mode.
+ * @param autonomousMode    Whether the agent is in autonomous mode.
  */
 export function getMediumReminder(
   threadId: number | undefined,
@@ -145,13 +143,10 @@ export function getMediumReminder(
     timeZoneName: "short",
   });
 
-  const directive = autonomousMode
-    ? "\nYou are the ORCHESTRATOR. Load the orchestrator skill via get_skill for full instructions before executing tasks."
-    : "\nFollow the operator's instructions. Report results via `send_voice`.";
+  const mode = autonomousMode ? "autonomous" : "standard";
 
   return (
-    directive +
-    ` threadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m`
+    `\nthreadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m | mode: ${mode}`
   );
 }
 
