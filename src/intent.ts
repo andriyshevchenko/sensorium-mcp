@@ -147,7 +147,7 @@ const ACTIVATION_PATTERNS = [
 
 /** Match operator message against skill trigger phrases (two-phase). Returns ALL matching skills, deduplicated. */
 export function matchSkills(message: string): Skill[] {
-  const lower = message.toLowerCase();
+  const normalizedMsg = message.toLowerCase().replace(/-/g, ' ');
 
   // Phase 1: Check for explicit activation intent
   const hasActivation = ACTIVATION_PATTERNS.some(p => p.test(message));
@@ -160,7 +160,7 @@ export function matchSkills(message: string): Skill[] {
   const skills = loadSkills();
   for (const skill of skills) {
     for (const trigger of skill.triggers) {
-      if (lower.includes(trigger.toLowerCase()) && !seen.has(skill.name)) {
+      if (normalizedMsg.includes(trigger.toLowerCase().replace(/-/g, ' ')) && !seen.has(skill.name)) {
         matched.push(skill);
         seen.add(skill.name);
       }
@@ -169,7 +169,7 @@ export function matchSkills(message: string): Skill[] {
 
   // Phase 2b: Try matching by skill name directly
   for (const skill of skills) {
-    if (lower.includes(skill.name.toLowerCase()) && !seen.has(skill.name)) {
+    if (normalizedMsg.includes(skill.name.toLowerCase().replace(/-/g, ' ')) && !seen.has(skill.name)) {
       matched.push(skill);
       seen.add(skill.name);
     }
