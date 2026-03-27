@@ -30,10 +30,6 @@ import {
   cleanupStalePidFiles,
 } from "./thread-lifecycle.js";
 
-// Re-export types and functions that consumers depend on
-export type { SpawnedThread } from "./thread-lifecycle.js";
-export { isThreadRunning } from "./thread-lifecycle.js";
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
