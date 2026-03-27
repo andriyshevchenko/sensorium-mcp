@@ -50,7 +50,7 @@ export function checkForDueTasks(
   const taskPrompt = dueTask.prompt === "__DMN__"
     ? ctx.generateDmnReflection(effectiveThreadId)
     : `⏰ **Scheduled task fired: "${dueTask.task.label}"**\n\n` +
-      `This task was scheduled by you. Execute it now using subagents, then report progress and continue waiting.\n\n` +
+      `This task was scheduled by you. Load the orchestrator skill via get_skill for full instructions, then execute this task. Report progress and continue waiting.\n\n` +
       `Task prompt: ${dueTask.prompt}`;
 
   return {
