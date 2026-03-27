@@ -402,9 +402,17 @@ function collectThreadData(): CollectedThread[] {
 /**
  * Classify a thread as running / dormant / dead / unknown based on its
  * process liveness and dashboard-session state.
+ *
+ * Session activity is checked independently of PID — the main server thread
+ * (e.g. sensorium) is the host process itself and won't appear in
+ * spawnedThreads, yet it has an active dashboard session with recent
+ * wait-call activity.
  */
 function classifyThreadStatus(t: CollectedThread): ThreadStatus {
   if (t.alive && t.hasActiveSession && t.hasRecentWait) return "running";
+  // Session-only liveness: no PID tracked but dashboard session is active
+  if (t.hasActiveSession && t.hasRecentWait) return "running";
+  if (t.hasActiveSession) return "dormant";
   if (t.alive) return "dormant";
   if (t.pid !== undefined && !t.alive) return "dead";
   return "unknown";
