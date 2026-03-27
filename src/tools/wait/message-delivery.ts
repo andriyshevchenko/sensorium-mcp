@@ -11,7 +11,7 @@
 import { basename } from "node:path";
 import { saveFileToDisk } from "../../data/file-storage.js";
 import type { StoredMessage } from "../../dispatcher.js";
-import { classifyIntent, matchSkills } from "../../intent.js";
+import { classifyIntent, matchSkills, type MessageIntent, type Skill } from "../../intent.js";
 import { log } from "../../logger.js";
 import {
   saveEpisode,
@@ -336,12 +336,13 @@ export function assembleOperatorResponse(
   hasVoiceMessages: boolean,
   autoMemoryContext: string,
   ctx: Pick<MessageDeliveryContext, "effectiveThreadId" | "sessionStartedAt" | "autonomousMode">,
+  preClassified?: { intent: MessageIntent; skills: Skill[] },
 ): ToolResult {
-  const intent = classifyIntent(operatorText);
-  log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${intent}`);
+  const intent = preClassified?.intent ?? classifyIntent(operatorText);
+  log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${intent}${preClassified ? " (OpenAI)" : " (local)"}`);
 
   // ── Skill matching: check before building the default prompt ──
-  const skills = matchSkills(operatorText);
+  const skills = preClassified?.skills ?? matchSkills(operatorText);
   if (skills.length > 0) {
     log.info(`[skill] Matched ${skills.length} skill(s): ${skills.map(s => s.name).join(", ")}`);
   }
