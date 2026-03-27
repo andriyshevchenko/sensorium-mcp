@@ -16,7 +16,6 @@ import { log } from "../../logger.js";
 import {
   chatCompletion,
   generateEmbedding,
-  cosineSimilarity,
   type ChatMessage,
 } from "../../integrations/openai/chat.js";
 
