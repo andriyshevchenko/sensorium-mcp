@@ -145,28 +145,37 @@ const ACTIVATION_PATTERNS = [
   /@[\w-]+\s*skill\b/i,
 ];
 
-/** Match operator message against skill trigger phrases (two-phase). */
-export function matchSkill(message: string): Skill | null {
+/** Match operator message against skill trigger phrases (two-phase). Returns ALL matching skills, deduplicated. */
+export function matchSkills(message: string): Skill[] {
   const lower = message.toLowerCase();
 
   // Phase 1: Check for explicit activation intent
   const hasActivation = ACTIVATION_PATTERNS.some(p => p.test(message));
-  if (!hasActivation) return null;
+  if (!hasActivation) return [];
 
-  // Phase 2: Match specific skill by trigger
+  const matched: Skill[] = [];
+  const seen = new Set<string>();
+
+  // Phase 2: Match specific skills by trigger
   const skills = loadSkills();
   for (const skill of skills) {
     for (const trigger of skill.triggers) {
-      if (lower.includes(trigger.toLowerCase())) return skill;
+      if (lower.includes(trigger.toLowerCase()) && !seen.has(skill.name)) {
+        matched.push(skill);
+        seen.add(skill.name);
+      }
     }
   }
 
   // Phase 2b: Try matching by skill name directly
   for (const skill of skills) {
-    if (lower.includes(skill.name.toLowerCase())) return skill;
+    if (lower.includes(skill.name.toLowerCase()) && !seen.has(skill.name)) {
+      matched.push(skill);
+      seen.add(skill.name);
+    }
   }
 
-  return null;
+  return matched;
 }
 
 // ── Intent classification ─────────────────────────────────────────────────
