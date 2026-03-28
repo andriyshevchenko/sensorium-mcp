@@ -530,7 +530,7 @@ function createWatcherMcp(): Server {
     const lbl = tid ? `threadId=${tid}` : `threadId=<your thread>`;
     const deadline = Date.now() + 600_000;
     while (flagExists() && Date.now() < deadline) await sleep(2_000);
-    if (!flagExists()) return { content: [{ type: "text", text: `Server ready. Call start_session with ${lbl}.` }] };
+    if (!flagExists()) return { content: [{ type: "text", text: `Server ready. **Wait 15 seconds** for the MCP client to reconnect (use Desktop Commander: Start-Sleep -Seconds 15), then call start_session with ${lbl}.` }] };
     return { content: [{ type: "text", text: `Timed out. Try start_session with ${lbl} anyway.` }] };
   });
   return srv;
