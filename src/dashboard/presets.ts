@@ -16,11 +16,14 @@ export const DEFAULT_DRIVE_PROMPT = `The operator is away. The session is yours.
 
 // Per-agent default reminders templates
 const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
-  copilot: `threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+  copilot: `For tasks, load relevant skill via get_skill first.
+threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
-  claude: `You coordinate work via MCP tools. For complex tasks, break them into sequential steps. Keep context lean \u2014 summarize progress before starting new work. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+  claude: `For tasks, load relevant skill via get_skill first.
+You coordinate work via MCP tools. For complex tasks, break them into sequential steps. Keep context lean — summarize progress before starting new work. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
-  cursor: `You coordinate work via MCP tools. Prefer targeted, minimal edits. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+  cursor: `For tasks, load relevant skill via get_skill first.
+You coordinate work via MCP tools. Prefer targeted, minimal edits. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
 };
 
