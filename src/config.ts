@@ -178,6 +178,51 @@ export function setGuardrailsEnabled(enabled: boolean): void {
   updateSettings(s => { s.guardrailsEnabled = enabled; });
 }
 
+// ─── Keep-alive settings ─────────────────────────────────────────────────────
+
+const DEFAULT_KEEP_ALIVE_MAX_RETRIES = 5;
+const DEFAULT_KEEP_ALIVE_COOLDOWN_MS = 300_000;
+
+export function getKeepAliveEnabled(): boolean {
+  const v = readSettings().keepAliveEnabled;
+  if (typeof v === "boolean") return v;
+  return false; // default: disabled
+}
+
+export function setKeepAliveEnabled(enabled: boolean): void {
+  updateSettings(s => { s.keepAliveEnabled = enabled; });
+}
+
+export function getKeepAliveThreadId(): number {
+  const v = readSettings().keepAliveThreadId;
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  return 0;
+}
+
+export function setKeepAliveThreadId(threadId: number): void {
+  updateSettings(s => { s.keepAliveThreadId = threadId; });
+}
+
+export function getKeepAliveMaxRetries(): number {
+  const v = readSettings().keepAliveMaxRetries;
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  return DEFAULT_KEEP_ALIVE_MAX_RETRIES;
+}
+
+export function setKeepAliveMaxRetries(retries: number): void {
+  updateSettings(s => { s.keepAliveMaxRetries = retries; });
+}
+
+export function getKeepAliveCooldownMs(): number {
+  const v = readSettings().keepAliveCooldownMs;
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  return DEFAULT_KEEP_ALIVE_COOLDOWN_MS;
+}
+
+export function setKeepAliveCooldownMs(ms: number): void {
+  updateSettings(s => { s.keepAliveCooldownMs = ms; });
+}
+
 // ─── Ghost thread memory source ───────────────────────────────────────────
 
 /**

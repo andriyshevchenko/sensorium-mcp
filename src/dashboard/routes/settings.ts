@@ -14,6 +14,14 @@ import {
     setGuardrailsEnabled,
     getBootstrapMessageCount,
     setBootstrapMessageCount,
+    getKeepAliveEnabled,
+    setKeepAliveEnabled,
+    getKeepAliveThreadId,
+    setKeepAliveThreadId,
+    getKeepAliveMaxRetries,
+    setKeepAliveMaxRetries,
+    getKeepAliveCooldownMs,
+    setKeepAliveCooldownMs,
     type AgentType,
 } from "../../config.js";
 
@@ -152,6 +160,72 @@ export const handlePostBootstrapMessageCount: RouteHandler = ({ req, json }) => 
             }
             setBootstrapMessageCount(count);
             json({ ok: true, count: getBootstrapMessageCount() });
+        } catch (err) {
+            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+        }
+    })();
+    return true;
+};
+
+// ─── Keep-alive settings ─────────────────────────────────────────────────────
+
+export const handleGetKeepAlive: RouteHandler = ({ json }) => {
+    json({
+        keepAliveEnabled: getKeepAliveEnabled(),
+        keepAliveThreadId: getKeepAliveThreadId(),
+        keepAliveMaxRetries: getKeepAliveMaxRetries(),
+        keepAliveCooldownMs: getKeepAliveCooldownMs(),
+    });
+    return true;
+};
+
+export const handlePostKeepAlive: RouteHandler = ({ req, json }) => {
+    void (async () => {
+        try {
+            const raw = await readBody(req);
+            const body = safeParseJSON(raw) as Record<string, unknown> | null;
+            if (!body || typeof body !== "object") {
+                json({ error: "Invalid request body" }, 400);
+                return;
+            }
+            if ("keepAliveEnabled" in body) {
+                if (typeof body.keepAliveEnabled !== "boolean") {
+                    json({ error: "keepAliveEnabled must be a boolean" }, 400);
+                    return;
+                }
+                setKeepAliveEnabled(body.keepAliveEnabled);
+            }
+            if ("keepAliveThreadId" in body) {
+                const tid = body.keepAliveThreadId;
+                if (typeof tid !== "number" || !Number.isFinite(tid) || tid < 0) {
+                    json({ error: "keepAliveThreadId must be a non-negative number" }, 400);
+                    return;
+                }
+                setKeepAliveThreadId(tid);
+            }
+            if ("keepAliveMaxRetries" in body) {
+                const r = body.keepAliveMaxRetries;
+                if (typeof r !== "number" || !Number.isFinite(r) || r < 1) {
+                    json({ error: "keepAliveMaxRetries must be a positive number" }, 400);
+                    return;
+                }
+                setKeepAliveMaxRetries(r);
+            }
+            if ("keepAliveCooldownMs" in body) {
+                const ms = body.keepAliveCooldownMs;
+                if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 1000) {
+                    json({ error: "keepAliveCooldownMs must be >= 1000" }, 400);
+                    return;
+                }
+                setKeepAliveCooldownMs(ms);
+            }
+            json({
+                ok: true,
+                keepAliveEnabled: getKeepAliveEnabled(),
+                keepAliveThreadId: getKeepAliveThreadId(),
+                keepAliveMaxRetries: getKeepAliveMaxRetries(),
+                keepAliveCooldownMs: getKeepAliveCooldownMs(),
+            });
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
         }
