@@ -75,6 +75,7 @@ function createMcpServer(
   let lastOperatorMessageAt = Date.now();
   let lastOperatorMessageText = "";
   let lastConsolidationAt = 0;
+  let sessionFullyInitialized = false;
   let toolCallsSinceLastDelivery = 0;
   let lastDriveAttemptAt = 0;
   let drivePhase2Fired = false;
@@ -200,6 +201,8 @@ function createMcpServer(
           set currentThreadId(v) { currentThreadId = v; },
           get sessionStartedAt() { return sessionStartedAt; },
           set sessionStartedAt(v) { sessionStartedAt = v; },
+          get sessionFullyInitialized() { return sessionFullyInitialized; },
+          set sessionFullyInitialized(v) { sessionFullyInitialized = v; },
           get waitCallCount() { return waitCallCount; },
           set waitCallCount(v) { waitCallCount = v; },
           get lastToolCallAt() { return lastToolCallAt; },

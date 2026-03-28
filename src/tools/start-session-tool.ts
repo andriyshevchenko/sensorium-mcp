@@ -34,6 +34,8 @@ export interface StartSessionContext {
   session: {
     currentThreadId: number | undefined;
     sessionStartedAt: number;
+    /** True once the full bootstrap (memory briefing, schedule setup, etc.) has run in THIS process. */
+    sessionFullyInitialized: boolean;
     waitCallCount: number;
     lastToolCallAt: number;
     toolCallsSinceLastDelivery: number;
@@ -82,9 +84,17 @@ export async function handleStartSession(
     : undefined;
 
   // ── Re-entry guard ────────────────────────────────────────────────────
-  // If the requested thread is already the active session, return early
-  // without reinitializing state — reinitialization disrupts the polling loop.
-  if (explicitThreadId !== undefined && explicitThreadId === session.currentThreadId) {
+  // If the requested thread is already the active session AND the full
+  // bootstrap already ran in THIS process lifetime, return early without
+  // reinitializing state — reinitialization disrupts the polling loop.
+  // After a server restart, sessionFullyInitialized is false even though
+  // currentThreadId may already match (restored from the session store),
+  // so we always run the full bootstrap on a fresh process.
+  if (
+    session.sessionFullyInitialized &&
+    explicitThreadId !== undefined &&
+    explicitThreadId === session.currentThreadId
+  ) {
     log.info(
       `[start_session] Thread ${explicitThreadId} is already the active session — skipping reinitialization.`,
     );
@@ -328,6 +338,10 @@ export async function handleStartSession(
 
   const threadId = session.currentThreadId;
   const reminders = ctx.getReminders(threadId, session.sessionStartedAt, config.AUTONOMOUS_MODE);
+  // Mark session as fully initialized — subsequent start_session calls with
+  // the same threadId will hit the re-entry guard instead of re-bootstrapping.
+  session.sessionFullyInitialized = true;
+
   const endDirective =
     `\n\n**⚠️ ACTION REQUIRED: Call the \`remote_copilot_wait_for_instructions\` tool NOW with threadId=${threadId}. Do NOT stop or end your turn.**`;
 
