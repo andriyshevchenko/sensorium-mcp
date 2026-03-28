@@ -385,22 +385,84 @@ async function checkAndUpdate(): Promise<void> {
 }
 
 // Claude CLI keeper -----------------------------------------------------------
-function keeperEnabled(): boolean {
-  return CONFIG.alwaysOnThreadId > 0 && CONFIG.mcpHttpPort > 0;
+
+const SETTINGS_JSON_PATH = join(CONFIG.dataDir, "settings.json");
+const KEEPER_SETTINGS_POLL_MS = 2 * 60_000;
+
+interface KeeperSettings {
+  enabled: boolean;
+  threadId: number;
+  maxRetries: number;
+  cooldownMs: number;
 }
 
-async function launchKeeper(): Promise<void> {
-  if (!keeperEnabled()) return;
-  if (keeper) { await keeper.stop(); keeper = null; }
-  keeper = await startClaudeKeeper({
-    threadId: CONFIG.alwaysOnThreadId,
-    sessionName: CONFIG.alwaysOnSessionName,
-    claudeCmd: CONFIG.claudeCmd,
-    mcpConfigPath: join(CONFIG.dataDir, "claude-mcp-config.json"),
-    mcpHttpPort: CONFIG.mcpHttpPort,
-    mcpHttpSecret: CONFIG.mcpHttpSecret,
-    dataDir: CONFIG.dataDir,
-  });
+function readKeeperSettings(): KeeperSettings {
+  const raw = safeRead(SETTINGS_JSON_PATH);
+  const s: Record<string, unknown> = raw
+    ? (() => { try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; } })()
+    : {};
+  const threadId = typeof s.keepAliveThreadId === "number" && s.keepAliveThreadId > 0
+    ? s.keepAliveThreadId
+    : CONFIG.alwaysOnThreadId;
+  // If keepAliveEnabled is explicitly set, use it. Otherwise fall back to env-var behaviour.
+  const enabled = typeof s.keepAliveEnabled === "boolean"
+    ? s.keepAliveEnabled
+    : CONFIG.alwaysOnThreadId > 0;
+  const maxRetries = typeof s.keepAliveMaxRetries === "number" && s.keepAliveMaxRetries > 0
+    ? s.keepAliveMaxRetries : 5;
+  const cooldownMs = typeof s.keepAliveCooldownMs === "number" && s.keepAliveCooldownMs >= 1000
+    ? s.keepAliveCooldownMs : 300_000;
+  return { enabled, threadId, maxRetries, cooldownMs };
+}
+
+let activeKeeperSettings: KeeperSettings | null = null;
+
+function keeperSettingsChanged(a: KeeperSettings, b: KeeperSettings): boolean {
+  return a.threadId !== b.threadId || a.maxRetries !== b.maxRetries || a.cooldownMs !== b.cooldownMs;
+}
+
+async function applyKeeperSettings(): Promise<void> {
+  if (CONFIG.mcpHttpPort <= 0) return;
+  const settings = readKeeperSettings();
+  const shouldRun = settings.enabled && settings.threadId > 0;
+
+  if (!shouldRun) {
+    if (keeper) {
+      log("INFO", "Keep-alive disabled — stopping keeper.");
+      await keeper.stop();
+      keeper = null;
+      activeKeeperSettings = null;
+    }
+    return;
+  }
+
+  if (keeper && activeKeeperSettings && keeperSettingsChanged(activeKeeperSettings, settings)) {
+    log("INFO", "Keep-alive settings changed — restarting keeper.");
+    await keeper.stop();
+    keeper = null;
+    activeKeeperSettings = null;
+  }
+
+  if (!keeper) {
+    activeKeeperSettings = settings;
+    keeper = await startClaudeKeeper({
+      threadId: settings.threadId,
+      sessionName: CONFIG.alwaysOnSessionName,
+      claudeCmd: CONFIG.claudeCmd,
+      mcpConfigPath: join(CONFIG.dataDir, "claude-mcp-config.json"),
+      mcpHttpPort: CONFIG.mcpHttpPort,
+      mcpHttpSecret: CONFIG.mcpHttpSecret,
+      dataDir: CONFIG.dataDir,
+      maxRetries: settings.maxRetries,
+      cooldownMs: settings.cooldownMs,
+    });
+  }
+}
+
+function startKeeperPoller(): void {
+  setInterval(() => {
+    void applyKeeperSettings().catch((err) => log("ERROR", `Keeper settings poll failed: ${err}`));
+  }, KEEPER_SETTINGS_POLL_MS);
 }
 
 // Main loop -------------------------------------------------------------------
@@ -418,7 +480,8 @@ async function runLoop(): Promise<void> {
   }
   const pid = readPid();
   if (!pid || !alive(pid)) startMcpServer();
-  void launchKeeper().catch((err) => log("ERROR", `Keeper failed to start: ${err}`));
+  void applyKeeperSettings().catch((err) => log("ERROR", `Keeper failed to start: ${err}`));
+  startKeeperPoller();
   if (CONFIG.mode === "production") {
     while (true) {
       const ms = msUntilHour(CONFIG.pollAtHour);

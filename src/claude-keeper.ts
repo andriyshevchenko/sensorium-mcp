@@ -16,8 +16,10 @@ import { join } from "node:path";
 const BASE_BACKOFF_MS = 5_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 const LIVENESS_CHECK_INTERVAL_MS = 5 * 60_000;
-/** Minimum uptime before a restart is considered "healthy" and backoff resets. */
+/** Minimum uptime before a restart is considered "healthy" and retry count resets. */
 const HEALTHY_UPTIME_MS = 60_000;
+const DEFAULT_MAX_RETRIES = 5;
+const DEFAULT_COOLDOWN_MS = 300_000;
 const WARM_CONTEXT_LINE_LIMIT = 50;
 const WARM_CONTEXT_TEXT_LIMIT = 200;
 const MCP_READY_POLL_INTERVAL_MS = 3_000;
@@ -44,6 +46,10 @@ export interface KeeperConfig {
   mcpHttpSecret: string | null;
   /** ~/.remote-copilot-mcp data directory. */
   dataDir: string;
+  /** Max consecutive fast crashes before entering cooldown. Default: 5. */
+  maxRetries?: number;
+  /** Cooldown duration in ms after max retries exceeded. Default: 300000. */
+  cooldownMs?: number;
 }
 
 export interface KeeperHandle {
@@ -142,14 +148,25 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
   let child: ChildProcess | null = null;
   let backoffMs = BASE_BACKOFF_MS;
   let stopped = false;
+  let retryCount = 0;
   let livenessTimer: ReturnType<typeof setInterval> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
 
+  const maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const cooldownMs = config.cooldownMs ?? DEFAULT_COOLDOWN_MS;
+
   function scheduleRestart(): void {
     if (stopped) return;
+    if (retryCount > maxRetries) {
+      keeperLog("WARN", `Max retries (${maxRetries}) exceeded — cooling down for ${Math.round(cooldownMs / 1000)}s`);
+      retryCount = 0;
+      backoffMs = BASE_BACKOFF_MS;
+      restartTimer = setTimeout(() => { restartTimer = null; spawnAgent(); }, cooldownMs);
+      return;
+    }
     const delay = backoffMs;
     backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
-    keeperLog("INFO", `Scheduling restart in ${delay}ms...`);
+    keeperLog("INFO", `Scheduling restart in ${delay}ms (attempt ${retryCount}/${maxRetries})...`);
     restartTimer = setTimeout(() => { restartTimer = null; spawnAgent(); }, delay);
   }
 
@@ -184,8 +201,14 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
       spawned.on("exit", (code, signal) => {
         if (child === spawned) child = null;
         if (stopped) return;
-        // Reset backoff only if the agent ran long enough — prevents hiding rapid crash loops.
-        if (Date.now() - spawnedAt >= HEALTHY_UPTIME_MS) backoffMs = BASE_BACKOFF_MS;
+        const ranLongEnough = Date.now() - spawnedAt >= HEALTHY_UPTIME_MS;
+        if (ranLongEnough) {
+          // Healthy run — reset backoff and retry counter.
+          backoffMs = BASE_BACKOFF_MS;
+          retryCount = 0;
+        } else {
+          retryCount++;
+        }
         keeperLog("WARN", `Claude exited (code=${code ?? "?"}, signal=${signal ?? "none"})`);
         scheduleRestart();
       });
