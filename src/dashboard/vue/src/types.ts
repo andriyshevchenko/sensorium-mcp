@@ -65,3 +65,10 @@ export interface Topic {
   proceduralCount: number
   lastUpdated: string
 }
+
+export interface KeepAliveSettings {
+  keepAliveEnabled: boolean
+  keepAliveThreadId: number
+  keepAliveMaxRetries: number
+  keepAliveCooldownMs: number
+}
