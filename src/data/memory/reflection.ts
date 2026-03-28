@@ -9,7 +9,7 @@
  */
 
 import type { Database } from "./schema.js";
-import type { Episode } from "./episodes.js";
+import { type Episode, rowToEpisode } from "./episodes.js";
 import { saveSemanticNote, searchByEmbedding, saveNoteEmbedding } from "./semantic.js";
 import { nowISO } from "./utils.js";
 import { log } from "../../logger.js";
@@ -96,35 +96,6 @@ function gatherEpisodes(
 
   const allRows = [...recentRows, ...olderFiltered];
   return allRows.map(rowToEpisode);
-}
-
-/** Map a raw DB row to an Episode (mirrors episodes.ts but avoids circular import). */
-function rowToEpisode(row: Record<string, unknown>): Episode {
-  return {
-    episodeId: row.episode_id as string,
-    sessionId: row.session_id as string,
-    threadId: row.thread_id as number,
-    timestamp: row.timestamp as string,
-    type: row.type as Episode["type"],
-    modality: row.modality as Episode["modality"],
-    content: safeParseJson(row.content as string | null),
-    topicTags: safeParseArray(row.topic_tags as string | null),
-    importance: row.importance as number,
-    consolidated: (row.consolidated as number) === 1,
-    accessedCount: row.accessed_count as number,
-    lastAccessed: (row.last_accessed as string) ?? null,
-    createdAt: row.created_at as string,
-  };
-}
-
-function safeParseJson(val: string | null): Record<string, unknown> {
-  if (!val) return {};
-  try { return JSON.parse(val); } catch { return {}; }
-}
-
-function safeParseArray(val: string | null): string[] {
-  if (!val) return [];
-  try { return JSON.parse(val); } catch { return []; }
 }
 
 // ─── JSON repair (minimal — shared pattern with consolidation.ts) ────────────
