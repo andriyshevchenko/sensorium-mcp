@@ -51,6 +51,10 @@ mkdirSync(TEMPLATES_DIR, { recursive: true });
 
 export type AgentType = "copilot" | "claude" | "cursor";
 
+function isValidAgentType(v: unknown): v is AgentType {
+  return v === "copilot" || v === "claude" || v === "cursor";
+}
+
 const SETTINGS_PATH = join(homedir(), ".remote-copilot-mcp", "settings.json");
 const SETTINGS_TMP_PATH = SETTINGS_PATH + ".tmp";
 
@@ -76,8 +80,7 @@ function updateSettings(mutator: (s: Record<string, unknown>) => void): void {
 
 export function getAgentType(): AgentType {
   const t = readSettings().agentType;
-  if (t === "copilot" || t === "claude" || t === "cursor") return t;
-  return "copilot";
+  return isValidAgentType(t) ? t : "copilot";
 }
 
 export function setAgentType(type: AgentType): void {
@@ -91,7 +94,7 @@ function getThreadAgentType(threadId: number): AgentType | null {
   const map = readSettings().threadAgentTypes as Record<string, unknown> | undefined;
   if (map) {
     const t = map[String(threadId)];
-    if (t === "copilot" || t === "claude" || t === "cursor") return t;
+    if (isValidAgentType(t)) return t;
   }
   return null;
 }
@@ -111,7 +114,7 @@ export function getAllThreadAgentTypes(): Record<string, AgentType> {
   if (map && typeof map === "object") {
     const result: Record<string, AgentType> = {};
     for (const [k, v] of Object.entries(map)) {
-      if (v === "copilot" || v === "claude" || v === "cursor") result[k] = v;
+      if (isValidAgentType(v)) result[k] = v;
     }
     return result;
   }
