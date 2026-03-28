@@ -3,6 +3,7 @@
  * and tracks active MCP transport sessions per thread.
  */
 
+import type { Database } from "better-sqlite3";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -184,8 +185,6 @@ export const WAIT_LIVENESS_MS = 5 * 60 * 1000;
 // ─── Topic registry (operator-managed name → threadId mapping) ──────────────
 // Backed by the shared SQLite memory database (topic_registry table).
 // Call setTopicRegistryDb() once at startup to wire up the DB accessor.
-
-import type { Database } from "better-sqlite3";
 
 let topicDbGetter: (() => Database) | null = null;
 
