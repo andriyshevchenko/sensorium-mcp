@@ -86,31 +86,24 @@ export function getReminders(
   const uptimeMin = Math.round((Date.now() - sessionStartedAt) / 60000);
   const timeStr = formatTimestamp(now);
 
-  // ── Try custom template ────────────────────────────────────────────────
-  const tpl = loadTemplate("reminders");
-  if (tpl !== null) {
-    const vars: Record<string, string> = {
-      OPERATOR_MESSAGE: "",           // not available at this call-site
-      THREAD_ID: String(threadId ?? "?"),
-      TIME: timeStr,
-      UPTIME: `${uptimeMin}m`,
-      VERSION: config.PKG_VERSION,
-      MODE: autonomousMode ? "autonomous" : "standard",
-    };
-    return "\n" + renderTemplate(tpl, vars).trim();
-  }
-
-  // ── Fallback: use agent-specific default template ────────────────────
-  const defaultTpl = getDefaultRemindersTemplate(getEffectiveAgentType(threadId));
-  const fallbackVars: Record<string, string> = {
-    OPERATOR_MESSAGE: "",
+  const vars: Record<string, string> = {
+    OPERATOR_MESSAGE: "",           // not available at this call-site
     THREAD_ID: String(threadId ?? "?"),
     TIME: timeStr,
     UPTIME: `${uptimeMin}m`,
     VERSION: config.PKG_VERSION,
     MODE: autonomousMode ? "autonomous" : "standard",
   };
-  return "\n" + renderTemplate(defaultTpl, fallbackVars).trim();
+
+  // ── Try custom template ────────────────────────────────────────────────
+  const tpl = loadTemplate("reminders");
+  if (tpl !== null) {
+    return "\n" + renderTemplate(tpl, vars).trim();
+  }
+
+  // ── Fallback: use agent-specific default template ────────────────────
+  const defaultTpl = getDefaultRemindersTemplate(getEffectiveAgentType(threadId));
+  return "\n" + renderTemplate(defaultTpl, vars).trim();
 }
 
 /**

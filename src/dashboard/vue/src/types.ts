@@ -20,16 +20,6 @@ export interface MemoryNote {
   updatedAt: string
 }
 
-export interface Episode {
-  episodeId: string
-  threadId: number
-  type: string
-  modality: string
-  content: string
-  importance: number
-  consolidated: boolean
-  createdAt: string
-}
 
 export interface MemoryStats {
   totalSemanticNotes: number
@@ -57,13 +47,6 @@ export interface DrivePreset {
   key: string
   label: string
   content: string
-}
-
-export interface Topic {
-  topic: string
-  semanticCount: number
-  proceduralCount: number
-  lastUpdated: string
 }
 
 export interface KeepAliveSettings {
