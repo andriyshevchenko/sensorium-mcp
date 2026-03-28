@@ -247,6 +247,7 @@ export async function handleStartSession(
         "SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0 AND thread_id = ?",
       ).get(effectiveThreadId) as { c: number };
       if (uncons.c > STARTUP_CONSOLIDATION_THRESHOLD) {
+        log.info(`[start_session] Startup consolidation triggered: ${uncons.c} unconsolidated episodes`);
         session.lastConsolidationAt = Date.now();
         void runIntelligentConsolidation(db, effectiveThreadId)
           .then((report) => {
