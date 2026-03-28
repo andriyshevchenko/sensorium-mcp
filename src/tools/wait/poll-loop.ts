@@ -30,6 +30,26 @@ import { checkForDueTasks } from "./task-handler.js";
 import { processIncomingMessages, handlePollTimeout } from "./message-processing.js";
 
 // ---------------------------------------------------------------------------
+// Maintenance Telegram de-duplication
+// ---------------------------------------------------------------------------
+
+/**
+ * Tracks which thread IDs have already received a Telegram maintenance
+ * notification for the CURRENT update cycle.  Prevents duplicate alerts when
+ * an agent (incorrectly) calls wait_for_instructions again during maintenance.
+ * Automatically cleared when the maintenance flag disappears (update done).
+ */
+const maintenanceTgSent = new Set<number>();
+
+// Periodically clear the set once maintenance is over so future updates
+// can send fresh notifications.
+setInterval(() => {
+  if (maintenanceTgSent.size > 0 && checkMaintenanceFlag() === null) {
+    maintenanceTgSent.clear();
+  }
+}, 30_000);
+
+// ---------------------------------------------------------------------------
 // Pending-task file helper
 // ---------------------------------------------------------------------------
 
@@ -145,7 +165,6 @@ export async function handleWaitForInstructions(
   const SSE_KEEPALIVE_INTERVAL_MS = 30_000;
   let lastScheduleCheck = 0;
   let lastKeepalive = Date.now();
-  let maintenanceNotified = false;
 
   while (Date.now() < deadline) {
     // Check for pending update — tell agent to use the watcher MCP server
@@ -156,9 +175,13 @@ export async function handleWaitForInstructions(
     if (maintenanceInfo) {
       log.info(`[wait] Maintenance flag detected: ${maintenanceInfo}`);
 
-      // Notify operator via Telegram once
-      if (!maintenanceNotified) {
-        maintenanceNotified = true;
+      // Notify operator via Telegram once **per thread across all
+      // wait_for_instructions calls**.  Uses a module-level Set so an agent
+      // that (incorrectly) re-calls wait_for_instructions during maintenance
+      // does not fire a duplicate Telegram notification.
+      const tgKey = effectiveThreadId ?? 0;
+      if (!maintenanceTgSent.has(tgKey)) {
+        maintenanceTgSent.add(tgKey);
         let version = "unknown";
         try { version = (JSON.parse(maintenanceInfo) as { version?: string }).version ?? version; } catch { /* not JSON or missing field */ }
         telegram.sendMessage(

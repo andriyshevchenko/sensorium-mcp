@@ -475,9 +475,14 @@ function parseBody(req: IncomingMessage): Promise<unknown> {
 function startHttpMcp(port: number): void {
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const sessionCreated = new Map<string, number>();
+  // Session TTL: 24 hours.  Ghost threads establish their watcher session at
+  // startup but may not need await_server_ready for hours.  The old 600 s
+  // timeout caused sessions to expire before the first update arrived,
+  // making await_server_ready fail with "Bad Request".
+  const SESSION_TTL_MS = 86_400_000;
   setInterval(() => {
     for (const [sid, ts] of sessionCreated) {
-      if (Date.now() - ts > 600_000) {
+      if (Date.now() - ts > SESSION_TTL_MS) {
         transports.get(sid)?.close?.();
         transports.delete(sid);
         sessionCreated.delete(sid);
@@ -500,6 +505,14 @@ function startHttpMcp(port: number): void {
         const body = await parseBody(req);
         const existing = sid ? transports.get(sid) : undefined;
         if (existing) { await existing.handleRequest(req, res, body); return; }
+        // If the client sent a session ID we don't recognise (expired /
+        // watcher restarted), return 404 per the MCP Streamable HTTP spec
+        // so the client re-initialises instead of giving up.
+        if (sid && !existing && !isInitializeRequest(body)) {
+          log("WARN", `Unknown session ${sid} — returning 404 to trigger re-init`);
+          res.writeHead(404); res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "Session not found — please re-initialize" }, id: null }));
+          return;
+        }
         if (isInitializeRequest(body)) {
           const t = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
@@ -509,12 +522,12 @@ function startHttpMcp(port: number): void {
           await (createWatcherMcp()).connect(t);
           await t.handleRequest(req, res, body); return;
         }
-        res.writeHead(400); res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Bad Request" }, id: null }));
+        res.writeHead(400); res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Bad Request: expected initialize" }, id: null }));
         return;
       }
       if (req.method === "GET" || req.method === "DELETE") {
         const t = sid ? transports.get(sid) : undefined;
-        if (t) { await t.handleRequest(req, res); } else { res.writeHead(400); res.end("Invalid session"); }
+        if (t) { await t.handleRequest(req, res); } else { res.writeHead(404); res.end("Session not found"); }
         return;
       }
       res.writeHead(405); res.end("Method Not Allowed");
