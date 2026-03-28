@@ -77,11 +77,9 @@ function consumePendingTask(threadId: number): ToolResult | null {
         {
           type: "text",
           text:
-            `<<< OPERATOR MESSAGE >>>\n` +
-            `${taskContent}\n\n` +
-            `Execute this task using subagents. Report progress via send_voice or report_progress. ` +
-            `When complete, simply finish.\n` +
-            `<<< END OPERATOR MESSAGE >>>`,
+            `<<< CROSS-THREAD MESSAGE >>>\n` +
+            `${taskContent}\n` +
+            `<<< END CROSS-THREAD MESSAGE >>>`,
         },
       ],
     };

@@ -227,8 +227,10 @@ export function handleSendMessageToThread(
     ? args.threadId
     : typeof args.threadId === "string" ? Number(args.threadId) : undefined;
   const message = typeof args.message === "string" ? args.message.trim() : "";
-  const mode = typeof args.mode === "string" && args.mode === "manager-worker"
-    ? "manager-worker"
+  const rawMode = typeof args.mode === "string" ? args.mode : "";
+  const mode: "one-shot" | "manager-worker" | "reply" =
+    rawMode === "manager-worker" ? "manager-worker"
+    : rawMode === "reply" ? "reply"
     : "one-shot";
   const senderName = typeof args.senderName === "string" ? args.senderName.trim() : "";
   const senderThreadId = typeof args.senderThreadId === "number"
@@ -249,7 +251,18 @@ export function handleSendMessageToThread(
   const senderLabel = senderName || "another thread";
   let structuredMessage: string;
 
-  if (mode === "manager-worker") {
+  if (mode === "reply") {
+    // Clean reply — no task boilerplate
+    structuredMessage =
+      `Thread "${senderLabel}"` +
+      (senderThreadId !== undefined && Number.isFinite(senderThreadId)
+        ? ` (thread ${senderThreadId})`
+        : "") +
+      ` reports back:\n` +
+      `---\n` +
+      `${message}\n` +
+      `---`;
+  } else if (mode === "manager-worker") {
     structuredMessage =
       `Thread "${senderLabel}" sent you a message:\n` +
       `---\n` +

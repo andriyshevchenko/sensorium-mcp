@@ -244,6 +244,7 @@ export const sessionToolDefs: ToolDefinition[] = [
     description:
       "Send a task or message to another thread's agent. " +
       "The agent receives it on their next poll. " +
+      "Use mode='reply' when sending results BACK to a parent/orchestrator thread (no task wrapper added). " +
       "If the thread is dormant, the message is queued but not processed until start_thread is called. " +
       "Use 'mode' to control how the receiving thread should behave: " +
       "'one-shot' (default) for fire-and-forget tasks, 'manager-worker' for collaborative back-and-forth.",
@@ -262,8 +263,9 @@ export const sessionToolDefs: ToolDefinition[] = [
           type: "string",
           description:
             "Delegation mode: 'one-shot' (default) \u2014 receiver reports to operator only, does not message sender back. " +
-            "'manager-worker' \u2014 receiver reports back to sender thread when complete.",
-          enum: ["one-shot", "manager-worker"],
+            "'manager-worker' \u2014 receiver reports back to sender thread when complete. " +
+            "'reply' \u2014 sending results/status BACK to a parent or orchestrator thread (no task boilerplate added).",
+          enum: ["one-shot", "manager-worker", "reply"],
         },
         senderName: {
           type: "string",
