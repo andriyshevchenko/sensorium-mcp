@@ -43,11 +43,11 @@ send_message_to_thread(
   - Save button persists changes
   
   ⚠️ IMPORTANT: When complete, report your results back to thread <ORCHESTRATOR_THREAD_ID> using:
-  send_message_to_thread(threadId=<ORCHESTRATOR_THREAD_ID>, message='...')"
+  send_message_to_thread(threadId=<ORCHESTRATOR_THREAD_ID>, message='...', mode='reply')"
 )
 ```
 
-**CRITICAL**: The task message MUST include the orchestrator's thread ID so the worker knows where to send results.
+**CRITICAL**: The task message MUST include the orchestrator's thread ID so the worker knows where to send results. Tasks sent TO workers use mode `"one-shot"` or `"manager-worker"`, but RESULTS sent BACK use mode `"reply"` for clean delivery.
 
 #### Step 3 — Wait for results (do NOT duplicate the work)
 ```
