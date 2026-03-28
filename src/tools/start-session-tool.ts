@@ -8,7 +8,7 @@
 
 import { getMemorySourceThreadId } from "../config.js";
 import { convertMarkdown } from "../markdown.js";
-import { assembleBootstrap, runIntelligentConsolidation, type initMemoryDb } from "../memory.js";
+import { assembleBootstrap, runConsolidationAllThreads, type initMemoryDb } from "../memory.js";
 import { addSchedule, generateTaskId, listSchedules, purgeSchedules } from "../scheduler.js";
 import {
   lookupSession,
@@ -72,7 +72,6 @@ export async function handleStartSession(
 ): Promise<ToolResult> {
   const { session, telegram, telegramChatId: TELEGRAM_CHAT_ID, config, getMemoryDb } = ctx;
 
-  session.sessionStartedAt = Date.now();
   const typedArgs = args;
   const rawThreadId = typedArgs.threadId;
   const explicitThreadId = typeof rawThreadId === "number" ? rawThreadId
@@ -81,6 +80,25 @@ export async function handleStartSession(
   const customName = typeof typedArgs.name === "string" && typedArgs.name.trim()
     ? typedArgs.name.trim()
     : undefined;
+
+  // ── Re-entry guard ────────────────────────────────────────────────────
+  // If the requested thread is already the active session, return early
+  // without reinitializing state — reinitialization disrupts the polling loop.
+  if (explicitThreadId !== undefined && explicitThreadId === session.currentThreadId) {
+    log.info(
+      `[start_session] Thread ${explicitThreadId} is already the active session — skipping reinitialization.`,
+    );
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Session already active on thread ${explicitThreadId}. No reinitialization needed.`,
+        },
+      ],
+    };
+  }
+
+  session.sessionStartedAt = Date.now();
 
   // When creating a new session (no threadId), name is mandatory.
   if (explicitThreadId === undefined && !customName) {
@@ -239,21 +257,22 @@ export async function handleStartSession(
   }
 
   // ── Startup consolidation: catch up if episodes piled up between sessions ──
+  // Consolidates ALL threads (not just the active one) so stale episodes from
+  // other threads don't accumulate indefinitely.
   try {
     if (session.currentThreadId !== undefined) {
       const db = getMemoryDb();
-      const effectiveThreadId = memorySourceThreadId ?? session.currentThreadId;
       const uncons = db.prepare(
-        "SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0 AND thread_id = ?",
-      ).get(effectiveThreadId) as { c: number };
+        "SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0",
+      ).get() as { c: number };
       if (uncons.c > STARTUP_CONSOLIDATION_THRESHOLD) {
-        log.info(`[start_session] Startup consolidation triggered: ${uncons.c} unconsolidated episodes`);
+        log.info(`[start_session] Startup consolidation triggered: ${uncons.c} unconsolidated episodes across all threads`);
         session.lastConsolidationAt = Date.now();
-        void runIntelligentConsolidation(db, effectiveThreadId)
+        void runConsolidationAllThreads(db)
           .then((report) => {
             if (report.episodesProcessed > 0) {
               log.info(
-                `[memory] Startup consolidation: ${report.episodesProcessed} episodes \u2192 ${report.notesCreated} notes`,
+                `[memory] Startup consolidation: ${report.episodesProcessed} episodes \u2192 ${report.notesCreated} notes (${report.details.length} threads)`,
               );
             }
           })

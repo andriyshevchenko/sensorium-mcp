@@ -123,10 +123,77 @@ function repairAndParseJSON(raw: string): unknown {
 
 let consolidationInProgress = false;
 
+/**
+ * Consolidate ALL threads that have unconsolidated episodes.
+ * Iterates distinct thread_ids and runs per-thread consolidation for each.
+ * Returns an aggregated report.
+ *
+ * Owns the global `consolidationInProgress` lock so that per-thread calls
+ * within the loop don't block each other and concurrent invocations are
+ * properly serialized.
+ */
+export async function runConsolidationAllThreads(
+  db: Database,
+  options?: { maxEpisodesPerThread?: number; dryRun?: boolean }
+): Promise<ConsolidationReport> {
+  if (consolidationInProgress) {
+    log.info("Consolidation already in progress — skipping (all-threads)");
+    return {
+      episodesProcessed: 0,
+      notesCreated: 0,
+      durationMs: 0,
+      details: ["Skipped — consolidation already in progress."],
+    };
+  }
+
+  consolidationInProgress = true;
+  try {
+
+  const startMs = Date.now();
+  const threadRows = db
+    .prepare(`SELECT DISTINCT thread_id FROM episodes WHERE consolidated = 0`)
+    .all() as { thread_id: number }[];
+
+  if (threadRows.length === 0) {
+    return {
+      episodesProcessed: 0,
+      notesCreated: 0,
+      durationMs: Date.now() - startMs,
+      details: ["Nothing to consolidate across any thread."],
+    };
+  }
+
+  let totalProcessed = 0;
+  let totalNotes = 0;
+  const allDetails: string[] = [];
+
+  for (const { thread_id } of threadRows) {
+    const report = await runIntelligentConsolidation(db, thread_id, {
+      maxEpisodes: options?.maxEpisodesPerThread ?? 30,
+      dryRun: options?.dryRun,
+      _skipLock: true, // lock is held by this function
+    });
+    totalProcessed += report.episodesProcessed;
+    totalNotes += report.notesCreated;
+    allDetails.push(`Thread ${thread_id}: ${report.episodesProcessed} eps → ${report.notesCreated} notes`);
+  }
+
+  return {
+    episodesProcessed: totalProcessed,
+    notesCreated: totalNotes,
+    durationMs: Date.now() - startMs,
+    details: allDetails,
+  };
+
+  } finally {
+    consolidationInProgress = false;
+  }
+}
+
 export async function runIntelligentConsolidation(
   db: Database,
   threadId: number,
-  options?: { maxEpisodes?: number; dryRun?: boolean }
+  options?: { maxEpisodes?: number; dryRun?: boolean; _skipLock?: boolean }
 ): Promise<ConsolidationReport> {
   // Opt-out: allow operators to disable consolidation for privacy reasons
   const consolidationEnabled = process.env.CONSOLIDATION_ENABLED;
@@ -139,7 +206,9 @@ export async function runIntelligentConsolidation(
     };
   }
 
-  if (consolidationInProgress) {
+  const skipLock = options?._skipLock ?? false;
+
+  if (!skipLock && consolidationInProgress) {
     log.info("Consolidation already in progress — skipping");
     return {
       episodesProcessed: 0,
@@ -149,7 +218,7 @@ export async function runIntelligentConsolidation(
     };
   }
 
-  consolidationInProgress = true;
+  if (!skipLock) consolidationInProgress = true;
   try {
 
   const startMs = Date.now();
@@ -388,6 +457,6 @@ Rules:
   };
 
   } finally {
-    consolidationInProgress = false;
+    if (!skipLock) consolidationInProgress = false;
   }
 }

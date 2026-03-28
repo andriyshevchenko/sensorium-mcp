@@ -13,7 +13,6 @@ import {
   getSemanticNoteById,
   getTopicIndex,
   type initMemoryDb,
-  runIntelligentConsolidation,
   saveNoteEmbedding,
   saveSemanticNote,
   searchByEmbedding,
@@ -293,7 +292,8 @@ async function handleMemoryConsolidate(
   onConsolidation?: () => void,
 ): Promise<ToolResult> {
   try {
-    const report = await runIntelligentConsolidation(db, threadId);
+    const { runConsolidationAllThreads } = await import("../data/memory/consolidation.js");
+    const report = await runConsolidationAllThreads(db);
     onConsolidation?.();
     if (report.episodesProcessed === 0) {
       return {
