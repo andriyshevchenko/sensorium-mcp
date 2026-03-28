@@ -141,7 +141,7 @@ export function saveAgentEpisodeSafe(
       importance: AGENT_EPISODE_IMPORTANCE,
     });
   } catch (err) {
-    log.debug(`[episode] Failed to save agent episode: ${err instanceof Error ? err.message : String(err)}`);
+    log.warn(`[episode] Failed to save agent episode: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
