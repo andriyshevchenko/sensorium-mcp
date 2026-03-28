@@ -1,19 +1,16 @@
 /**
  * Session tool handlers extracted from index.ts.
  *
- * Handles: report_progress, hibernate
+ * Handles: report_progress
  */
 
 import { convertMarkdown, splitMessage } from "../markdown.js";
 import type { TelegramClient } from "../telegram.js";
 import type { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
-import type { checkMaintenanceFlag } from "../data/file-storage.js";
-import type { checkDueTasks } from "../scheduler.js";
 import { log } from "../logger.js";
 import { saveAgentEpisodeSafe, type Database } from "../memory.js";
 import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
-import { buildMaintenanceResponse } from "../response-builders.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,9 +20,6 @@ import { buildMaintenanceResponse } from "../response-builders.js";
 function hasMediaContent(msg: Record<string, unknown>): boolean {
   return !!(msg.photo || msg.document || msg.voice || msg.video_note || msg.animation || msg.sticker);
 }
-
-/** Keywords the operator must use to authorise hibernation. */
-const HIBERNATE_KEYWORDS = /\b(hibernate|sleep|goodnight|go\s+to\s+sleep|shut\s*down|stop|stand\s*by|pause)\b/i;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,11 +35,6 @@ export interface SessionToolContext {
   peekThreadMessages: typeof peekThreadMessages;
   readThreadMessages: typeof readThreadMessages;
   appendToThread: typeof appendToThread;
-  checkMaintenanceFlag: typeof checkMaintenanceFlag;
-  checkDueTasks: typeof checkDueTasks;
-  generateDmnReflection: (threadId: number) => string;
-  lastOperatorMessageAt: number;
-  lastOperatorMessageText: string;
   previewedUpdateIds: Set<number>;
   addPreviewedId: (id: number) => void;
   getMemoryDb: () => Database;
@@ -66,13 +55,11 @@ export async function handleSessionTool(
   name: string,
   args: Record<string, unknown>,
   ctx: SessionToolContext,
-  extra: Extra,
+  _extra: Extra,
 ): Promise<ToolResult> {
   switch (name) {
     case "report_progress":
       return handleReportProgress(args, ctx);
-    case "hibernate":
-      return handleHibernate(args, ctx, extra);
     default:
       return ctx.errorResult(`Unknown session tool: ${name}`);
   }
@@ -246,150 +233,5 @@ async function handleReportProgress(
         text: responseText,
       },
     ],
-  };
-}
-
-// ---------------------------------------------------------------------------
-// hibernate
-// ---------------------------------------------------------------------------
-
-async function handleHibernate(
-  args: Record<string, unknown>,
-  ctx: SessionToolContext,
-  extra: Extra,
-): Promise<ToolResult> {
-  const {
-    resolveThreadId, getShortReminder, errorResult,
-    peekThreadMessages, checkMaintenanceFlag, checkDueTasks,
-    generateDmnReflection, lastOperatorMessageAt, lastOperatorMessageText,
-  } = ctx;
-
-  const effectiveThreadId = resolveThreadId(args);
-  if (effectiveThreadId === undefined) {
-    return errorResult("Error: No active session. Call start_session first.");
-  }
-
-  // ── Guard: hibernate only when operator explicitly requested it ──────
-  if (!HIBERNATE_KEYWORDS.test(lastOperatorMessageText)) {
-    return errorResult(
-      "Hibernate can only be called when the operator explicitly requests it. " +
-      "Continue using wait_for_instructions instead.",
-    );
-  }
-
-  const wakeAt = typeof args.wakeAt === "string" ? new Date(args.wakeAt).getTime() : undefined;
-  if (wakeAt !== undefined && isNaN(wakeAt)) {
-    return errorResult("Error: Invalid wakeAt timestamp. Use ISO 8601 format.");
-  }
-
-  // Max hibernation time: 8 hours
-  const MAX_HIBERNATE_MS = 8 * 60 * 60 * 1000;
-  const HIBERNATE_POLL_MS = 30_000; // 30s
-  const SSE_KEEPALIVE_INTERVAL_MS = 30_000;
-  const deadline = Date.now() + MAX_HIBERNATE_MS;
-  let lastKeepalive = Date.now();
-
-  log.info(`[hibernate] Entering hibernation. threadId=${effectiveThreadId}, wakeAt=${wakeAt ? new Date(wakeAt).toISOString() : "indefinite"}`);
-
-  while (Date.now() < deadline) {
-    // Check for operator messages (non-destructive peek)
-    const peeked = peekThreadMessages(effectiveThreadId);
-    if (peeked.length > 0) {
-      log.info(`[hibernate] Waking up — ${peeked.length} operator message(s) received.`);
-      // Don't consume messages — let the next wait_for_instructions call handle them
-      return {
-        content: [{
-          type: "text",
-          text: `Woke up: operator sent a message. Call wait_for_instructions now to read it.` +
-            getShortReminder(effectiveThreadId),
-        }],
-      };
-    }
-
-    // Maintenance flag: RETURN immediately so the agent can use Desktop Commander
-    // to run Start-Sleep. Do NOT stay hibernating — the server will die and the agent
-    // gets no guidance on how to reconnect.
-    const maintenanceInfo = checkMaintenanceFlag();
-    if (maintenanceInfo) {
-      log.info(`[hibernate] Maintenance flag detected — returning to let agent sleep externally: ${maintenanceInfo}`);
-      return buildMaintenanceResponse(effectiveThreadId, getShortReminder(effectiveThreadId));
-    }
-
-    // Check for scheduled tasks
-    const dueTask = checkDueTasks(effectiveThreadId, lastOperatorMessageAt, false);
-    if (dueTask) {
-      log.info(`[hibernate] Waking up — scheduled task fired: ${dueTask.task.label}`);
-      // DMN sentinel: generate dynamic first-person reflection
-      const taskPrompt = dueTask.prompt === "__DMN__"
-        ? generateDmnReflection(effectiveThreadId)
-        : `⏰ Woke up: scheduled task **"${dueTask.task.label}"**\n\n${dueTask.prompt}`;
-      return {
-        content: [{
-          type: "text",
-          text: taskPrompt + getShortReminder(effectiveThreadId),
-        }],
-      };
-    }
-
-    // Check alarm
-    if (wakeAt && Date.now() >= wakeAt) {
-      log.info(`[hibernate] Waking up — alarm reached.`);
-      return {
-        content: [{
-          type: "text",
-          text: `Woke up: alarm time reached (${new Date(wakeAt).toISOString()}).` +
-            getShortReminder(effectiveThreadId),
-        }],
-      };
-    }
-
-    // SSE keepalive — use the same approach as wait_for_instructions
-    const sinceKeepalive = Date.now() - lastKeepalive;
-    if (sinceKeepalive >= SSE_KEEPALIVE_INTERVAL_MS && extra?.sendNotification) {
-      lastKeepalive = Date.now();
-      try {
-        await extra.sendNotification({
-          method: "notifications/progress",
-          params: {
-            progressToken: extra.requestId,
-            progress: 0,
-            total: 0,
-          },
-        });
-      } catch {
-        log.warn(`[hibernate] SSE keepalive failed — connection lost.`);
-        return {
-          content: [{
-            type: "text",
-            text: "Hibernation interrupted: connection lost. Call hibernate again to resume." +
-              getShortReminder(effectiveThreadId),
-          }],
-        };
-      }
-    }
-
-    // Check abort signal
-    if (extra.signal.aborted) {
-      log.info(`[hibernate] SSE connection aborted during hibernation.`);
-      return {
-        content: [{
-          type: "text",
-          text: "Hibernation interrupted: connection closed." +
-            getShortReminder(effectiveThreadId),
-        }],
-      };
-    }
-
-    await new Promise<void>((resolve) => setTimeout(resolve, HIBERNATE_POLL_MS));
-  }
-
-  // Max hibernation duration reached
-  log.info(`[hibernate] Max hibernation duration reached (8h).`);
-  return {
-    content: [{
-      type: "text",
-      text: "Woke up: maximum hibernation duration reached (8 hours)." +
-        getShortReminder(effectiveThreadId),
-    }],
   };
 }

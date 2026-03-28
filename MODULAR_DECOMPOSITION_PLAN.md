@@ -130,7 +130,7 @@ src/
 │   │   ├── drive-handler.ts     # Drive activation + Phase 2/3
 │   │   └── task-handler.ts      # Scheduled task firing
 │   ├── memory-tools.ts      # memory_* tool handlers
-│   ├── session-tools.ts     # report_progress, hibernate handlers
+│   ├── session-tools.ts     # report_progress handler
 │   ├── utility-tools.ts     # send_file, send_voice, send_sticker, etc.
 │   └── start-session.ts     # start_session handler
 │

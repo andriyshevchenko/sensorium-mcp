@@ -173,7 +173,7 @@ export function getShortReminder(threadId: number | undefined, sessionStartedAt:
 
 /**
  * Build the standardised maintenance-mode response returned when a server
- * update is in progress.  Both the poll-loop and hibernate handlers use
+ * update is in progress.  The poll-loop handler uses
  * this, so it lives here to avoid duplication.
  *
  * @param effectiveThreadId  Current Telegram thread ID.

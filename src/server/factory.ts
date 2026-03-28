@@ -12,11 +12,10 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { checkMaintenanceFlag, writeActivityHeartbeat } from "../data/file-storage.js";
+import { writeActivityHeartbeat } from "../data/file-storage.js";
 import { config } from "../config.js";
 import { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
 import { formatDrivePrompt } from "../drive.js";
-import { checkDueTasks } from "../scheduler.js";
 import {
   updateDashboardActivity,
   updateDashboardThreadId,
@@ -179,13 +178,6 @@ function createMcpServer(
       peekThreadMessages,
       readThreadMessages,
       appendToThread,
-      checkMaintenanceFlag,
-      checkDueTasks,
-      generateDmnReflection,
-      get lastOperatorMessageAt() { return lastOperatorMessageAt; },
-      set lastOperatorMessageAt(v) { lastOperatorMessageAt = v; },
-      get lastOperatorMessageText() { return lastOperatorMessageText; },
-      set lastOperatorMessageText(v) { lastOperatorMessageText = v; },
       previewedUpdateIds,
       addPreviewedId,
       getMemoryDb,
@@ -284,9 +276,6 @@ function createMcpServer(
       if (scopeErr) return errorResult(scopeErr);
       return handleSessionTool("report_progress", typedArgs, buildSessionToolCtx(), extra);
     },
-
-    hibernate: (typedArgs, extra) =>
-      handleSessionTool("hibernate", typedArgs, buildSessionToolCtx(), extra),
 
     send_file: (typedArgs) => {
       const scopeErr = enforceThreadScope(typedArgs);
