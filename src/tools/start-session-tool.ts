@@ -98,11 +98,19 @@ export async function handleStartSession(
     log.info(
       `[start_session] Thread ${explicitThreadId} is already the active session — skipping reinitialization.`,
     );
+    // Include reminders + wait directive so the agent doesn't stall after
+    // a duplicate start_session call (e.g. post-update context replay).
+    const reminders = ctx.getReminders(explicitThreadId, session.sessionStartedAt, config.AUTONOMOUS_MODE);
+    const endDirective =
+      `\n\n**⚠️ ACTION REQUIRED: Call the \`remote_copilot_wait_for_instructions\` tool NOW with threadId=${explicitThreadId}. Do NOT stop or end your turn.**`;
     return {
       content: [
         {
           type: "text" as const,
-          text: `Session already active on thread ${explicitThreadId}. No reinitialization needed.`,
+          text: `Session already active on thread ${explicitThreadId}. No reinitialization needed.` +
+            ` Call the remote_copilot_wait_for_instructions tool next.` +
+            reminders +
+            endDirective,
         },
       ],
     };
