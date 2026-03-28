@@ -247,30 +247,6 @@ export class TelegramClient {
   }
 
   /**
-   * Validate that a forum topic still exists by attempting a no-op edit.
-   * Returns true if the topic is reachable, false otherwise.
-   */
-  async validateForumTopic(chatId: string, threadId: number): Promise<boolean> {
-    try {
-      const url = `${this.baseUrl}/editForumTopic`;
-      const response = await this.safeFetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, message_thread_id: threadId }),
-      });
-      const data = await this.tryParseJson<{ ok: boolean; description?: string }>(response);
-      // "ok: true" means the topic exists (even if nothing changed).
-      // Some error codes like "TOPIC_NOT_MODIFIED" also mean it exists.
-      if (data?.ok) return true;
-      const desc = (data?.description ?? "").toLowerCase();
-      if (desc.includes("not modified") || desc.includes("topic_not_modified")) return true;
-      return false;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
    * Send a text message to a chat, optionally scoped to a forum topic thread.
    */
   async sendMessage(
