@@ -68,3 +68,15 @@ export const IMAGE_EXTENSIONS = new Set([
 
 /** Maximum characters for OpenAI TTS input. */
 export const OPENAI_TTS_MAX_CHARS = 4096;
+
+/**
+ * Format a Date as a human-readable timestamp string.
+ * e.g. "28 Mar 2026, 23:07 EET"
+ */
+export function formatTimestamp(date: Date = new Date()): string {
+  return date.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+    timeZoneName: "short",
+  });
+}

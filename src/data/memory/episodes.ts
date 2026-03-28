@@ -30,7 +30,7 @@ export interface Episode {
 
 // ─── Row → Interface mapper ─────────────────────────────────────────────────
 
-function rowToEpisode(row: Record<string, unknown>): Episode {
+export function rowToEpisode(row: Record<string, unknown>): Episode {
   return {
     episodeId: row.episode_id as string,
     sessionId: row.session_id as string,

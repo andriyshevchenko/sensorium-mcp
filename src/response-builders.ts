@@ -7,13 +7,11 @@
  */
 
 import { config, getEffectiveAgentType } from "./config.js";
-import { describeADV } from "./utils.js";
+import { describeADV, formatTimestamp } from "./utils.js";
 import { loadTemplate, renderTemplate } from "./data/templates.js";
 import type { VoiceAnalysisResult } from "./openai.js";
 import { getDefaultRemindersTemplate } from "./dashboard/presets.js";
 import type { ToolResult } from "./types.js";
-
-export { loadTemplate, renderTemplate } from "./data/templates.js";
 
 // ── Stop-word list for auto-memory keyword extraction ─────────────────
 const STOP_WORDS = new Set([
@@ -86,11 +84,7 @@ export function getReminders(
 ): string {
   const now = new Date();
   const uptimeMin = Math.round((Date.now() - sessionStartedAt) / 60000);
-  const timeStr = now.toLocaleString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-    timeZoneName: "short",
-  });
+  const timeStr = formatTimestamp(now);
 
   // ── Try custom template ────────────────────────────────────────────────
   const tpl = loadTemplate("reminders");
@@ -137,11 +131,7 @@ export function getMediumReminder(
 ): string {
   const now = new Date();
   const uptimeMin = Math.round((Date.now() - sessionStartedAt) / 60000);
-  const timeStr = now.toLocaleString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-    timeZoneName: "short",
-  });
+  const timeStr = formatTimestamp(now);
 
   const mode = autonomousMode ? "autonomous" : "standard";
 
@@ -160,11 +150,7 @@ export function getMediumReminder(
 export function getShortReminder(threadId: number | undefined, sessionStartedAt: number): string {
   const now = new Date();
   const uptimeMin = Math.round((Date.now() - sessionStartedAt) / 60000);
-  const timeStr = now.toLocaleString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-    timeZoneName: "short",
-  });
+  const timeStr = formatTimestamp(now);
   const threadHint = threadId !== undefined
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
