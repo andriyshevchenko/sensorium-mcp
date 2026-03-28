@@ -15,7 +15,8 @@ const CONFIG = {
   mode: process.env.WATCHER_MODE || "development",
   pollAtHour: parseInt(process.env.WATCHER_POLL_HOUR || "4", 10),
   pollIntervalSeconds: parseInt(process.env.WATCHER_POLL_INTERVAL || "60", 10),
-  gracePeriodSeconds: 300, idleThresholdSeconds: 300, maxIdleWaitSeconds: 300,
+  gracePeriodSeconds: parseInt(process.env.WATCHER_GRACE_PERIOD || ((process.env.WATCHER_MODE || "development") === "development" ? "10" : "300"), 10),
+  idleThresholdSeconds: 300, maxIdleWaitSeconds: 300,
   minUptimeSeconds: 600,
   httpPort: parseInt(process.env.WATCHER_PORT || "3848", 10),
   mcpStartCommand: process.env.MCP_START_COMMAND || "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM",
@@ -150,6 +151,21 @@ async function stopMcpServer(): Promise<void> {
   await killPid(pid);
   rmPid(); managedChild = null;
   log("INFO", `PID ${pid} stopped.`);
+}
+
+// Server readiness check ------------------------------------------------------
+/** Poll the MCP HTTP server until it responds or 60s timeout. */
+async function waitForServerReady(): Promise<void> {
+  const port = CONFIG.mcpHttpPort || 3847;
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/mcp`, { method: "OPTIONS", signal: AbortSignal.timeout(2000) });
+      if (res.status < 500) { log("INFO", "MCP server ready (HTTP responding)."); return; }
+    } catch { /* server not up yet */ }
+    await sleep(2000);
+  }
+  log("WARN", "MCP server did not respond within 60s — proceeding anyway.");
 }
 
 // npx cache clearing ----------------------------------------------------------
@@ -370,7 +386,7 @@ async function checkAndUpdate(): Promise<void> {
     clearNpxCache();
     setLocalVersion(remote);
     startMcpServer(); startTime = Date.now();
-    await sleep(10_000);
+    await waitForServerReady();
     await killStale();
     removeMaintenanceFlag();
     // Re-spawn ghost threads that were killed during the update
