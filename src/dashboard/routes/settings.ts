@@ -144,8 +144,8 @@ export const handlePostBootstrapMessageCount: RouteHandler = ({ req, json }) => 
     void (async () => {
         try {
             const raw = await readBody(req);
-            const body = safeParseJSON(raw) as { count?: number } | null;
-            const count = body && typeof body === "object" ? (body as { count?: number }).count : undefined;
+            const body = safeParseJSON(raw) as Record<string, unknown> | null;
+            const count = body && typeof body === "object" ? body.count : undefined;
             if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
                 json({ error: "count must be a non-negative number" }, 400);
                 return;
