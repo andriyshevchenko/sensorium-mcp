@@ -125,7 +125,6 @@ function createMcpServer(
       : typeof raw === "string" ? Number(raw)
         : undefined;
     if (explicit !== undefined && Number.isFinite(explicit)) {
-      currentThreadId = explicit;
       return explicit;
     }
     return currentThreadId;
