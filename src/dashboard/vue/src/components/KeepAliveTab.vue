@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { api, getToken } from '../api'
-import type { KeepAliveSettings } from '../types'
+import type { KeepAliveSettings, Session } from '../types'
 
 const settings = ref<KeepAliveSettings | null>(null)
+const sessions = ref<Session[]>([])
 const loading = ref(true)
 const saving = ref(false)
 const saveStatus = ref('')
@@ -15,11 +16,24 @@ const form = ref<KeepAliveSettings>({
   keepAliveCooldownMs: 300000,
 })
 
+/** Unique threads from active sessions, for the dropdown */
+const threadOptions = computed(() => {
+  const seen = new Set<number>()
+  return sessions.value
+    .filter(s => s.threadId != null && !seen.has(s.threadId!) && seen.add(s.threadId!))
+    .map(s => ({ threadId: s.threadId!, label: s.topicName ?? `Thread ${s.threadId}` }))
+})
+
 async function load() {
   loading.value = true
   try {
-    settings.value = await api<KeepAliveSettings>('/api/settings/keep-alive')
-    form.value = { ...settings.value }
+    const [ka, sess] = await Promise.all([
+      api<KeepAliveSettings>('/api/settings/keep-alive'),
+      api<Session[]>('/api/sessions'),
+    ])
+    settings.value = ka
+    sessions.value = sess
+    form.value = { ...ka }
   } finally {
     loading.value = false
   }
@@ -100,17 +114,22 @@ onMounted(load)
           </div>
         </div>
 
-        <!-- Thread ID -->
+        <!-- Thread Selection -->
         <div class="glass rounded-xl p-4 border border-gray-700/50">
-          <label class="block text-sm font-medium mb-1">Thread ID</label>
-          <p class="text-xs text-textSecondary mb-3">The Telegram thread to monitor and keep alive</p>
-          <input
+          <label class="block text-sm font-medium mb-1">Session to Keep Alive</label>
+          <p class="text-xs text-textSecondary mb-3">Select the Telegram thread to monitor and keep alive</p>
+          <select
             v-model.number="form.keepAliveThreadId"
-            type="number"
-            min="0"
-            class="w-full sm:w-48 px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition"
-          />
-          <p class="text-xs text-muted mt-2">0 = disabled</p>
+            class="w-full sm:w-72 px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary focus:outline-none focus:border-accent transition appearance-none"
+          >
+            <option :value="0">Disabled</option>
+            <option v-for="opt in threadOptions" :key="opt.threadId" :value="opt.threadId">
+              {{ opt.label }} ({{ opt.threadId }})
+            </option>
+          </select>
+          <p v-if="form.keepAliveThreadId && !threadOptions.find(o => o.threadId === form.keepAliveThreadId)" class="text-xs text-warn mt-2">
+            Thread {{ form.keepAliveThreadId }} is configured but not in active sessions
+          </p>
         </div>
 
         <!-- Max Retries -->
@@ -157,7 +176,9 @@ onMounted(load)
             </div>
             <div>
               <div class="text-xs text-muted mb-1">Thread</div>
-              <span class="text-sm font-mono">{{ settings.keepAliveThreadId || '—' }}</span>
+              <span class="text-sm font-mono">
+                {{ threadOptions.find(o => o.threadId === settings.keepAliveThreadId)?.label ?? (settings.keepAliveThreadId || '—') }}
+              </span>
             </div>
             <div>
               <div class="text-xs text-muted mb-1">Max Retries</div>
