@@ -23,6 +23,8 @@ import { getGuardrailsEnabled, getBootstrapMessageCount } from "../../config.js"
 
 /** Maximum characters for the Recent Conversation section before truncation. */
 const MAX_BOOTSTRAP_CONVERSATION_CHARS = 100_000;
+/** Maximum characters per individual message in the Recent Conversation section. */
+const MAX_MESSAGE_CONTENT_CHARS = 200;
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -177,7 +179,10 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
       const raw = typeof ep.content === "object" && ep.content !== null
         ? (ep.content.text ?? ep.content.caption ?? null)
         : null;
-      const textContent = typeof raw === "string" ? raw : JSON.stringify(ep.content);
+      const fullText = typeof raw === "string" ? raw : JSON.stringify(ep.content);
+      const textContent = fullText.length > MAX_MESSAGE_CONTENT_CHARS
+        ? fullText.slice(0, MAX_MESSAGE_CONTENT_CHARS) + "…"
+        : fullText;
       let line: string;
       if (ep.type === "operator_message") {
         line = `**Operator** (${ep.timestamp}): ${textContent}`;

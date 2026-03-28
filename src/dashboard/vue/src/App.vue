@@ -8,6 +8,7 @@ import EpisodesTab from './components/EpisodesTab.vue'
 import TopicsTab from './components/TopicsTab.vue'
 import TemplatesTab from './components/TemplatesTab.vue'
 import SkillsTab from './components/SkillsTab.vue'
+import KeepAliveTab from './components/KeepAliveTab.vue'
 
 const TOKEN_KEY = 'sensorium_token'
 
@@ -28,6 +29,7 @@ const tabs = [
   { id: 'topics', label: 'Topics' },
   { id: 'templates', label: 'Templates' },
   { id: 'skills', label: 'Skills' },
+  { id: 'keepalive', label: 'Keep-Alive' },
 ]
 
 const tabComponents = {
@@ -37,6 +39,7 @@ const tabComponents = {
   topics: TopicsTab,
   templates: TemplatesTab,
   skills: SkillsTab,
+  keepalive: KeepAliveTab,
 }
 
 const currentTabComponent = computed(() => tabComponents[currentTab.value as keyof typeof tabComponents])
