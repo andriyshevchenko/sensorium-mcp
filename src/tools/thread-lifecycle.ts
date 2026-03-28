@@ -5,7 +5,7 @@
  * from MCP tool-handler logic.
  */
 
-import { spawn, spawnSync } from "node:child_process";
+import { execSync, spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -35,8 +35,23 @@ const spawnedThreads: SpawnedThread[] = [];
 
 /**
  * Check if a process with the given PID is still running.
+ * On Windows, uses `tasklist` instead of `process.kill(pid, 0)` to prevent
+ * false positives from PID reuse — a common issue on Windows where PIDs
+ * are recycled quickly after process exit.
  */
 function isProcessAlive(pid: number): boolean {
+  if (process.platform === "win32") {
+    try {
+      const out = execSync(`tasklist /FI "PID eq ${pid}" /NH`, {
+        encoding: "utf-8",
+        timeout: 5000,
+        windowsHide: true,
+      });
+      return out.includes(String(pid));
+    } catch {
+      return false;
+    }
+  }
   try {
     process.kill(pid, 0); // signal 0 = check existence
     return true;
@@ -79,6 +94,7 @@ const BASE_DIR = join(homedir(), ".remote-copilot-mcp");
 export const PENDING_TASKS_DIR = join(BASE_DIR, "pending-tasks");
 const LOGS_DIR = join(BASE_DIR, "logs");
 const PIDS_DIR = join(BASE_DIR, "pids");
+const WATCHER_PORT = Number.parseInt(process.env.WATCHER_PORT || "3848", 10);
 
 export function ensureDirs(): void {
   mkdirSync(PENDING_TASKS_DIR, { recursive: true });
@@ -95,6 +111,35 @@ export function ensureDirs(): void {
  *   4. ~/.claude/mcp_config.json
  *   5. ~/.claude/.mcp.json
  */
+/**
+ * Generate a per-thread MCP config that includes the sensorium-watcher server.
+ * This allows ghost threads to call `await_server_ready` during server updates
+ * instead of falling back to a blind 600s sleep.
+ * Returns the path to the generated config, or the original path on failure.
+ */
+export function generateThreadMcpConfig(baseConfigPath: string, threadId: number): string {
+  const outPath = join(PIDS_DIR, `${threadId}-mcp-config.json`);
+  try {
+    const raw = readFileSync(baseConfigPath, "utf-8");
+    const config = JSON.parse(raw) as Record<string, unknown>;
+    const servers = (config.mcpServers ?? {}) as Record<string, unknown>;
+    if (!servers["sensorium-watcher"]) {
+      servers["sensorium-watcher"] = {
+        type: "http",
+        url: `http://127.0.0.1:${WATCHER_PORT}/mcp`,
+      };
+      config.mcpServers = servers;
+      mkdirSync(PIDS_DIR, { recursive: true });
+      writeFileSync(outPath, JSON.stringify(config, null, 2), "utf-8");
+      return outPath;
+    }
+    return baseConfigPath; // watcher already in config
+  } catch (err) {
+    log.warn(`[start_thread] Failed to generate merged MCP config for thread ${threadId}: ${errorMessage(err)}`);
+    return baseConfigPath;
+  }
+}
+
 export function resolveMcpConfigPath(): string | null {
   const envPath = process.env.CLAUDE_MCP_CONFIG;
   if (envPath && existsSync(envPath)) return envPath;
@@ -147,6 +192,10 @@ export function spawnAgentProcess(
 
   const logFd = openSync(logFilePath, "a");
 
+  // Generate a per-thread MCP config that includes sensorium-watcher for
+  // graceful server-update reconnection (Issue A1 fix).
+  const effectiveConfigPath = generateThreadMcpConfig(mcpConfigPath, threadId);
+
   // Use the original name (not safeName) in the prompt so the spawned agent
   // calls start_session with the exact name stored in the session registry.
   // safeName is only for filesystem-safe log filenames.
@@ -155,7 +204,7 @@ export function spawnAgentProcess(
   const cliArgs = [
     "--verbose",
     "--dangerously-skip-permissions",
-    "--mcp-config", mcpConfigPath,
+    "--mcp-config", effectiveConfigPath,
     "-p", prompt,
     "--output-format", "stream-json",
     "--include-partial-messages",
@@ -207,10 +256,11 @@ export function spawnAgentProcess(
     return { error: "Claude process spawned but PID is undefined — spawn may have failed." };
   }
 
-  // Write PID file for external process tracking
+  // Write PID file with metadata for tracking and re-spawn after updates
   const pidFilePath = join(PIDS_DIR, `${threadId}.pid`);
   try {
-    writeFileSync(pidFilePath, String(pid), "utf-8");
+    const pidMeta = { pid, name, configPath: effectiveConfigPath, startedAt: Date.now() };
+    writeFileSync(pidFilePath, JSON.stringify(pidMeta), "utf-8");
   } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
 
   // Track spawned process
@@ -248,9 +298,15 @@ interface PidFileEntry {
   threadId: number;
   pid: number;
   filePath: string;
+  /** Thread name from PID metadata (may be absent in legacy PID files). */
+  name?: string;
 }
 
-function readPidFiles(): PidFileEntry[] {
+/**
+ * Read all PID files from the pids directory.
+ * Supports both legacy (plain PID number) and new (JSON metadata) formats.
+ */
+export function readPidFiles(): PidFileEntry[] {
   const entries: PidFileEntry[] = [];
   try {
     const files = readdirSync(PIDS_DIR);
@@ -259,9 +315,19 @@ function readPidFiles(): PidFileEntry[] {
       try {
         const threadId = Number(file.replace(".pid", ""));
         const filePath = join(PIDS_DIR, file);
-        const pid = Number(readFileSync(filePath, "utf-8").trim());
+        const raw = readFileSync(filePath, "utf-8").trim();
+        let pid: number;
+        let name: string | undefined;
+        try {
+          const meta = JSON.parse(raw) as { pid: number; name?: string };
+          pid = meta.pid;
+          name = meta.name;
+        } catch {
+          // Legacy format: plain PID number
+          pid = Number(raw);
+        }
         if (Number.isFinite(threadId) && Number.isFinite(pid)) {
-          entries.push({ threadId, pid, filePath });
+          entries.push({ threadId, pid, filePath, name });
         }
       } catch { /* skip unreadable files */ }
     }

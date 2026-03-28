@@ -25,6 +25,7 @@ const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
 const { setTopicRegistryDb, lookupTopicRegistry } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
+const { cleanupStalePidFiles } = await import("./tools/thread-lifecycle.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -59,6 +60,12 @@ if (secureVaultThreadId === undefined) {
 
 // Initialize video temp-file cleanup handlers (registers process exit hooks).
 initVideoTempCleanup();
+
+// Clean up stale PID files from ghost threads that were killed during a
+// previous server update (taskkill /T kills the entire process tree).
+// Without this, orphaned PID files cause get_threads_health to show dead
+// threads as "dormant" when the PID is reused by an unrelated process.
+cleanupStalePidFiles();
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)
