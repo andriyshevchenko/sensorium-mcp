@@ -190,7 +190,7 @@ export function buildMaintenanceResponse(
         `Do NOT call start_session, wait_for_instructions, or any other tool on sensorium-mcp.\n\n` +
         `Your next action: Call the \`await_server_ready\` tool on the **sensorium-watcher** MCP server with threadId=${effectiveThreadId}. ` +
         `It will block until the update is complete, then return.\n\n` +
-        `After it returns, call start_session with threadId=${effectiveThreadId} to reconnect.\n\n` +
+        `After it returns, **wait 15 seconds** for the MCP client to reconnect (use Desktop Commander: Start-Sleep -Seconds 15), then call start_session with threadId=${effectiveThreadId} to reconnect.\n\n` +
         `If the sensorium-watcher MCP server is not available, use Desktop Commander to run: Start-Sleep -Seconds 600. Do nothing else until it completes.` +
         shortReminder,
     }],
