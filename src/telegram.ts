@@ -39,7 +39,7 @@ export class TelegramClient {
   lastReaction: { emoji: string; messageId: number; date: number } | null = null;
 
   // Ring buffer for sent messages (tracks message_id → content snippet)
-  private sentMessages: Array<{ messageId: number; snippet: string; timestamp: number }> = [];
+  private readonly sentMessages: Array<{ messageId: number; snippet: string; timestamp: number }> = [];
   private static readonly MAX_SENT_MESSAGES = 50;
 
   /** Optional lazy DB getter for persisting message_id → thread_id mapping. */
@@ -218,10 +218,9 @@ export class TelegramClient {
           `Telegram getUpdates failed: ${response.status} ${description}`,
         );
       }
-      if (!data || !data.ok) {
-        throw new Error(
-          `Telegram API error in getUpdates${data?.description ? `: ${data.description}` : ""}`,
-        );
+      if (!data?.ok) {
+        const desc = data?.description ? `: ${data.description}` : "";
+        throw new Error(`Telegram API error in getUpdates${desc}`);
       }
       return data.result;
     }
@@ -392,13 +391,23 @@ export class TelegramClient {
   }
 
   /**
-   * Set an emoji reaction on a message ("seen" indicator).
-   * Retries on 429 rate-limit responses. Logs the first failure per
-   * 60-second window to avoid flooding stderr in busy sessions.
+   * Log a reaction-related warning at most once per suppression window.
    */
   private reactionWarned = false;
   private reactionWarnedAt = 0;
 
+  private warnReactionOnce(message: string): void {
+    if (this.reactionWarned) return;
+    this.reactionWarned = true;
+    this.reactionWarnedAt = Date.now();
+    log.warn(`[telegram] ${message} (further failures suppressed for 60s)`);
+  }
+
+  /**
+   * Set an emoji reaction on a message ("seen" indicator).
+   * Retries on 429 rate-limit responses. Logs the first failure per
+   * 60-second window to avoid flooding stderr in busy sessions.
+   */
   async setMessageReaction(
     chatId: string,
     messageId: number,
@@ -426,30 +435,18 @@ export class TelegramClient {
 
         // Retry on 429 Too Many Requests.
         if (response.status === 429 && attempt < MAX_RETRIES) {
-          const data = await this.tryParseJson<{ parameters?: { retry_after?: number }; description?: string }>(response);
+          const data = await this.tryParseJson<{ parameters?: { retry_after?: number } }>(response);
           const retryAfter = data?.parameters?.retry_after ?? 1;
           log.info(`[telegram] setMessageReaction 429 on msg ${messageId} — retrying in ${retryAfter}s (attempt ${attempt + 1}/${MAX_RETRIES})`);
           await new Promise<void>(r => setTimeout(r, retryAfter * 1000));
           continue;
         }
 
-        if (!this.reactionWarned) {
-          this.reactionWarned = true;
-          this.reactionWarnedAt = Date.now();
-          const data = await this.tryParseJson<{ description?: string }>(response);
-          log.warn(
-            `[telegram] setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText} (further failures suppressed for 60s)`,
-          );
-        }
+        const data = await this.tryParseJson<{ description?: string }>(response);
+        this.warnReactionOnce(`setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText}`);
         return;
       } catch (err) {
-        if (!this.reactionWarned) {
-          this.reactionWarned = true;
-          this.reactionWarnedAt = Date.now();
-          log.warn(
-            `[telegram] setMessageReaction error: ${err instanceof Error ? err.message : String(err)} (further errors suppressed for 60s)`,
-          );
-        }
+        this.warnReactionOnce(`setMessageReaction error: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
     }
