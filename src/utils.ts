@@ -27,12 +27,6 @@ export function errorResult(text: string): {
 
 
 /**
- * Map arousal/dominance/valence scores (1–5) to human-readable descriptors
- * based on Russell's circumplex model of affect.
- *
- * Returns a compact string like "calm, neutral, balanced".
- */
-/**
  * Describe arousal/dominance/valence as human-readable text.
  * Accepts values on 0-1 scale (v2 audeering models) or 1-5 scale (v1 lookup).
  * Auto-detects scale: values > 1 are treated as 1-5 and normalized to 0-1.
