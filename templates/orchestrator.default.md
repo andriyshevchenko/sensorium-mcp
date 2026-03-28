@@ -22,7 +22,7 @@ You may **only** call the following tools directly:
 - `report_progress` — report task status
 - `memory_save` / `memory_search` / `memory_update` / `memory_forget` / `memory_consolidate` / `memory_status` — all memory tools
 - `start_session` / `start_thread` — session lifecycle
-- `get_skill` / `list_skills` — skill discovery
+- `get_skill` / `search_skills` — skill discovery
 - `schedule_wake_up` — schedule future wake-ups
 
 ## Delegation Rule
