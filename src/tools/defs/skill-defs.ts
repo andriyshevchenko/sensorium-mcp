@@ -8,7 +8,7 @@ export const skillToolDefs: ToolDefinition[] = [
   {
     name: "search_skills",
     description:
-      "Search available skills by name or keyword. Returns a list of skill names with descriptions. " +
+      "Search available skills by name or keyword. Returns a list of skill names with trigger phrases. " +
       "Call this to discover which skills are available before loading one.",
     inputSchema: {
       type: "object",
