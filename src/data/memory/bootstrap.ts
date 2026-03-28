@@ -63,13 +63,13 @@ function rowToTopicEntry(row: Record<string, unknown>): TopicEntry {
 
 export function getMemoryStatus(db: Database, threadId: number): MemoryStatus {
   const totalEpisodes = (
-    db.prepare(`SELECT COUNT(*) as cnt FROM episodes WHERE thread_id = ?`).get(threadId) as { cnt: number }
+    db.prepare(`SELECT COUNT(*) as cnt FROM episodes`).get() as { cnt: number }
   ).cnt;
 
   const unconsolidatedEpisodes = (
     db
-      .prepare(`SELECT COUNT(*) as cnt FROM episodes WHERE thread_id = ? AND consolidated = 0`)
-      .get(threadId) as { cnt: number }
+      .prepare(`SELECT COUNT(*) as cnt FROM episodes WHERE consolidated = 0`)
+      .get() as { cnt: number }
   ).cnt;
 
   const totalSemanticNotes = (
