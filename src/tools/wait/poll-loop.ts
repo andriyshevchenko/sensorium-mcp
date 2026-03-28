@@ -60,7 +60,7 @@ function consumePendingTask(threadId: number): ToolResult | null {
             `<<< OPERATOR MESSAGE >>>\n` +
             `${taskContent}\n\n` +
             `Execute this task using subagents. Report progress via send_voice or report_progress. ` +
-            `When complete, use hibernate or simply finish.\n` +
+            `When complete, simply finish.\n` +
             `<<< END OPERATOR MESSAGE >>>`,
         },
       ],
@@ -149,7 +149,7 @@ export async function handleWaitForInstructions(
 
   while (Date.now() < deadline) {
     // Check for pending update — tell agent to use the watcher MCP server
-    // CRITICAL: Do NOT tell agents to call hibernate or any MCP tool on sensorium-mcp
+    // CRITICAL: Do NOT tell agents to call any MCP tool on sensorium-mcp
     // here — the server is about to die. Agents must call await_server_ready on
     // sensorium-watcher (or fall back to an external sleep) instead.
     const maintenanceInfo = checkMaintenanceFlag();

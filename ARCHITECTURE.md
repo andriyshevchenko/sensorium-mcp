@@ -79,13 +79,13 @@ src/
     ├── definitions.ts       [  26] Barrel re-export of defs/*
     ├── defs/                       # Decomposed JSON schema definitions
     │   ├── memory-defs.ts   [ 176] memory_* tool schemas
-    │   ├── session-defs.ts  [ 279] start_session, report_progress, hibernate schemas
+    │   ├── session-defs.ts  [ 279] start_session, report_progress schemas
     │   ├── utility-defs.ts  [  39] send_file, send_voice, schedule_wake_up schemas
     │   └── wait-defs.ts     [  26] wait_for_instructions + remote_copilot_wait schemas
     ├── delegate-tool.ts     [ 260] Subagent delegation handler (runSubagent)
     ├── thread-lifecycle.ts  [ 220] Thread creation, topic management, session bootstrap
     ├── start-session-tool.ts[ 270] start_session — topic creation, memory bootstrap
-    ├── session-tools.ts     [ 346] report_progress, hibernate
+    ├── session-tools.ts     [ 346] report_progress
     ├── utility-tools.ts     [ 282] send_file, send_voice, send_sticker, schedule_wake_up, etc.
     ├── memory-tools.ts      [ 372] All memory_* tool handlers
     ├── wait-tool.ts         [   5] ← barrel re-export of wait/*

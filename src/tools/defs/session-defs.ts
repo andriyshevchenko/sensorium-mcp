@@ -1,5 +1,5 @@
 /**
- * Session tool definitions — start_session, hibernate, schedule_wake_up,
+ * Session tool definitions — start_session, schedule_wake_up,
  * send_voice, send_file, send_sticker, start_thread, send_message_to_thread.
  */
 
@@ -159,28 +159,6 @@ export const sessionToolDefs: ToolDefinition[] = [
         taskId: {
           type: "string",
           description: "Task ID to remove (for action: 'remove').",
-        },
-      },
-    },
-  },
-  {
-    name: "hibernate",
-    description:
-      "Enter hibernation \u2014 the agent suspends until a specific time, a scheduled task fires, or the operator sends a message. " +
-      "Only call this when the operator explicitly asks you to hibernate/sleep/stop. Self-hibernation is not allowed. " +
-      "Specify 'wakeAt' (ISO 8601 timestamp) for a timed alarm, or omit it to hibernate indefinitely until operator message or scheduled task wakes you. " +
-      "Hibernation uses a low-frequency poll (30s intervals) to minimize resource usage. " +
-      "On wake, returns the reason: 'operator_message', 'scheduled_task', 'alarm', or 'connection_lost'.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        threadId: {
-          type: "number",
-          description: "Thread ID for the session (optional if already set).",
-        },
-        wakeAt: {
-          type: "string",
-          description: "ISO 8601 timestamp to wake up at (e.g. '2026-03-20T14:00:00+02:00'). If omitted, hibernates until operator message or scheduled task.",
         },
       },
     },
