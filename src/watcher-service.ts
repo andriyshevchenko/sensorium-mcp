@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, isInitializeRequest, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { startClaudeKeeper, type KeeperHandle } from "./claude-keeper.js";
 
 // Configuration ---------------------------------------------------------------
 const CONFIG = {
@@ -19,6 +20,12 @@ const CONFIG = {
   httpPort: parseInt(process.env.WATCHER_PORT || "3848", 10),
   mcpStartCommand: process.env.MCP_START_COMMAND || "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM",
   dataDir: join(homedir(), ".remote-copilot-mcp"),
+  // Always-on Claude CLI keeper
+  alwaysOnThreadId: parseInt(process.env.ALWAYS_ON_THREAD_ID || "0", 10),
+  alwaysOnSessionName: process.env.ALWAYS_ON_SESSION_NAME || "always-on-keepalive",
+  claudeCmd: process.env.CLAUDE_CLI_CMD || "claude",
+  mcpHttpPort: parseInt(process.env.MCP_HTTP_PORT || "0", 10),
+  mcpHttpSecret: process.env.MCP_HTTP_SECRET || null,
 };
 const P = {
   flag: join(CONFIG.dataDir, "maintenance.flag"), ver: join(CONFIG.dataDir, "current-version.txt"),
@@ -29,6 +36,7 @@ let startTime = Date.now();
 let managedChild: ChildProcess | null = null;
 let httpSrv: HttpServer | null = null;
 let updateInProgress = false;
+let keeper: KeeperHandle | null = null;
 
 // Helpers ---------------------------------------------------------------------
 function log(level: "INFO" | "WARN" | "ERROR", msg: unknown): void {
@@ -216,6 +224,25 @@ async function checkAndUpdate(): Promise<void> {
   }
 }
 
+// Claude CLI keeper -----------------------------------------------------------
+function keeperEnabled(): boolean {
+  return CONFIG.alwaysOnThreadId > 0 && CONFIG.mcpHttpPort > 0;
+}
+
+async function launchKeeper(): Promise<void> {
+  if (!keeperEnabled()) return;
+  if (keeper) { await keeper.stop(); keeper = null; }
+  keeper = await startClaudeKeeper({
+    threadId: CONFIG.alwaysOnThreadId,
+    sessionName: CONFIG.alwaysOnSessionName,
+    claudeCmd: CONFIG.claudeCmd,
+    mcpConfigPath: join(CONFIG.dataDir, "claude-mcp-config.json"),
+    mcpHttpPort: CONFIG.mcpHttpPort,
+    mcpHttpSecret: CONFIG.mcpHttpSecret,
+    dataDir: CONFIG.dataDir,
+  });
+}
+
 // Main loop -------------------------------------------------------------------
 async function runLoop(): Promise<void> {
   log("INFO", `Watcher starting in ${CONFIG.mode} mode.`);
@@ -231,6 +258,7 @@ async function runLoop(): Promise<void> {
   }
   const pid = readPid();
   if (!pid || !alive(pid)) startMcpServer();
+  void launchKeeper().catch((err) => log("ERROR", `Keeper failed to start: ${err}`));
   if (CONFIG.mode === "production") {
     while (true) {
       const ms = msUntilHour(CONFIG.pollAtHour);
@@ -379,6 +407,7 @@ export async function startWatcherService(): Promise<void> {
   if (!acquireLock()) { process.exit(1); return; }
   const shutdown = async () => {
     log("INFO", "Shutting down watcher...");
+    if (keeper) { await keeper.stop(); keeper = null; }
     await stopMcpServer();
     httpSrv?.close();
     releaseLock();
