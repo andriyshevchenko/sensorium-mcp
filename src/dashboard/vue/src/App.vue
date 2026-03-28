@@ -4,8 +4,6 @@ import { api, setToken } from './api'
 import type { StatusResponse } from './types'
 import SessionsTab from './components/SessionsTab.vue'
 import MemoryNotesTab from './components/MemoryNotesTab.vue'
-import EpisodesTab from './components/EpisodesTab.vue'
-import TopicsTab from './components/TopicsTab.vue'
 import TemplatesTab from './components/TemplatesTab.vue'
 import SkillsTab from './components/SkillsTab.vue'
 import KeepAliveTab from './components/KeepAliveTab.vue'
@@ -25,8 +23,6 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null
 const tabs = [
   { id: 'sessions', label: 'Sessions' },
   { id: 'notes', label: 'Memory Notes' },
-  { id: 'episodes', label: 'Episodes' },
-  { id: 'topics', label: 'Topics' },
   { id: 'templates', label: 'Templates' },
   { id: 'skills', label: 'Skills' },
   { id: 'keepalive', label: 'Keep-Alive' },
@@ -35,8 +31,6 @@ const tabs = [
 const tabComponents = {
   sessions: SessionsTab,
   notes: MemoryNotesTab,
-  episodes: EpisodesTab,
-  topics: TopicsTab,
   templates: TemplatesTab,
   skills: SkillsTab,
   keepalive: KeepAliveTab,
