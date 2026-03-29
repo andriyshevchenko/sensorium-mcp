@@ -21,10 +21,11 @@ const CONFIG = {
   httpPort: parseInt(process.env.WATCHER_PORT || "3848", 10),
   mcpStartCommand: process.env.MCP_START_COMMAND || "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM",
   dataDir: join(homedir(), ".remote-copilot-mcp"),
-  // Always-on Claude CLI keeper
+  // Always-on CLI keeper
   alwaysOnThreadId: parseInt(process.env.ALWAYS_ON_THREAD_ID || "0", 10),
   alwaysOnSessionName: process.env.ALWAYS_ON_SESSION_NAME || "always-on-keepalive",
   claudeCmd: process.env.CLAUDE_CLI_CMD || "claude",
+  copilotCmd: process.env.COPILOT_CLI_CMD || "copilot",
   mcpHttpPort: parseInt(process.env.MCP_HTTP_PORT || "0", 10),
   mcpHttpSecret: process.env.MCP_HTTP_SECRET || null,
 };
@@ -410,6 +411,7 @@ interface KeeperSettings {
   threadId: number;
   maxRetries: number;
   cooldownMs: number;
+  client: "claude" | "copilot";
 }
 
 function readKeeperSettings(): KeeperSettings {
@@ -428,13 +430,14 @@ function readKeeperSettings(): KeeperSettings {
     ? s.keepAliveMaxRetries : 5;
   const cooldownMs = typeof s.keepAliveCooldownMs === "number" && s.keepAliveCooldownMs >= 1000
     ? s.keepAliveCooldownMs : 300_000;
-  return { enabled, threadId, maxRetries, cooldownMs };
+  const client = s.keepAliveClient === "copilot" ? "copilot" : "claude";
+  return { enabled, threadId, maxRetries, cooldownMs, client };
 }
 
 let activeKeeperSettings: KeeperSettings | null = null;
 
 function keeperSettingsChanged(a: KeeperSettings, b: KeeperSettings): boolean {
-  return a.threadId !== b.threadId || a.maxRetries !== b.maxRetries || a.cooldownMs !== b.cooldownMs;
+  return a.threadId !== b.threadId || a.maxRetries !== b.maxRetries || a.cooldownMs !== b.cooldownMs || a.client !== b.client;
 }
 
 async function applyKeeperSettings(): Promise<void> {
@@ -464,7 +467,9 @@ async function applyKeeperSettings(): Promise<void> {
     keeper = await startClaudeKeeper({
       threadId: settings.threadId,
       sessionName: CONFIG.alwaysOnSessionName,
+      client: settings.client,
       claudeCmd: CONFIG.claudeCmd,
+      copilotCmd: CONFIG.copilotCmd,
       mcpConfigPath: join(CONFIG.dataDir, "claude-mcp-config.json"),
       mcpHttpPort: CONFIG.mcpHttpPort,
       mcpHttpSecret: CONFIG.mcpHttpSecret,

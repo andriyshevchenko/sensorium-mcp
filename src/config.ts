@@ -223,6 +223,23 @@ export function setKeepAliveCooldownMs(ms: number): void {
   updateSettings(s => { s.keepAliveCooldownMs = ms; });
 }
 
+// ─── Keep-alive client type ──────────────────────────────────────────────────
+
+export type KeeperClient = "claude" | "copilot";
+
+function isValidKeeperClient(v: unknown): v is KeeperClient {
+  return v === "claude" || v === "copilot";
+}
+
+export function getKeepAliveClient(): KeeperClient {
+  const v = readSettings().keepAliveClient;
+  return isValidKeeperClient(v) ? v : "claude";
+}
+
+export function setKeepAliveClient(client: KeeperClient): void {
+  updateSettings(s => { s.keepAliveClient = client; });
+}
+
 // ─── Ghost thread memory source ───────────────────────────────────────────
 
 /**
