@@ -36,8 +36,13 @@ export const sessionToolDefs: ToolDefinition[] = [
           description:
             "Optional. The Telegram message_thread_id of an existing topic to resume. " +
             "When provided, no new topic is created \u2014 the session continues in the existing thread.",
-        },
-      },
+        },        agentType: {
+          type: "string",
+          description:
+            'Which agent type is connecting: "copilot" | "claude" | "cursor". ' +
+            "Determines agent-specific reminders and routing. Defaults to the dashboard setting.",
+          enum: ["copilot", "claude", "cursor"],
+        },      },
       required: [],
     },
   },
