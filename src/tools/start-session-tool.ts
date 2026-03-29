@@ -6,7 +6,7 @@
  * session greeting with reminders.
  */
 
-import { getMemorySourceThreadId } from "../config.js";
+import { getMemorySourceThreadId, setThreadAgentType, type AgentType } from "../config.js";
 import { convertMarkdown } from "../markdown.js";
 import { assembleBootstrap, runConsolidationAllThreads, type initMemoryDb } from "../memory.js";
 import { addSchedule, generateTaskId, listSchedules, purgeSchedules } from "../scheduler.js";
@@ -82,6 +82,11 @@ export async function handleStartSession(
   const customName = typeof typedArgs.name === "string" && typedArgs.name.trim()
     ? typedArgs.name.trim()
     : undefined;
+  const rawAgentType = typeof typedArgs.agentType === "string" ? typedArgs.agentType.trim() : "";
+  const agentType: AgentType | undefined =
+    rawAgentType === "copilot" || rawAgentType === "claude" || rawAgentType === "cursor"
+      ? rawAgentType
+      : undefined;
 
   // ── Re-entry guard ────────────────────────────────────────────────────
   // If the requested thread is already the active session AND the full
@@ -345,6 +350,10 @@ export async function handleStartSession(
     : "";
 
   const threadId = session.currentThreadId;
+  // Set per-thread agent type if declared — determines agent-specific reminders
+  if (threadId !== undefined && agentType) {
+    setThreadAgentType(threadId, agentType);
+  }
   const reminders = ctx.getReminders(threadId, session.sessionStartedAt, config.AUTONOMOUS_MODE);
   // Mark session as fully initialized — subsequent start_session calls with
   // the same threadId will hit the re-entry guard instead of re-bootstrapping.

@@ -95,15 +95,27 @@ export function getReminders(
     MODE: autonomousMode ? "autonomous" : "standard",
   };
 
-  // ── Try custom template ────────────────────────────────────────────────
-  const tpl = loadTemplate("reminders");
-  if (tpl !== null) {
-    return "\n" + renderTemplate(tpl, vars).trim();
-  }
+  // Two-layer reminder system:
+  // Layer 1: Base template (custom override → agent-specific default fallback)
+  // Layer 2: Agent-specific suffix (always appended — orchestrator hints, etc.)
+  const customTpl = loadTemplate("reminders");
+  const basePart = customTpl !== null
+    ? renderTemplate(customTpl, vars).trim()
+    : renderTemplate(getDefaultRemindersTemplate(getEffectiveAgentType(threadId)), vars).trim();
 
-  // ── Fallback: use agent-specific default template ────────────────────
-  const defaultTpl = getDefaultRemindersTemplate(getEffectiveAgentType(threadId));
-  return "\n" + renderTemplate(defaultTpl, vars).trim();
+  // Agent-specific suffix — loaded from reminders-{agentType}.md custom file,
+  // falling back to the built-in AGENT_REMINDERS_TEMPLATES preset.
+  const agentType = getEffectiveAgentType(threadId);
+  const agentTpl = loadTemplate(`reminders-${agentType}`);
+  const agentPart = agentTpl !== null
+    ? renderTemplate(agentTpl, vars).trim()
+    : "";
+
+  // When a custom base template is used AND there's no agent-specific override,
+  // don't double up — the base template already contains the full reminder.
+  // Agent suffix only adds value when it exists as a separate file.
+  const parts = [basePart, agentPart].filter(Boolean);
+  return "\n" + parts.join("\n");
 }
 
 /**
