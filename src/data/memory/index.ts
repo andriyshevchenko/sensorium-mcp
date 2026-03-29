@@ -18,4 +18,5 @@ export * from './consolidation.js';
 export * from './reflection.js';
 export * from './narrative.js';
 export * from './topic-shift.js';
+export * from './synthesis.js';
 export * from './bootstrap.js';
