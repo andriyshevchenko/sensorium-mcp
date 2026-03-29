@@ -17,10 +17,11 @@ import {
   saveEpisode,
   searchByEmbedding,
   searchSemanticNotesRanked,
+  getPinnedNotes,
+  getGuardrailNotes,
   type initMemoryDb,
 } from "../../memory.js";
 import {
-  chatCompletion,
   generateEmbedding,
 } from "../../openai.js";
 import { extractSearchKeywords, getReminders, getMediumReminder } from "../../response-builders.js";
@@ -35,8 +36,10 @@ import type { ContentBlock, ToolResult } from "../../types.js";
 
 const MIN_CONTEXT_TEXT_LENGTH = 10;
 const MAX_EPISODE_CONTENT_LENGTH = 2000;
-const SMART_CONTEXT_MAX_RESULTS = 10;
+const SMART_CONTEXT_MAX_RESULTS = 15;
 const MIN_SIMILARITY = 0.25;
+const MAX_INJECTED_NOTES = 7;
+const NOTE_CONTENT_MAX_CHARS = 400;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -239,70 +242,29 @@ export async function buildSmartContext(
       try {
         const queryEmb = await generateEmbedding(operatorText, apiKey);
         const embResults = searchByEmbedding(db, queryEmb, { maxResults: SMART_CONTEXT_MAX_RESULTS, minSimilarity: MIN_SIMILARITY, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
-        candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, 200), confidence: n.confidence, similarity: n.similarity }));
+        candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence, similarity: n.similarity }));
       } catch (err) {
         // Fallback to keyword search
         log.warn(`Embedding generation failed, falling back to keyword search: ${err instanceof Error ? err.message : String(err)}`);
         const searchQuery = extractSearchKeywords(operatorText);
         if (searchQuery.trim().length > 0) {
           const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: SMART_CONTEXT_MAX_RESULTS, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
-          candidates = kwResults.map(n => ({ type: n.type, content: n.content.slice(0, 200), confidence: n.confidence }));
+          candidates = kwResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence }));
         }
       }
 
       if (candidates.length > 0) {
-        // Phase 2: GPT-4o-mini filters and compresses
-        try {
-          const noteList = candidates.map((c, i) => `[${i}] [${c.type}] ${c.content}`).join("\n");
-          const filterResponse = await chatCompletion([
-            {
-              role: "system",
-              content:
-                "You are a context filter for an AI assistant. Given an operator's message and candidate memory notes, " +
-                "select ONLY the notes that are directly relevant to the operator's current instruction or question. " +
-                "Discard notes that are tangentially related, duplicates, or noise. " +
-                "Return a JSON array of objects: [{\"i\": <index>, \"s\": \"<compressed one-liner>\"}] " +
-                "where 'i' is the note index and 's' is a compressed summary (max 80 chars). " +
-                "Return [] if no notes are relevant. Return at most 3 notes. Be aggressive about filtering.",
-            },
-            {
-              role: "user",
-              content: `Operator message: "${operatorText.slice(0, 300)}"\n\nCandidate notes:\n${noteList}`,
-            },
-          ], apiKey, { maxTokens: 200, temperature: 0 });
-
-          // Parse the response — expect JSON array
-          const jsonMatch = filterResponse.match(/\[.*\]/s);
-          let selectedCount = 0;
-          if (jsonMatch) {
-            const parsed: unknown = JSON.parse(jsonMatch[0]);
-            if (!Array.isArray(parsed) || !parsed.every((p: Record<string, unknown>) => typeof p.i === "number" && typeof p.s === "string")) {
-              throw new Error("Invalid LLM filter response shape");
-            }
-            const filtered = parsed as { i: number; s: string }[];
-            selectedCount = filtered.length;
-            if (filtered.length > 0) {
-              const lines = filtered
-                .filter(f => f.i >= 0 && f.i < candidates.length)
-                .slice(0, 3)
-                .map(f => {
-                  const c = candidates[f.i];
-                  return `- **[${c.type}]** ${f.s} _(conf: ${c.confidence})_`;
-                });
-              if (lines.length > 0) {
-                autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
-              }
-            }
-          }
-          log.verbose("memory", `Smart filter: ${candidates.length} candidates → ${selectedCount} selected`);
-        } catch (filterErr) {
-          // GPT-4o-mini filter failed — fall back to top-3 raw notes
-          log.warn(`[memory] Smart filter failed, using raw top-3: ${filterErr instanceof Error ? filterErr.message : String(filterErr)}`);
-          const lines = candidates.slice(0, 3).map(c =>
-            `- **[${c.type}]** ${c.content} _(conf: ${c.confidence})_`
-          );
+        // Take top candidates by similarity — no LLM filter needed.
+        // Cosine similarity already provides strong relevance signal.
+        const topCandidates = candidates.slice(0, MAX_INJECTED_NOTES);
+        const lines = topCandidates.map(c => {
+          const simLabel = c.similarity !== undefined ? `, sim: ${c.similarity.toFixed(2)}` : "";
+          return `- **[${c.type}]** ${c.content} _(conf: ${c.confidence}${simLabel})_`;
+        });
+        if (lines.length > 0) {
           autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
         }
+        log.verbose("memory", `Smart context: ${candidates.length} candidates → ${topCandidates.length} injected`);
       }
     } else if (operatorText.length > MIN_CONTEXT_TEXT_LENGTH) {
       // No API key — keyword search, raw top-3
@@ -311,13 +273,39 @@ export async function buildSmartContext(
         const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 3, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
         if (kwResults.length > 0) {
           const lines = kwResults.map(n =>
-            `- **[${n.type}]** ${n.content.slice(0, 200)} _(conf: ${n.confidence})_`
+            `- **[${n.type}]** ${n.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${n.confidence})_`
           );
           autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
         }
       }
     }
   } catch (err) { log.debug(`Smart context injection failed: ${err instanceof Error ? err.message : String(err)}`); }
+
+  // ── Persistent context: pinned notes + active decisions ──────────────
+  // Always injected regardless of query relevance. These are the operator's
+  // long-term invariants that every response should be grounded in.
+  try {
+    const db = ctx.getMemoryDb();
+    const persistentLines: string[] = [];
+
+    const pinned = getPinnedNotes(db, ctx.effectiveThreadId ?? 0);
+    if (pinned.length > 0) {
+      for (const p of pinned) {
+        persistentLines.push(`- **[pinned/${p.type}]** ${p.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${p.confidence.toFixed(2)})_`);
+      }
+    }
+
+    const guardrails = getGuardrailNotes(db);
+    if (guardrails.length > 0) {
+      for (const g of guardrails) {
+        persistentLines.push(`- **[decision]** ${g.content.slice(0, NOTE_CONTENT_MAX_CHARS)}`);
+      }
+    }
+
+    if (persistentLines.length > 0) {
+      autoMemoryContext += `\n\n## Persistent Context (always active)\n${persistentLines.join("\n")}`;
+    }
+  } catch { /* non-critical */ }
 
   return autoMemoryContext;
 }
