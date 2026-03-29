@@ -239,10 +239,17 @@ export async function runIntelligentConsolidation(
   // Format episodes for the prompt
   const episodesText = episodes
     .map((ep, i) => {
-      const content =
-        typeof ep.content === "object" && ep.content !== null
-          ? (ep.content.text as string) ?? (ep.content.caption as string) ?? JSON.stringify(ep.content)
-          : String(ep.content);
+      const c = ep.content as Record<string, unknown>;
+      let content: string;
+      if (c && typeof c === "object" && c.tool) {
+        // Tool call episode — format as readable action description
+        content = `TOOL_CALL: ${c.tool}(${String(c.args ?? "").slice(0, 150)})` +
+          (c.result ? ` → ${String(c.result).slice(0, 200)}` : "");
+      } else if (c && typeof c === "object") {
+        content = (c.text as string) ?? (c.caption as string) ?? JSON.stringify(c);
+      } else {
+        content = String(ep.content);
+      }
       return `[${i + 1}] (${ep.type}/${ep.modality}, ${ep.timestamp}) ${content}`;
     })
     .join("\n");
