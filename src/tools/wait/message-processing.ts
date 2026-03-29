@@ -10,7 +10,7 @@
  */
 
 import { readThreadMessages } from "../../dispatcher.js";
-import { assembleCompactRefresh } from "../../memory.js";
+import { assembleCompactRefresh, detectTopicShift } from "../../memory.js";
 import { log } from "../../logger.js";
 import { getReminders } from "../../response-builders.js";
 import { listSchedules } from "../../scheduler.js";
@@ -153,7 +153,17 @@ export async function processIncomingMessages(
     .slice(0, 500);
 
   // Smart context injection (skills are now loaded on-demand via MCP tools)
-  const autoMemoryContext = await buildSmartContext(operatorText, { getMemoryDb, effectiveThreadId });
+  let autoMemoryContext = await buildSmartContext(operatorText, { getMemoryDb, effectiveThreadId });
+
+  // Topic-shift detection
+  try {
+    const db = getMemoryDb();
+    const shift = await detectTopicShift(db, effectiveThreadId, operatorText);
+    if (shift?.shifted) {
+      autoMemoryContext += `\n\n## ⚡ Topic Shift Detected\nSimilarity to recent context: ${shift.similarity.toFixed(2)}\nRecent topic: "${shift.recentTopicSummary}"\nNew topic: "${shift.suggestedTopic}"\n\nConsider suggesting a focused ghost thread (via start_thread) for this new topic to keep the main thread focused.`;
+    }
+  } catch { /* non-fatal */ }
+
   // Voice messages have no .text — extract transcriptions from content blocks
   // so the intent classifier sees spoken words rather than empty string.
   let intentText = operatorText;
