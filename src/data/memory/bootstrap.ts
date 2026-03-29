@@ -25,7 +25,7 @@ import { getGuardrailsEnabled, getBootstrapMessageCount } from "../../config.js"
 /** Maximum characters for the Recent Conversation section before truncation. */
 const MAX_BOOTSTRAP_CONVERSATION_CHARS = 100_000;
 /** Maximum characters per individual message in the Recent Conversation section. */
-const MAX_MESSAGE_CONTENT_CHARS = 200;
+const MAX_MESSAGE_CONTENT_CHARS = 500;
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -134,11 +134,11 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   const bootstrapMessageCount = getBootstrapMessageCount();
   const recentEpisodesDesc = getRecentEpisodes(db, queryThreadId, bootstrapMessageCount);
   const recentEpisodes = [...recentEpisodesDesc].reverse(); // chronological order (oldest first)
-  const topNotes = getTopSemanticNotes(db, { limit: 10, sortBy: "access_count", threadId: queryThreadId });
-  // Preferences first
+  const topNotes = getTopSemanticNotes(db, { limit: 20, sortBy: "access_count", threadId: queryThreadId });
+  // Preferences first, then other notes
   const preferences = topNotes.filter((n) => n.type === "preference");
   const otherNotes = topNotes.filter((n) => n.type !== "preference");
-  const sortedNotes = [...preferences, ...otherNotes].slice(0, 10);
+  const sortedNotes = [...preferences, ...otherNotes].slice(0, 20);
 
   const activeProcedures = db
     .prepare(
@@ -269,6 +269,25 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
     lines.push("");
   }
 
+  // Recent Reflection Insights — deeper patterns from the reflection pipeline
+  try {
+    const reflections = db
+      .prepare(
+        `SELECT content, confidence, created_at FROM semantic_notes
+         WHERE content LIKE '[REFLECTION]%'
+           AND valid_to IS NULL AND superseded_by IS NULL AND thread_id = ?
+         ORDER BY created_at DESC LIMIT 5`,
+      )
+      .all(queryThreadId) as { content: string; confidence: number; created_at: string }[];
+    if (reflections.length > 0) {
+      lines.push("## Recent Reflections");
+      for (const r of reflections) {
+        lines.push(`- ${r.content.slice(0, 300)} _(conf: ${r.confidence.toFixed(2)}, ${r.created_at.slice(0, 10)})_`);
+      }
+      lines.push("");
+    }
+  } catch { /* non-critical — table or column might not exist in older schemas */ }
+
   // Topics
   if (status.topTopics.length > 0) {
     lines.push("## Top Topics");
@@ -286,7 +305,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
  * Much shorter than full bootstrap. Designed to re-ground the agent after context compaction.
  */
 export function assembleCompactRefresh(db: Database, threadId: number): string {
-  const topNotes = getTopSemanticNotes(db, { limit: 6, sortBy: "access_count", threadId });
+  const topNotes = getTopSemanticNotes(db, { limit: 12, sortBy: "access_count", threadId });
   if (topNotes.length === 0) return "";
 
   const lines: string[] = [];
