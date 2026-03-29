@@ -14,18 +14,20 @@ You are a **worker thread** spawned by an orchestrator. Your job is to execute t
 
 ## Reporting Protocol
 
-1. **Progress updates** — use `report_progress` for intermediate status (the orchestrator and operator both see these)
-2. **Final result** — use `send_message_to_thread` with mode `"reply"` to send your findings back to the orchestrator:
+1. **Progress updates** — use `report_progress` throughout your work so the operator has visibility
+2. **Final result** — use **both**:
+   - `report_progress` with a summary (so the operator sees it)
+   - `send_message_to_thread` with mode `"reply"` to send detailed findings back to the orchestrator:
    ```
    send_message_to_thread(
      threadId: <ORCHESTRATOR_THREAD_ID>,
-     message: "<your results>",
+     message: "<your detailed results>",
      mode: "reply",
      senderName: "<your thread name>",
      senderThreadId: <YOUR_THREAD_ID>
    )
    ```
-3. **Errors** — if you fail, still report back with what went wrong. Don't go silent.
+3. **Errors** — report failures via both `report_progress` and `send_message_to_thread(mode="reply")`. Don't go silent.
 
 ## Rules
 
