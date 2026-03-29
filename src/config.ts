@@ -240,6 +240,86 @@ export function setKeepAliveClient(client: KeeperClient): void {
   updateSettings(s => { s.keepAliveClient = client; });
 }
 
+// ─── Per-thread keep-alive overrides ─────────────────────────────────────────
+
+export interface ThreadKeepAliveSettings {
+  enabled: boolean;
+  client?: KeeperClient;
+  maxRetries?: number;
+  cooldownMs?: number;
+}
+
+/** Returns per-thread keep-alive settings, or null if none set. */
+export function getThreadKeepAlive(threadId: number): ThreadKeepAliveSettings | null {
+  const map = readSettings().threadKeepAlive as Record<string, unknown> | undefined;
+  if (!map || typeof map !== "object") return null;
+  const entry = map[String(threadId)];
+  if (!entry || typeof entry !== "object") return null;
+  const e = entry as Record<string, unknown>;
+  return {
+    enabled: typeof e.enabled === "boolean" ? e.enabled : false,
+    client: isValidKeeperClient(e.client) ? e.client : undefined,
+    cooldownMs: typeof e.cooldownMs === "number" && e.cooldownMs >= 1000 ? e.cooldownMs : undefined,
+    maxRetries: typeof e.maxRetries === "number" && e.maxRetries > 0 ? e.maxRetries : undefined,
+  };
+}
+
+/** Sets keep-alive settings for a specific thread. */
+export function setThreadKeepAlive(threadId: number, settings: ThreadKeepAliveSettings): void {
+  updateSettings(s => {
+    const map = (s.threadKeepAlive ?? {}) as Record<string, unknown>;
+    map[String(threadId)] = settings;
+    s.threadKeepAlive = map;
+  });
+}
+
+/** Removes per-thread keep-alive settings. */
+export function removeThreadKeepAlive(threadId: number): void {
+  updateSettings(s => {
+    const map = (s.threadKeepAlive ?? {}) as Record<string, unknown>;
+    delete map[String(threadId)];
+    s.threadKeepAlive = map;
+  });
+}
+
+/** Returns all per-thread keep-alive overrides. */
+export function getAllThreadKeepAlive(): Record<string, ThreadKeepAliveSettings> {
+  const map = readSettings().threadKeepAlive as Record<string, unknown> | undefined;
+  if (!map || typeof map !== "object") return {};
+  const result: Record<string, ThreadKeepAliveSettings> = {};
+  for (const [k, v] of Object.entries(map)) {
+    if (v && typeof v === "object") {
+      const e = v as Record<string, unknown>;
+      result[k] = {
+        enabled: typeof e.enabled === "boolean" ? e.enabled : false,
+        client: isValidKeeperClient(e.client) ? e.client : undefined,
+        cooldownMs: typeof e.cooldownMs === "number" && e.cooldownMs >= 1000 ? e.cooldownMs : undefined,
+        maxRetries: typeof e.maxRetries === "number" && e.maxRetries > 0 ? e.maxRetries : undefined,
+      };
+    }
+  }
+  return result;
+}
+
+/** Returns all thread IDs that have keep-alive enabled (global + per-thread). */
+export function getAllKeepAliveThreadIds(): number[] {
+  const ids = new Set<number>();
+  // Global keep-alive thread
+  if (getKeepAliveEnabled()) {
+    const globalThread = getKeepAliveThreadId();
+    if (globalThread > 0) ids.add(globalThread);
+  }
+  // Per-thread overrides
+  const map = getAllThreadKeepAlive();
+  for (const [k, v] of Object.entries(map)) {
+    if (v.enabled) {
+      const id = Number(k);
+      if (id > 0) ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
 // ─── Ghost thread memory source ───────────────────────────────────────────
 
 /**

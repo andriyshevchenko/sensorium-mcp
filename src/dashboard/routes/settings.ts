@@ -24,8 +24,12 @@ import {
     setKeepAliveCooldownMs,
     getKeepAliveClient,
     setKeepAliveClient,
+    setThreadKeepAlive,
+    removeThreadKeepAlive,
+    getAllThreadKeepAlive,
     type AgentType,
     type KeeperClient,
+    type ThreadKeepAliveSettings,
 } from "../../config.js";
 
 import { readBody, safeParseJSON, type RouteHandler } from "./types.js";
@@ -239,6 +243,54 @@ export const handlePostKeepAlive: RouteHandler = ({ req, json }) => {
                 keepAliveCooldownMs: getKeepAliveCooldownMs(),
                 keepAliveClient: getKeepAliveClient(),
             });
+        } catch (err) {
+            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+        }
+    })();
+    return true;
+};
+
+// ─── Per-thread keep-alive settings ─────────────────────────────────────────
+
+export const handleGetThreadKeepAlive: RouteHandler = ({ json }) => {
+    json({ threadKeepAlive: getAllThreadKeepAlive() });
+    return true;
+};
+
+export const handlePostThreadKeepAlive: RouteHandler = ({ req, json }) => {
+    void (async () => {
+        try {
+            const raw = await readBody(req);
+            const body = safeParseJSON(raw) as Record<string, unknown> | null;
+            if (!body || typeof body !== "object") {
+                json({ error: "Invalid request body" }, 400);
+                return;
+            }
+            const threadId = body.threadId;
+            if (typeof threadId !== "number" || !Number.isFinite(threadId) || threadId <= 0) {
+                json({ error: "threadId must be a positive number" }, 400);
+                return;
+            }
+            // Delete action
+            if (body.delete === true) {
+                removeThreadKeepAlive(threadId);
+                json({ ok: true, threadKeepAlive: getAllThreadKeepAlive() });
+                return;
+            }
+            const settings: ThreadKeepAliveSettings = {
+                enabled: typeof body.enabled === "boolean" ? body.enabled : false,
+            };
+            if (typeof body.client === "string" && (body.client === "claude" || body.client === "copilot")) {
+                settings.client = body.client;
+            }
+            if (typeof body.maxRetries === "number" && body.maxRetries > 0) {
+                settings.maxRetries = body.maxRetries;
+            }
+            if (typeof body.cooldownMs === "number" && body.cooldownMs >= 1000) {
+                settings.cooldownMs = body.cooldownMs;
+            }
+            setThreadKeepAlive(threadId, settings);
+            json({ ok: true, threadKeepAlive: getAllThreadKeepAlive() });
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
         }
