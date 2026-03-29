@@ -29,6 +29,11 @@ const remindersIsDefault = ref(true)
 const remindersStatus = ref('')
 const tplPreviewOpen = ref(false)
 
+// Agent-specific reminders
+const agentReminders = ref<Record<string, { content: string; isDefault: boolean }>>({})
+const activeAgentTab = ref('copilot')
+const agentRemindersStatus = ref('')
+
 // Drive template
 const driveContent = ref('')
 const driveIsDefault = ref(true)
@@ -70,11 +75,17 @@ async function loadBootstrapMsgCount() {
 
 async function loadTemplates() {
   try {
-    const data = await api<{ templates?: Array<{ content: string; isDefault: boolean }> }>('/api/templates')
+    const data = await api<{
+      templates?: Array<{ content: string; isDefault: boolean }>;
+      agentReminders?: Record<string, { content: string; isDefault: boolean }>;
+    }>('/api/templates')
     if (data.templates && data.templates.length > 0) {
       const tpl = data.templates[0]
       remindersContent.value = tpl.content || ''
       remindersIsDefault.value = tpl.isDefault ?? true
+    }
+    if (data.agentReminders) {
+      agentReminders.value = data.agentReminders
     }
   } catch {}
 }
@@ -172,6 +183,41 @@ async function resetReminders() {
     setTimeout(() => { remindersStatus.value = '' }, 3000)
   } catch (e: unknown) {
     remindersStatus.value = 'Error: ' + (e as Error).message
+  }
+}
+
+async function saveAgentReminder() {
+  const agent = activeAgentTab.value
+  const content = agentReminders.value[agent]?.content ?? ''
+  try {
+    const r = await fetch(`/api/templates/reminders-${agent}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    agentReminders.value[agent] = { content, isDefault: false }
+    agentRemindersStatus.value = `Saved ${agent} ✓`
+    setTimeout(() => { agentRemindersStatus.value = '' }, 3000)
+  } catch (e: unknown) {
+    agentRemindersStatus.value = 'Error: ' + (e as Error).message
+  }
+}
+
+async function resetAgentReminder() {
+  const agent = activeAgentTab.value
+  if (!confirm(`Reset ${agent} agent reminder? The custom template will be removed.`)) return
+  try {
+    const r = await fetch(`/api/templates/reminders-${agent}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    await loadTemplates()
+    agentRemindersStatus.value = `Reset ${agent} ✓`
+    setTimeout(() => { agentRemindersStatus.value = '' }, 3000)
+  } catch (e: unknown) {
+    agentRemindersStatus.value = 'Error: ' + (e as Error).message
   }
 }
 
@@ -314,6 +360,40 @@ onMounted(loadAll)
           <div><code class="text-accentLight">{{MODE}}</code> <span class="text-textSecondary">— "autonomous" or "standard"</span></div>
         </div>
       </details>
+    </div>
+
+    <!-- Agent-Specific Reminders -->
+    <div class="glass rounded-xl p-6">
+      <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <div>
+          <h3 class="text-lg font-semibold">Agent-Specific Reminders</h3>
+          <p class="text-sm text-textSecondary mt-1">Appended after the base reminders template — per agent type</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span v-if="agentRemindersStatus" class="text-sm text-success">{{ agentRemindersStatus }}</span>
+          <button @click="resetAgentReminder" class="px-4 py-2 rounded-xl bg-card hover:bg-cardHover border border-gray-700 text-sm text-textSecondary hover:text-textPrimary transition">Reset</button>
+          <button @click="saveAgentReminder" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Save</button>
+        </div>
+      </div>
+      <div class="flex gap-2 mb-4">
+        <button
+          v-for="agent in ['copilot', 'claude', 'cursor']"
+          :key="agent"
+          @click="activeAgentTab = agent"
+          :class="['px-4 py-2 rounded-xl text-sm font-medium transition', activeAgentTab === agent ? 'bg-accent text-white' : 'bg-card hover:bg-cardHover border border-gray-700 text-textSecondary hover:text-textPrimary']"
+        >{{ agent.charAt(0).toUpperCase() + agent.slice(1) }}</button>
+      </div>
+      <div v-if="agentReminders[activeAgentTab]?.isDefault !== false" class="mb-3">
+        <span class="type-badge" style="background:rgba(245,158,11,0.15);color:#fbbf24">NO CUSTOM OVERRIDE — this agent uses only the base reminders</span>
+      </div>
+      <textarea
+        :value="agentReminders[activeAgentTab]?.content ?? ''"
+        @input="(e: Event) => { const t = e.target as HTMLTextAreaElement; agentReminders[activeAgentTab] = { content: t.value, isDefault: false } }"
+        rows="8"
+        spellcheck="false"
+        class="w-full px-4 py-3 rounded-xl bg-surface border border-gray-700 text-textPrimary font-mono text-sm leading-relaxed focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition resize-y"
+        :placeholder="`Add ${activeAgentTab}-specific reminders (e.g. orchestrator hints, subagent policies)...`"
+      ></textarea>
     </div>
 
     <!-- Drive Framing Template -->

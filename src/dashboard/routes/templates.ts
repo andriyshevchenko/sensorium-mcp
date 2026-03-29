@@ -7,16 +7,20 @@ import { readFile, mkdir, writeFile, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { getEffectiveAgentType } from "../../config.js";
+import { getEffectiveAgentType, type AgentType } from "../../config.js";
 import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "../presets.js";
 import { readBody, type RouteHandler, type RouteArgs } from "./types.js";
 
-// ─── GET /api/templates — list reminders template ───────────────────────────
+const AGENT_TYPES: AgentType[] = ["copilot", "claude", "cursor"];
+
+// ─── GET /api/templates — list reminders template + agent-specific overrides ─
 
 export const handleGetTemplates: RouteHandler = ({ json }) => {
     void (async () => {
         try {
             const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
+
+            // Base reminders template
             const userFile = join(templatesDir, "reminders.md");
             let content: string;
             let isDefault = false;
@@ -26,7 +30,19 @@ export const handleGetTemplates: RouteHandler = ({ json }) => {
                 content = getDefaultRemindersTemplate(getEffectiveAgentType());
                 isDefault = true;
             }
-            json({ templates: [{ name: "reminders", content, isDefault }] });
+
+            // Agent-specific reminder suffixes
+            const agentReminders: Record<string, { content: string; isDefault: boolean }> = {};
+            for (const agent of AGENT_TYPES) {
+                const agentFile = join(templatesDir, `reminders-${agent}.md`);
+                try {
+                    agentReminders[agent] = { content: await readFile(agentFile, "utf-8"), isDefault: false };
+                } catch {
+                    agentReminders[agent] = { content: "", isDefault: true };
+                }
+            }
+
+            json({ templates: [{ name: "reminders", content, isDefault }], agentReminders });
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
         }
