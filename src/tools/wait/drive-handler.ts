@@ -8,7 +8,7 @@
 
 import { formatDrivePrompt, PHASE3_APPROVAL_PROMPT } from "../../drive.js";
 import { log } from "../../logger.js";
-import { runIntelligentConsolidation, runReflection, type initMemoryDb } from "../../memory.js";
+import { runIntelligentConsolidation, runNarrativeGeneration, runReflection, type initMemoryDb } from "../../memory.js";
 import { getReminders } from "../../response-builders.js";
 import { backfillEmbeddings } from "../memory-tools.js";
 import type { ToolResult } from "../../types.js";
@@ -77,6 +77,13 @@ function fireConsolidation(
           log.warn(
             `[memory] Reflection failed (non-fatal): ${reflErr instanceof Error ? reflErr.message : String(reflErr)}`,
           );
+        }
+
+        // Temporal narrative generation
+        try {
+          await runNarrativeGeneration(db, threadId);
+        } catch (err) {
+          log.warn(`Narrative generation failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     })

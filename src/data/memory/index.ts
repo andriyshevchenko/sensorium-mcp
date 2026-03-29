@@ -16,4 +16,5 @@ export * from './procedures.js';
 export * from './voice-sig.js';
 export * from './consolidation.js';
 export * from './reflection.js';
+export * from './narrative.js';
 export * from './bootstrap.js';

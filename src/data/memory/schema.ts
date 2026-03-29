@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -165,6 +165,26 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     );
     log.info("[migration-10] Added pinned column to semantic_notes");
   },
+  11: (db) => {
+    // Temporal narratives: pre-generated summaries at day/week/month resolution
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS temporal_narratives (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id INTEGER NOT NULL,
+        resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month')),
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        narrative TEXT NOT NULL,
+        source_episode_count INTEGER NOT NULL DEFAULT 0,
+        source_note_count INTEGER NOT NULL DEFAULT 0,
+        model TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(thread_id, resolution, period_start)
+      );
+      CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
+    `);
+    log.info("[migration-11] Created temporal_narratives table");
+  },
 };
 
 /**
@@ -283,6 +303,31 @@ function ensureSchemaIntegrity(db: Database): void {
     log.info("[memory] Self-heal: adding missing thread_id column to episodes");
     db.exec("ALTER TABLE episodes ADD COLUMN thread_id INTEGER");
     stampVersion(2); // migration 2 added thread_id to episodes
+  }
+
+  // Self-heal: ensure temporal_narratives table exists (migration 11)
+  const hasTemporalNarratives = db
+    .prepare("SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='temporal_narratives'")
+    .get() as { cnt: number };
+  if (hasTemporalNarratives.cnt === 0) {
+    log.info("[memory] Self-heal: creating missing temporal_narratives table");
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS temporal_narratives (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id INTEGER NOT NULL,
+        resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month')),
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        narrative TEXT NOT NULL,
+        source_episode_count INTEGER NOT NULL DEFAULT 0,
+        source_note_count INTEGER NOT NULL DEFAULT 0,
+        model TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(thread_id, resolution, period_start)
+      );
+      CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
+    `);
+    stampVersion(11);
   }
 }
 
@@ -420,6 +465,21 @@ CREATE TABLE IF NOT EXISTS topic_registry (
   registered_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (chat_id, name)
 );
+
+CREATE TABLE IF NOT EXISTS temporal_narratives (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL,
+  resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month')),
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  narrative TEXT NOT NULL,
+  source_episode_count INTEGER NOT NULL DEFAULT 0,
+  source_note_count INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(thread_id, resolution, period_start)
+);
+CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS schema_version (
   version     INTEGER PRIMARY KEY,
