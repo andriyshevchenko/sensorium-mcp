@@ -20,6 +20,7 @@ import {
 import { rowToProcedure } from "./procedures.js";
 import { getVoiceBaseline } from "./voice-sig.js";
 import { parseJsonArray } from "./utils.js";
+import { getNarrativesForBootstrap } from "./narrative.js";
 import { getGuardrailsEnabled, getBootstrapMessageCount } from "../../config.js";
 
 /** Maximum characters for the Recent Conversation section before truncation. */
@@ -170,6 +171,30 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   }
   lines.push(`- DB size: ${(status.dbSizeBytes / 1024).toFixed(1)} KB`);
   lines.push("");
+
+  // Temporal narrative — multi-resolution "story so far"
+  try {
+    const narratives = getNarrativesForBootstrap(db, queryThreadId);
+    const hasNarrative = narratives.month || narratives.week || narratives.day;
+    if (hasNarrative) {
+      lines.push("## Temporal Context");
+      if (narratives.month) {
+        lines.push("### This Month");
+        lines.push(narratives.month);
+        lines.push("");
+      }
+      if (narratives.week) {
+        lines.push("### This Week");
+        lines.push(narratives.week);
+        lines.push("");
+      }
+      if (narratives.day) {
+        lines.push("### Today");
+        lines.push(narratives.day);
+        lines.push("");
+      }
+    }
+  } catch { /* table might not exist in older schemas */ }
 
   // Recent conversation (full verbatim content, chronological order)
   if (recentEpisodes.length > 0) {
