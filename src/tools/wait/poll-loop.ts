@@ -28,6 +28,7 @@ import { getShortReminder, buildMaintenanceResponse } from "../../response-build
 import { handleReactionOnly } from "./reaction-handler.js";
 import { checkForDueTasks } from "./task-handler.js";
 import { processIncomingMessages, handlePollTimeout } from "./message-processing.js";
+import { checkDriveActivation, runAutoConsolidation } from "./drive-handler.js";
 
 // ---------------------------------------------------------------------------
 // Maintenance Telegram de-duplication
@@ -161,8 +162,10 @@ export async function handleWaitForInstructions(
   // directly. This avoids 409 conflicts between concurrent instances.
   const POLL_INTERVAL_MS = 2000;
   const SSE_KEEPALIVE_INTERVAL_MS = 30_000;
+  const DRIVE_CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
   let lastScheduleCheck = 0;
   let lastKeepalive = Date.now();
+  let lastDriveCheck = 0;
 
   while (Date.now() < deadline) {
     // Check for pending update — tell agent to use the watcher MCP server
@@ -230,6 +233,16 @@ export async function handleWaitForInstructions(
       lastScheduleCheck = Date.now();
       const taskResult = checkForDueTasks(ctx, effectiveThreadId);
       if (taskResult) return taskResult;
+    }
+
+    // ── In-loop drive activation check (every 30 min) ──────────────────
+    // Without this, the drive only fires on poll TIMEOUT (every 2h default).
+    // Checking inside the loop ensures consistent activation during long polls.
+    if (effectiveThreadId !== undefined && AUTONOMOUS_MODE && Date.now() - lastDriveCheck >= DRIVE_CHECK_INTERVAL_MS) {
+      lastDriveCheck = Date.now();
+      runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
+      const driveResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
+      if (driveResult) return driveResult;
     }
 
     // No messages yet — sleep briefly and check again.
