@@ -38,7 +38,7 @@ let startTime = Date.now();
 let managedChild: ChildProcess | null = null;
 let httpSrv: HttpServer | null = null;
 let updateInProgress = false;
-let keeper: KeeperHandle | null = null;
+const keepers = new Map<number, { handle: KeeperHandle; settings: KeeperSettings }>();
 
 // Helpers ---------------------------------------------------------------------
 function log(level: "INFO" | "WARN" | "ERROR", msg: unknown): void {
@@ -336,8 +336,8 @@ async function respawnGhostThreads(threads: GhostThreadInfo[]): Promise<void> {
   mkdirSync(pidsDir, { recursive: true });
 
   for (const thread of threads) {
-    // Skip the keeper's always-on thread — the keeper handles its own restart
-    if (thread.threadId === CONFIG.alwaysOnThreadId) continue;
+    // Skip threads managed by a keeper — the keeper handles its own restart
+    if (keepers.has(thread.threadId)) continue;
 
     log("INFO", `Re-spawning ghost thread ${thread.threadId} ("${thread.name}")`);
 
@@ -440,71 +440,113 @@ interface KeeperSettings {
   maxRetries: number;
   cooldownMs: number;
   client: "claude" | "copilot";
+  sessionName: string;
 }
 
-function readKeeperSettings(): KeeperSettings {
+function readAllKeeperSettings(): KeeperSettings[] {
   const raw = safeRead(SETTINGS_JSON_PATH);
   const s: Record<string, unknown> = raw
     ? (() => { try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; } })()
     : {};
-  const threadId = typeof s.keepAliveThreadId === "number" && s.keepAliveThreadId > 0
+
+  const results: KeeperSettings[] = [];
+
+  // Global keep-alive (backward-compatible)
+  const globalThreadId = typeof s.keepAliveThreadId === "number" && s.keepAliveThreadId > 0
     ? s.keepAliveThreadId
     : CONFIG.alwaysOnThreadId;
-  // If keepAliveEnabled is explicitly set, use it. Otherwise fall back to env-var behaviour.
-  const enabled = typeof s.keepAliveEnabled === "boolean"
+  const globalEnabled = typeof s.keepAliveEnabled === "boolean"
     ? s.keepAliveEnabled
     : CONFIG.alwaysOnThreadId > 0;
-  const maxRetries = typeof s.keepAliveMaxRetries === "number" && s.keepAliveMaxRetries > 0
+  const globalMaxRetries = typeof s.keepAliveMaxRetries === "number" && s.keepAliveMaxRetries > 0
     ? s.keepAliveMaxRetries : 5;
-  const cooldownMs = typeof s.keepAliveCooldownMs === "number" && s.keepAliveCooldownMs >= 1000
+  const globalCooldownMs = typeof s.keepAliveCooldownMs === "number" && s.keepAliveCooldownMs >= 1000
     ? s.keepAliveCooldownMs : 300_000;
-  const client = s.keepAliveClient === "copilot" ? "copilot" : "claude";
-  return { enabled, threadId, maxRetries, cooldownMs, client };
+  const globalClient = s.keepAliveClient === "copilot" ? "copilot" as const : "claude" as const;
+
+  if (globalEnabled && globalThreadId > 0) {
+    results.push({
+      enabled: true,
+      threadId: globalThreadId,
+      maxRetries: globalMaxRetries,
+      cooldownMs: globalCooldownMs,
+      client: globalClient,
+      sessionName: CONFIG.alwaysOnSessionName,
+    });
+  }
+
+  // Per-thread overrides
+  const threadMap = s.threadKeepAlive as Record<string, unknown> | undefined;
+  if (threadMap && typeof threadMap === "object") {
+    for (const [idStr, val] of Object.entries(threadMap)) {
+      if (!val || typeof val !== "object") continue;
+      const e = val as Record<string, unknown>;
+      const tid = Number(idStr);
+      if (!tid || tid <= 0) continue;
+      // Skip if same as global (already handled)
+      if (tid === globalThreadId && globalEnabled) continue;
+      if (typeof e.enabled === "boolean" && e.enabled) {
+        results.push({
+          enabled: true,
+          threadId: tid,
+          maxRetries: typeof e.maxRetries === "number" && e.maxRetries > 0 ? e.maxRetries : globalMaxRetries,
+          cooldownMs: typeof e.cooldownMs === "number" && e.cooldownMs >= 1000 ? e.cooldownMs : globalCooldownMs,
+          client: e.client === "copilot" ? "copilot" : e.client === "claude" ? "claude" : globalClient,
+          sessionName: `thread-${tid}`,
+        });
+      }
+    }
+  }
+
+  return results;
 }
 
-let activeKeeperSettings: KeeperSettings | null = null;
-
 function keeperSettingsChanged(a: KeeperSettings, b: KeeperSettings): boolean {
-  return a.threadId !== b.threadId || a.maxRetries !== b.maxRetries || a.cooldownMs !== b.cooldownMs || a.client !== b.client;
+  return a.maxRetries !== b.maxRetries || a.cooldownMs !== b.cooldownMs || a.client !== b.client;
 }
 
 async function applyKeeperSettings(): Promise<void> {
   if (CONFIG.mcpHttpPort <= 0) return;
-  const settings = readKeeperSettings();
-  const shouldRun = settings.enabled && settings.threadId > 0;
+  const allSettings = readAllKeeperSettings();
+  const desiredThreadIds = new Set(allSettings.map(s => s.threadId));
 
-  if (!shouldRun) {
-    if (keeper) {
-      log("INFO", "Keep-alive disabled — stopping keeper.");
-      await keeper.stop();
-      keeper = null;
-      activeKeeperSettings = null;
+  // Stop keepers for threads that are no longer configured
+  for (const [tid, entry] of keepers) {
+    if (!desiredThreadIds.has(tid)) {
+      log("INFO", `Keep-alive disabled for thread ${tid} — stopping keeper.`);
+      await entry.handle.stop();
+      keepers.delete(tid);
     }
-    return;
   }
 
-  if (keeper && activeKeeperSettings && keeperSettingsChanged(activeKeeperSettings, settings)) {
-    log("INFO", "Keep-alive settings changed — restarting keeper.");
-    await keeper.stop();
-    keeper = null;
-    activeKeeperSettings = null;
-  }
+  // Start or restart keepers
+  for (const settings of allSettings) {
+    const existing = keepers.get(settings.threadId);
 
-  if (!keeper) {
-    activeKeeperSettings = settings;
-    keeper = await startClaudeKeeper({
-      threadId: settings.threadId,
-      sessionName: CONFIG.alwaysOnSessionName,
-      client: settings.client,
-      claudeCmd: CONFIG.claudeCmd,
-      copilotCmd: CONFIG.copilotCmd,
-      mcpConfigPath: join(CONFIG.dataDir, "claude-mcp-config.json"),
-      mcpHttpPort: CONFIG.mcpHttpPort,
-      mcpHttpSecret: CONFIG.mcpHttpSecret,
-      dataDir: CONFIG.dataDir,
-      maxRetries: settings.maxRetries,
-      cooldownMs: settings.cooldownMs,
-    });
+    // Restart if settings changed
+    if (existing && keeperSettingsChanged(existing.settings, settings)) {
+      log("INFO", `Keep-alive settings changed for thread ${settings.threadId} — restarting keeper.`);
+      await existing.handle.stop();
+      keepers.delete(settings.threadId);
+    }
+
+    // Start if not running
+    if (!keepers.has(settings.threadId)) {
+      const handle = await startClaudeKeeper({
+        threadId: settings.threadId,
+        sessionName: settings.sessionName,
+        client: settings.client,
+        claudeCmd: CONFIG.claudeCmd,
+        copilotCmd: CONFIG.copilotCmd,
+        mcpConfigPath: join(CONFIG.dataDir, `mcp-config-${settings.threadId}.json`),
+        mcpHttpPort: CONFIG.mcpHttpPort,
+        mcpHttpSecret: CONFIG.mcpHttpSecret,
+        dataDir: CONFIG.dataDir,
+        maxRetries: settings.maxRetries,
+        cooldownMs: settings.cooldownMs,
+      });
+      keepers.set(settings.threadId, { handle, settings });
+    }
   }
 }
 
@@ -692,7 +734,8 @@ export async function startWatcherService(): Promise<void> {
   if (!acquireLock()) { process.exit(1); return; }
   const shutdown = async () => {
     log("INFO", "Shutting down watcher...");
-    if (keeper) { await keeper.stop(); keeper = null; }
+    for (const [, entry] of keepers) { await entry.handle.stop(); }
+    keepers.clear();
     await stopMcpServer();
     httpSrv?.close();
     releaseLock();

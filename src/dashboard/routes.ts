@@ -43,6 +43,8 @@ import {
     handlePostBootstrapMessageCount,
     handleGetKeepAlive,
     handlePostKeepAlive,
+    handleGetThreadKeepAlive,
+    handlePostThreadKeepAlive,
 } from "./routes/settings.js";
 
 // Domain handlers — templates
@@ -102,6 +104,8 @@ const routeTable: Record<string, RouteHandler> = {
     "POST /api/settings/bootstrap-message-count": handlePostBootstrapMessageCount,
     "GET /api/settings/keep-alive":               handleGetKeepAlive,
     "POST /api/settings/keep-alive":              handlePostKeepAlive,
+    "GET /api/settings/thread-keep-alive":        handleGetThreadKeepAlive,
+    "POST /api/settings/thread-keep-alive":       handlePostThreadKeepAlive,
 
     // Topic registry
     "GET /api/topic-registry":    handleGetTopicRegistry,
