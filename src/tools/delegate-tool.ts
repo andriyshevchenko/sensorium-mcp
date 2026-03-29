@@ -264,6 +264,7 @@ export function handleSendMessageToThread(
       `---`;
   } else if (mode === "manager-worker") {
     structuredMessage =
+      `Load the 'Worker — Delegate' skill via get_skill for reporting instructions.\n` +
       `Thread "${senderLabel}" sent you a message:\n` +
       `---\n` +
       `${message}\n` +
@@ -275,6 +276,7 @@ export function handleSendMessageToThread(
       ` when complete.`;
   } else {
     structuredMessage =
+      `Load the 'Worker — Autonomous' skill via get_skill for reporting instructions.\n` +
       `Thread "${senderLabel}" sent you a task:\n` +
       `---\n` +
       `${message}\n` +

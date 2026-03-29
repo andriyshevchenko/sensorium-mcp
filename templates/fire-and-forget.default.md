@@ -37,17 +37,17 @@ start_thread(
 → returns { threadId: <WORKER_THREAD_ID> }
 ```
 
-#### Step 2 — Send the task (NO report-back needed)
+#### Step 2 — Send the task with worker skill
 ```
 send_message_to_thread(
   threadId: <WORKER_THREAD_ID>,
-  message: "Task: Clean up stale log files older than 30 days in ~/.remote-copilot-mcp/logs/.
-  This is a one-shot task. Report progress to the operator via report_progress or send_voice.
-  Do NOT message the sender back."
+  message: "Load the 'Worker — Autonomous' skill via get_skill for reporting instructions.
+  
+  Task: Clean up stale log files older than 30 days in ~/.remote-copilot-mcp/logs/."
 )
 ```
 
-**KEY**: The task explicitly tells the worker NOT to send results back to the orchestrator. The worker reports to the **operator** directly using `report_progress` or `send_voice`.
+**KEY**: The task includes `Load the 'Worker — Autonomous' skill via get_skill` which teaches the worker to report to the **operator** directly using `report_progress` or `send_voice` — not back to the orchestrator.
 
 #### Step 3 — Continue working immediately
 Do NOT call `wait_for_instructions` for this worker. Continue with your own work. The worker runs independently.
