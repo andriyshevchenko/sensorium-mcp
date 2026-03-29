@@ -205,7 +205,14 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
       const raw = typeof ep.content === "object" && ep.content !== null
         ? (ep.content.text ?? ep.content.caption ?? null)
         : null;
-      const fullText = typeof raw === "string" ? raw : JSON.stringify(ep.content);
+      const c = ep.content as Record<string, unknown>;
+      let fullText: string;
+      if (c && typeof c === "object" && c.tool) {
+        fullText = `🔧 ${c.tool}(${String(c.args ?? "").slice(0, 100)})` +
+          (c.result ? ` → ${String(c.result).slice(0, 150)}` : "");
+      } else {
+        fullText = typeof raw === "string" ? raw : JSON.stringify(ep.content);
+      }
       const textContent = fullText.length > MAX_MESSAGE_CONTENT_CHARS
         ? fullText.slice(0, MAX_MESSAGE_CONTENT_CHARS) + "…"
         : fullText;
