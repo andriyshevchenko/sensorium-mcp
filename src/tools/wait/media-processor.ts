@@ -29,8 +29,6 @@ import { errorMessage } from "../../utils.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export type { ContentBlock };
-
 /** Focused context that media processors need — not the full WaitToolContext. */
 export interface MediaContext {
   telegram: TelegramClient;

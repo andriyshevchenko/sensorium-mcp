@@ -7,14 +7,14 @@
 
 // Re-export chat completion + embedding functions
 export { chatCompletion, cosineSimilarity, generateEmbedding } from "./integrations/openai/chat.js";
-export type { ChatMessage } from "./integrations/openai/chat.js";
+
 
 // Re-export TTS & transcription
 export { TTS_VOICES, type TTSVoice, textToSpeech, transcribeAudio } from "./integrations/openai/speech.js";
 
 // Re-export voice emotion analysis
 export { analyzeVoiceEmotion } from "./integrations/openai/voice-emotion.js";
-export type { AudioEvent, Paralinguistics, VoiceAnalysisResult } from "./integrations/openai/voice-emotion.js";
+export type { VoiceAnalysisResult } from "./integrations/openai/voice-emotion.js";
 
 // Re-export video frame extraction
 export { extractVideoFrames } from "./integrations/openai/video.js";
