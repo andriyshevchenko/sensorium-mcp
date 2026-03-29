@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -155,6 +155,16 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       log.info(`[migration-9] Assigned ${result.changes} orphan notes to thread ${oldest.thread_id}`);
     }
   },
+  10: (db) => {
+    // Add "pinned" column: pinned notes always appear in bootstrap briefing.
+    try {
+      db.exec("ALTER TABLE semantic_notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+    } catch { /* already exists in fresh DBs */ }
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_sem_pinned ON semantic_notes(pinned) WHERE pinned = 1 AND valid_to IS NULL",
+    );
+    log.info("[migration-10] Added pinned column to semantic_notes");
+  },
 };
 
 /**
@@ -217,6 +227,16 @@ function ensureSchemaIntegrity(db: Database): void {
     );
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL",
+    );
+  }
+
+  if (!semanticNoteCols.includes("pinned")) {
+    log.info("[memory] Self-heal: adding missing pinned column");
+    db.exec(
+      "ALTER TABLE semantic_notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+    );
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_sem_pinned ON semantic_notes(pinned) WHERE pinned = 1 AND valid_to IS NULL",
     );
   }
 
@@ -288,6 +308,7 @@ CREATE TABLE IF NOT EXISTS semantic_notes (
   priority        INTEGER NOT NULL DEFAULT 0,
   thread_id       INTEGER,
   is_guardrail    INTEGER NOT NULL DEFAULT 0,
+  pinned          INTEGER NOT NULL DEFAULT 0,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
@@ -298,6 +319,7 @@ CREATE INDEX IF NOT EXISTS idx_sem_valid ON semantic_notes(valid_to) WHERE valid
 CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sem_pinned ON semantic_notes(pinned) WHERE pinned = 1 AND valid_to IS NULL;
 
 CREATE TABLE IF NOT EXISTS procedures (
   procedure_id       TEXT PRIMARY KEY,

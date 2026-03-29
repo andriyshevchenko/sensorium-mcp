@@ -198,6 +198,7 @@ async function handleMemorySave(
       priority: typeof args.priority === "number" ? args.priority : 0,
       threadId: threadId ?? null,
       isGuardrail: args.guardrail === true,
+      pinned: args.pinned === true,
     });
     // Fire-and-forget embedding generation
     if (apiKey) {
