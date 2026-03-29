@@ -18,7 +18,7 @@ import { errorMessage } from "../utils.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface SpawnedThread {
+interface SpawnedThread {
   pid: number;
   threadId: number;
   name: string;
@@ -117,7 +117,7 @@ export function ensureDirs(): void {
  * instead of falling back to a blind 600s sleep.
  * Returns the path to the generated config, or the original path on failure.
  */
-export function generateThreadMcpConfig(baseConfigPath: string, threadId: number): string {
+function generateThreadMcpConfig(baseConfigPath: string, threadId: number): string {
   const outPath = join(PIDS_DIR, `${threadId}-mcp-config.json`);
   try {
     const raw = readFileSync(baseConfigPath, "utf-8");
@@ -306,7 +306,7 @@ interface PidFileEntry {
  * Read all PID files from the pids directory.
  * Supports both legacy (plain PID number) and new (JSON metadata) formats.
  */
-export function readPidFiles(): PidFileEntry[] {
+function readPidFiles(): PidFileEntry[] {
   const entries: PidFileEntry[] = [];
   try {
     const files = readdirSync(PIDS_DIR);
