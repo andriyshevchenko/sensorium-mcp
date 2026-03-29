@@ -32,22 +32,27 @@ start_thread(
 → returns { threadId: <WORKER_THREAD_ID> }
 ```
 
-#### Step 2 — Send a detailed task with EXPLICIT report-back instruction
+#### Step 2 — Send a detailed task with worker skill and report-back instruction
 ```
 send_message_to_thread(
   threadId: <WORKER_THREAD_ID>,
-  message: "Task: Rewrite the dashboard settings page using React.
+  message: "Load the 'Worker — Delegate' skill via get_skill for reporting instructions.
+  
+  Task: Rewrite the dashboard settings page using React.
   Acceptance criteria:
   - Settings load from /api/settings
   - Form validates input
   - Save button persists changes
   
-  ⚠️ IMPORTANT: When complete, report your results back to thread <ORCHESTRATOR_THREAD_ID> using:
-  send_message_to_thread(threadId=<ORCHESTRATOR_THREAD_ID>, message='...', mode='reply')"
+  Report results back to thread <ORCHESTRATOR_THREAD_ID>."
 )
 ```
 
-**CRITICAL**: The task message MUST include the orchestrator's thread ID so the worker knows where to send results. Tasks sent TO workers use mode `"one-shot"` or `"manager-worker"`, but RESULTS sent BACK use mode `"reply"` for clean delivery.
+**CRITICAL**: The task message MUST include:
+1. `Load the 'Worker — Delegate' skill via get_skill` — this teaches the worker HOW to report back
+2. The orchestrator's thread ID so the worker knows WHERE to send results
+
+Tasks sent TO workers use mode `"one-shot"` or `"manager-worker"`, but RESULTS sent BACK use mode `"reply"` for clean delivery.
 
 #### Step 3 — Wait for results (do NOT duplicate the work)
 ```
