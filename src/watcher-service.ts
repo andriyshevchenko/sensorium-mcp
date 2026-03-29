@@ -48,6 +48,32 @@ function log(level: "INFO" | "WARN" | "ERROR", msg: unknown): void {
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
 function ensureDir(): void { if (!existsSync(CONFIG.dataDir)) mkdirSync(CONFIG.dataDir, { recursive: true }); }
 function uptimeS(): number { return (Date.now() - startTime) / 1000; }
+
+// ── Lightweight Telegram notification (no dependency on telegram.ts) ─────────
+
+const TG_TOKEN = process.env.TELEGRAM_TOKEN ?? "";
+const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
+
+/**
+ * Send a Telegram message from the watcher process.
+ * Uses raw fetch against the Bot API — does not depend on the main server
+ * or any agent connections. If token/chatId are missing, silently no-ops.
+ */
+async function notifyOperator(text: string, threadId?: number): Promise<void> {
+  if (!TG_TOKEN || !TG_CHAT_ID) return;
+  try {
+    const body: Record<string, unknown> = { chat_id: TG_CHAT_ID, text, parse_mode: "HTML" };
+    if (threadId) body.message_thread_id = threadId;
+    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    log("WARN", `Telegram notify failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 function msUntilHour(h: number): number {
   const now = new Date(), t = new Date(now);
   t.setHours(h, 0, 0, 0);
@@ -363,7 +389,7 @@ async function checkAndUpdate(): Promise<void> {
   try {
     if (uptimeS() > 120) {
       const pid = readPid();
-      if (!pid || !alive(pid)) { log("WARN", "Server not running — restarting..."); startMcpServer(); startTime = Date.now(); }
+      if (!pid || !alive(pid)) { log("WARN", "Server not running — restarting..."); await notifyOperator("\u26A0\uFE0F Watcher: server process not running — restarting..."); startMcpServer(); startTime = Date.now(); }
     }
     const remote = await getRemoteVersion();
     if (!remote) return;
@@ -372,6 +398,7 @@ async function checkAndUpdate(): Promise<void> {
     if (remote === local) { log("INFO", `Up to date: v${local}`); return; }
     if (uptimeS() < CONFIG.minUptimeSeconds) { log("INFO", "Deferring update — too early."); return; }
     log("INFO", `Update: v${local} → v${remote}`);
+    await notifyOperator(`\u2699\uFE0F Watcher: updating sensorium v${local} \u2192 v${remote}. Grace period ${CONFIG.gracePeriodSeconds}s...`);
     writeMaintenanceFlag(remote);
     log("INFO", `Grace period ${CONFIG.gracePeriodSeconds}s...`);
     await sleep(CONFIG.gracePeriodSeconds * 1000);
@@ -395,6 +422,7 @@ async function checkAndUpdate(): Promise<void> {
       log("INFO", "Re-spawning ghost threads...");
       await respawnGhostThreads(ghostThreads);
     }
+    await notifyOperator(`\u2705 Watcher: update to v${remote} complete. Server ready.` + (ghostThreads.length > 0 ? ` Re-spawned ${ghostThreads.length} ghost thread(s).` : ""));
     log("INFO", `Update to v${remote} complete.`);
   } finally {
     updateInProgress = false;
