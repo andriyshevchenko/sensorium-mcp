@@ -154,7 +154,21 @@ export async function processIncomingMessages(
 
   // Smart context injection (skills are now loaded on-demand via MCP tools)
   const autoMemoryContext = await buildSmartContext(operatorText, { getMemoryDb, effectiveThreadId });
-  const intent = classifyIntent(operatorText);
+  // Voice messages have no .text — extract transcriptions from content blocks
+  // so the intent classifier sees spoken words rather than empty string.
+  let intentText = operatorText;
+  if (!intentText && hasVoiceMessages) {
+    intentText = contentBlocks
+      .filter((b): b is TextBlock => b.type === "text")
+      .map(b => {
+        const match = /transcribed\]:\s*(.+)/i.exec(b.text);
+        return match?.[1] ?? "";
+      })
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 500);
+  }
+  const intent = classifyIntent(intentText);
 
   log.info(`[wait] Returning response with ${contentBlocks.length} blocks to agent.`);
 
