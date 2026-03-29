@@ -18,7 +18,6 @@ import {
   searchByEmbedding,
   searchSemanticNotesRanked,
   getPinnedNotes,
-  getGuardrailNotes,
   type initMemoryDb,
 } from "../../memory.js";
 import {
@@ -281,29 +280,18 @@ export async function buildSmartContext(
     }
   } catch (err) { log.debug(`Smart context injection failed: ${err instanceof Error ? err.message : String(err)}`); }
 
-  // ── Persistent context: pinned notes + active decisions ──────────────
-  // Always injected regardless of query relevance. These are the operator's
-  // long-term invariants that every response should be grounded in.
+  // ── Persistent context: pinned notes ─────────────────────────────────
+  // Pinned notes represent long-term invariants the agent should always
+  // have in view. Guardrails/decisions are already in bootstrap and will
+  // surface via similarity search when relevant — no need to repeat them.
   try {
     const db = ctx.getMemoryDb();
-    const persistentLines: string[] = [];
-
     const pinned = getPinnedNotes(db, ctx.effectiveThreadId ?? 0);
     if (pinned.length > 0) {
-      for (const p of pinned) {
-        persistentLines.push(`- **[pinned/${p.type}]** ${p.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${p.confidence.toFixed(2)})_`);
-      }
-    }
-
-    const guardrails = getGuardrailNotes(db);
-    if (guardrails.length > 0) {
-      for (const g of guardrails) {
-        persistentLines.push(`- **[decision]** ${g.content.slice(0, NOTE_CONTENT_MAX_CHARS)}`);
-      }
-    }
-
-    if (persistentLines.length > 0) {
-      autoMemoryContext += `\n\n## Persistent Context (always active)\n${persistentLines.join("\n")}`;
+      const pinnedLines = pinned.map(p =>
+        `- **[pinned/${p.type}]** ${p.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${p.confidence.toFixed(2)})_`
+      );
+      autoMemoryContext += `\n\n## Persistent Context (always active)\n${pinnedLines.join("\n")}`;
     }
   } catch { /* non-critical */ }
 
