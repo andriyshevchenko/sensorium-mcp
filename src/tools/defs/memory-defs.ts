@@ -82,6 +82,10 @@ export const memoryToolDefs: ToolDefinition[] = [
           type: "boolean",
           description: "Set true to mark as an always-enforced guardrail constraint (e.g. \"NEVER do X\", \"ALWAYS do Y\"). Only for critical decision rules.",
         },
+        pinned: {
+          type: "boolean",
+          description: "Set true to pin this note — pinned notes always appear in session bootstrap briefing regardless of access count. Use for long-term invariants (project identity, operator info, architectural decisions).",
+        },
         threadId: {
           type: "number",
           description: "Active thread ID.",

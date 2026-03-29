@@ -27,6 +27,7 @@ export interface SemanticNote {
   accessCount: number;
   lastAccessed: string | null;
   isGuardrail: boolean;
+  pinned: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +36,9 @@ export interface SemanticNote {
 
 /** Maximum guardrail notes returned by getGuardrailNotes. */
 const GUARDRAIL_LIMIT = 5;
+
+/** Maximum pinned notes returned by getPinnedNotes. */
+const PINNED_LIMIT = 20;
 
 /** Minimum shared keywords required to flag a note as a potential conflict. */
 const MIN_KEYWORD_OVERLAP = 2;
@@ -73,6 +77,7 @@ function rowToSemanticNote(row: Record<string, unknown>): SemanticNote {
     accessCount: row.access_count as number,
     lastAccessed: (row.last_accessed as string) ?? null,
     isGuardrail: (row.is_guardrail as number) === 1,
+    pinned: (row.pinned as number) === 1,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -150,6 +155,7 @@ export function saveSemanticNote(
     priority?: number;
     threadId?: number | null;
     isGuardrail?: boolean;
+    pinned?: boolean;
     sourceEpisodes?: string[];
   }
 ): string {
@@ -158,8 +164,8 @@ export function saveSemanticNote(
 
   db.prepare(
     `INSERT INTO semantic_notes
-       (note_id, type, content, keywords, confidence, priority, thread_id, is_guardrail, source_episodes, linked_notes, link_reasons, valid_from, access_count, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+       (note_id, type, content, keywords, confidence, priority, thread_id, is_guardrail, pinned, source_episodes, linked_notes, link_reasons, valid_from, access_count, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
   ).run(
     id,
     note.type,
@@ -169,6 +175,7 @@ export function saveSemanticNote(
     Math.max(0, Math.min(2, note.priority ?? 0)),
     note.threadId ?? null,
     note.isGuardrail ? 1 : 0,
+    note.pinned ? 1 : 0,
     jsonOrNull(note.sourceEpisodes),
     null,
     null,
@@ -362,6 +369,24 @@ export function getGuardrailNotes(db: Database): SemanticNote[] {
   return rows.map(rowToSemanticNote);
 }
 
+/**
+ * Pinned notes: always shown in bootstrap briefing regardless of access count.
+ * Thread-scoped — only returns notes for the given thread (or global NULL).
+ * Ordered by priority DESC, then confidence DESC.
+ */
+export function getPinnedNotes(db: Database, threadId: number): SemanticNote[] {
+  const rows = db
+    .prepare(
+      `SELECT * FROM semantic_notes
+       WHERE valid_to IS NULL AND superseded_by IS NULL
+         AND pinned = 1 AND thread_id = ?
+       ORDER BY priority DESC, confidence DESC, created_at ASC
+       LIMIT ?`
+    )
+    .all(threadId, PINNED_LIMIT) as Record<string, unknown>[];
+  return rows.map(rowToSemanticNote);
+}
+
 export function updateSemanticNote(
   db: Database,
   noteId: string,
@@ -420,7 +445,7 @@ export function supersedeNote(
   }
 ): string {
   // Inherit thread_id and is_guardrail from the old note being superseded
-  const oldRow = db.prepare(`SELECT thread_id, is_guardrail FROM semantic_notes WHERE note_id = ?`).get(oldNoteId) as { thread_id: number | null; is_guardrail: number } | undefined;
+  const oldRow = db.prepare(`SELECT thread_id, is_guardrail, pinned FROM semantic_notes WHERE note_id = ?`).get(oldNoteId) as { thread_id: number | null; is_guardrail: number; pinned: number } | undefined;
   const newId = saveSemanticNote(db, {
     type: newNote.type as SemanticNote["type"],
     content: newNote.content,
@@ -429,6 +454,7 @@ export function supersedeNote(
     priority: newNote.priority,
     threadId: oldRow?.thread_id ?? null,
     isGuardrail: (oldRow?.is_guardrail ?? 0) === 1,
+    pinned: (oldRow?.pinned ?? 0) === 1,
     sourceEpisodes: newNote.sourceEpisodes,
   });
 

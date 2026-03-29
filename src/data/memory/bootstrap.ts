@@ -14,6 +14,7 @@ import { getRecentEpisodes } from "./episodes.js";
 import {
   getTopSemanticNotes,
   getGuardrailNotes,
+  getPinnedNotes,
   decrementTopicIndexForKeywords,
 } from "./semantic.js";
 import { rowToProcedure } from "./procedures.js";
@@ -221,11 +222,26 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
 
   // Key knowledge
   if (sortedNotes.length > 0) {
-    lines.push("## Key Knowledge");
-    for (const note of sortedNotes) {
-      lines.push(`- **[${note.type}]** ${note.content} (conf: ${note.confidence.toFixed(2)}, accessed: ${note.accessCount}x)`);
+    // Pinned notes — always shown, represent long-term invariants
+    const pinned = getPinnedNotes(db, queryThreadId);
+    const pinnedIds = new Set(pinned.map(p => p.noteId));
+    if (pinned.length > 0) {
+      lines.push("## Pinned (Long-Term Context)");
+      for (const p of pinned) {
+        lines.push(`- **[${p.type}]** ${p.content} _(conf: ${p.confidence.toFixed(2)})_`);
+      }
+      lines.push("");
     }
-    lines.push("");
+
+    // Filter out pinned notes from key knowledge to avoid duplicates
+    const filtered = sortedNotes.filter(n => !pinnedIds.has(n.noteId));
+    if (filtered.length > 0) {
+      lines.push("## Key Knowledge");
+      for (const note of filtered) {
+        lines.push(`- **[${note.type}]** ${note.content} (conf: ${note.confidence.toFixed(2)}, accessed: ${note.accessCount}x)`);
+      }
+      lines.push("");
+    }
   }
 
   // Active procedures
