@@ -22,7 +22,10 @@ import {
     setKeepAliveMaxRetries,
     getKeepAliveCooldownMs,
     setKeepAliveCooldownMs,
+    getKeepAliveClient,
+    setKeepAliveClient,
     type AgentType,
+    type KeeperClient,
 } from "../../config.js";
 
 import { readBody, safeParseJSON, type RouteHandler } from "./types.js";
@@ -175,6 +178,7 @@ export const handleGetKeepAlive: RouteHandler = ({ json }) => {
         keepAliveThreadId: getKeepAliveThreadId(),
         keepAliveMaxRetries: getKeepAliveMaxRetries(),
         keepAliveCooldownMs: getKeepAliveCooldownMs(),
+        keepAliveClient: getKeepAliveClient(),
     });
     return true;
 };
@@ -219,12 +223,21 @@ export const handlePostKeepAlive: RouteHandler = ({ req, json }) => {
                 }
                 setKeepAliveCooldownMs(ms);
             }
+            if ("keepAliveClient" in body) {
+                const validClients: KeeperClient[] = ["claude", "copilot"];
+                if (!validClients.includes(body.keepAliveClient as KeeperClient)) {
+                    json({ error: "keepAliveClient must be 'claude' or 'copilot'" }, 400);
+                    return;
+                }
+                setKeepAliveClient(body.keepAliveClient as KeeperClient);
+            }
             json({
                 ok: true,
                 keepAliveEnabled: getKeepAliveEnabled(),
                 keepAliveThreadId: getKeepAliveThreadId(),
                 keepAliveMaxRetries: getKeepAliveMaxRetries(),
                 keepAliveCooldownMs: getKeepAliveCooldownMs(),
+                keepAliveClient: getKeepAliveClient(),
             });
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);

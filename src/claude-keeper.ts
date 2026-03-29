@@ -8,10 +8,17 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
+
+const DEFAULT_COPILOT_MODEL = "claude-opus-4.6";
+const COPILOT_MCP_CONFIG_FILENAME = "mcp-config.json";
+const COPILOT_INSTRUCTIONS_FILENAME = "copilot-instructions.md";
+const COPILOT_SYSTEM_PROMPT =
+  "You are a remote copilot agent. " +
+  "Use the sensorium MCP tools to handle tasks from your operator via Telegram.";
 
 const BASE_BACKOFF_MS = 5_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
@@ -36,9 +43,15 @@ export interface KeeperConfig {
   threadId: number;
   /** Human-readable session name passed to start_session. */
   sessionName: string;
+  /** Which CLI client to spawn (default: "claude"). */
+  client?: "claude" | "copilot";
   /** Path to the `claude` binary (default: "claude"). */
   claudeCmd: string;
-  /** Path where the keeper writes its MCP config JSON. */
+  /** Path to the `copilot` binary (default: "copilot"). */
+  copilotCmd?: string;
+  /** Model flag passed to Copilot CLI (default: "claude-opus-4.6"). */
+  copilotModel?: string;
+  /** Path where the keeper writes its Claude MCP config JSON. */
   mcpConfigPath: string;
   /** Port of the sensorium MCP HTTP server. */
   mcpHttpPort: number;
@@ -72,6 +85,13 @@ function writeMcpConfig(path: string, port: number, secret: string | null): void
   if (secret) serverConfig.headers = { Authorization: `Bearer ${secret}` };
   const config = { mcpServers: { "sensorium-mcp": serverConfig } };
   writeFileSync(path, JSON.stringify(config, null, 2), "utf-8");
+}
+
+/** Write Copilot CLI home directory files: MCP config + system prompt. */
+function writeCopilotHomeFiles(copilotHome: string, port: number, secret: string | null): void {
+  mkdirSync(copilotHome, { recursive: true });
+  writeMcpConfig(join(copilotHome, COPILOT_MCP_CONFIG_FILENAME), port, secret);
+  writeFileSync(join(copilotHome, COPILOT_INSTRUCTIONS_FILENAME), COPILOT_SYSTEM_PROMPT, "utf-8");
 }
 
 /** Read-only peek at the last N messages from a thread's JSONL broker file for warm context. */
@@ -137,8 +157,18 @@ async function checkHttpLiveness(port: number, secret: string | null): Promise<b
 // ─── Core keeper ──────────────────────────────────────────────────────────────
 
 export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHandle> {
-  keeperLog("INFO", `Starting keeper for thread ${config.threadId} ('${config.sessionName}')`);
-  writeMcpConfig(config.mcpConfigPath, config.mcpHttpPort, config.mcpHttpSecret);
+  const client = config.client ?? "claude";
+  const copilotCmd = config.copilotCmd ?? "copilot";
+  const copilotModel = config.copilotModel ?? DEFAULT_COPILOT_MODEL;
+  const copilotHome = join(config.dataDir, "copilot-home");
+
+  keeperLog("INFO", `Starting keeper for thread ${config.threadId} ('${config.sessionName}') [client=${client}]`);
+
+  if (client === "claude") {
+    writeMcpConfig(config.mcpConfigPath, config.mcpHttpPort, config.mcpHttpSecret);
+  } else {
+    writeCopilotHomeFiles(copilotHome, config.mcpHttpPort, config.mcpHttpSecret);
+  }
 
   keeperLog("INFO", "Waiting for MCP server to be ready...");
   const ready = await waitForMcpReady(config.mcpHttpPort, config.mcpHttpSecret);
@@ -174,26 +204,42 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
     if (stopped) return;
     const warmContext = readWarmContext(config.dataDir, config.threadId);
     const prompt = `${warmContext}Start remote session with sensorium. Thread name = '${config.sessionName}'`;
-    keeperLog("INFO", `Spawning ${config.claudeCmd} with ${warmContext ? "warm context" : "cold start"}`);
+
+    // Build client-specific spawn arguments and environment.
+    const useShell = process.platform === "win32";
+    let cmd: string;
+    let args: string[];
+    let spawnEnv: NodeJS.ProcessEnv | undefined;
+
+    if (client === "claude") {
+      cmd = config.claudeCmd;
+      args = ["--mcp-config", config.mcpConfigPath, "-p", prompt];
+      spawnEnv = undefined;
+    } else {
+      cmd = copilotCmd;
+      args = ["-p", prompt, "--allow-all-tools", "--model", copilotModel];
+      spawnEnv = { ...process.env, COPILOT_HOME: copilotHome };
+    }
+
+    keeperLog("INFO", `Spawning ${cmd} [${client}] with ${warmContext ? "warm context" : "cold start"}`);
 
     try {
-      // On Windows, claude is typically claude.cmd — shell:true is required to resolve it.
-      const useShell = process.platform === "win32";
-      const spawned = spawn(
-        config.claudeCmd,
-        ["--mcp-config", config.mcpConfigPath, "-p", prompt],
-        { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: useShell },
-      );
+      const spawned = spawn(cmd, args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        shell: useShell,
+        env: spawnEnv,
+      });
       child = spawned;
       const spawnedAt = Date.now();
 
       spawned.stdout?.on("data", (chunk: Buffer) => {
         const text = chunk.toString().trimEnd();
-        if (text) keeperLog("INFO", `[claude] ${text}`);
+        if (text) keeperLog("INFO", `[${client}] ${text}`);
       });
       spawned.stderr?.on("data", (chunk: Buffer) => {
         const text = chunk.toString().trimEnd();
-        if (text) keeperLog("WARN", `[claude:err] ${text}`);
+        if (text) keeperLog("WARN", `[${client}:err] ${text}`);
       });
       spawned.on("error", (err: Error) => {
         keeperLog("ERROR", `Spawn error: ${err.message}`);
@@ -209,11 +255,11 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
         } else {
           retryCount++;
         }
-        keeperLog("WARN", `Claude exited (code=${code ?? "?"}, signal=${signal ?? "none"})`);
+        keeperLog("WARN", `${client} exited (code=${code ?? "?"}, signal=${signal ?? "none"})`);
         scheduleRestart();
       });
     } catch (err) {
-      keeperLog("ERROR", `Failed to spawn Claude: ${err}`);
+      keeperLog("ERROR", `Failed to spawn ${client}: ${err}`);
       scheduleRestart();
     }
   }
