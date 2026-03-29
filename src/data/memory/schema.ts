@@ -213,8 +213,19 @@ function runMigrations(db: Database): void {
  * Self-healing: verify that critical columns exist after migrations.
  * If any are missing (e.g. a migration was skipped or failed), add them
  * idempotently so downstream queries never crash on a missing column.
+ *
+ * After each successful self-heal, we record the corresponding migration
+ * version so the migration loop won't retry it on next startup.
  */
 function ensureSchemaIntegrity(db: Database): void {
+  const stampVersion = (v: number) => {
+    try {
+      db.prepare(
+        "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)"
+      ).run(v, nowISO());
+    } catch { /* non-critical */ }
+  };
+
   const semanticNoteCols = db
     .prepare("PRAGMA table_info(semantic_notes)")
     .all()
@@ -228,6 +239,7 @@ function ensureSchemaIntegrity(db: Database): void {
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL",
     );
+    stampVersion(7); // migration 7 added is_guardrail
   }
 
   if (!semanticNoteCols.includes("pinned")) {
@@ -238,6 +250,7 @@ function ensureSchemaIntegrity(db: Database): void {
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_sem_pinned ON semantic_notes(pinned) WHERE pinned = 1 AND valid_to IS NULL",
     );
+    stampVersion(10); // migration 10 added pinned
   }
 
   if (!semanticNoteCols.includes("thread_id")) {
@@ -246,6 +259,7 @@ function ensureSchemaIntegrity(db: Database): void {
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL",
     );
+    stampVersion(3); // migration 3 added thread_id
   }
 
   if (!semanticNoteCols.includes("priority")) {
@@ -256,6 +270,7 @@ function ensureSchemaIntegrity(db: Database): void {
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL",
     );
+    stampVersion(6); // migration 6 added priority
   }
 
   // Also check episodes table for thread_id
@@ -267,6 +282,7 @@ function ensureSchemaIntegrity(db: Database): void {
   if (!episodeCols.includes("thread_id")) {
     log.info("[memory] Self-heal: adding missing thread_id column to episodes");
     db.exec("ALTER TABLE episodes ADD COLUMN thread_id INTEGER");
+    stampVersion(2); // migration 2 added thread_id to episodes
   }
 }
 
@@ -434,19 +450,15 @@ export function initMemoryDb(): Database {
   // Run any pending migrations (will upgrade from stored version to SCHEMA_VERSION)
   runMigrations(db);
 
-  // Self-heal: ensure all critical columns exist even if a migration failed
+  // Self-heal: ensure all critical columns exist even if a migration failed.
+  // After each successful column addition, record the corresponding migration
+  // version so it isn't retried but also isn't force-stamped over failures.
   ensureSchemaIntegrity(db);
 
-  // Ensure schema_version is up to date so failed migrations aren't retried
-  const maxApplied = db
-    .prepare("SELECT MAX(version) as v FROM schema_version")
-    .get() as { v: number | null } | undefined;
-  if ((maxApplied?.v ?? 0) < SCHEMA_VERSION) {
-    db.prepare(
-      "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)",
-    ).run(SCHEMA_VERSION, nowISO());
-    log.info(`[memory] Schema version updated to ${SCHEMA_VERSION} after self-heal`);
-  }
+  // NOTE: We deliberately do NOT force-stamp schema_version to SCHEMA_VERSION
+  // here. If a migration failed, its version is not recorded, so it will be
+  // retried on the next startup. This prevents permanently skipping failed
+  // migrations (which was the root cause of the "pinned column missing" bug).
 
   return db;
 }
