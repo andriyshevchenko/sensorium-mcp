@@ -563,8 +563,6 @@ export function spawnCodexProcess(
   const logFileName = `${safeName}_${threadId}_${dateStr}.log`;
   const logFilePath = join(LOGS_DIR, logFileName);
 
-  const logFd = openSync(logFilePath, "a");
-
   const prompt = `Start remote session with sensorium. Thread name = '${name}'`;
   const codexModel = process.env.CODEX_MODEL || DEFAULT_CODEX_MODEL;
 
@@ -591,20 +589,40 @@ export function spawnCodexProcess(
     spawnEnv.SENSORIUM_MCP_SECRET = httpSecret;
   }
 
-  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath);
-
   let child;
   try {
-    child = spawn(codexPath, cliArgs, {
-      detached: true,
-      stdio: ["pipe", logFd, logFd],
-      shell: needsShell,
-      windowsHide: true,
-      env: spawnEnv,
-      cwd: workingDirectory || undefined,
-    });
+    if (process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath)) {
+      // On Windows, codex.cmd runs via Volta which spawns child processes that break
+      // file descriptor inheritance (node→cmd→volta→cmd→codex). Use shell-level
+      // output redirection (>>) so all descendant output lands in the log file.
+      const quotedPath = codexPath.includes(" ") ? `"${codexPath}"` : codexPath;
+      const quotedArgs = cliArgs.map(a => /[ &|<>^"()]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a).join(" ");
+      const quotedLog = `"${logFilePath}"`;
+      const shellCmd = `${quotedPath} ${quotedArgs} >> ${quotedLog} 2>&1`;
+      child = spawn("cmd.exe", ["/c", shellCmd], {
+        detached: true,
+        stdio: ["pipe", "ignore", "ignore"],
+        shell: false,
+        windowsHide: true,
+        env: spawnEnv,
+        cwd: workingDirectory || undefined,
+      });
+    } else {
+      const logFd = openSync(logFilePath, "a");
+      try {
+        child = spawn(codexPath, cliArgs, {
+          detached: true,
+          stdio: ["pipe", logFd, logFd],
+          shell: false,
+          windowsHide: true,
+          env: spawnEnv,
+          cwd: workingDirectory || undefined,
+        });
+      } finally {
+        closeSync(logFd);
+      }
+    }
   } catch (err) {
-    closeSync(logFd);
     return { error: `Failed to spawn Codex process: ${errorMessage(err)}` };
   }
 
@@ -613,8 +631,6 @@ export function spawnCodexProcess(
     child.stdin?.write(prompt + "\n");
     child.stdin?.end();
   } catch { /* ignore — process may have already exited */ }
-
-  closeSync(logFd);
 
   const pid = child.pid;
   if (pid === undefined) {
