@@ -26,7 +26,9 @@ import {
   PENDING_TASKS_DIR,
   resolveMcpConfigPath,
   resolveClaudePath,
+  resolveCopilotPath,
   spawnAgentProcess,
+  spawnCopilotProcess,
   cleanupStalePidFiles,
 } from "./thread-lifecycle.js";
 
@@ -108,26 +110,36 @@ export async function handleStartThread(
       ? rawAgentType
       : "claude";
 
-  if (agentType && agentType !== 'claude') {
-    return errorResult(`Agent type "${agentType}" is not yet supported for thread spawning. Only "claude" is currently available.`);
-  }
-
   // ── Verify CLI availability ───────────────────────────────────────────
-  const claudePath = resolveClaudePath();
-  if (!claudePath) {
-    return errorResult(
-      "Error: 'claude' CLI is not installed or not on PATH. " +
-      "Install it with: npm install -g @anthropic-ai/claude-code",
-    );
-  }
+  let cliPath: string;
+  let mcpConfigPath: string | undefined;
 
-  // ── Resolve MCP config ────────────────────────────────────────────────
-  const mcpConfigPath = resolveMcpConfigPath();
-  if (!mcpConfigPath) {
-    return errorResult(
-      "Error: Could not find MCP config for Claude. " +
-      "Set CLAUDE_MCP_CONFIG env var or place config at ~/.claude/mcp_config.json",
-    );
+  if (agentType === "copilot") {
+    const copilotPath = resolveCopilotPath();
+    if (!copilotPath) {
+      return errorResult(
+        "Error: 'copilot' CLI is not installed or not on PATH. " +
+        "Set COPILOT_CLI_CMD env var or ensure 'copilot' is on PATH.",
+      );
+    }
+    cliPath = copilotPath;
+  } else {
+    const claudePath = resolveClaudePath();
+    if (!claudePath) {
+      return errorResult(
+        "Error: 'claude' CLI is not installed or not on PATH. " +
+        "Install it with: npm install -g @anthropic-ai/claude-code",
+      );
+    }
+    const resolvedConfig = resolveMcpConfigPath();
+    if (!resolvedConfig) {
+      return errorResult(
+        "Error: Could not find MCP config for Claude. " +
+        "Set CLAUDE_MCP_CONFIG env var or place config at ~/.claude/mcp_config.json",
+      );
+    }
+    cliPath = claudePath;
+    mcpConfigPath = resolvedConfig;
   }
 
   // ── 1. Resolve or create Telegram forum topic ─────────────────────────
@@ -185,7 +197,9 @@ export async function handleStartThread(
 
   // ── 4. Dormant (topic existed, process dead) → restart ────────────────
   ensureDirs();
-  const result = spawnAgentProcess(claudePath, mcpConfigPath, name, threadId, workingDirectory, memorySourceThreadId);
+  const result = agentType === "copilot"
+    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId)
+    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
   const status = topicExisted ? "restarted" : "created";
