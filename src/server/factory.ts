@@ -305,7 +305,7 @@ function createMcpServer(
       handleStartThread(typedArgs, delegateCtx),
 
     send_message_to_thread: (typedArgs) =>
-      handleSendMessageToThreadFile(typedArgs),
+      handleSendMessageToThreadFile({ ...typedArgs, _callerThreadId: currentThreadId }),
 
     get_threads_health: () => {
       try {
