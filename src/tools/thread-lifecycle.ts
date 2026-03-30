@@ -227,7 +227,9 @@ const CODEX_INSTRUCTIONS_FILENAME = "AGENTS.md";
 const CODEX_SYSTEM_PROMPT =
   "You are a remote Codex agent. " +
   "Start remote session with sensorium. Pass agentType='codex' to start_session.";
-const DEFAULT_CODEX_MODEL = "o3";
+// No hardcoded default — let the codex CLI pick its own default.
+// Override via CODEX_MODEL env var if needed.
+const DEFAULT_CODEX_MODEL = "";
 
 /**
  * Resolve the absolute path to the `codex` CLI executable.
@@ -250,6 +252,46 @@ export function resolveCodexPath(): string | null {
       return candidates[0];
     }
   } catch { /* not found */ }
+  return null;
+}
+
+/**
+ * On Windows, Volta wraps codex in cmd→volta→cmd→node, breaking file descriptor
+ * inheritance. Resolve node.exe + codex.js directly so we can spawn without any
+ * Volta wrapper process in the chain.
+ * Returns null if the paths cannot be found (fallback to codex.cmd).
+ */
+export function resolveCodexNodeExe(): { nodeExe: string; codexJs: string } | null {
+  if (process.platform !== "win32") return null;
+  try {
+    const localAppData = process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local");
+    const voltaImage = join(localAppData, "Volta", "tools", "image");
+
+    // Find the codex.js script (stable path relative to Volta's image dir)
+    const codexJs = join(voltaImage, "packages", "@openai", "codex", "node_modules", "@openai", "codex", "bin", "codex.js");
+    if (!existsSync(codexJs)) return null;
+
+    // Ask Volta for the node.exe path it would use (synchronous, fast)
+    const voltaCmd = join(localAppData, "Volta", "bin", "volta.exe");
+    const nodePathResult = spawnSync(voltaCmd, ["run", "node", "-e", "process.stdout.write(process.execPath)"], { encoding: "utf-8", timeout: 5000 });
+    if (nodePathResult.status === 0 && nodePathResult.stdout?.trim()) {
+      return { nodeExe: nodePathResult.stdout.trim(), codexJs };
+    }
+
+    // Fallback: pick the highest-version node from Volta's image dir
+    const nodeDir = join(voltaImage, "node");
+    if (existsSync(nodeDir)) {
+      const versions = readdirSync(nodeDir).filter(v => /^\d+\.\d+\.\d+$/.test(v)).sort((a, b) => {
+        const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+        for (let i = 0; i < 3; i++) { if (pa[i] !== pb[i]) return pb[i] - pa[i]; }
+        return 0;
+      });
+      for (const ver of versions) {
+        const nodeExe = join(nodeDir, ver, "node.exe");
+        if (existsSync(nodeExe)) return { nodeExe, codexJs };
+      }
+    }
+  } catch { /* ignore */ }
   return null;
 }
 
@@ -571,7 +613,7 @@ export function spawnCodexProcess(
     "exec",
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
-    "-m", codexModel,
+    ...(codexModel ? ["-m", codexModel] : []),
     "--json",
     "-",
   ];
@@ -589,47 +631,50 @@ export function spawnCodexProcess(
     spawnEnv.SENSORIUM_MCP_SECRET = httpSecret;
   }
 
+  const logFd = openSync(logFilePath, "a");
   let child;
   try {
-    if (process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath)) {
-      // On Windows, codex.cmd runs via Volta (cmd→volta→cmd→codex), breaking fd inheritance.
-      // Write the prompt to a temp file and use shell-level < and >> redirections so
-      // stdin/stdout are wired entirely within cmd.exe — no Node.js pipes needed.
-      const promptFile = join(LOGS_DIR, `${threadId}-prompt.txt`);
-      writeFileSync(promptFile, prompt + "\n", "utf-8");
+    // On Windows, codex.cmd runs via Volta (cmd→volta→cmd→node), which does NOT
+    // forward inherited file handles to grandchild processes. Bypass Volta by
+    // spawning node.exe + codex.js directly so fd inheritance works.
+    const nodeExeResult = process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath)
+      ? resolveCodexNodeExe()
+      : null;
 
-      const q = (p: string) => p.includes(" ") ? `"${p}"` : p;
-      const quotedArgs = cliArgs.map(a => /[ &|<>^"()]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a).join(" ");
-      // Use > (create/truncate) for the log so the file is created even before output arrives.
-      // del the prompt file after codex exits via a chained command.
-      const shellCmd = `${q(codexPath)} ${quotedArgs} < ${q(promptFile)} > ${q(logFilePath)} 2>&1 & del ${q(promptFile)}`;
-      child = spawn("cmd.exe", ["/c", shellCmd], {
+    if (nodeExeResult) {
+      const { nodeExe, codexJs } = nodeExeResult;
+      // Replace the bare "-" prompt arg with the actual script path as first arg to node
+      const nodeArgs = [codexJs, ...cliArgs];
+      child = spawn(nodeExe, nodeArgs, {
         detached: true,
-        stdio: "ignore",
+        stdio: ["pipe", logFd, logFd],
         shell: false,
         windowsHide: true,
-        windowsVerbatimArguments: true,
         env: spawnEnv,
         cwd: workingDirectory || undefined,
       });
     } else {
-      const logFd = openSync(logFilePath, "a");
-      try {
-        child = spawn(codexPath, cliArgs, {
-          detached: true,
-          stdio: ["pipe", logFd, logFd],
-          shell: false,
-          windowsHide: true,
-          env: spawnEnv,
-          cwd: workingDirectory || undefined,
-        });
-      } finally {
-        closeSync(logFd);
-      }
+      child = spawn(codexPath, cliArgs, {
+        detached: true,
+        stdio: ["pipe", logFd, logFd],
+        shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath),
+        windowsHide: true,
+        env: spawnEnv,
+        cwd: workingDirectory || undefined,
+      });
     }
   } catch (err) {
+    closeSync(logFd);
     return { error: `Failed to spawn Codex process: ${errorMessage(err)}` };
   }
+
+  closeSync(logFd);
+
+  // Write prompt to stdin (codex reads it via the "-" arg) and close to signal EOF
+  try {
+    child.stdin?.write(prompt + "\n");
+    child.stdin?.end();
+  } catch { /* process may have already exited */ }
 
   const pid = child.pid;
   if (pid === undefined) {
