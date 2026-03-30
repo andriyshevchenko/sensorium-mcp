@@ -243,6 +243,13 @@ export function handleSendMessageToThread(
   if (!Number.isInteger(threadId) || threadId <= 0) {
     return errorResult('threadId must be a positive integer');
   }
+
+  // Prevent sending to own thread
+  const callerThread = typeof args._callerThreadId === "number" ? args._callerThreadId : undefined;
+  if (callerThread !== undefined && callerThread === threadId) {
+    return errorResult(`Cannot send a message to your own thread (${threadId}). Use report_progress to communicate with the operator, or start_thread to delegate work.`);
+  }
+
   if (!message) {
     return errorResult("Error: 'message' is required.");
   }
