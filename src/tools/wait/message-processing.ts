@@ -237,7 +237,9 @@ export function handlePollTimeout(
   }
 
   // ── Auto-consolidation during idle (fire-and-forget) ────────────────────
-  runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, apiKey: OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
+  try {
+    runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, apiKey: OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
+  } catch (err: unknown) { log.warn(`auto-consolidation failed: ${err instanceof Error ? err.message : String(err)}`); }
 
   // Periodic memory refresh — re-ground the agent every 10 polls (~5h)
   // (reduced from 5 since auto-inject now handles per-message context)
