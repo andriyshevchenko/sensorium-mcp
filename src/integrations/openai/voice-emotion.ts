@@ -9,12 +9,12 @@ import { log } from "../../logger.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface AudioEvent {
+interface AudioEvent {
     label: string;
     score: number;
 }
 
-export interface Paralinguistics {
+interface Paralinguistics {
     speech_rate?: number;
     mean_pitch_hz?: number;
     pitch_std_hz?: number;

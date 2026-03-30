@@ -15,7 +15,7 @@ import { chatCompletion } from "../../integrations/openai/chat.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface SynthesisResult {
+interface SynthesisResult {
   synthesizedNotes: number;
   synthesizedEpisode: boolean;
   ghostEpisodesRead: number;

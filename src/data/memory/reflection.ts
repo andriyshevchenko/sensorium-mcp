@@ -21,14 +21,14 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface ReflectionInsight {
+interface ReflectionInsight {
   type: "causal" | "pattern" | "self_assessment" | "counterfactual";
   content: string;
   confidence: number;
   relatedEpisodeIds: string[];
 }
 
-export interface ReflectionResult {
+interface ReflectionResult {
   insights: ReflectionInsight[];
   processedEpisodeCount: number;
   duration: number;

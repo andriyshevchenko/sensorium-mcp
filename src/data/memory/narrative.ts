@@ -17,9 +17,9 @@ import { type SemanticNote } from "./semantic.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type NarrativeResolution = "day" | "week" | "month";
+type NarrativeResolution = "day" | "week" | "month";
 
-export interface TemporalNarrative {
+interface TemporalNarrative {
   id: number;
   threadId: number;
   resolution: NarrativeResolution;
