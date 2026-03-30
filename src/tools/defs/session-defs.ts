@@ -202,39 +202,38 @@ export const sessionToolDefs: ToolDefinition[] = [
       properties: {
         name: {
           type: "string",
-          description:
-            "Thread name for the session (e.g. 'Azure-WorkItems'). " +
-            "Resolved case-insensitively against persisted sessions. " +
-            "Required unless threadId is provided.",
+          description: "Thread name",
         },
         threadId: {
           type: "number",
+          description: "Explicit Telegram thread ID (optional — auto-created if not provided)",
+        },
+        threadType: {
+          type: "string",
+          enum: ["worker", "branch"],
           description:
-            "Explicit Telegram thread ID to use. Bypasses name-based resolution. " +
-            "If both name and threadId are provided, threadId takes priority.",
+            "Thread type. 'worker': temporary thread with read-only memory, auto-cleaned after 1 hour. " +
+            "'branch': long-lived thread that reads AND writes to the memory bank.",
+        },
+        memoryBankId: {
+          type: "number",
+          description: "Memory bank thread ID. Workers read from it. Branches read from AND write to it.",
         },
         agentType: {
           type: "string",
-          description:
-            'Which agent type to use: "copilot" | "claude" | "cursor" | "codex". Defaults to "claude".',
           enum: ["copilot", "claude", "cursor", "codex"],
         },
         workingDirectory: {
           type: "string",
-          description:
-            "The absolute path to the working directory for the new thread. The agent will start in this directory.",
+          description: "Absolute path for cwd",
         },
         memorySourceThreadId: {
           type: "number",
-          description:
-            "Optional. If set, the spawned thread's initial memory briefing will be populated from this thread's memory instead of its own. " +
-            "Useful for ghost threads that need the parent's full context. " +
-            "All runtime memory operations (saves, searches) still use the ghost's own thread ID.",
+          description: "Advanced: explicit source memory thread (use memoryBankId + threadType instead)",
         },
         targetMemoryThreadId: {
           type: "number",
-          description:
-            "Thread ID for writing knowledge (notes, narratives). If set, semantic notes and consolidation output go here instead of the session's own thread. Episodes always stay on the session thread.",
+          description: "Advanced: explicit target memory thread (use memoryBankId + threadType instead)",
         },
       },
       required: ["workingDirectory"],
