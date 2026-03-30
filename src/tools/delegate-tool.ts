@@ -98,12 +98,28 @@ export async function handleStartThread(
   const workingDirectory = typeof args.workingDirectory === "string" ? args.workingDirectory.trim() : undefined;
   // NOTE: No access control — any thread can read any thread's memory via memorySourceThreadId.
   // Acceptable in single-user architecture. Review if multi-tenant support is added.
-  const memorySourceThreadId = typeof args.memorySourceThreadId === "number" ? args.memorySourceThreadId
+  let memorySourceThreadId = typeof args.memorySourceThreadId === "number" ? args.memorySourceThreadId
     : typeof args.memorySourceThreadId === "string" ? (Number.isFinite(Number(args.memorySourceThreadId)) ? Number(args.memorySourceThreadId) : undefined)
     : undefined;
-  const targetMemoryThreadId = typeof args.targetMemoryThreadId === "number" ? args.targetMemoryThreadId
+  let targetMemoryThreadId = typeof args.targetMemoryThreadId === "number" ? args.targetMemoryThreadId
     : typeof args.targetMemoryThreadId === "string" ? (Number.isFinite(Number(args.targetMemoryThreadId)) ? Number(args.targetMemoryThreadId) : undefined)
     : undefined;
+
+  // Thread type shorthand — resolves to source/target memory settings
+  const threadType = args.threadType as string | undefined;
+  const memoryBankId = args.memoryBankId as number | undefined;
+
+  if (memoryBankId !== undefined && threadType) {
+    if (threadType === "worker") {
+      // Workers: read from bank, write to own temp memory
+      memorySourceThreadId = memoryBankId;
+      // targetMemoryThreadId stays undefined (temp/own memory)
+    } else if (threadType === "branch") {
+      // Branches: read from AND write to bank
+      memorySourceThreadId = memoryBankId;
+      targetMemoryThreadId = memoryBankId;
+    }
+  }
 
   // name is required unless an explicit threadId is provided
   if (!name && explicitThreadId === undefined) {
