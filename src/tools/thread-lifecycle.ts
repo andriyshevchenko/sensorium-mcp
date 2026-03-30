@@ -24,8 +24,10 @@ interface SpawnedThread {
   threadId: number;
   name: string;
   startedAt: number;
+  createdAt: number;
   logFile: string;
   memorySourceThreadId?: number;
+  memoryTargetThreadId?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,6 +295,7 @@ export function spawnAgentProcess(
   threadId: number,
   workingDirectory?: string,
   memorySourceThreadId?: number,
+  memoryTargetThreadId?: number,
 ): { pid: number; logFile: string } | { error: string } {
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -326,6 +329,9 @@ export function spawnAgentProcess(
   const spawnEnv = { ...process.env };
   if (memorySourceThreadId !== undefined) {
     spawnEnv.MEMORY_SOURCE_THREAD_ID = String(memorySourceThreadId);
+  }
+  if (memoryTargetThreadId !== undefined) {
+    spawnEnv.MEMORY_TARGET_THREAD_ID = String(memoryTargetThreadId);
   }
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) {
     const gitBashCandidates = [
@@ -378,8 +384,10 @@ export function spawnAgentProcess(
     threadId,
     name,
     startedAt: Date.now(),
+    createdAt: Date.now(),
     logFile: logFilePath,
     ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
+    ...(memoryTargetThreadId !== undefined ? { memoryTargetThreadId } : {}),
   };
   spawnedThreads.push(entry);
 
@@ -495,6 +503,7 @@ export function spawnCopilotProcess(
     threadId,
     name,
     startedAt: Date.now(),
+    createdAt: Date.now(),
     logFile: logFilePath,
     ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
   };
@@ -616,6 +625,7 @@ export function spawnCodexProcess(
     threadId,
     name,
     startedAt: Date.now(),
+    createdAt: Date.now(),
     logFile: logFilePath,
     ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
   };
@@ -711,6 +721,63 @@ export function cleanupStalePidFiles(): void {
       } catch { /* already removed */ }
     }
   }
+}
+
+const DEFAULT_WORKER_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Clean up expired worker threads.
+ * Workers are temporary threads (have memorySourceThreadId but no memoryTargetThreadId).
+ * After TTL expires: synthesize outcomes, kill process, delete PID, delete Telegram topic.
+ */
+export async function cleanupExpiredWorkers(
+  db: ReturnType<typeof import("../memory.js").initMemoryDb>,
+  telegram: { deleteForumTopic(chatId: string, threadId: number): Promise<void> },
+  chatId: string,
+  ttlMs: number = DEFAULT_WORKER_TTL_MS,
+): Promise<{ cleaned: number; errors: string[] }> {
+  const result = { cleaned: 0, errors: [] as string[] };
+  const now = Date.now();
+
+  const isExpiredWorker = (t: SpawnedThread): boolean =>
+    t.memorySourceThreadId !== undefined
+    && t.memoryTargetThreadId === undefined
+    && now - t.createdAt > ttlMs;
+
+  for (const thread of spawnedThreads.filter(isExpiredWorker)) {
+    try {
+      await cleanupSingleWorker(thread, db, telegram, chatId);
+      result.cleaned++;
+    } catch (err) {
+      result.errors.push(`Thread ${thread.threadId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  return result;
+}
+
+/** Perform cleanup steps for a single expired worker thread. */
+async function cleanupSingleWorker(
+  thread: SpawnedThread,
+  db: ReturnType<typeof import("../memory.js").initMemoryDb>,
+  telegram: { deleteForumTopic(chatId: string, threadId: number): Promise<void> },
+  chatId: string,
+): Promise<void> {
+  // 1. Synthesize before cleanup (best-effort)
+  if (thread.memorySourceThreadId !== undefined) {
+    try { await synthesizeGhostMemory(db, thread.threadId, thread.memorySourceThreadId, thread.name); }
+    catch { /* synthesis is best-effort */ }
+  }
+
+  // 2. Kill process
+  try { process.kill(thread.pid, "SIGTERM"); } catch { /* already dead */ }
+
+  // 3. Delete Telegram topic
+  try { await telegram.deleteForumTopic(chatId, thread.threadId); } catch { /* topic might not exist */ }
+
+  // 4. Remove from tracking (PID file cleanup happens in the exit handler)
+  const idx = spawnedThreads.indexOf(thread);
+  if (idx !== -1) spawnedThreads.splice(idx, 1);
 }
 
 // ---------------------------------------------------------------------------

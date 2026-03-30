@@ -26,6 +26,7 @@ import {
 import { extractSearchKeywords, getReminders, getMediumReminder } from "../../response-builders.js";
 import type { TelegramClient } from "../../telegram.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../../utils.js";
+import { resolveKnowledgeThreadId } from "../../config.js";
 
 import type { ContentBlock, ToolResult } from "../../types.js";
 
@@ -240,14 +241,14 @@ export async function buildSmartContext(
       let candidates: { type: string; content: string; confidence: number; similarity?: number }[] = [];
       try {
         const queryEmb = await generateEmbedding(operatorText, apiKey);
-        const embResults = searchByEmbedding(db, queryEmb, { maxResults: SMART_CONTEXT_MAX_RESULTS, minSimilarity: MIN_SIMILARITY, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
+        const embResults = searchByEmbedding(db, queryEmb, { maxResults: SMART_CONTEXT_MAX_RESULTS, minSimilarity: MIN_SIMILARITY, skipAccessTracking: true, threadId: resolveKnowledgeThreadId(ctx.effectiveThreadId) });
         candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence, similarity: n.similarity }));
       } catch (err) {
         // Fallback to keyword search
         log.warn(`Embedding generation failed, falling back to keyword search: ${err instanceof Error ? err.message : String(err)}`);
         const searchQuery = extractSearchKeywords(operatorText);
         if (searchQuery.trim().length > 0) {
-          const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: SMART_CONTEXT_MAX_RESULTS, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
+          const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: SMART_CONTEXT_MAX_RESULTS, skipAccessTracking: true, threadId: resolveKnowledgeThreadId(ctx.effectiveThreadId) });
           candidates = kwResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence }));
         }
       }
@@ -269,7 +270,7 @@ export async function buildSmartContext(
       // No API key — keyword search, raw top-3
       const searchQuery = extractSearchKeywords(operatorText);
       if (searchQuery.trim().length > 0) {
-        const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 3, skipAccessTracking: true, threadId: ctx.effectiveThreadId });
+        const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 3, skipAccessTracking: true, threadId: resolveKnowledgeThreadId(ctx.effectiveThreadId) });
         if (kwResults.length > 0) {
           const lines = kwResults.map(n =>
             `- **[${n.type}]** ${n.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${n.confidence})_`
@@ -289,7 +290,7 @@ export async function buildSmartContext(
   // surface via similarity search when relevant — no need to repeat them.
   try {
     const db = ctx.getMemoryDb();
-    const pinned = getPinnedNotes(db, ctx.effectiveThreadId ?? 0);
+    const pinned = getPinnedNotes(db, resolveKnowledgeThreadId(ctx.effectiveThreadId ?? 0));
     if (pinned.length > 0) {
       const pinnedLines = pinned.map(p =>
         `- **[pinned/${p.type}]** ${p.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${p.confidence.toFixed(2)})_`

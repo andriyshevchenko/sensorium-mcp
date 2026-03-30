@@ -231,6 +231,11 @@ export const sessionToolDefs: ToolDefinition[] = [
             "Useful for ghost threads that need the parent's full context. " +
             "All runtime memory operations (saves, searches) still use the ghost's own thread ID.",
         },
+        targetMemoryThreadId: {
+          type: "number",
+          description:
+            "Thread ID for writing knowledge (notes, narratives). If set, semantic notes and consolidation output go here instead of the session's own thread. Episodes always stay on the session thread.",
+        },
       },
       required: ["workingDirectory"],
     },

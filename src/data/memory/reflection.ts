@@ -13,6 +13,7 @@ import { type Episode, rowToEpisode } from "./episodes.js";
 import { saveSemanticNote, searchByEmbedding, saveNoteEmbedding } from "./semantic.js";
 import { nowISO } from "./utils.js";
 import { log } from "../../logger.js";
+import { resolveKnowledgeThreadId } from "../../config.js";
 import {
   chatCompletion,
   generateEmbedding,
@@ -344,7 +345,7 @@ export async function runReflection(
       keywords: ["reflection", insightType, ...keywords],
       confidence,
       priority: confidence >= 0.8 ? 1 : 0,
-      threadId,
+      threadId: resolveKnowledgeThreadId(threadId),
       sourceEpisodes: refs,
     });
 

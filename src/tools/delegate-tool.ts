@@ -101,6 +101,9 @@ export async function handleStartThread(
   const memorySourceThreadId = typeof args.memorySourceThreadId === "number" ? args.memorySourceThreadId
     : typeof args.memorySourceThreadId === "string" ? (Number.isFinite(Number(args.memorySourceThreadId)) ? Number(args.memorySourceThreadId) : undefined)
     : undefined;
+  const targetMemoryThreadId = typeof args.targetMemoryThreadId === "number" ? args.targetMemoryThreadId
+    : typeof args.targetMemoryThreadId === "string" ? (Number.isFinite(Number(args.targetMemoryThreadId)) ? Number(args.targetMemoryThreadId) : undefined)
+    : undefined;
 
   // name is required unless an explicit threadId is provided
   if (!name && explicitThreadId === undefined) {
@@ -212,7 +215,7 @@ export async function handleStartThread(
     ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId)
     : agentType === "codex"
     ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId)
-    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId);
+    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId, targetMemoryThreadId);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
   const status = topicExisted ? "restarted" : "created";
@@ -238,6 +241,7 @@ export async function handleStartThread(
         pid: result.pid,
         logFile: result.logFile,
         ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
+        ...(targetMemoryThreadId !== undefined ? { targetMemoryThreadId } : {}),
       }),
     }],
   };

@@ -21,7 +21,7 @@ import { rowToProcedure } from "./procedures.js";
 import { getVoiceBaseline } from "./voice-sig.js";
 import { parseJsonArray } from "./utils.js";
 import { getNarrativesForBootstrap } from "./narrative.js";
-import { getGuardrailsEnabled, getBootstrapMessageCount } from "../../config.js";
+import { getGuardrailsEnabled, getBootstrapMessageCount, resolveKnowledgeThreadId } from "../../config.js";
 
 /** Maximum characters for the Recent Conversation section before truncation. */
 const MAX_BOOTSTRAP_CONVERSATION_CHARS = 100_000;
@@ -131,11 +131,12 @@ export function getTopicIndex(db: Database): TopicEntry[] {
 export function assembleBootstrap(db: Database, threadId: number, memorySourceThreadId?: number): string {
   // Ghost threads: use the parent's thread ID for memory queries
   const queryThreadId = memorySourceThreadId ?? threadId;
+  const knowledgeThreadId = resolveKnowledgeThreadId(queryThreadId);
   const status = getMemoryStatus(db, queryThreadId);
   const bootstrapMessageCount = getBootstrapMessageCount();
   const recentEpisodesDesc = getRecentEpisodes(db, queryThreadId, bootstrapMessageCount);
   const recentEpisodes = [...recentEpisodesDesc].reverse(); // chronological order (oldest first)
-  const topNotes = getTopSemanticNotes(db, { limit: 20, sortBy: "access_count", threadId: queryThreadId });
+  const topNotes = getTopSemanticNotes(db, { limit: 20, sortBy: "access_count", threadId: knowledgeThreadId });
   // Preferences first, then other notes
   const preferences = topNotes.filter((n) => n.type === "preference");
   const otherNotes = topNotes.filter((n) => n.type !== "preference");
@@ -174,7 +175,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
 
   // Temporal narrative — multi-resolution "story so far"
   try {
-    const narratives = getNarrativesForBootstrap(db, queryThreadId);
+    const narratives = getNarrativesForBootstrap(db, knowledgeThreadId);
     const hasNarrative = narratives.month || narratives.week || narratives.day;
     if (hasNarrative) {
       lines.push("## Temporal Context");
@@ -248,7 +249,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   // Key knowledge
   if (sortedNotes.length > 0) {
     // Pinned notes — always shown, represent long-term invariants
-    const pinned = getPinnedNotes(db, queryThreadId);
+    const pinned = getPinnedNotes(db, knowledgeThreadId);
     const pinnedIds = new Set(pinned.map(p => p.noteId));
     if (pinned.length > 0) {
       lines.push("## Pinned (Long-Term Context)");
@@ -303,7 +304,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
            AND valid_to IS NULL AND superseded_by IS NULL AND thread_id = ?
          ORDER BY created_at DESC LIMIT 5`,
       )
-      .all(queryThreadId) as { content: string; confidence: number; created_at: string }[];
+      .all(knowledgeThreadId) as { content: string; confidence: number; created_at: string }[];
     if (reflections.length > 0) {
       lines.push("## Recent Reflections");
       for (const r of reflections) {
@@ -330,7 +331,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
  * Much shorter than full bootstrap. Designed to re-ground the agent after context compaction.
  */
 export function assembleCompactRefresh(db: Database, threadId: number): string {
-  const topNotes = getTopSemanticNotes(db, { limit: 12, sortBy: "access_count", threadId });
+  const topNotes = getTopSemanticNotes(db, { limit: 12, sortBy: "access_count", threadId: resolveKnowledgeThreadId(threadId) });
   if (topNotes.length === 0) return "";
 
   const lines: string[] = [];
