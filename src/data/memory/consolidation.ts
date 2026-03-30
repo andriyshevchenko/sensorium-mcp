@@ -241,11 +241,7 @@ export async function runIntelligentConsolidation(
     .map((ep, i) => {
       const c = ep.content as Record<string, unknown>;
       let content: string;
-      if (c && typeof c === "object" && c.tool) {
-        // Tool call episode — format as readable action description
-        content = `TOOL_CALL: ${c.tool}(${String(c.args ?? "").slice(0, 150)})` +
-          (c.result ? ` → ${String(c.result).slice(0, 200)}` : "");
-      } else if (c && typeof c === "object") {
+      if (c && typeof c === "object") {
         content = (c.text as string) ?? (c.caption as string) ?? JSON.stringify(c);
       } else {
         content = String(ep.content);
