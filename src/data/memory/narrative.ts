@@ -14,6 +14,7 @@ import type { Database } from "./schema.js";
 import { chatCompletion } from "../../integrations/openai/chat.js";
 import { type Episode } from "./episodes.js";
 import { type SemanticNote } from "./semantic.js";
+import { resolveKnowledgeThreadId } from "../../config.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -307,7 +308,7 @@ async function generateNarrative(
        source_note_count = excluded.source_note_count,
        model = excluded.model,
        created_at = datetime('now')`,
-  ).run(threadId, resolution, start, end, narrative.trim(), episodes.length, notes.length, NARRATIVE_MODEL);
+  ).run(resolveKnowledgeThreadId(threadId), resolution, start, end, narrative.trim(), episodes.length, notes.length, NARRATIVE_MODEL);
 
   return getLastNarrative(db, threadId, resolution);
 }

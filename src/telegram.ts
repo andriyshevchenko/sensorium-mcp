@@ -246,6 +246,27 @@ export class TelegramClient {
   }
 
   /**
+   * Delete a forum topic (and all its messages) from a supergroup.
+   * The bot must be an admin with can_manage_topics right.
+   */
+  async deleteForumTopic(chatId: string | number, messageThreadId: number): Promise<void> {
+    const url = `${this.baseUrl}/deleteForumTopic`;
+    const response = await this.safeFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_thread_id: messageThreadId,
+      }),
+    });
+    const data = await this.tryParseJson<{ ok: boolean; description?: string }>(response);
+    if (!response.ok || !data?.ok) {
+      const description = data?.description ?? response.statusText;
+      throw new Error(`Telegram deleteForumTopic failed: ${description}`);
+    }
+  }
+
+  /**
    * Send a text message to a chat, optionally scoped to a forum topic thread.
    */
   async sendMessage(

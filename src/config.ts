@@ -317,6 +317,27 @@ export function getMemorySourceThreadId(): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/**
+ * Read the MEMORY_TARGET_THREAD_ID env var set by the parent process.
+ * When set, semantic notes, consolidation output, and narratives
+ * write to this thread instead of the session's own thread.
+ * Episodes always stay on the session's own thread.
+ */
+export function getMemoryTargetThreadId(): number | undefined {
+  const val = process.env.MEMORY_TARGET_THREAD_ID;
+  if (!val) return undefined;
+  const n = parseInt(val, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Resolve where knowledge (notes, narratives) should be written.
+ * Returns targetMemoryThreadId if set, otherwise falls back to sessionThreadId.
+ */
+export function resolveKnowledgeThreadId(sessionThreadId: number): number {
+  return getMemoryTargetThreadId() ?? sessionThreadId;
+}
+
 // ─── Exported config object ─────────────────────────────────────────────────
 
 export const config: AppConfig = {

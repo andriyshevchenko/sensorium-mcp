@@ -7,6 +7,7 @@ import {
   supersedeNote,
 } from "./semantic.js";
 import { log } from "../../logger.js";
+import { resolveKnowledgeThreadId } from "../../config.js";
 import { nowISO } from "./utils.js";
 import { chatCompletion, type ChatMessage } from "../../integrations/openai/chat.js";
 
@@ -381,7 +382,7 @@ Rules:
           keywords: Array.isArray(note.keywords) ? note.keywords : [],
           confidence: Math.max(0, Math.min(1, note.confidence ?? 0.5)),
           priority: Math.max(0, Math.min(2, note.priority ?? 0)),
-          threadId: threadId,
+          threadId: resolveKnowledgeThreadId(threadId),
           sourceEpisodes: episodeIds,
         });
         notesCreated++;

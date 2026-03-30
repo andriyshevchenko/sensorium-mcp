@@ -27,6 +27,7 @@ import { generateEmbedding } from "../openai.js";
 import { log } from "../logger.js";
 import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
+import { resolveKnowledgeThreadId } from "../config.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -196,7 +197,7 @@ async function handleMemorySave(
       keywords: Array.isArray(args.keywords) ? args.keywords.map(String) : typeof args.keywords === 'string' ? [args.keywords] : [],
       confidence: typeof args.confidence === "number" ? args.confidence : 0.8,
       priority: typeof args.priority === "number" ? args.priority : 0,
-      threadId: threadId ?? null,
+      threadId: threadId != null ? resolveKnowledgeThreadId(threadId) : null,
       isGuardrail: args.guardrail === true,
       pinned: args.pinned === true,
     });
