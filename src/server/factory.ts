@@ -13,7 +13,6 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { writeActivityHeartbeat } from "../data/file-storage.js";
-import { saveEpisode } from "../data/memory/episodes.js";
 import { config } from "../config.js";
 import { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
 import { formatDrivePrompt } from "../drive.js";
@@ -337,12 +336,6 @@ function createMcpServer(
 
   // ── Tool implementations ──────────────────────────────────────────────────
 
-  // Tools to skip when recording tool-call episodes (noisy/frequent).
-  const SKIP_TOOLS: ReadonlySet<string> = new Set([
-    "wait_for_instructions", "remote_copilot_wait_for_instructions",
-    "memory_search", "memory_status", "get_skill", "search_skills",
-  ]);
-
   // ToolResult intentionally omits `[key: string]: unknown` for internal type
   // safety; assert structural compatibility at the SDK boundary.
   // @ts-expect-error — ToolResult is structurally compatible but lacks index signature
@@ -362,42 +355,9 @@ function createMcpServer(
     // ── Dispatch ─────────────────────────────────────────────────────────
     const typedArgs = (args ?? {}) as Record<string, unknown>;
     const handler = toolHandlers[name];
-    let result: ToolResult;
-    if (handler) {
-      result = await handler(typedArgs, extra);
-    } else if (name.startsWith("memory_")) {
-      result = await handleMemoryTool(name, typedArgs, memoryToolCtx);
-    } else {
-      return errorResult(`Unknown tool: ${name}`);
-    }
-
-    // ── Tool-call episode capture ────────────────────────────────────────
-    // Record significant tool calls as episodes for memory consolidation.
-    // Skip noisy/frequent tools to avoid flooding the episode store.
-    if (currentThreadId !== undefined && !SKIP_TOOLS.has(name)) {
-      try {
-        const db = getMemoryDb();
-        const resultText = Array.isArray(result?.content)
-          ? (result.content as Array<{ text?: string }>)
-              .map(c => c.text ?? "").filter(Boolean).join(" ").slice(0, 500)
-          : "";
-        const episodeContent: Record<string, unknown> = {
-          tool: name,
-          args: argsSummary,
-        };
-        if (resultText) episodeContent.result = resultText.slice(0, 500);
-        saveEpisode(db, {
-          sessionId: `session_${sessionStartedAt}`,
-          threadId: currentThreadId,
-          type: "agent_action",
-          modality: "text",
-          content: episodeContent,
-          importance: 0.3,
-        });
-      } catch { /* non-fatal — don't break tool dispatch */ }
-    }
-
-    return result;
+    if (handler) return handler(typedArgs, extra);
+    if (name.startsWith("memory_")) return handleMemoryTool(name, typedArgs, memoryToolCtx);
+    return errorResult(`Unknown tool: ${name}`);
   });
 
   return srv;
