@@ -213,7 +213,7 @@ export function autoIngestEpisodes(
         }
       }
     }
-  } catch (err) { log.debug(`Episode save failed during delivery: ${err instanceof Error ? err.message : String(err)}`); }
+  } catch (err) { log.warn(`Episode save failed during delivery: ${err instanceof Error ? err.message : String(err)}`); }
 }
 
 // ---------------------------------------------------------------------------
@@ -278,7 +278,10 @@ export async function buildSmartContext(
         }
       }
     }
-  } catch (err) { log.debug(`Smart context injection failed: ${err instanceof Error ? err.message : String(err)}`); }
+  } catch (err) {
+    const msg = `Smart context injection failed: ${err instanceof Error ? err.message : String(err)}`;
+    if (process.env.OPENAI_API_KEY) log.warn(msg); else log.debug(msg);
+  }
 
   // ── Persistent context: pinned notes ─────────────────────────────────
   // Pinned notes represent long-term invariants the agent should always

@@ -254,8 +254,8 @@ export async function startDispatcher(
             removeLock();
         };
         process.on("exit", cleanup);
-        process.on("SIGINT", () => { cleanup(); process.exit(0); });
-        process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+        process.on("SIGINT", cleanup);
+        process.on("SIGTERM", cleanup);
     };
 
     const installConsumerRetry = () => {

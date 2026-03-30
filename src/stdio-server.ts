@@ -46,7 +46,9 @@ export async function startStdioServer(
     shuttingDown = true;
     log.info(`[shutdown] Graceful stdio shutdown (${reason})…`);
 
-    // Close memory DB and exit.
+    // Tear down server and transport before closing resources.
+    try { await server.close(); } catch (_) { /* best-effort */ }
+    try { transport.close?.(); } catch (_) { /* best-effort */ }
     closeMemoryDb();
     markDashboardSessionDisconnected(stdioSessionId);
     process.exit(0);
