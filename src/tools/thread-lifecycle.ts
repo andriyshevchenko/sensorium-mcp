@@ -174,6 +174,47 @@ export function resolveClaudePath(): string | null {
   return null;
 }
 
+/**
+ * Resolve the absolute path to the `copilot` CLI executable.
+ * Checks COPILOT_CLI_CMD env var first, then PATH. Returns null if not found.
+ */
+export function resolveCopilotPath(): string | null {
+  const envCmd = process.env.COPILOT_CLI_CMD;
+  if (envCmd) return envCmd;
+  try {
+    const cmd = process.platform === "win32" ? "where" : "which";
+    const result = spawnSync(cmd, ["copilot"], { timeout: 5000, encoding: "utf-8" });
+    if (result.status === 0 && result.stdout) {
+      return result.stdout.trim().split(/\r?\n/)[0];
+    }
+  } catch { /* not found */ }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Copilot home helpers
+// ---------------------------------------------------------------------------
+
+const COPILOT_HOME_DIR = join(BASE_DIR, "copilot-home");
+const COPILOT_MCP_CONFIG_FILENAME = "mcp-config.json";
+const COPILOT_INSTRUCTIONS_FILENAME = "copilot-instructions.md";
+const COPILOT_SYSTEM_PROMPT =
+  "You are a remote copilot agent. " +
+  "Start remote session with sensorium.";
+const DEFAULT_COPILOT_MODEL = "claude-opus-4.6";
+
+function writeCopilotHomeFiles(copilotHome: string, port: number, secret: string | null): void {
+  mkdirSync(copilotHome, { recursive: true });
+  const serverConfig: Record<string, unknown> = {
+    type: "http",
+    url: `http://127.0.0.1:${port}/mcp`,
+  };
+  if (secret) serverConfig.headers = { Authorization: `Bearer ${secret}` };
+  const mcpConfig = { mcpServers: { "sensorium-mcp": serverConfig } };
+  writeFileSync(join(copilotHome, COPILOT_MCP_CONFIG_FILENAME), JSON.stringify(mcpConfig, null, 2), "utf-8");
+  writeFileSync(join(copilotHome, COPILOT_INSTRUCTIONS_FILENAME), COPILOT_SYSTEM_PROMPT, "utf-8");
+}
+
 // ---------------------------------------------------------------------------
 // Spawn agent process
 // ---------------------------------------------------------------------------
@@ -302,6 +343,112 @@ export function spawnAgentProcess(
   child.unref();
 
   log.info(`[start_thread] Spawned Claude process PID=${pid} for thread ${threadId} ("${name}")`);
+
+  return { pid, logFile: logFilePath };
+}
+
+/**
+ * Spawn a GitHub Copilot agent process for the given thread.
+ * Writes Copilot home files (MCP config + system prompt) before spawning.
+ * Requires MCP_HTTP_PORT env var to be set.
+ */
+export function spawnCopilotProcess(
+  copilotPath: string,
+  name: string,
+  threadId: number,
+  workingDirectory?: string,
+  memorySourceThreadId?: number,
+): { pid: number; logFile: string } | { error: string } {
+  const httpPort = parseInt(process.env.MCP_HTTP_PORT || "0", 10);
+  if (!httpPort) {
+    return { error: "MCP_HTTP_PORT env var is not set or invalid. Copilot threads require HTTP transport." };
+  }
+  const httpSecret = process.env.MCP_HTTP_SECRET || null;
+
+  writeCopilotHomeFiles(COPILOT_HOME_DIR, httpPort, httpSecret);
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const logFileName = `${safeName}_${threadId}_${dateStr}.json`;
+  const logFilePath = join(LOGS_DIR, logFileName);
+
+  const logFd = openSync(logFilePath, "a");
+
+  const prompt = `Start remote session with sensorium. Thread name = '${name}'`;
+  const copilotModel = process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL;
+
+  const cliArgs = ["-p", prompt, "--allow-all-tools", "--model", copilotModel];
+
+  const spawnEnv: NodeJS.ProcessEnv = { ...process.env, COPILOT_HOME: COPILOT_HOME_DIR };
+  if (memorySourceThreadId !== undefined) {
+    spawnEnv.MEMORY_SOURCE_THREAD_ID = String(memorySourceThreadId);
+  }
+
+  // On Windows, always use shell for copilot CLI
+  const needsShell = process.platform === "win32";
+
+  let child;
+  try {
+    child = spawn(copilotPath, cliArgs, {
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+      shell: needsShell,
+      windowsHide: true,
+      env: spawnEnv,
+      cwd: workingDirectory || undefined,
+    });
+  } catch (err) {
+    closeSync(logFd);
+    return { error: `Failed to spawn Copilot process: ${errorMessage(err)}` };
+  }
+
+  closeSync(logFd);
+
+  const pid = child.pid;
+  if (pid === undefined) {
+    return { error: "Copilot process spawned but PID is undefined — spawn may have failed." };
+  }
+
+  const pidFilePath = join(PIDS_DIR, `${threadId}.pid`);
+  try {
+    const pidMeta = { pid, name, configPath: COPILOT_HOME_DIR, startedAt: Date.now() };
+    writeFileSync(pidFilePath, JSON.stringify(pidMeta), "utf-8");
+  } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
+
+  const entry: SpawnedThread = {
+    pid,
+    threadId,
+    name,
+    startedAt: Date.now(),
+    logFile: logFilePath,
+    ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
+  };
+  spawnedThreads.push(entry);
+
+  child.on("exit", async (code) => {
+    const idx = spawnedThreads.indexOf(entry);
+    if (idx !== -1) spawnedThreads.splice(idx, 1);
+    try { unlinkSync(pidFilePath); } catch { /* already removed */ }
+
+    if (entry.memorySourceThreadId !== undefined) {
+      try {
+        const { initMemoryDb: getDb } = await import("../memory.js");
+        const db = getDb();
+        const result = await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name);
+        if (result.synthesizedNotes > 0 || result.synthesizedEpisode) {
+          log.info(`[synthesis] Ghost ${threadId} → parent ${entry.memorySourceThreadId}: ${result.synthesizedNotes} notes, episode: ${result.synthesizedEpisode}`);
+        }
+      } catch (err) {
+        log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`);
+      }
+    }
+
+    log.info(`[start_thread] Copilot process PID=${pid} for thread ${threadId} exited with code ${code}`);
+  });
+
+  child.unref();
+
+  log.info(`[start_thread] Spawned Copilot process PID=${pid} for thread ${threadId} ("${name}")`);
 
   return { pid, logFile: logFilePath };
 }
