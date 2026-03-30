@@ -592,19 +592,20 @@ export function spawnCodexProcess(
   let child;
   try {
     if (process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath)) {
-      // On Windows, codex.cmd runs via Volta which spawns child processes that break
-      // file descriptor inheritance (node→cmd→volta→cmd→codex). Use shell-level
-      // output redirection (>>) so all descendant output lands in the log file.
-      // Build the command line verbatim — Node.js would otherwise wrap the shellCmd
-      // arg in extra double-quotes (it contains spaces), which breaks cmd.exe's
-      // parsing of the >> redirection operator. windowsVerbatimArguments bypasses that.
-      const quotedPath = codexPath.includes(" ") ? `"${codexPath}"` : codexPath;
+      // On Windows, codex.cmd runs via Volta (cmd→volta→cmd→codex), breaking fd inheritance.
+      // Write the prompt to a temp file and use shell-level < and >> redirections so
+      // stdin/stdout are wired entirely within cmd.exe — no Node.js pipes needed.
+      const promptFile = join(LOGS_DIR, `${threadId}-prompt.txt`);
+      writeFileSync(promptFile, prompt + "\n", "utf-8");
+
+      const q = (p: string) => p.includes(" ") ? `"${p}"` : p;
       const quotedArgs = cliArgs.map(a => /[ &|<>^"()]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a).join(" ");
-      const quotedLog = logFilePath.includes(" ") ? `"${logFilePath}"` : logFilePath;
-      const shellCmd = `${quotedPath} ${quotedArgs} >> ${quotedLog} 2>&1`;
+      // Use > (create/truncate) for the log so the file is created even before output arrives.
+      // del the prompt file after codex exits via a chained command.
+      const shellCmd = `${q(codexPath)} ${quotedArgs} < ${q(promptFile)} > ${q(logFilePath)} 2>&1 & del ${q(promptFile)}`;
       child = spawn("cmd.exe", ["/c", shellCmd], {
         detached: true,
-        stdio: ["pipe", "ignore", "ignore"],
+        stdio: "ignore",
         shell: false,
         windowsHide: true,
         windowsVerbatimArguments: true,
@@ -629,12 +630,6 @@ export function spawnCodexProcess(
   } catch (err) {
     return { error: `Failed to spawn Codex process: ${errorMessage(err)}` };
   }
-
-  // Write prompt to stdin and close so codex receives it and stdin reaches EOF
-  try {
-    child.stdin?.write(prompt + "\n");
-    child.stdin?.end();
-  } catch { /* ignore — process may have already exited */ }
 
   const pid = child.pid;
   if (pid === undefined) {
