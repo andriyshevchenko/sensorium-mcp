@@ -611,7 +611,7 @@ async function runLoop(): Promise<void> {
 
 // MCP server (await_server_ready) — in-process HTTP ---------------------------
 function createWatcherMcp(): Server {
-  const srv = new Server({ name: "sensorium-watcher", version: "1.0.0" }, { capabilities: { tools: {} } });
+  const srv = new Server({ name: "sensorium-watcher", version: "1.0.0" }, { capabilities: { tools: {}, logging: {} } });
   srv.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [{
     name: "await_server_ready",
     description: "Blocks until sensorium finishes updating (maintenance.flag removed) or 600s timeout.",
@@ -625,7 +625,14 @@ function createWatcherMcp(): Server {
     const tid = (req.params.arguments?.threadId as number | undefined) ?? 0;
     const lbl = tid ? `threadId=${tid}` : `threadId=<your thread>`;
     const deadline = Date.now() + 600_000;
-    while (flagExists() && Date.now() < deadline) await sleep(2_000);
+    let pingCounter = 0;
+    while (flagExists() && Date.now() < deadline) {
+      await sleep(2_000);
+      // Send SSE keepalive every ~30s to prevent connection/socket timeouts
+      if (++pingCounter % 15 === 0) {
+        try { await srv.sendLoggingMessage({ level: "info", data: `Waiting for server update… (${Math.round((Date.now() - (deadline - 600_000)) / 1000)}s)` }); } catch { /**/ }
+      }
+    }
     if (!flagExists()) return { content: [{ type: "text", text: `Server ready. **Wait 15 seconds** for the MCP client to reconnect (use Desktop Commander: Start-Sleep -Seconds 15), then call start_session with ${lbl}.` }] };
     return { content: [{ type: "text", text: `Timed out. Try start_session with ${lbl} anyway.` }] };
   });
@@ -711,6 +718,13 @@ function startHttpMcp(port: number): void {
       if (!res.headersSent) { res.writeHead(500); res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null })); }
     }
   });
+  // Disable Node.js HTTP server timeouts — await_server_ready can block
+  // up to 600 s on a single SSE response.  The defaults (requestTimeout=300 s,
+  // headersTimeout=60 s) would destroy the socket mid-wait, silently
+  // dropping the tool result that eventually flows through the SSE stream.
+  httpSrv.requestTimeout = 0;
+  httpSrv.headersTimeout = 0;
+  httpSrv.timeout = 0;
   httpSrv.listen(port, "127.0.0.1", () => log("INFO", `Watcher MCP on http://127.0.0.1:${port}/mcp`));
 }
 
