@@ -12,7 +12,7 @@
 
 import type { Database } from "./schema.js";
 import { chatCompletion } from "../../integrations/openai/chat.js";
-import { getRecentEpisodes, type Episode } from "./episodes.js";
+import { type Episode } from "./episodes.js";
 import { type SemanticNote } from "./semantic.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -59,19 +59,19 @@ function getPeriodBounds(resolution: NarrativeResolution): { start: string; end:
 
   if (resolution === "day") {
     const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
+    start.setUTCHours(0, 0, 0, 0);
     return { start: start.toISOString(), end };
   }
   if (resolution === "week") {
     const start = new Date(now);
     start.setDate(start.getDate() - 7);
-    start.setHours(0, 0, 0, 0);
+    start.setUTCHours(0, 0, 0, 0);
     return { start: start.toISOString(), end };
   }
   // month
   const start = new Date(now);
   start.setDate(start.getDate() - 30);
-  start.setHours(0, 0, 0, 0);
+  start.setUTCHours(0, 0, 0, 0);
   return { start: start.toISOString(), end };
 }
 
@@ -261,6 +261,9 @@ async function generateNarrative(
   threadId: number,
   resolution: NarrativeResolution,
 ): Promise<TemporalNarrative | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
+
   const { start, end } = getPeriodBounds(resolution);
   const episodes = getEpisodesInPeriod(db, threadId, start, end);
 
@@ -277,12 +280,9 @@ async function generateNarrative(
     ? new Date(start).toLocaleDateString("en-US", { month: "short", day: "numeric" })
     : resolution === "week"
       ? `${new Date(start).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(end).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-      : `${new Date(start).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(end).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+      : `Month of ${new Date(end).toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
 
   const prompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel);
-
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
   const narrative = await chatCompletion(
     [{ role: "user", content: prompt }],
@@ -290,7 +290,7 @@ async function generateNarrative(
     {
       model: NARRATIVE_MODEL,
       temperature: 0.3,
-      maxTokens: Math.ceil(TOKEN_BUDGETS[resolution] / 3), // rough token limit
+      maxTokens: Math.ceil(TOKEN_BUDGETS[resolution] / 4), // rough token limit
     },
   );
 

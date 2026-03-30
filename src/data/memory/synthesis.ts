@@ -102,18 +102,26 @@ RULES:
     { model: SYNTHESIS_MODEL, temperature: 0.2, maxTokens: 500 },
   );
 
+  const fallback = {
+    summary: `Ghost thread "${ghostName}" completed its work.`,
+    keyFacts: [] as Array<{ type: string; content: string; keywords: string[]; confidence: number }>,
+  };
+
   try {
     // Handle potential markdown fences
     const cleaned = response
       .replace(/```json\s*/g, "")
       .replace(/```\s*/g, "")
       .trim();
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+
+    // Validate LLM response shape
+    if (typeof parsed.summary !== "string" || !Array.isArray(parsed.keyFacts)) {
+      return fallback;
+    }
+    return parsed;
   } catch {
-    return {
-      summary: `Ghost thread "${ghostName}" completed its work.`,
-      keyFacts: [],
-    };
+    return fallback;
   }
 }
 
@@ -186,9 +194,13 @@ export async function synthesizeGhostMemory(
     }
 
     // Save key facts as semantic notes in parent thread
+    const VALID_NOTE_TYPES = new Set(["fact", "preference", "pattern", "entity", "relationship"] as const);
+    type NoteType = "fact" | "preference" | "pattern" | "entity" | "relationship";
+
     for (const fact of synthesis.keyFacts) {
+      const noteType: NoteType = VALID_NOTE_TYPES.has(fact.type as NoteType) ? (fact.type as NoteType) : "fact";
       saveSemanticNote(db, {
-        type: (fact.type || "fact") as "fact" | "preference" | "pattern" | "entity" | "relationship",
+        type: noteType,
         content: `[From ghost thread "${name}"] ${fact.content}`,
         keywords: [...(fact.keywords || []), "thread-synthesis", name],
         confidence: fact.confidence || 0.7,

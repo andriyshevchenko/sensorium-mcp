@@ -505,7 +505,12 @@ function keeperSettingsChanged(a: KeeperSettings, b: KeeperSettings): boolean {
   return a.maxRetries !== b.maxRetries || a.cooldownMs !== b.cooldownMs || a.client !== b.client;
 }
 
+let applyingSettings = false;
+
 async function applyKeeperSettings(): Promise<void> {
+  if (applyingSettings) return;
+  applyingSettings = true;
+  try {
   if (CONFIG.mcpHttpPort <= 0) return;
   const allSettings = readAllKeeperSettings();
   const desiredThreadIds = new Set(allSettings.map(s => s.threadId));
@@ -532,22 +537,27 @@ async function applyKeeperSettings(): Promise<void> {
 
     // Start if not running
     if (!keepers.has(settings.threadId)) {
-      const handle = await startClaudeKeeper({
-        threadId: settings.threadId,
-        sessionName: settings.sessionName,
-        client: settings.client,
-        claudeCmd: CONFIG.claudeCmd,
-        copilotCmd: CONFIG.copilotCmd,
-        mcpConfigPath: join(CONFIG.dataDir, `mcp-config-${settings.threadId}.json`),
-        mcpHttpPort: CONFIG.mcpHttpPort,
-        mcpHttpSecret: CONFIG.mcpHttpSecret,
-        dataDir: CONFIG.dataDir,
-        maxRetries: settings.maxRetries,
-        cooldownMs: settings.cooldownMs,
-      });
-      keepers.set(settings.threadId, { handle, settings });
+      try {
+        const handle = await startClaudeKeeper({
+          threadId: settings.threadId,
+          sessionName: settings.sessionName,
+          client: settings.client,
+          claudeCmd: CONFIG.claudeCmd,
+          copilotCmd: CONFIG.copilotCmd,
+          mcpConfigPath: join(CONFIG.dataDir, `mcp-config-${settings.threadId}.json`),
+          mcpHttpPort: CONFIG.mcpHttpPort,
+          mcpHttpSecret: CONFIG.mcpHttpSecret,
+          dataDir: CONFIG.dataDir,
+          maxRetries: settings.maxRetries,
+          cooldownMs: settings.cooldownMs,
+        });
+        keepers.set(settings.threadId, { handle, settings });
+      } catch (err) {
+        log("ERROR", `Failed to start keeper for thread ${settings.threadId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
+  } finally { applyingSettings = false; }
 }
 
 function startKeeperPoller(): void {
