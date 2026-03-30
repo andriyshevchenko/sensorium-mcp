@@ -38,7 +38,7 @@ const LIVENESS_THRESHOLD_MS = (Math.max(1, rawWaitTimeout) + 10) * 60_000;
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
-export interface KeeperConfig {
+interface KeeperConfig {
   /** Telegram thread ID of the always-on session. */
   threadId: number;
   /** Human-readable session name passed to start_session. */

@@ -301,24 +301,7 @@ export function getAllThreadKeepAlive(): Record<string, ThreadKeepAliveSettings>
   return result;
 }
 
-/** Returns all thread IDs that have keep-alive enabled (global + per-thread). */
-export function getAllKeepAliveThreadIds(): number[] {
-  const ids = new Set<number>();
-  // Global keep-alive thread
-  if (getKeepAliveEnabled()) {
-    const globalThread = getKeepAliveThreadId();
-    if (globalThread > 0) ids.add(globalThread);
-  }
-  // Per-thread overrides
-  const map = getAllThreadKeepAlive();
-  for (const [k, v] of Object.entries(map)) {
-    if (v.enabled) {
-      const id = Number(k);
-      if (id > 0) ids.add(id);
-    }
-  }
-  return [...ids];
-}
+
 
 // ─── Ghost thread memory source ───────────────────────────────────────────
 

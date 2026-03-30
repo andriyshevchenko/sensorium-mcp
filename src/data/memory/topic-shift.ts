@@ -15,7 +15,7 @@ import type { Database } from "./schema.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface TopicShiftResult {
+interface TopicShiftResult {
   shifted: boolean;
   similarity: number;         // cosine similarity to recent context centroid
   suggestedTopic: string;     // extracted topic from the new message
