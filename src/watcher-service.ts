@@ -266,7 +266,8 @@ function parsePidFile(filePath: string): { pid: number; name?: string } | null {
 
 /**
  * Read active ghost thread info from PID files before killing the MCP server.
- * Only returns threads whose processes are currently alive.
+ * Only returns threads whose processes are currently alive AND were started
+ * recently (within 24h).  Stale PID files from old sessions are cleaned up.
  */
 function readGhostThreads(): GhostThreadInfo[] {
   const pidsDir = join(CONFIG.dataDir, "pids");
@@ -282,14 +283,39 @@ function readGhostThreads(): GhostThreadInfo[] {
     }
   } catch { /* no sessions file */ }
 
+  // Collect threads from keep-alive config as the authoritative set of
+  // threads that SHOULD be respawned.  Ghost threads spawned ad-hoc by
+  // agents will NOT be respawned — only keeper-managed threads survive.
+  const keepAliveThreadIds = new Set<number>();
+  try {
+    const allSettings = readAllKeeperSettings();
+    for (const s of allSettings) {
+      if (s.enabled && s.threadId > 0) keepAliveThreadIds.add(s.threadId);
+    }
+  } catch { /* best effort */ }
+
   const threads: GhostThreadInfo[] = [];
+  const STALE_CUTOFF_MS = 24 * 60 * 60 * 1000; // 24 hours
   try {
     for (const file of readdirSync(pidsDir)) {
       if (!file.endsWith(".pid")) continue;
       const threadId = Number(file.replace(".pid", ""));
       if (!Number.isFinite(threadId)) continue;
-      const parsed = parsePidFile(join(pidsDir, file));
-      if (!parsed || !alive(parsed.pid)) continue;
+      const fullPath = join(pidsDir, file);
+      const parsed = parsePidFile(fullPath);
+
+      // Clean up PID files for dead processes
+      if (!parsed || !alive(parsed.pid)) {
+        try { unlinkSync(fullPath); } catch { /* ignore */ }
+        continue;
+      }
+
+      // Only respawn threads that are in the keep-alive config
+      if (!keepAliveThreadIds.has(threadId)) {
+        log("INFO", `Skipping ghost thread ${threadId} — not in keep-alive config`);
+        continue;
+      }
+
       threads.push({
         threadId,
         name: parsed.name ?? threadNames.get(threadId) ?? `thread-${threadId}`,
