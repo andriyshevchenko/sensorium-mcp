@@ -147,7 +147,12 @@ const ACK_EXACT = new Set([
   "👍", "👌", "✅", "🙏",
 ]);
 
+// Matches a task verb at the START of a message (imperative form).
 const TASK_VERB_RE = /^(fix|implement|add|create|update|remove|delete|change|build|deploy|refactor|debug|test|write|configure|setup|set up|migrate|install|check|run|send|stop|start|restart|enable|disable|ship|push|publish|use|search|find|look|read|open|review|analyze|research|investigate)\b/;
+
+// Matches a task verb ANYWHERE in a short message — catches "let's test",
+// "please fix", "just run", "quickly check" etc. where the verb isn't first.
+const TASK_VERB_ANYWHERE_RE = /\b(fix|implement|add|create|update|remove|delete|change|build|deploy|refactor|debug|test|write|configure|setup|migrate|install|check|run|send|stop|start|restart|enable|disable|ship|push|publish|search|find|review|analyze|research|investigate)\b/;
 
 export type MessageIntent = "conversational" | "task";
 
@@ -159,8 +164,9 @@ export function classifyIntent(message: string): MessageIntent {
   // Tier 1: Exact-match acknowledgments
   if (ACK_EXACT.has(lower)) return "conversational";
 
-  // Tier 2: Very short messages (≤ 3 words) without imperative task verbs
-  if (wordCount <= 3 && !TASK_VERB_RE.test(lower)) return "conversational";
+  // Tier 2: Very short messages (≤ 3 words) without any task verbs.
+  // Check anywhere in the message — catches "let's test", "please fix", etc.
+  if (wordCount <= 3 && !TASK_VERB_RE.test(lower) && !TASK_VERB_ANYWHERE_RE.test(lower)) return "conversational";
 
   // Tier 3: Default to task (safe — includes full reminders)
   return "task";
