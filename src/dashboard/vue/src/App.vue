@@ -7,6 +7,7 @@ import MemoryNotesTab from './components/MemoryNotesTab.vue'
 import TemplatesTab from './components/TemplatesTab.vue'
 import SkillsTab from './components/SkillsTab.vue'
 import KeepAliveTab from './components/KeepAliveTab.vue'
+import SettingsTab from './components/SettingsTab.vue'
 
 const TOKEN_KEY = 'sensorium_token'
 
@@ -26,6 +27,7 @@ const tabs = [
   { id: 'templates', label: 'Templates' },
   { id: 'skills', label: 'Skills' },
   { id: 'keepalive', label: 'Keep-Alive' },
+  { id: 'settings', label: 'Settings' },
 ]
 
 const tabComponents = {
@@ -34,6 +36,7 @@ const tabComponents = {
   templates: TemplatesTab,
   skills: SkillsTab,
   keepalive: KeepAliveTab,
+  settings: SettingsTab,
 }
 
 const currentTabComponent = computed(() => tabComponents[currentTab.value as keyof typeof tabComponents])
