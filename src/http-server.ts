@@ -285,6 +285,12 @@ export function startHttpServer(
    }
   });
 
+  // Disable request timeout — voice transcription + analysis of long audio
+  // can easily exceed the Node.js default of 300 s (5 min).  The watcher
+  // already sets this to 0; the main server needs it too.
+  httpServer.requestTimeout = 0;
+  httpServer.headersTimeout = 0;
+
   httpServer.listen(httpPort, httpBind, () => {
     log.info(`Remote Copilot MCP server running on http://${httpBind}:${httpPort}/mcp`);
   });

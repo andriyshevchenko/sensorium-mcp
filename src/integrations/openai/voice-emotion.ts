@@ -52,7 +52,7 @@ export async function analyzeVoiceEmotion(
     serviceUrl: string,
     options?: { mimeType?: string; filename?: string; timeoutMs?: number },
 ): Promise<VoiceAnalysisResult | null> {
-    const { mimeType = "audio/ogg", filename = "voice.ogg", timeoutMs = 120_000 } = options ?? {};
+    const { mimeType = "audio/ogg", filename = "voice.ogg", timeoutMs = 600_000 } = options ?? {};
     const start = Date.now();
     const baseUrl = serviceUrl.replace(/\/+$/, "");
     log.verbose("voice-analysis", `Starting analysis (timeout: ${timeoutMs}ms, format: ${mimeType})...`);
