@@ -30,6 +30,15 @@ import {
 } from "./sessions.js";
 import type { CreateMcpServerFn } from "./types.js";
 
+process.on("uncaughtException", (err) => {
+  console.error(`[fatal] Uncaught exception: ${err.stack ?? err}`);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error(`[fatal] Unhandled rejection: ${reason instanceof Error ? reason.stack : reason}`);
+  process.exit(1);
+});
+
 export function startHttpServer(
   createMcpServerFn: CreateMcpServerFn,
   getMemoryDb: () => Database,

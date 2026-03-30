@@ -92,7 +92,7 @@ export async function processIncomingMessages(
       try { await telegram.setMessageReaction(telegramChatId, msg.message.message_id); } catch { /* non-critical */ }
       if (stored.length > 1) await new Promise<void>(r => setTimeout(r, 100));
     }
-  })();
+  })().catch(() => {});
 
   const contentBlocks: Array<TextBlock | ImageBlock> = [];
   let hasVoiceMessages = false;

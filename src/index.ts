@@ -7,6 +7,15 @@
  * creation and tool dispatch logic lives in ./server/factory.ts.
  */
 
+process.on("uncaughtException", (err) => {
+  console.error(`[fatal] Uncaught exception: ${err.stack ?? err}`);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error(`[fatal] Unhandled rejection: ${reason instanceof Error ? reason.stack : reason}`);
+  process.exit(1);
+});
+
 // --watcher mode: update watcher + standby MCP server (replaces PowerShell script).
 // Checked before heavy initialisation so the watcher stays self-contained.
 if (process.argv.includes("--watcher")) {
