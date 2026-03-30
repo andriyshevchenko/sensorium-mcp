@@ -296,7 +296,7 @@ export async function startDispatcher(
                 await new Promise<void>((r) => setTimeout(r, INTER_POLL_DELAY_MS));
             }
         };
-        void loop();
+        void loop().catch((err) => log.error(`[dispatcher] Poll loop crashed: ${errorMessage(err)}`));
     };
 
     if (isPoller) {

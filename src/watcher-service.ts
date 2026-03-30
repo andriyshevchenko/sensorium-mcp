@@ -10,6 +10,15 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, isInitializeRequest, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { startClaudeKeeper, type KeeperHandle } from "./claude-keeper.js";
 
+process.on("uncaughtException", (err) => {
+  console.error(`[fatal] Uncaught exception: ${err.stack ?? err}`);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error(`[fatal] Unhandled rejection: ${reason instanceof Error ? reason.stack : reason}`);
+  process.exit(1);
+});
+
 // Configuration ---------------------------------------------------------------
 const CONFIG = {
   mode: process.env.WATCHER_MODE || "development",
@@ -39,6 +48,8 @@ let managedChild: ChildProcess | null = null;
 let httpSrv: HttpServer | null = null;
 let updateInProgress = false;
 const keepers = new Map<number, { handle: KeeperHandle; settings: KeeperSettings }>();
+let keeperPollerHandle: ReturnType<typeof setInterval> | null = null;
+let sessionSweeperHandle: ReturnType<typeof setInterval> | null = null;
 
 // Helpers ---------------------------------------------------------------------
 function log(level: "INFO" | "WARN" | "ERROR", msg: unknown): void {
@@ -561,7 +572,7 @@ async function applyKeeperSettings(): Promise<void> {
 }
 
 function startKeeperPoller(): void {
-  setInterval(() => {
+  keeperPollerHandle = setInterval(() => {
     void applyKeeperSettings().catch((err) => log("ERROR", `Keeper settings poll failed: ${err}`));
   }, KEEPER_SETTINGS_POLL_MS);
 }
@@ -644,7 +655,7 @@ function startHttpMcp(port: number): void {
   // timeout caused sessions to expire before the first update arrived,
   // making await_server_ready fail with "Bad Request".
   const SESSION_TTL_MS = 86_400_000;
-  setInterval(() => {
+  sessionSweeperHandle = setInterval(() => {
     for (const [sid, ts] of sessionCreated) {
       if (Date.now() - ts > SESSION_TTL_MS) {
         transports.get(sid)?.close?.();
@@ -743,6 +754,8 @@ function releaseLock(): void {
 export async function startWatcherService(): Promise<void> {
   if (!acquireLock()) { process.exit(1); return; }
   const shutdown = async () => {
+    if (keeperPollerHandle) clearInterval(keeperPollerHandle);
+    if (sessionSweeperHandle) clearInterval(sessionSweeperHandle);
     log("INFO", "Shutting down watcher...");
     for (const [, entry] of keepers) { await entry.handle.stop(); }
     keepers.clear();
