@@ -27,8 +27,10 @@ import {
   resolveMcpConfigPath,
   resolveClaudePath,
   resolveCopilotPath,
+  resolveCodexPath,
   spawnAgentProcess,
   spawnCopilotProcess,
+  spawnCodexProcess,
   cleanupStalePidFiles,
 } from "./thread-lifecycle.js";
 
@@ -106,7 +108,7 @@ export async function handleStartThread(
   }
 
   const agentType: AgentType =
-    rawAgentType === "copilot" || rawAgentType === "claude" || rawAgentType === "cursor"
+    rawAgentType === "copilot" || rawAgentType === "claude" || rawAgentType === "cursor" || rawAgentType === "codex"
       ? rawAgentType
       : "claude";
 
@@ -123,6 +125,15 @@ export async function handleStartThread(
       );
     }
     cliPath = copilotPath;
+  } else if (agentType === "codex") {
+    const codexPath = resolveCodexPath();
+    if (!codexPath) {
+      return errorResult(
+        "Error: 'codex' CLI is not installed or not on PATH. " +
+        "Set CODEX_CLI_CMD env var or ensure 'codex' is on PATH.",
+      );
+    }
+    cliPath = codexPath;
   } else {
     const claudePath = resolveClaudePath();
     if (!claudePath) {
@@ -199,6 +210,8 @@ export async function handleStartThread(
   ensureDirs();
   const result = agentType === "copilot"
     ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId)
+    : agentType === "codex"
+    ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId)
     : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 

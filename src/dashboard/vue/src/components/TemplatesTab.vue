@@ -377,7 +377,7 @@ onMounted(loadAll)
       </div>
       <div class="flex gap-2 mb-4">
         <button
-          v-for="agent in ['copilot', 'claude', 'cursor']"
+          v-for="agent in ['copilot', 'claude', 'cursor', 'codex']"
           :key="agent"
           @click="activeAgentTab = agent"
           :class="['px-4 py-2 rounded-xl text-sm font-medium transition', activeAgentTab === agent ? 'bg-accent text-white' : 'bg-card hover:bg-cardHover border border-gray-700 text-textSecondary hover:text-textPrimary']"

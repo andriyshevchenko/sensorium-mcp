@@ -11,7 +11,7 @@ import { getEffectiveAgentType, type AgentType } from "../../config.js";
 import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "../presets.js";
 import { readBody, type RouteHandler, type RouteArgs } from "./types.js";
 
-const AGENT_TYPES: AgentType[] = ["copilot", "claude", "cursor"];
+const AGENT_TYPES: AgentType[] = ["copilot", "claude", "cursor", "codex"];
 
 // ─── GET /api/templates — list reminders template + agent-specific overrides ─
 

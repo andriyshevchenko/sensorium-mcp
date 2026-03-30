@@ -25,6 +25,9 @@ You coordinate work via MCP tools. For complex tasks, break them into sequential
   cursor: `For tasks, load relevant skill via get_skill first.
 You coordinate work via MCP tools. Prefer targeted, minimal edits. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
+  codex: `For tasks, load relevant skill via get_skill first.
+threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+`,
 };
 
 export function getDefaultRemindersTemplate(agentType: AgentType): string {
