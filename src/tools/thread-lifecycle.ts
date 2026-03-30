@@ -568,13 +568,14 @@ export function spawnCodexProcess(
   const prompt = `Start remote session with sensorium. Thread name = '${name}'`;
   const codexModel = process.env.CODEX_MODEL || DEFAULT_CODEX_MODEL;
 
+  // Pass prompt via stdin ("-") to avoid shell quoting issues with multi-word prompts.
   const cliArgs = [
     "exec",
     "--dangerously-bypass-approvals-and-sandbox",
     "--skip-git-repo-check",
     "-m", codexModel,
     "--json",
-    prompt,
+    "-",
   ];
 
   if (workingDirectory) {
@@ -596,7 +597,7 @@ export function spawnCodexProcess(
   try {
     child = spawn(codexPath, cliArgs, {
       detached: true,
-      stdio: ["ignore", logFd, logFd],
+      stdio: ["pipe", logFd, logFd],
       shell: needsShell,
       windowsHide: true,
       env: spawnEnv,
@@ -606,6 +607,12 @@ export function spawnCodexProcess(
     closeSync(logFd);
     return { error: `Failed to spawn Codex process: ${errorMessage(err)}` };
   }
+
+  // Write prompt to stdin and close so codex receives it and stdin reaches EOF
+  try {
+    child.stdin?.write(prompt + "\n");
+    child.stdin?.end();
+  } catch { /* ignore — process may have already exited */ }
 
   closeSync(logFd);
 
