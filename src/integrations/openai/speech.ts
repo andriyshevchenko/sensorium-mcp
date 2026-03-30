@@ -64,7 +64,8 @@ export async function transcribeAudio(
 ): Promise<string> {
     // Telegram stores voice as .oga (OGG Opus). Whisper accepts .ogg but
     // not .oga, so we hardcode the extension.
-    const signal = AbortSignal.timeout(60_000);
+    // 10 min — long voice messages (8+ min) need proportionally longer.
+    const signal = AbortSignal.timeout(600_000);
     try {
         const formData = new FormData();
         formData.append(
