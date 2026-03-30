@@ -337,6 +337,12 @@ function createMcpServer(
 
   // ── Tool implementations ──────────────────────────────────────────────────
 
+  // Tools to skip when recording tool-call episodes (noisy/frequent).
+  const SKIP_TOOLS: ReadonlySet<string> = new Set([
+    "wait_for_instructions", "remote_copilot_wait_for_instructions",
+    "memory_search", "memory_status", "get_skill", "search_skills",
+  ]);
+
   // ToolResult intentionally omits `[key: string]: unknown` for internal type
   // safety; assert structural compatibility at the SDK boundary.
   // @ts-expect-error — ToolResult is structurally compatible but lacks index signature
@@ -368,10 +374,6 @@ function createMcpServer(
     // ── Tool-call episode capture ────────────────────────────────────────
     // Record significant tool calls as episodes for memory consolidation.
     // Skip noisy/frequent tools to avoid flooding the episode store.
-    const SKIP_TOOLS = new Set([
-      "wait_for_instructions", "remote_copilot_wait_for_instructions",
-      "memory_search", "memory_status", "get_skill", "search_skills",
-    ]);
     if (currentThreadId !== undefined && !SKIP_TOOLS.has(name)) {
       try {
         const db = getMemoryDb();
