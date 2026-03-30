@@ -199,8 +199,8 @@ const COPILOT_HOME_DIR = join(BASE_DIR, "copilot-home");
 const COPILOT_MCP_CONFIG_FILENAME = "mcp-config.json";
 const COPILOT_INSTRUCTIONS_FILENAME = "copilot-instructions.md";
 const COPILOT_SYSTEM_PROMPT =
-  "You are a remote copilot agent. " +
-  "Start remote session with sensorium.";
+  "You are a remote Copilot agent. " +
+  "Start remote session with sensorium. Pass agentType='copilot' to start_session.";
 const DEFAULT_COPILOT_MODEL = "claude-opus-4.6";
 
 function writeCopilotHomeFiles(copilotHome: string, port: number, secret: string | null): void {
@@ -223,8 +223,8 @@ const CODEX_HOME_DIR = join(BASE_DIR, "codex-home");
 const CODEX_CONFIG_FILENAME = "config.toml";
 const CODEX_INSTRUCTIONS_FILENAME = "AGENTS.md";
 const CODEX_SYSTEM_PROMPT =
-  "You are a remote copilot agent. " +
-  "Start remote session with sensorium.";
+  "You are a remote Codex agent. " +
+  "Start remote session with sensorium. Pass agentType='codex' to start_session.";
 const DEFAULT_CODEX_MODEL = "o3";
 
 /**
@@ -238,7 +238,14 @@ export function resolveCodexPath(): string | null {
     const cmd = process.platform === "win32" ? "where" : "which";
     const result = spawnSync(cmd, ["codex"], { timeout: 5000, encoding: "utf-8" });
     if (result.status === 0 && result.stdout) {
-      return result.stdout.trim().split(/\r?\n/)[0];
+      const candidates = result.stdout.trim().split(/\r?\n/);
+      // On Windows, prefer codex.cmd over the bare bash shim so that needsShell
+      // is correctly set and stdio fd inheritance works (same pattern as claude.cmd).
+      if (process.platform === "win32") {
+        const cmdVariant = candidates.find(p => /\.cmd$/i.test(p));
+        if (cmdVariant) return cmdVariant;
+      }
+      return candidates[0];
     }
   } catch { /* not found */ }
   return null;
