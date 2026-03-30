@@ -595,15 +595,19 @@ export function spawnCodexProcess(
       // On Windows, codex.cmd runs via Volta which spawns child processes that break
       // file descriptor inheritance (node→cmd→volta→cmd→codex). Use shell-level
       // output redirection (>>) so all descendant output lands in the log file.
+      // Build the command line verbatim — Node.js would otherwise wrap the shellCmd
+      // arg in extra double-quotes (it contains spaces), which breaks cmd.exe's
+      // parsing of the >> redirection operator. windowsVerbatimArguments bypasses that.
       const quotedPath = codexPath.includes(" ") ? `"${codexPath}"` : codexPath;
       const quotedArgs = cliArgs.map(a => /[ &|<>^"()]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a).join(" ");
-      const quotedLog = `"${logFilePath}"`;
+      const quotedLog = logFilePath.includes(" ") ? `"${logFilePath}"` : logFilePath;
       const shellCmd = `${quotedPath} ${quotedArgs} >> ${quotedLog} 2>&1`;
       child = spawn("cmd.exe", ["/c", shellCmd], {
         detached: true,
         stdio: ["pipe", "ignore", "ignore"],
         shell: false,
         windowsHide: true,
+        windowsVerbatimArguments: true,
         env: spawnEnv,
         cwd: workingDirectory || undefined,
       });
