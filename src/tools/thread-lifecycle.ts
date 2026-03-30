@@ -377,15 +377,23 @@ export function spawnCopilotProcess(
   const prompt = `Start remote session with sensorium. Thread name = '${name}'`;
   const copilotModel = process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL;
 
-  const cliArgs = ["-p", prompt, "--allow-all-tools", "--model", copilotModel];
+  const cliArgs = [
+    "-p", prompt,
+    "--allow-all-tools",
+    "--model", copilotModel,
+    "--no-alt-screen",
+    "--autopilot",
+  ];
 
   const spawnEnv: NodeJS.ProcessEnv = { ...process.env, COPILOT_HOME: COPILOT_HOME_DIR };
   if (memorySourceThreadId !== undefined) {
     spawnEnv.MEMORY_SOURCE_THREAD_ID = String(memorySourceThreadId);
   }
 
-  // On Windows, always use shell for copilot CLI
-  const needsShell = process.platform === "win32";
+  // Use shell only when the resolved path is a Windows batch script (.cmd/.bat).
+  // copilot.exe is a direct executable and does not need shell wrapping — shell
+  // wrapping on Windows breaks stdio fd inheritance causing empty log files.
+  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(copilotPath);
 
   let child;
   try {
