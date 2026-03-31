@@ -275,151 +275,26 @@ function parsePidFile(filePath: string): { pid: number; name?: string } | null {
 }
 
 /**
- * Read active ghost thread info from PID files before killing the MCP server.
- * Only returns threads whose processes are currently alive AND were started
- * recently (within 24h).  Stale PID files from old sessions are cleaned up.
+ * Clean up PID files for dead processes.
  */
-function readGhostThreads(): GhostThreadInfo[] {
+function readGhostThreads(): void {
   const pidsDir = join(CONFIG.dataDir, "pids");
-  // Read session store for name lookups (reverse map: threadId → name)
-  const sessionStorePath = join(homedir(), ".remote-copilot-mcp-sessions.json");
-  const threadNames = new Map<number, string>();
-  try {
-    const sessions = JSON.parse(readFileSync(sessionStorePath, "utf-8")) as Record<string, Record<string, number>>;
-    for (const chatTopics of Object.values(sessions)) {
-      for (const [name, tid] of Object.entries(chatTopics)) {
-        threadNames.set(tid, name);
-      }
-    }
-  } catch { /* no sessions file */ }
-
-  // Collect threads from keep-alive config as the authoritative set of
-  // threads that SHOULD be respawned.  Ghost threads spawned ad-hoc by
-  // agents will NOT be respawned — only keeper-managed threads survive.
-  const keepAliveThreadIds = new Set<number>();
-  try {
-    const allSettings = readAllKeeperSettings();
-    for (const s of allSettings) {
-      if (s.enabled && s.threadId > 0) keepAliveThreadIds.add(s.threadId);
-    }
-  } catch { /* best effort */ }
-
-  const threads: GhostThreadInfo[] = [];
-  const STALE_CUTOFF_MS = 24 * 60 * 60 * 1000; // 24 hours
   try {
     for (const file of readdirSync(pidsDir)) {
       if (!file.endsWith(".pid")) continue;
-      const threadId = Number(file.replace(".pid", ""));
-      if (!Number.isFinite(threadId)) continue;
       const fullPath = join(pidsDir, file);
       const parsed = parsePidFile(fullPath);
-
-      // Clean up PID files for dead processes
       if (!parsed || !alive(parsed.pid)) {
         try { unlinkSync(fullPath); } catch { /* ignore */ }
-        continue;
       }
-
-      // Only respawn threads that are in the keep-alive config
-      if (!keepAliveThreadIds.has(threadId)) {
-        log("INFO", `Skipping ghost thread ${threadId} — not in keep-alive config`);
-        continue;
-      }
-
-      threads.push({
-        threadId,
-        name: parsed.name ?? threadNames.get(threadId) ?? `thread-${threadId}`,
-      });
     }
   } catch { /* pids dir may not exist */ }
-  return threads;
 }
 
-/**
- * Re-spawn ghost threads after a server update.
- * Each thread gets a fresh Claude CLI pointed at the updated MCP server,
- * with sensorium-watcher included in the config for future update resilience.
- */
-async function respawnGhostThreads(threads: GhostThreadInfo[]): Promise<void> {
-  if (threads.length === 0) return;
-
-  // Resolve base MCP config (same candidates as thread-lifecycle.ts)
-  const candidates = [
-    process.env.CLAUDE_MCP_CONFIG,
-    join(homedir(), ".claude", "settings.json"),
-    join(homedir(), ".claude", "mcp_config.json"),
-    join(homedir(), ".claude", ".mcp.json"),
-  ].filter(Boolean) as string[];
-  const baseConfigPath = candidates.find((p) => existsSync(p));
-  if (!baseConfigPath) {
-    log("WARN", "Cannot re-spawn ghost threads: no MCP config found");
-    return;
-  }
-
-  // Generate a merged config that includes sensorium-watcher
-  const mergedConfigPath = join(CONFIG.dataDir, "ghost-respawn-mcp-config.json");
-  try {
-    const raw = readFileSync(baseConfigPath, "utf-8");
-    const config = JSON.parse(raw) as Record<string, unknown>;
-    const servers = (config.mcpServers ?? {}) as Record<string, unknown>;
-    if (!servers["sensorium-watcher"]) {
-      servers["sensorium-watcher"] = {
-        type: "http",
-        url: `http://127.0.0.1:${CONFIG.httpPort}/mcp`,
-      };
-      config.mcpServers = servers;
-    }
-    writeFileSync(mergedConfigPath, JSON.stringify(config, null, 2), "utf-8");
-  } catch (err) {
-    log("WARN", `Failed to generate merged MCP config for re-spawn: ${err}`);
-    return;
-  }
-
-  const claudeCmd = CONFIG.claudeCmd;
-  const useShell = process.platform === "win32";
-  const logsDir = join(CONFIG.dataDir, "logs");
-  const pidsDir = join(CONFIG.dataDir, "pids");
-  mkdirSync(logsDir, { recursive: true });
-  mkdirSync(pidsDir, { recursive: true });
-
-  for (const thread of threads) {
-    // Skip threads managed by a keeper — the keeper handles its own restart
-    if (keepers.has(thread.threadId)) continue;
-
-    log("INFO", `Re-spawning ghost thread ${thread.threadId} ("${thread.name}")`);
-
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const safeName = thread.name.replaceAll(/[^a-zA-Z0-9_-]/g, "_");
-    const logFile = join(logsDir, `${safeName}_${thread.threadId}_${dateStr}.json`);
-    const prompt = `Start remote session with sensorium. Thread name = '${thread.name}'`;
-
-    try {
-      const logFd = openSync(logFile, "a");
-      const child = spawn(claudeCmd, [
-        "--verbose",
-        "--dangerously-skip-permissions",
-        "--mcp-config", mergedConfigPath,
-        "-p", prompt,
-        "--output-format", "stream-json",
-        "--include-partial-messages",
-      ], {
-        detached: true,
-        stdio: ["ignore", logFd, logFd],
-        shell: useShell,
-        windowsHide: true,
-      });
-      closeSync(logFd);
-
-      if (child.pid) {
-        const pidFile = join(pidsDir, `${thread.threadId}.pid`);
-        writeFileSync(pidFile, JSON.stringify({ pid: child.pid, name: thread.name, startedAt: Date.now() }), "utf-8");
-        child.unref();
-        log("INFO", `Re-spawned ghost thread ${thread.threadId} (PID ${child.pid})`);
-      }
-    } catch (err) {
-      log("ERROR", `Failed to re-spawn ghost thread ${thread.threadId}: ${err}`);
-    }
-  }
+/** @deprecated Keeper system handles restarts — retained as no-op. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function respawnGhostThreads(_threads: GhostThreadInfo[]): Promise<void> {
+  // No-op: keepers handle their own restart via scheduleRestart() and applyKeeperSettings().
 }
 async function getRemoteVersion(): Promise<string | null> {
   try {
@@ -452,14 +327,8 @@ async function checkAndUpdate(): Promise<void> {
     writeMaintenanceFlag(remote);
     log("INFO", `Grace period ${CONFIG.gracePeriodSeconds}s...`);
     await sleep(CONFIG.gracePeriodSeconds * 1000);
-    // Save active ghost thread info BEFORE killing the server.
-    // taskkill /F /T kills the entire process tree including ghost threads,
-    // so we need to re-spawn them after the update.
-    const ghostThreads = readGhostThreads();
-    if (ghostThreads.length > 0) {
-      const desc = ghostThreads.map(t => String(t.threadId) + '("' + t.name + '")').join(", ");
-      log("INFO", `Saved ${ghostThreads.length} ghost thread(s) for re-spawn after update: ${desc}`);
-    }
+    // Clean up stale PID files before killing the server
+    readGhostThreads();
     await stopMcpServer();
     clearNpxCache();
     setLocalVersion(remote);
@@ -467,12 +336,9 @@ async function checkAndUpdate(): Promise<void> {
     await waitForServerReady();
     await killStale();
     removeMaintenanceFlag();
-    // Re-spawn ghost threads that were killed during the update
-    if (ghostThreads.length > 0) {
-      log("INFO", "Re-spawning ghost threads...");
-      await respawnGhostThreads(ghostThreads);
-    }
-    await notifyOperator(`\u2705 Watcher: update to v${remote} complete. Server ready.` + (ghostThreads.length > 0 ? ` Re-spawned ${ghostThreads.length} ghost thread(s).` : ""));
+    // Keepers detect their agents died and restart them naturally
+    // via scheduleRestart() and the applyKeeperSettings() poller.
+    await notifyOperator(`\u2705 Watcher: update to v${remote} complete. Server ready.`);
     log("INFO", `Update to v${remote} complete.`);
   } finally {
     updateInProgress = false;
