@@ -19,6 +19,8 @@ import type { TelegramClient } from "../telegram.js";
 import type { ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
+import { registerThread } from "../data/memory/thread-registry.js";
+import { initMemoryDb } from "../data/memory/schema.js";
 import {
   findAliveThread,
   isThreadRunning,
@@ -230,11 +232,23 @@ export async function handleStartThread(
   // ── 4. Dormant (topic existed, process dead) → restart ────────────────
   ensureDirs();
   const result = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex"
-    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, agentType)
+    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, agentType, threadType as 'worker' | 'branch' | undefined)
     : agentType === "codex" || agentType === "openai_codex"
-    ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId)
-    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId, targetMemoryThreadId);
+    ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, threadType as 'worker' | 'branch' | undefined)
+    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId, targetMemoryThreadId, threadType as 'worker' | 'branch' | undefined);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
+
+  // Register thread in the memory registry (best-effort)
+  try {
+    const db = initMemoryDb();
+    registerThread(db, {
+      threadId,
+      name,
+      type: (threadType === 'worker' || threadType === 'branch') ? threadType : 'worker',
+      rootThreadId: memorySourceThreadId ?? undefined,
+      badge: threadType || 'worker',
+    });
+  } catch { /* registration is best-effort */ }
 
   const status = topicExisted ? "restarted" : "created";
 
