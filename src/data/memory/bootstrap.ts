@@ -21,6 +21,7 @@ import { rowToProcedure } from "./procedures.js";
 import { getVoiceBaseline } from "./voice-sig.js";
 import { parseJsonArray } from "./utils.js";
 import { getNarrativesForBootstrap } from "./narrative.js";
+import { getThread } from "./thread-registry.js";
 import { getGuardrailsEnabled, getBootstrapMessageCount, resolveKnowledgeThreadId } from "../../config.js";
 
 /** Maximum characters for the Recent Conversation section before truncation. */
@@ -134,7 +135,9 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   const knowledgeThreadId = resolveKnowledgeThreadId(queryThreadId);
   const status = getMemoryStatus(db, queryThreadId);
   const bootstrapMessageCount = getBootstrapMessageCount();
-  const recentEpisodesDesc = getRecentEpisodes(db, queryThreadId, bootstrapMessageCount);
+  const threadEntry = getThread(db, queryThreadId);
+  const sessionResetAt = threadEntry?.sessionResetAt ?? undefined;
+  const recentEpisodesDesc = getRecentEpisodes(db, queryThreadId, bootstrapMessageCount, sessionResetAt ? { since: sessionResetAt } : undefined);
   const recentEpisodes = [...recentEpisodesDesc].reverse(); // chronological order (oldest first)
   const topNotes = getTopSemanticNotes(db, { limit: 20, sortBy: "access_count", threadId: knowledgeThreadId });
   // Preferences first, then other notes
