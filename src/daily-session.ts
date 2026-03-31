@@ -53,9 +53,12 @@ export async function rotateDailySession(
   try {
     // Capture current session_reset_at before overwriting
     const thread = getThread(db, rootThreadId);
-    if (thread) {
-      result.previousSessionResetAt = thread.sessionResetAt;
+    if (!thread) {
+      result.error = `Thread ${rootThreadId} not found`;
+      log.error(result.error);
+      return result;
     }
+    result.previousSessionResetAt = thread.sessionResetAt;
 
     // 1. Run consolidation on the root thread (distill episodes into knowledge)
     try {
@@ -78,10 +81,12 @@ export async function rotateDailySession(
       log.warn(`Narrative generation failed during daily rotation for root ${rootThreadId}: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // 3. Reset the daily session timestamp
-    resetDailySession(db, rootThreadId);
-    result.newSessionResetAt = new Date().toISOString();
-    log.info(`Daily session reset for root ${rootThreadId} at ${result.newSessionResetAt}`);
+    // 3. Reset the daily session timestamp (only if consolidation succeeded)
+    if (result.consolidated) {
+      resetDailySession(db, rootThreadId);
+      result.newSessionResetAt = new Date().toISOString();
+      log.info(`Daily session reset for root ${rootThreadId} at ${result.newSessionResetAt}`);
+    }
 
   } catch (err) {
     result.error = err instanceof Error ? err.message : String(err);
@@ -93,11 +98,30 @@ export async function rotateDailySession(
 
 // ─── Rotate all ──────────────────────────────────────────────────────────────
 
+let _rotating = false;
+let _lastRotationDate: string | null = null;
+
 /**
  * Check and rotate all root threads that have keepAlive enabled.
  * Called from the watcher service on a schedule (e.g., 4 AM daily).
  */
 export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
+  const todayDate = new Date().toISOString().slice(0, 10);
+
+  // Prevent running twice in the same day
+  if (_lastRotationDate === todayDate) {
+    log.info(`Daily rotation already completed for ${todayDate}, skipping`);
+    return [];
+  }
+
+  // Concurrency guard — prevent overlapping executions
+  if (_rotating) {
+    log.warn("rotateAllDailySessions already in progress, skipping");
+    return [];
+  }
+  _rotating = true;
+
+  try {
   const db = initMemoryDb();
   const roots = getRootThreads(db);
   const results: DailyRotationResult[] = [];
@@ -119,7 +143,11 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
     results.push(result);
   }
 
+  _lastRotationDate = todayDate;
   return results;
+  } finally {
+    _rotating = false;
+  }
 }
 
 // ─── Query helper ────────────────────────────────────────────────────────────

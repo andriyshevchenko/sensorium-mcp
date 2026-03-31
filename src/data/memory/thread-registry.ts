@@ -68,7 +68,7 @@ export function registerThread(
 ): ThreadRegistryEntry {
   const now = nowISO();
   db.prepare(
-    `INSERT INTO thread_registry
+    `INSERT OR IGNORE INTO thread_registry
        (thread_id, name, type, root_thread_id, badge, client, max_retries, cooldown_ms, keep_alive, created_at, last_active_at, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
   ).run(
@@ -85,7 +85,11 @@ export function registerThread(
     now,
   );
 
-  return getThread(db, entry.threadId)!;
+  const result = getThread(db, entry.threadId);
+  if (!result) {
+    throw new Error(`registerThread: failed to retrieve thread after insert (threadId=${entry.threadId})`);
+  }
+  return result;
 }
 
 export function getThread(db: Database, threadId: number): ThreadRegistryEntry | null {

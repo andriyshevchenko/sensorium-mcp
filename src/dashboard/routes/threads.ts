@@ -32,6 +32,7 @@ import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./ty
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const VALID_STATUSES = ["active", "archived", "expired"] as const;
+const VALID_CLIENTS = ["claude", "copilot", "codex"] as const;
 
 /** Extract valid update fields from a request body. Returns an error string on validation failure. */
 function buildThreadUpdates(
@@ -46,9 +47,24 @@ function buildThreadUpdates(
         updates.status = body.status as ThreadRegistryEntry["status"];
     }
     if (typeof body.keepAlive === "boolean") updates.keepAlive = body.keepAlive;
-    if (typeof body.client === "string") updates.client = body.client;
-    if (typeof body.maxRetries === "number") updates.maxRetries = body.maxRetries;
-    if (typeof body.cooldownMs === "number") updates.cooldownMs = body.cooldownMs;
+    if (typeof body.client === "string") {
+        if (!(VALID_CLIENTS as readonly string[]).includes(body.client)) {
+            return `client must be one of: ${VALID_CLIENTS.join(", ")}`;
+        }
+        updates.client = body.client;
+    }
+    if (typeof body.maxRetries === "number") {
+        if (!Number.isFinite(body.maxRetries) || !Number.isInteger(body.maxRetries) || body.maxRetries < 0) {
+            return "maxRetries must be a non-negative integer";
+        }
+        updates.maxRetries = body.maxRetries;
+    }
+    if (typeof body.cooldownMs === "number") {
+        if (!Number.isFinite(body.cooldownMs) || !Number.isInteger(body.cooldownMs) || body.cooldownMs < 0) {
+            return "cooldownMs must be a non-negative integer";
+        }
+        updates.cooldownMs = body.cooldownMs;
+    }
     if (typeof body.badge === "string") updates.badge = body.badge;
     return updates;
 }
@@ -89,8 +105,8 @@ export const handleCreateThread: RouteHandler = ({ req, json, db }) => {
             }
 
             const threadId = body.threadId;
-            if (typeof threadId !== "number" || !Number.isFinite(threadId) || threadId <= 0) {
-                json({ error: "threadId must be a positive number" }, 400);
+            if (typeof threadId !== "number" || !Number.isFinite(threadId) || !Number.isInteger(threadId) || threadId <= 0) {
+                json({ error: "threadId must be a positive integer" }, 400);
                 return;
             }
 
@@ -120,7 +136,7 @@ export const handleCreateThread: RouteHandler = ({ req, json, db }) => {
                 type: type as ThreadRegistryEntry["type"],
                 rootThreadId: typeof body.rootThreadId === "number" ? body.rootThreadId : undefined,
                 badge: typeof body.badge === "string" ? body.badge : undefined,
-                client: typeof body.client === "string" ? body.client : undefined,
+                client: typeof body.client === "string" && (VALID_CLIENTS as readonly string[]).includes(body.client) ? body.client : undefined,
                 keepAlive: typeof body.keepAlive === "boolean" ? body.keepAlive : undefined,
             });
 
