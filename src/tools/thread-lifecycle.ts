@@ -295,6 +295,28 @@ export function resolveCodexNodeExe(): { nodeExe: string; codexJs: string } | nu
   return null;
 }
 
+/**
+ * Resolve the native codex.exe binary installed by Volta.
+ * Bypasses the codex.js Node.js wrapper and the entire Volta shim chain.
+ * Returns null if the binary cannot be found.
+ */
+export function resolveCodexExe(): string | null {
+  if (process.platform !== "win32") return null;
+  // Allow operator override via env var
+  if (process.env.CODEX_EXE) return process.env.CODEX_EXE;
+  try {
+    const localAppData = process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local");
+    const nativeExe = join(
+      localAppData, "Volta", "tools", "image", "packages", "@openai", "codex",
+      "node_modules", "@openai", "codex",
+      "node_modules", "@openai", "codex-win32-x64",
+      "vendor", "x86_64-pc-windows-msvc", "codex", "codex.exe",
+    );
+    if (existsSync(nativeExe)) return nativeExe;
+  } catch { /* ignore */ }
+  return null;
+}
+
 /** Path to the optional user-maintained base TOML config for Codex MCP servers. */
 const CODEX_BASE_CONFIG_PATH = join(BASE_DIR, "codex-base.toml");
 
@@ -498,7 +520,6 @@ export function spawnCopilotProcess(
     "-p", prompt,
     "--allow-all-tools",
     "--model", copilotModel,
-    "--no-alt-screen",
     "--autopilot",
   ];
 
@@ -597,16 +618,27 @@ export function spawnCodexProcess(
     return { error: "MCP_HTTP_PORT env var is not set or invalid. Codex threads require HTTP transport." };
   }
   const httpSecret = process.env.MCP_HTTP_SECRET || null;
-
-  writeCodexHomeFiles(CODEX_HOME_DIR, httpPort, httpSecret);
+  const httpMcpUrl = `http://127.0.0.1:${httpPort}/mcp`;
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const logFileName = `${safeName}_${threadId}_${dateStr}.log`;
+  const logFileName = `${safeName}_${threadId}_${dateStr}.jsonl`;
   const logFilePath = join(LOGS_DIR, logFileName);
 
-  const prompt = `Start remote session with sensorium. Thread name = '${name}'`;
+  const prompt =
+    `You are a remote Codex agent connected to the Sensorium MCP framework.\n` +
+    `Your first and only action right now: call the start_session MCP tool with name='${name}', agentType='codex'.\n` +
+    `After start_session returns a threadId, call remote_copilot_wait_for_instructions with that threadId.\n` +
+    `Do NOT explain, summarize, or ask questions. Just call the tools immediately.`;
+
   const codexModel = process.env.CODEX_MODEL || DEFAULT_CODEX_MODEL;
+
+  // Inject MCP server config via -c flags (avoids CODEX_HOME override which breaks auth).
+  // Codex uses ~/.codex for auth — we must not redirect CODEX_HOME away from it.
+  const mcpConfigArgs: string[] = [
+    "-c", `mcp_servers.sensorium-mcp.url="${httpMcpUrl}"`,
+    ...(httpSecret ? ["-c", `mcp_servers.sensorium-mcp.bearer_token_env_var="SENSORIUM_MCP_SECRET"`] : []),
+  ];
 
   // Pass prompt via stdin ("-") to avoid shell quoting issues with multi-word prompts.
   const cliArgs = [
@@ -615,6 +647,7 @@ export function spawnCodexProcess(
     "--skip-git-repo-check",
     ...(codexModel ? ["-m", codexModel] : []),
     "--json",
+    ...mcpConfigArgs,
     "-",
   ];
 
@@ -622,7 +655,7 @@ export function spawnCodexProcess(
     cliArgs.splice(1, 0, "-C", workingDirectory);
   }
 
-  const spawnEnv: NodeJS.ProcessEnv = { ...process.env, CODEX_HOME: CODEX_HOME_DIR };
+  const spawnEnv: NodeJS.ProcessEnv = { ...process.env };
   if (memorySourceThreadId !== undefined) {
     spawnEnv.MEMORY_SOURCE_THREAD_ID = String(memorySourceThreadId);
   }
@@ -634,16 +667,25 @@ export function spawnCodexProcess(
   const logFd = openSync(logFilePath, "a");
   let child;
   try {
-    // On Windows, codex.cmd runs via Volta (cmd→volta→cmd→node), which does NOT
-    // forward inherited file handles to grandchild processes. Bypass Volta by
-    // spawning node.exe + codex.js directly so fd inheritance works.
-    const nodeExeResult = process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath)
+    // Preferred: spawn the native codex.exe binary directly (no Volta wrapper chain).
+    // Fallback: node.exe + codex.js (also bypasses Volta for fd inheritance).
+    // Last resort: spawn codexPath directly (works on Mac/Linux).
+    const nativeExe = resolveCodexExe();
+    const nodeExeResult = !nativeExe && process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath)
       ? resolveCodexNodeExe()
       : null;
 
-    if (nodeExeResult) {
+    if (nativeExe) {
+      child = spawn(nativeExe, cliArgs, {
+        detached: true,
+        stdio: ["pipe", logFd, logFd],
+        shell: false,
+        windowsHide: true,
+        env: spawnEnv,
+        cwd: workingDirectory || undefined,
+      });
+    } else if (nodeExeResult) {
       const { nodeExe, codexJs } = nodeExeResult;
-      // Replace the bare "-" prompt arg with the actual script path as first arg to node
       const nodeArgs = [codexJs, ...cliArgs];
       child = spawn(nodeExe, nodeArgs, {
         detached: true,
