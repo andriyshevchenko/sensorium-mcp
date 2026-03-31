@@ -371,6 +371,10 @@ Rules:
 
     if (!dryRun) {
       for (const note of extractedNotes) {
+        if (typeof note.content !== 'string' || note.content.length === 0 || note.content.length >= 2000) {
+          log.warn(`[consolidation] Skipping note with invalid content (type=${typeof note.content}, len=${typeof note.content === 'string' ? note.content.length : 'N/A'})`);
+          continue;
+        }
         const validTypes = ["fact", "preference", "pattern", "entity", "relationship"];
         const noteType = validTypes.includes(note.type)
           ? (note.type as "fact" | "preference" | "pattern" | "entity" | "relationship")

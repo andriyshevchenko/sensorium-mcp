@@ -174,6 +174,7 @@ export async function handleWaitForInstructions(
   let lastDriveCheck = 0;
 
   while (Date.now() < deadline) {
+    try {
     // Check for pending update — tell agent to use the watcher MCP server
     // CRITICAL: Do NOT tell agents to call any MCP tool on sensorium-mcp
     // here — the server is about to die. Agents must call await_server_ready on
@@ -280,6 +281,10 @@ export async function handleWaitForInstructions(
     }
     await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     writeActivityHeartbeat();
+    } catch (loopErr) {
+      log.error(`Poll loop error: ${loopErr instanceof Error ? loopErr.message : String(loopErr)}`);
+      continue;
+    }
   }
 
   // Timeout elapsed with no actionable message.
