@@ -261,7 +261,7 @@ export function resolveCodexPath(): string | null {
  * Volta wrapper process in the chain.
  * Returns null if the paths cannot be found (fallback to codex.cmd).
  */
-export function resolveCodexNodeExe(): { nodeExe: string; codexJs: string } | null {
+function resolveCodexNodeExe(): { nodeExe: string; codexJs: string } | null {
   if (process.platform !== "win32") return null;
   try {
     const localAppData = process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local");
@@ -300,7 +300,7 @@ export function resolveCodexNodeExe(): { nodeExe: string; codexJs: string } | nu
  * Bypasses the codex.js Node.js wrapper and the entire Volta shim chain.
  * Returns null if the binary cannot be found.
  */
-export function resolveCodexExe(): string | null {
+function resolveCodexExe(): string | null {
   if (process.platform !== "win32") return null;
   // Allow operator override via env var
   if (process.env.CODEX_EXE) return process.env.CODEX_EXE;
