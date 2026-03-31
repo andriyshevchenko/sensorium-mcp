@@ -603,6 +603,40 @@ export function spawnCopilotProcess(
   return { pid, logFile: logFilePath };
 }
 
+// ---------------------------------------------------------------------------
+// Codex auto-respawn
+// ---------------------------------------------------------------------------
+
+/**
+ * Schedules a Codex process restart with exponential backoff.
+ * Called automatically when a top-level Codex thread exits (e.g., context exhaustion).
+ */
+function scheduleCodexRespawn(
+  codexPath: string,
+  name: string,
+  threadId: number,
+  workingDirectory: string | undefined,
+  attempt: number,
+): void {
+  const MAX_ATTEMPTS = 10;
+  if (attempt >= MAX_ATTEMPTS) {
+    log.warn(`[codex] Auto-respawn: max attempts (${MAX_ATTEMPTS}) reached for thread ${threadId} ("${name}")`);
+    return;
+  }
+  const delayMs = Math.min(5_000 * Math.pow(2, attempt), 120_000); // 5s → 10s → 20s → … → 120s max
+  log.info(`[codex] Auto-respawn: scheduling attempt ${attempt + 1} for thread ${threadId} ("${name}") in ${delayMs}ms`);
+  setTimeout(() => {
+    log.info(`[codex] Auto-respawn: spawning thread ${threadId} ("${name}"), attempt ${attempt + 1}`);
+    const result = spawnCodexProcess(codexPath, name, threadId, workingDirectory);
+    if ("error" in result) {
+      log.error(`[codex] Auto-respawn failed for thread ${threadId}: ${result.error}`);
+      scheduleCodexRespawn(codexPath, name, threadId, workingDirectory, attempt + 1);
+    } else {
+      log.info(`[codex] Auto-respawn successful for thread ${threadId}: PID=${result.pid}`);
+    }
+  }, delayMs);
+}
+
 /**
  * Spawn an OpenAI Codex CLI agent process for the given thread.
  * Writes Codex home files (TOML config + AGENTS.md) before spawning.
@@ -766,6 +800,12 @@ export function spawnCodexProcess(
     }
 
     log.info(`[start_thread] Codex process PID=${pid} for thread ${threadId} exited with code ${code}`);
+
+    // Auto-respawn: Codex exits after context exhaustion (~267K tokens).
+    // Only restart top-level threads — ghost workers are one-shot by design.
+    if (entry.memorySourceThreadId === undefined) {
+      scheduleCodexRespawn(codexPath, name, threadId, workingDirectory, 0);
+    }
   });
 
   child.unref();

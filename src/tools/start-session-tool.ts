@@ -269,16 +269,20 @@ export async function handleStartSession(
 
   // Auto-bootstrap memory
   // Ghost threads: use the parent's thread ID for the initial memory briefing
+  // Codex/openai_codex: skip the full briefing to preserve token budget (context exhausts ~267K tokens)
   const memorySourceThreadId = getMemorySourceThreadId();
+  const isCodexAgent = agentType === "codex" || agentType === "openai_codex";
   let memoryBriefing = "";
-  try {
-    const db = getMemoryDb();
-    if (session.currentThreadId !== undefined) {
-      memoryBriefing = "\n\n" + assembleBootstrap(db, session.currentThreadId, memorySourceThreadId);
+  if (!isCodexAgent) {
+    try {
+      const db = getMemoryDb();
+      if (session.currentThreadId !== undefined) {
+        memoryBriefing = "\n\n" + assembleBootstrap(db, session.currentThreadId, memorySourceThreadId);
+      }
+    } catch (e) {
+      log.warn(`[start_session] Memory bootstrap failed: ${e instanceof Error ? e.message : String(e)}`);
+      memoryBriefing = "\n\n_Memory system unavailable._";
     }
-  } catch (e) {
-    log.warn(`[start_session] Memory bootstrap failed: ${e instanceof Error ? e.message : String(e)}`);
-    memoryBriefing = "\n\n_Memory system unavailable._";
   }
 
   // ── Startup consolidation: catch up if episodes piled up between sessions ──
