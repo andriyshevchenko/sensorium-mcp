@@ -13,6 +13,8 @@ import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
 import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "../sessions.js";
 import { synthesizeGhostMemory } from "../memory.js";
+import { archiveThread } from "../data/memory/thread-registry.js";
+import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +30,7 @@ interface SpawnedThread {
   logFile: string;
   memorySourceThreadId?: number;
   memoryTargetThreadId?: number;
+  threadType?: 'worker' | 'branch';
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +363,7 @@ export function spawnAgentProcess(
   workingDirectory?: string,
   memorySourceThreadId?: number,
   memoryTargetThreadId?: number,
+  threadType?: 'worker' | 'branch',
 ): { pid: number; logFile: string } | { error: string } {
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -452,6 +456,7 @@ export function spawnAgentProcess(
     logFile: logFilePath,
     ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
     ...(memoryTargetThreadId !== undefined ? { memoryTargetThreadId } : {}),
+    ...(threadType ? { threadType } : {}),
   };
   spawnedThreads.push(entry);
 
@@ -498,6 +503,7 @@ export function spawnCopilotProcess(
   workingDirectory?: string,
   memorySourceThreadId?: number,
   agentType?: string,
+  threadType?: 'worker' | 'branch',
 ): { pid: number; logFile: string } | { error: string } {
   const httpPort = parseInt(process.env.MCP_HTTP_PORT || "0", 10);
   if (!httpPort) {
@@ -572,6 +578,7 @@ export function spawnCopilotProcess(
     createdAt: Date.now(),
     logFile: logFilePath,
     ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
+    ...(threadType ? { threadType } : {}),
   };
   spawnedThreads.push(entry);
 
@@ -615,6 +622,7 @@ export function spawnCodexProcess(
   threadId: number,
   workingDirectory?: string,
   memorySourceThreadId?: number,
+  threadType?: 'worker' | 'branch',
 ): { pid: number; logFile: string } | { error: string } {
   const httpPort = parseInt(process.env.MCP_HTTP_PORT || "0", 10);
   if (!httpPort) {
@@ -744,6 +752,7 @@ export function spawnCodexProcess(
     createdAt: Date.now(),
     logFile: logFilePath,
     ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
+    ...(threadType ? { threadType } : {}),
   };
   spawnedThreads.push(entry);
 
@@ -856,9 +865,7 @@ export async function cleanupExpiredWorkers(
   const now = Date.now();
 
   const isExpiredWorker = (t: SpawnedThread): boolean =>
-    t.memorySourceThreadId !== undefined
-    && t.memoryTargetThreadId === undefined
-    && now - t.createdAt > ttlMs;
+    t.threadType === 'worker' && now - t.createdAt > ttlMs;
 
   for (const thread of spawnedThreads.filter(isExpiredWorker)) {
     try {
@@ -891,7 +898,13 @@ async function cleanupSingleWorker(
   // 3. Delete Telegram topic
   try { await telegram.deleteForumTopic(chatId, thread.threadId); } catch { /* topic might not exist */ }
 
-  // 4. Remove from tracking (PID file cleanup happens in the exit handler)
+  // 4. Archive in thread registry (best-effort)
+  try {
+    const db = initMemoryDb();
+    archiveThread(db, thread.threadId);
+  } catch { /* registry archival is best-effort */ }
+
+  // 5. Remove from tracking (PID file cleanup happens in the exit handler)
   const idx = spawnedThreads.indexOf(thread);
   if (idx !== -1) spawnedThreads.splice(idx, 1);
 }
