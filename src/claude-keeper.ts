@@ -112,7 +112,7 @@ function readWarmContext(dataDir: string, threadId: number): string {
     if (!texts.length) return "";
     return (
       `[Warm context: last ${texts.length} messages from thread ${threadId}]\n` +
-      texts.map((t) => `> ${t}`).join("\n") +
+      texts.map((t) => `- ${t}`).join("\n") +
       "\n\n"
     );
   } catch {
@@ -205,7 +205,14 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
     const warmContext = readWarmContext(config.dataDir, config.threadId);
     const prompt = `${warmContext}Start remote session with sensorium. Thread name = '${config.sessionName}'`;
 
-    // Build client-specific spawn arguments and environment.
+    // Pass prompt via args array with shell: false to prevent cmd.exe interpreting
+    // shell metacharacters (> | & ^) in warm context message text.
+    // On Windows, claude/copilot are .cmd shims — they need shell: true, so we
+    // sanitize the prompt instead by replacing shell-unsafe chars.
+    const safePrompt = process.platform === "win32"
+      ? prompt.replace(/[>|&^<"]/g, " ")
+      : prompt;
+
     const useShell = process.platform === "win32";
     let cmd: string;
     let args: string[];
@@ -213,11 +220,11 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
 
     if (client === "claude") {
       cmd = config.claudeCmd;
-      args = ["--mcp-config", config.mcpConfigPath, "-p", prompt];
+      args = ["--mcp-config", config.mcpConfigPath, "-p", safePrompt];
       spawnEnv = undefined;
     } else {
       cmd = copilotCmd;
-      args = ["-p", prompt, "--allow-all-tools", "--model", copilotModel];
+      args = ["-p", safePrompt, "--allow-all-tools", "--model", copilotModel];
       spawnEnv = { ...process.env, COPILOT_HOME: copilotHome };
     }
 
