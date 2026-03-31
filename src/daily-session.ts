@@ -69,13 +69,13 @@ export async function rotateDailySession(
     // 2. Run reflection and narrative generation (best-effort, non-blocking)
     try {
       await runReflection(db, rootThreadId);
-    } catch {
-      // Non-critical — reflection failure shouldn't block rotation
+    } catch (err) {
+      log.warn(`Reflection failed during daily rotation for root ${rootThreadId}: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
       await runNarrativeGeneration(db, rootThreadId);
-    } catch {
-      // Non-critical — narrative failure shouldn't block rotation
+    } catch (err) {
+      log.warn(`Narrative generation failed during daily rotation for root ${rootThreadId}: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // 3. Reset the daily session timestamp

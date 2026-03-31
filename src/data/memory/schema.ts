@@ -291,7 +291,7 @@ function ensureSchemaIntegrity(db: Database): void {
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL",
     );
-    stampVersion(7); // migration 7 added is_guardrail
+    stampVersion(8); // migration 8 added is_guardrail
   }
 
   if (!semanticNoteCols.includes("pinned")) {
@@ -311,7 +311,7 @@ function ensureSchemaIntegrity(db: Database): void {
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL",
     );
-    stampVersion(3); // migration 3 added thread_id
+    stampVersion(4); // migration 4 added thread_id
   }
 
   if (!semanticNoteCols.includes("priority")) {
@@ -322,7 +322,7 @@ function ensureSchemaIntegrity(db: Database): void {
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL",
     );
-    stampVersion(6); // migration 6 added priority
+    stampVersion(3); // migration 3 added priority
   }
 
   // Also check episodes table for thread_id
@@ -360,6 +360,47 @@ function ensureSchemaIntegrity(db: Database): void {
       CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
     `);
     stampVersion(11);
+  }
+
+  const hasThreadRegistry = db
+    .prepare("SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='thread_registry'")
+    .get() as { cnt: number };
+  if (hasThreadRegistry.cnt === 0) {
+    log.info("[memory] Self-heal: creating missing thread_registry table");
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS thread_registry (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id       INTEGER NOT NULL UNIQUE,
+        name            TEXT NOT NULL,
+        type            TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
+        root_thread_id  INTEGER,
+        badge           TEXT NOT NULL DEFAULT 'root',
+        client          TEXT DEFAULT 'claude',
+        max_retries     INTEGER DEFAULT 5,
+        cooldown_ms     INTEGER DEFAULT 300000,
+        keep_alive      INTEGER DEFAULT 0,
+        created_at      TEXT NOT NULL,
+        last_active_at  TEXT,
+        session_reset_at TEXT,
+        status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
+    `);
+    stampVersion(12);
+    stampVersion(13);
+  } else {
+    const threadRegistryCols = db
+      .prepare("PRAGMA table_info(thread_registry)")
+      .all()
+      .map((r: any) => r.name as string);
+
+    if (!threadRegistryCols.includes("session_reset_at")) {
+      log.info("[memory] Self-heal: adding missing session_reset_at column to thread_registry");
+      db.exec("ALTER TABLE thread_registry ADD COLUMN session_reset_at TEXT");
+      stampVersion(13);
+    }
   }
 }
 
