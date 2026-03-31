@@ -497,6 +497,7 @@ export function spawnCopilotProcess(
   threadId: number,
   workingDirectory?: string,
   memorySourceThreadId?: number,
+  agentType?: string,
 ): { pid: number; logFile: string } | { error: string } {
   const httpPort = parseInt(process.env.MCP_HTTP_PORT || "0", 10);
   if (!httpPort) {
@@ -514,7 +515,9 @@ export function spawnCopilotProcess(
   const logFd = openSync(logFilePath, "a");
 
   const prompt = `Start remote session with sensorium. Thread name = '${name}'`;
-  const copilotModel = process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL;
+  const copilotModel = agentType === "copilot_codex"
+    ? "gpt-5.3-codex"
+    : (process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL);
 
   const cliArgs = [
     "-p", prompt,

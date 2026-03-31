@@ -79,9 +79,9 @@ export const handlePostAgentType: RouteHandler = ({ req, json }) => {
         try {
             const body = await readBody(req);
             const parsed = JSON.parse(body) as { agentType?: string };
-            const valid = ["copilot", "claude", "cursor", "codex"];
+            const valid = ["copilot", "copilot_claude", "copilot_codex", "claude", "cursor", "codex", "openai_codex"];
             if (!parsed.agentType || !valid.includes(parsed.agentType)) {
-                json({ error: "Invalid agent type. Must be: copilot, claude, cursor, codex" }, 400);
+                json({ error: "Invalid agent type. Must be: copilot, copilot_claude, copilot_codex, claude, cursor, codex, openai_codex" }, 400);
                 return;
             }
             setAgentType(parsed.agentType as AgentType);
@@ -105,13 +105,13 @@ export const handlePostThreadAgentType: RouteHandler = ({ req, json }) => {
         try {
             const body = await readBody(req);
             const parsed = JSON.parse(body) as { threadId?: number; agentType?: string };
-            const valid = ["copilot", "claude", "cursor", "codex"];
+            const valid = ["copilot", "copilot_claude", "copilot_codex", "claude", "cursor", "codex", "openai_codex"];
             if (parsed.threadId == null || !Number.isFinite(parsed.threadId)) {
                 json({ error: "Missing or invalid threadId (must be a number)" }, 400);
                 return;
             }
             if (!parsed.agentType || !valid.includes(parsed.agentType)) {
-                json({ error: "Invalid agent type. Must be: copilot, claude, cursor, codex" }, 400);
+                json({ error: "Invalid agent type. Must be: copilot, copilot_claude, copilot_codex, claude, cursor, codex, openai_codex" }, 400);
                 return;
             }
             setThreadAgentType(parsed.threadId, parsed.agentType as AgentType);
