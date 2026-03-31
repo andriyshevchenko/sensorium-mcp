@@ -209,7 +209,12 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     log.info("[migration-12] Created thread_registry table");
   },
   13: (db) => {
-    db.exec(`ALTER TABLE thread_registry ADD COLUMN session_reset_at TEXT`);
+    // session_reset_at may already exist if the DB was created with the latest SCHEMA_SQL
+    const cols = db.prepare("PRAGMA table_info(thread_registry)").all() as Record<string, unknown>[];
+    const hasCol = cols.some(c => (c.name as string) === "session_reset_at");
+    if (!hasCol) {
+      db.exec("ALTER TABLE thread_registry ADD COLUMN session_reset_at TEXT");
+    }
     log.info("[migration-13] Added session_reset_at column to thread_registry");
   },
 };

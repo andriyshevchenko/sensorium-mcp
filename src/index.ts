@@ -35,6 +35,8 @@ const { buildMcpServerFactory } = await import("./server/factory.js");
 const { setTopicRegistryDb, lookupTopicRegistry } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
 const { cleanupStalePidFiles } = await import("./tools/thread-lifecycle.js");
+const { log } = await import("./logger.js");
+const { rotateAllDailySessions } = await import("./daily-session.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -93,11 +95,41 @@ function closeMemoryDb(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Daily session rotation timer (runs in the MCP server process which has
+// all env vars — OpenAI, Telegram, etc.)
+// ---------------------------------------------------------------------------
+
+const DAILY_ROTATION_HOUR = 4;
+
+function startDailyRotationTimer(): void {
+  setInterval(async () => {
+    const now = new Date();
+    if (now.getHours() !== DAILY_ROTATION_HOUR || now.getMinutes() >= 5) return;
+    try {
+      log.info("Starting daily session rotation...");
+      const results = await rotateAllDailySessions();
+      for (const r of results) {
+        if (r.error) {
+          log.error(`Daily rotation failed for root ${r.rootThreadId}: ${r.error}`);
+        } else {
+          log.info(`Daily rotation complete for root ${r.rootThreadId}`);
+        }
+      }
+    } catch (err) {
+      log.error(`Daily rotation error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, 5 * 60_000);
+}
+
 const httpPort = process.env.MCP_HTTP_PORT ? parseInt(process.env.MCP_HTTP_PORT, 10) : undefined;
 if (httpPort) {
   startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb);
 } else {
   await startStdioServer(createMcpServer, closeMemoryDb);
 }
+
+// Start daily rotation timer after server is listening
+startDailyRotationTimer();
 
 }
