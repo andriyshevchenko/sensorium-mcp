@@ -207,6 +207,15 @@ async function waitForServerReady(): Promise<void> {
   log("WARN", "MCP server did not respond within 60s — proceeding anyway.");
 }
 
+/** Single-shot HTTP liveness probe. Returns true if MCP server is responding. */
+async function isMcpServerHealthy(): Promise<boolean> {
+  const port = CONFIG.mcpHttpPort || 3847;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/mcp`, { method: "OPTIONS", signal: AbortSignal.timeout(3000) });
+    return res.status < 500;
+  } catch { return false; }
+}
+
 // npx cache clearing ----------------------------------------------------------
 function clearNpxCache(): void {
   const base = process.platform === "win32"
@@ -426,8 +435,11 @@ async function checkAndUpdate(): Promise<void> {
   updateInProgress = true;
   try {
     if (uptimeS() > 120) {
-      const pid = readPid();
-      if (!pid || !alive(pid)) { log("WARN", "Server not running — restarting..."); await notifyOperator("\u26A0\uFE0F Watcher: server process not running — restarting..."); startMcpServer(); startTime = Date.now(); }
+      // Use HTTP health probe instead of PID liveness — on Windows, shell: true
+      // gives back the transient shell PID, not the real MCP server process.
+      // The shell exits quickly, making alive(pid) return false even when the
+      // server is healthy, causing a false-restart loop.
+      if (!(await isMcpServerHealthy())) { log("WARN", "Server not running — restarting..."); await notifyOperator("\u26A0\uFE0F Watcher: server process not running — restarting..."); startMcpServer(); startTime = Date.now(); }
     }
     const remote = await getRemoteVersion();
     if (!remote) return;
