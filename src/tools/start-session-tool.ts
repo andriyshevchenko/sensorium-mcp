@@ -24,6 +24,7 @@ import type { AppConfig, ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
 import { readThreadMessages } from "../dispatcher.js";
+import { updateThread } from "../data/memory/thread-registry.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -355,6 +356,8 @@ export async function handleStartSession(
   // Set per-thread agent type if declared — determines agent-specific reminders
   if (threadId !== undefined && agentType) {
     setThreadAgentType(threadId, agentType);
+    // Sync agent type to the thread_registry DB
+    try { updateThread(getMemoryDb(), threadId, { client: agentType }); } catch { /* best-effort */ }
   }
   const reminders = ctx.getReminders(threadId, session.sessionStartedAt, config.AUTONOMOUS_MODE);
   // Mark session as fully initialized — subsequent start_session calls with
