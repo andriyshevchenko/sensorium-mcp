@@ -7,7 +7,6 @@ import MemoryNotesTab from './components/MemoryNotesTab.vue'
 import TemplatesTab from './components/TemplatesTab.vue'
 import SkillsTab from './components/SkillsTab.vue'
 import ThreadsTab from './components/ThreadsTab.vue'
-import KeepAliveTab from './components/KeepAliveTab.vue'
 import SettingsTab from './components/SettingsTab.vue'
 
 const TOKEN_KEY = 'sensorium_token'
@@ -28,7 +27,6 @@ const tabs = [
   { id: 'templates', label: 'Templates' },
   { id: 'skills', label: 'Skills' },
   { id: 'threads', label: 'Threads' },
-  { id: 'keepalive', label: 'Keep-Alive' },
   { id: 'settings', label: 'Settings' },
 ]
 
@@ -38,7 +36,6 @@ const tabComponents = {
   templates: TemplatesTab,
   skills: SkillsTab,
   threads: ThreadsTab,
-  keepalive: KeepAliveTab,
   settings: SettingsTab,
 }
 

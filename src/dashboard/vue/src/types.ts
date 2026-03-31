@@ -49,13 +49,6 @@ export interface DrivePreset {
   content: string
 }
 
-export interface KeepAliveSettings {
-  keepAliveEnabled: boolean
-  keepAliveThreadId: number
-  keepAliveMaxRetries: number
-  keepAliveCooldownMs: number
-}
-
 export interface ThreadEntry {
   id: number
   threadId: number

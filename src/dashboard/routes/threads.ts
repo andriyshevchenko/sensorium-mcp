@@ -14,6 +14,18 @@ import {
     deleteThread,
     type ThreadRegistryEntry,
 } from "../../data/memory/thread-registry.js";
+import type { Database } from "../../data/memory/schema.js";
+
+import {
+    setKeepAliveEnabled,
+    setKeepAliveThreadId,
+    setKeepAliveClient,
+    setKeepAliveMaxRetries,
+    setKeepAliveCooldownMs,
+    setThreadKeepAlive,
+    removeThreadKeepAlive,
+    type KeeperClient,
+} from "../../config.js";
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
 
@@ -113,6 +125,11 @@ export const handleCreateThread: RouteHandler = ({ req, json, db }) => {
             });
 
             json(entry, 201);
+
+            // Sync keepAlive to settings.json for watcher backward compatibility
+            if (entry.keepAlive) {
+                syncKeepAliveToSettings(db);
+            }
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
         }
@@ -171,6 +188,11 @@ export function handleUpdateThread(args: RouteArgs, threadId: number): boolean {
             }
 
             json(getThread(db, threadId));
+
+            // Sync keepAlive to settings.json for watcher backward compatibility
+            if ("keepAlive" in updates || "client" in updates) {
+                syncKeepAliveToSettings(db);
+            }
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
         }
@@ -197,4 +219,43 @@ export function handleDeleteThread(args: RouteArgs, threadId: number): boolean {
         json({ ok: true, action: "archived", threadId });
     }
     return true;
+}
+
+// ─── Settings.json sync for watcher backward compatibility ──────────────────
+
+/**
+ * Sync thread_registry keepAlive settings to settings.json for watcher backward compatibility.
+ * The watcher's readKeeperSettingsFromFile() reads settings.json during startup before the MCP server is ready.
+ */
+function syncKeepAliveToSettings(db: Database): void {
+    try {
+        const roots = getRootThreads(db);
+        const activeKeepAlive = roots.find(r => r.keepAlive);
+
+        if (activeKeepAlive) {
+            setKeepAliveEnabled(true);
+            setKeepAliveThreadId(activeKeepAlive.threadId);
+            setKeepAliveClient(activeKeepAlive.client as KeeperClient);
+            setKeepAliveMaxRetries(activeKeepAlive.maxRetries);
+            setKeepAliveCooldownMs(activeKeepAlive.cooldownMs);
+        } else {
+            setKeepAliveEnabled(false);
+        }
+
+        // Sync per-thread overrides
+        for (const root of roots) {
+            if (root.keepAlive) {
+                setThreadKeepAlive(root.threadId, {
+                    enabled: true,
+                    client: root.client as KeeperClient,
+                    maxRetries: root.maxRetries,
+                    cooldownMs: root.cooldownMs,
+                });
+            } else {
+                removeThreadKeepAlive(root.threadId);
+            }
+        }
+    } catch {
+        // Best-effort sync — don't fail the API call
+    }
 }

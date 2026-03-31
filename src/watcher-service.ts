@@ -359,7 +359,7 @@ interface KeeperSettings {
   sessionName: string;
 }
 
-function readAllKeeperSettings(): KeeperSettings[] {
+function readKeeperSettingsFromFile(): KeeperSettings[] {
   const raw = safeRead(SETTINGS_JSON_PATH);
   const s: Record<string, unknown> = raw
     ? (() => { try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; } })()
@@ -417,6 +417,40 @@ function readAllKeeperSettings(): KeeperSettings[] {
   return results;
 }
 
+/**
+ * Read keeper settings from the MCP server's thread_registry via HTTP API.
+ * Falls back to settings.json if the server is not ready (e.g. during startup).
+ */
+async function readAllKeeperSettings(): Promise<KeeperSettings[]> {
+  // Try HTTP-based registry first
+  const port = CONFIG.mcpHttpPort || 3847;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/threads/roots`, {
+      headers: CONFIG.mcpHttpSecret ? { 'Authorization': `Bearer ${CONFIG.mcpHttpSecret}` } : {},
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { threads?: Record<string, unknown>[] };
+      const roots = body.threads ?? [];
+      return roots
+        .filter((r) => r.keepAlive)
+        .map((r) => ({
+          enabled: true,
+          threadId: r.threadId as number,
+          maxRetries: (typeof r.maxRetries === 'number' ? r.maxRetries : null) ?? 5,
+          cooldownMs: (typeof r.cooldownMs === 'number' ? r.cooldownMs : null) ?? 300_000,
+          client: r.client === 'copilot' ? 'copilot' : 'claude',
+          sessionName: (typeof r.name === 'string' ? r.name : null) ?? `thread-${r.threadId}`,
+        }));
+    }
+  } catch {
+    // Server not ready — fall back to settings.json
+  }
+
+  // Fallback: read from settings.json (legacy, for startup before server is ready)
+  return readKeeperSettingsFromFile();
+}
+
 function keeperSettingsChanged(a: KeeperSettings, b: KeeperSettings): boolean {
   return a.maxRetries !== b.maxRetries || a.cooldownMs !== b.cooldownMs || a.client !== b.client;
 }
@@ -428,7 +462,7 @@ async function applyKeeperSettings(): Promise<void> {
   applyingSettings = true;
   try {
   if (CONFIG.mcpHttpPort <= 0) return;
-  const allSettings = readAllKeeperSettings();
+  const allSettings = await readAllKeeperSettings();
   const desiredThreadIds = new Set(allSettings.map(s => s.threadId));
 
   // Stop keepers for threads that are no longer configured
