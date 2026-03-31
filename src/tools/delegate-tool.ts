@@ -247,6 +247,7 @@ export async function handleStartThread(
       type: (threadType === 'worker' || threadType === 'branch') ? threadType : 'worker',
       rootThreadId: memorySourceThreadId ?? undefined,
       badge: threadType || 'worker',
+      client: agentType,
     });
   } catch { /* registration is best-effort */ }
 
