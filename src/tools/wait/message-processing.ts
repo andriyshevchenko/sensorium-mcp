@@ -13,6 +13,7 @@ import { readThreadMessages } from "../../dispatcher.js";
 import { assembleCompactRefresh, detectTopicShift } from "../../memory.js";
 import { log } from "../../logger.js";
 import { getReminders } from "../../response-builders.js";
+import { getEffectiveAgentType } from "../../config.js";
 import { listSchedules } from "../../scheduler.js";
 
 import { processVoice, processAnimation, processVideoNote, type MediaContext } from "./media-processor.js";
@@ -256,16 +257,20 @@ export function handlePollTimeout(
   const driveActivationResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, apiKey: OPENAI_API_KEY || undefined, config, memoryRefresh, scheduleHint });
   if (driveActivationResult) return driveActivationResult;
 
+  // Codex exits after any tool response unless the message is very explicit.
+  // Use an imperative call-to-action that leaves no ambiguity about looping.
+  const agentType = getEffectiveAgentType(effectiveThreadId);
+  const noMsgText = agentType === "codex"
+    ? `MANDATORY ACTION: Call \`remote_copilot_wait_for_instructions\` with threadId=${effectiveThreadId} RIGHT NOW. ` +
+      `No operator message arrived. You MUST keep polling — call the tool again immediately. Do NOT stop.` +
+      memoryRefresh +
+      scheduleHint
+    : `No new instructions. Call \`remote_copilot_wait_for_instructions\` again to keep listening.` +
+      memoryRefresh +
+      scheduleHint +
+      getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE);
+
   return {
-    content: [
-      {
-        type: "text",
-        text:
-          `No new instructions. Call \`remote_copilot_wait_for_instructions\` again to keep listening.` +
-          memoryRefresh +
-          scheduleHint +
-          getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE),
-      },
-    ],
+    content: [{ type: "text", text: noMsgText }],
   };
 }

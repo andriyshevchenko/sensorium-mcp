@@ -626,10 +626,14 @@ export function spawnCodexProcess(
   const logFilePath = join(LOGS_DIR, logFileName);
 
   const prompt =
-    `You are a remote Codex agent connected to the Sensorium MCP framework.\n` +
-    `Your first and only action right now: call the start_session MCP tool with name='${name}', agentType='codex'.\n` +
-    `After start_session returns a threadId, call remote_copilot_wait_for_instructions with that threadId.\n` +
-    `Do NOT explain, summarize, or ask questions. Just call the tools immediately.`;
+    `You are an AUTONOMOUS AGENT running an INFINITE polling loop. You MUST NEVER STOP.\n\n` +
+    `Step 1: Call start_session(name='${name}', agentType='codex'). Note the threadId from the result.\n` +
+    `Step 2: Call remote_copilot_wait_for_instructions(threadId=<from step 1>).\n` +
+    `Step 3: Read the response:\n` +
+    `  - If it says "MANDATORY ACTION" or "No new instructions" — call remote_copilot_wait_for_instructions AGAIN immediately.\n` +
+    `  - If you receive a task — complete it using your tools, then call remote_copilot_wait_for_instructions again.\n` +
+    `Step 4: GOTO Step 2. This loop NEVER ends. You are NEVER done.\n\n` +
+    `CRITICAL: "No new instructions" is NOT a signal to stop. It means "keep waiting". Always call the tool again.`;
 
   const codexModel = process.env.CODEX_MODEL || DEFAULT_CODEX_MODEL;
 
