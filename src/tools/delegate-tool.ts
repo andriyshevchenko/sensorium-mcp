@@ -127,7 +127,9 @@ export async function handleStartThread(
   }
 
   const agentType: AgentType =
-    rawAgentType === "copilot" || rawAgentType === "claude" || rawAgentType === "cursor" || rawAgentType === "codex"
+    rawAgentType === "copilot" || rawAgentType === "copilot_claude" || rawAgentType === "copilot_codex"
+    || rawAgentType === "claude" || rawAgentType === "cursor"
+    || rawAgentType === "codex" || rawAgentType === "openai_codex"
       ? rawAgentType
       : "claude";
 
@@ -135,7 +137,7 @@ export async function handleStartThread(
   let cliPath: string;
   let mcpConfigPath: string | undefined;
 
-  if (agentType === "copilot") {
+  if (agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex") {
     const copilotPath = resolveCopilotPath();
     if (!copilotPath) {
       return errorResult(
@@ -144,7 +146,7 @@ export async function handleStartThread(
       );
     }
     cliPath = copilotPath;
-  } else if (agentType === "codex") {
+  } else if (agentType === "codex" || agentType === "openai_codex") {
     const codexPath = resolveCodexPath();
     if (!codexPath) {
       return errorResult(
@@ -227,9 +229,9 @@ export async function handleStartThread(
 
   // ── 4. Dormant (topic existed, process dead) → restart ────────────────
   ensureDirs();
-  const result = agentType === "copilot"
-    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId)
-    : agentType === "codex"
+  const result = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex"
+    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, agentType)
+    : agentType === "codex" || agentType === "openai_codex"
     ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId)
     : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId, targetMemoryThreadId);
   if ("error" in result) return errorResult(`Error: ${result.error}`);

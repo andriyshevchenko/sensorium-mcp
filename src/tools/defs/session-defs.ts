@@ -39,9 +39,9 @@ export const sessionToolDefs: ToolDefinition[] = [
         },        agentType: {
           type: "string",
           description:
-            'Which agent type is connecting: "copilot" | "claude" | "cursor" | "codex". ' +
+            'Which agent type is connecting: "copilot" | "copilot_claude" | "copilot_codex" | "claude" | "cursor" | "codex" | "openai_codex". ' +
             "Determines agent-specific reminders and routing. Defaults to the dashboard setting.",
-          enum: ["copilot", "claude", "cursor", "codex"],
+          enum: ["copilot", "copilot_claude", "copilot_codex", "claude", "cursor", "codex", "openai_codex"],
         },},
       required: [],
     },
@@ -221,7 +221,7 @@ export const sessionToolDefs: ToolDefinition[] = [
         },
         agentType: {
           type: "string",
-          enum: ["copilot", "claude", "cursor", "codex"],
+          enum: ["copilot", "copilot_claude", "copilot_codex", "claude", "cursor", "codex", "openai_codex"],
         },
         workingDirectory: {
           type: "string",

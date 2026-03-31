@@ -84,7 +84,9 @@ export async function handleStartSession(
     : undefined;
   const rawAgentType = typeof typedArgs.agentType === "string" ? typedArgs.agentType.trim() : "";
   const agentType: AgentType | undefined =
-    rawAgentType === "copilot" || rawAgentType === "claude" || rawAgentType === "cursor" || rawAgentType === "codex"
+    rawAgentType === "copilot" || rawAgentType === "copilot_claude" || rawAgentType === "copilot_codex"
+    || rawAgentType === "claude" || rawAgentType === "cursor"
+    || rawAgentType === "codex" || rawAgentType === "openai_codex"
       ? rawAgentType
       : undefined;
 

@@ -49,10 +49,16 @@ mkdirSync(TEMPLATES_DIR, { recursive: true });
 
 // ─── Agent-type settings ────────────────────────────────────────────────────
 
-export type AgentType = "copilot" | "claude" | "cursor" | "codex";
+export type AgentType = "copilot" | "copilot_claude" | "copilot_codex" | "claude" | "cursor" | "codex" | "openai_codex";
+
+const VALID_AGENT_TYPES: readonly string[] = [
+  "copilot", "copilot_claude", "copilot_codex",
+  "claude", "cursor",
+  "codex", "openai_codex",
+];
 
 function isValidAgentType(v: unknown): v is AgentType {
-  return v === "copilot" || v === "claude" || v === "cursor" || v === "codex";
+  return typeof v === "string" && VALID_AGENT_TYPES.includes(v);
 }
 
 const SETTINGS_PATH = join(homedir(), ".remote-copilot-mcp", "settings.json");

@@ -19,6 +19,12 @@ const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
   copilot: `For tasks, load relevant skill via get_skill first.
 threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
+  copilot_claude: `For tasks, load relevant skill via get_skill first.
+threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+`,
+  copilot_codex: `For tasks, load relevant skill via get_skill first.
+threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+`,
   claude: `For tasks, load relevant skill via get_skill first.
 You coordinate work via MCP tools. For complex tasks, break them into sequential steps. Keep context lean — summarize progress before starting new work. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
@@ -26,6 +32,9 @@ You coordinate work via MCP tools. For complex tasks, break them into sequential
 You coordinate work via MCP tools. Prefer targeted, minimal edits. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
   codex: `For tasks, load relevant skill via get_skill first.
+threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+`,
+  openai_codex: `For tasks, load relevant skill via get_skill first.
 threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
 `,
 };
