@@ -256,7 +256,7 @@ export interface ThreadKeepAliveSettings {
 }
 
 /** Returns per-thread keep-alive settings, or null if none set. */
-export function getThreadKeepAlive(threadId: number): ThreadKeepAliveSettings | null {
+function getThreadKeepAlive(threadId: number): ThreadKeepAliveSettings | null {
   const map = readSettings().threadKeepAlive as Record<string, unknown> | undefined;
   if (!map || typeof map !== "object") return null;
   const entry = map[String(threadId)];
@@ -329,7 +329,7 @@ export function getMemorySourceThreadId(): number | undefined {
  * write to this thread instead of the session's own thread.
  * Episodes always stay on the session's own thread.
  */
-export function getMemoryTargetThreadId(): number | undefined {
+function getMemoryTargetThreadId(): number | undefined {
   const val = process.env.MEMORY_TARGET_THREAD_ID;
   if (!val) return undefined;
   const n = parseInt(val, 10);
