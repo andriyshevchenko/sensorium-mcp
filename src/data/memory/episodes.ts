@@ -88,9 +88,13 @@ export function saveEpisode(
   return id;
 }
 
-export function getRecentEpisodes(db: Database, threadId: number, limit = 20, options?: { startTime?: string; endTime?: string }): Episode[] {
+export function getRecentEpisodes(db: Database, threadId: number, limit = 20, options?: { startTime?: string; endTime?: string; since?: string }): Episode[] {
   let sql = `SELECT * FROM episodes WHERE thread_id = ?`;
   const params: unknown[] = [threadId];
+  if (options?.since) {
+    sql += ` AND timestamp > ?`;
+    params.push(options.since);
+  }
   if (options?.startTime) {
     sql += ` AND timestamp >= ?`;
     params.push(options.startTime);

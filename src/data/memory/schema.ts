@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -207,6 +207,10 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
     `);
     log.info("[migration-12] Created thread_registry table");
+  },
+  13: (db) => {
+    db.exec(`ALTER TABLE thread_registry ADD COLUMN session_reset_at TEXT`);
+    log.info("[migration-13] Added session_reset_at column to thread_registry");
   },
 };
 
@@ -517,6 +521,7 @@ CREATE TABLE IF NOT EXISTS thread_registry (
   keep_alive      INTEGER DEFAULT 0,
   created_at      TEXT NOT NULL,
   last_active_at  TEXT,
+  session_reset_at TEXT,
   status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired'))
 );
 CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);

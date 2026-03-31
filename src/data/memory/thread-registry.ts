@@ -23,6 +23,7 @@ export interface ThreadRegistryEntry {
   keepAlive: boolean;
   createdAt: string;
   lastActiveAt: string | null;
+  sessionResetAt: string | null;
   status: 'active' | 'archived' | 'expired';
 }
 
@@ -44,6 +45,7 @@ function rowToEntry(row: Record<string, unknown>): ThreadRegistryEntry {
     keepAlive: !!(row.keep_alive as number),
     createdAt: row.created_at as string,
     lastActiveAt: (row.last_active_at as string | null) ?? null,
+    sessionResetAt: (row.session_reset_at as string | null) ?? null,
     status: row.status as ThreadRegistryEntry['status'],
   };
 }
@@ -174,6 +176,17 @@ export function getActiveDaily(db: Database, rootThreadId: number): ThreadRegist
      ORDER BY created_at DESC LIMIT 1`,
   ).get(rootThreadId) as Record<string, unknown> | undefined;
   return row ? rowToEntry(row) : null;
+}
+
+/**
+ * Reset the daily session timestamp for a thread.
+ * Sets session_reset_at = now, used by bootstrap to filter the message buffer.
+ */
+export function resetDailySession(db: Database, threadId: number): boolean {
+  const result = db.prepare(
+    `UPDATE thread_registry SET session_reset_at = ? WHERE thread_id = ?`,
+  ).run(nowISO(), threadId);
+  return result.changes > 0;
 }
 
 // ─── Migration Helper ────────────────────────────────────────────────────────

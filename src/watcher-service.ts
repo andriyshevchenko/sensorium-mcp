@@ -9,6 +9,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, isInitializeRequest, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { startClaudeKeeper, type KeeperHandle } from "./claude-keeper.js";
+import { rotateAllDailySessions } from "./daily-session.js";
 
 process.on("uncaughtException", (err) => {
   console.error(`[fatal] Uncaught exception: ${err.stack ?? err}`);
@@ -603,6 +604,46 @@ function startKeeperPoller(): void {
   }, KEEPER_SETTINGS_POLL_MS);
 }
 
+const DAILY_ROTATION_HOUR = 4; // 4 AM local time
+
+function startDailyRotationTimer(): void {
+  // Check every 5 minutes if it's time for daily rotation
+  setInterval(async () => {
+    const now = new Date();
+    // Only trigger at the rotation hour (first 5-minute window)
+    if (now.getHours() !== DAILY_ROTATION_HOUR || now.getMinutes() >= 5) return;
+
+    try {
+      log("INFO", "Starting daily session rotation...");
+      const results = await rotateAllDailySessions();
+
+      for (const result of results) {
+        if (result.error) {
+          log("WARN", `Daily rotation failed for root ${result.rootThreadId}: ${result.error}`);
+          continue;
+        }
+        log("INFO", `Daily rotation complete for root ${result.rootThreadId}: consolidated=${result.consolidated}`);
+
+        // Restart the keeper for this root thread to get fresh LLM context
+        const entry = keepers.get(result.rootThreadId);
+        if (entry) {
+          log("INFO", `Restarting keeper for root ${result.rootThreadId} after daily rotation`);
+          await entry.handle.stop();
+          keepers.delete(result.rootThreadId);
+          // applyKeeperSettings will restart it on the next poll cycle (within 2 min)
+        }
+      }
+
+      if (results.length > 0) {
+        // Force immediate keeper re-apply to restart stopped keepers
+        await applyKeeperSettings();
+      }
+    } catch (err) {
+      log("ERROR", `Daily rotation error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, 5 * 60_000); // Check every 5 minutes
+}
+
 // Main loop -------------------------------------------------------------------
 async function runLoop(): Promise<void> {
   log("INFO", `Watcher starting in ${CONFIG.mode} mode.`);
@@ -620,6 +661,7 @@ async function runLoop(): Promise<void> {
   if (!pid || !alive(pid)) startMcpServer();
   void applyKeeperSettings().catch((err) => log("ERROR", `Keeper failed to start: ${err}`));
   startKeeperPoller();
+  startDailyRotationTimer();
   if (CONFIG.mode === "production") {
     while (true) {
       const ms = msUntilHour(CONFIG.pollAtHour);
