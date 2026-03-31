@@ -74,6 +74,17 @@ import {
     handleSkillPut,
 } from "./routes/skills.js";
 
+// Domain handlers — threads
+import {
+    handleGetThreads,
+    handleGetRootThreads,
+    handleCreateThread,
+    handleGetThread,
+    handleGetThreadChildren,
+    handleUpdateThread,
+    handleDeleteThread,
+} from "./routes/threads.js";
+
 // ─── Route table ────────────────────────────────────────────────────────────
 
 const routeTable: Record<string, RouteHandler> = {
@@ -114,6 +125,11 @@ const routeTable: Record<string, RouteHandler> = {
 
     // Skills
     "GET /api/skills":            handleGetSkills,
+
+    // Threads
+    "GET /api/threads":           handleGetThreads,
+    "GET /api/threads/roots":     handleGetRootThreads,
+    "POST /api/threads":          handleCreateThread,
 };
 
 // ─── Public entry point ─────────────────────────────────────────────────────
@@ -203,6 +219,19 @@ async function dispatchApiRoute(
         if (skillMatch) {
             const result = await handleSkillPut(args, skillMatch[1]);
             if (result) return true;
+        }
+
+        // 4. Dynamic thread routes: /api/threads/:threadId[/children]
+        const threadChildrenMatch = /^\/api\/threads\/(\d+)\/children$/.exec(path);
+        if (threadChildrenMatch) {
+            return handleGetThreadChildren(args, Number.parseInt(threadChildrenMatch[1], 10));
+        }
+        const threadMatch = /^\/api\/threads\/(\d+)$/.exec(path);
+        if (threadMatch) {
+            const tid = Number.parseInt(threadMatch[1], 10);
+            if (method === "GET") return handleGetThread(args, tid);
+            if (method === "PATCH") return handleUpdateThread(args, tid);
+            if (method === "DELETE") return handleDeleteThread(args, tid);
         }
 
         json({ error: "Not found" }, 404);

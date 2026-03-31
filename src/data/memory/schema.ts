@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -184,6 +184,29 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
     `);
     log.info("[migration-11] Created temporal_narratives table");
+  },
+  12: (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS thread_registry (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id       INTEGER NOT NULL UNIQUE,
+        name            TEXT NOT NULL,
+        type            TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
+        root_thread_id  INTEGER,
+        badge           TEXT NOT NULL DEFAULT 'root',
+        client          TEXT DEFAULT 'claude',
+        max_retries     INTEGER DEFAULT 5,
+        cooldown_ms     INTEGER DEFAULT 300000,
+        keep_alive      INTEGER DEFAULT 0,
+        created_at      TEXT NOT NULL,
+        last_active_at  TEXT,
+        status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
+    `);
+    log.info("[migration-12] Created thread_registry table");
   },
 };
 
@@ -481,11 +504,56 @@ CREATE TABLE IF NOT EXISTS temporal_narratives (
 );
 CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS thread_registry (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id       INTEGER NOT NULL UNIQUE,
+  name            TEXT NOT NULL,
+  type            TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
+  root_thread_id  INTEGER,
+  badge           TEXT NOT NULL DEFAULT 'root',
+  client          TEXT DEFAULT 'claude',
+  max_retries     INTEGER DEFAULT 5,
+  cooldown_ms     INTEGER DEFAULT 300000,
+  keep_alive      INTEGER DEFAULT 0,
+  created_at      TEXT NOT NULL,
+  last_active_at  TEXT,
+  status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired'))
+);
+CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
+CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
+CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
+
 CREATE TABLE IF NOT EXISTS schema_version (
   version     INTEGER PRIMARY KEY,
   applied_at  TEXT NOT NULL
 );
 `;
+
+/**
+ * Backward-compatibility migration: if thread_registry is empty but we have
+ * episodes for known threads, register them as root threads so existing
+ * deployments don't lose visibility after the thread_registry feature lands.
+ */
+function migrateExistingRootThreads(db: Database): void {
+  const count = (db.prepare("SELECT COUNT(*) as cnt FROM thread_registry").get() as Record<string, unknown>).cnt as number;
+  if (count > 0) return;
+
+  const rows = db.prepare("SELECT DISTINCT thread_id FROM episodes ORDER BY thread_id").all() as Record<string, unknown>[];
+  if (rows.length === 0) return;
+
+  const now = nowISO();
+  const stmt = db.prepare(
+    "INSERT OR IGNORE INTO thread_registry (thread_id, name, type, badge, client, keep_alive, created_at, status) VALUES (?, ?, 'root', 'root', 'claude', 0, ?, 'active')"
+  );
+  const txn = db.transaction(() => {
+    for (const row of rows) {
+      const threadId = row.thread_id as number;
+      stmt.run(threadId, `Thread ${threadId}`, now);
+    }
+  });
+  txn();
+  log.info(`Migrated ${rows.length} existing threads as roots`);
+}
 
 export function initMemoryDb(): Database {
   const dbDir = join(homedir(), ".remote-copilot-mcp");
@@ -514,6 +582,9 @@ export function initMemoryDb(): Database {
   // After each successful column addition, record the corresponding migration
   // version so it isn't retried but also isn't force-stamped over failures.
   ensureSchemaIntegrity(db);
+
+  // Auto-migrate existing threads as roots (backward compatibility)
+  migrateExistingRootThreads(db);
 
   // NOTE: We deliberately do NOT force-stamp schema_version to SCHEMA_VERSION
   // here. If a migration failed, its version is not recorded, so it will be
