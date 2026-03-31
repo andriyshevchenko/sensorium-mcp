@@ -1,0 +1,369 @@
+param(
+    [ValidateSet("production", "development")]
+    [string]$Mode = "production"
+)
+
+<#
+.SYNOPSIS
+    Sensorium MCP Server Auto-Update Watcher
+#>
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+$POLL_AT_HOUR = 4
+$MCP_START_COMMAND = "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM"
+$POLL_INTERVAL_SECONDS = 60
+$GRACE_PERIOD_SECONDS = 300
+$MIN_UPTIME_SECONDS = 600
+$DATA_DIR = "$env:USERPROFILE\.remote-copilot-mcp"
+$MAINTENANCE_FLAG = "$DATA_DIR\maintenance.flag"
+$VERSION_FILE = "$DATA_DIR\current-version.txt"
+$NPX_CACHE_DIR = "$env:LOCALAPPDATA\npm-cache\_npx"
+$REGISTRY_URL = "https://registry.npmjs.org/sensorium-mcp/latest"
+$WATCHER_PORT = 3848
+
+# Normalize mode (safety)
+$Mode = $Mode.ToLower()
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [$Level] $Message"
+}
+
+function Get-RemoteVersion {
+    try {
+        $response = Invoke-RestMethod -Uri $REGISTRY_URL -ErrorAction Stop
+        return $response.version
+    }
+    catch {
+        Write-Log "Failed to fetch remote version: $_" -Level "ERROR"
+        return $null
+    }
+}
+
+function Get-LocalVersion {
+    if (Test-Path $VERSION_FILE) {
+        $version = (Get-Content $VERSION_FILE -Raw).Trim()
+        if ($version) { return $version }
+    }
+    return $null
+}
+
+function Set-LocalVersion {
+    param([string]$Version)
+    if (-not (Test-Path $DATA_DIR)) {
+        New-Item -ItemType Directory -Path $DATA_DIR -Force | Out-Null
+    }
+    $Version | Out-File -FilePath $VERSION_FILE -Encoding utf8 -NoNewline
+}
+
+function Write-MaintenanceFlag {
+    param([string]$NewVersion)
+    if (-not (Test-Path $DATA_DIR)) {
+        New-Item -ItemType Directory -Path $DATA_DIR -Force | Out-Null
+    }
+    $content = @{
+        version   = $NewVersion
+        timestamp = (Get-Date -Format "o")
+    } | ConvertTo-Json -Compress
+
+    $content | Out-File -FilePath $MAINTENANCE_FLAG -Encoding utf8 -Force
+    Write-Log "Maintenance flag written: $MAINTENANCE_FLAG"
+}
+
+function Remove-MaintenanceFlag {
+    if (Test-Path $MAINTENANCE_FLAG) {
+        Remove-Item -Path $MAINTENANCE_FLAG -Force
+        Write-Log "Maintenance flag removed."
+    }
+}
+
+function Stop-McpServer {
+    Write-Log "Searching for running sensorium-mcp processes..."
+
+    $processes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
+
+    if ($processes) {
+        # Wait until the server is idle (no tool call in the last 30s)
+        # to avoid killing mid-request and crashing the agent session.
+        $heartbeatFile = "$DATA_DIR\last-activity.txt"
+        $maxWait = 300  # absolute max wait (seconds)
+        $idleThreshold = 300  # seconds since last tool call (5 min -- agent may be doing subagent work via other MCP servers)
+        $waited = 0
+
+        while ($waited -lt $maxWait) {
+            $idle = $true
+            if (Test-Path $heartbeatFile) {
+                try {
+                    $lastActivity = [long](Get-Content $heartbeatFile -Raw).Trim()
+                    $nowMs = [long]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+                    $ageSec = ($nowMs - $lastActivity) / 1000
+                    if ($ageSec -lt $idleThreshold) {
+                        $idle = $false
+                    }
+                } catch {
+                    # Can't read -- assume idle
+                }
+            }
+
+            if ($idle) {
+                Write-Log "Server idle (no tool call in ${idleThreshold}s) -- safe to kill."
+                break
+            }
+
+                Write-Log "Server active (tool call ${ageSec}s ago) -- waiting..."
+            Start-Sleep -Seconds 5
+            $waited += 5
+        }
+
+        if ($waited -ge $maxWait) {
+                Write-Log "Max wait (${maxWait}s) exceeded -- force-killing." -Level "WARN"
+        }
+
+        foreach ($proc in $processes) {
+            try {
+                Write-Log "Stopping PID=$($proc.ProcessId)"
+                # Use taskkill /F /T instead of Stop-Process to kill the entire process tree
+                # (securevault → npx → node chain creates 8+ levels; Stop-Process only kills the target PID)
+                & taskkill /F /T /PID $proc.ProcessId 2>&1 | Out-Null
+            }
+            catch {
+                Write-Log "Failed to stop PID=$($proc.ProcessId): $_" -Level "WARN"
+            }
+        }
+
+        Start-Sleep -Seconds 3
+        # Verify all processes are dead
+        $remaining = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
+        if ($remaining) {
+            Write-Log "WARNING: $($remaining.Count) sensorium-mcp processes still running after kill" -Level "WARN"
+        }
+    }
+    else {
+        Write-Log "No running sensorium-mcp processes found." -Level "WARN"
+    }
+}
+
+function Stop-StaleProcesses {
+    <#
+    .SYNOPSIS
+        Kill sensorium-mcp processes that were started before the last update.
+        Compares each process CreationDate against the VERSION_FILE last-write
+        time. If a process predates the version file, it's running old code.
+    #>
+    if (-not (Test-Path $VERSION_FILE)) { return }
+    $versionFileTime = (Get-Item $VERSION_FILE).LastWriteTime
+
+    $processes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine -match "sensorium-mcp" }
+
+    if (-not $processes) { return }
+
+    foreach ($proc in $processes) {
+        $ageSec = ($versionFileTime - $proc.CreationDate).TotalSeconds
+        if ($proc.CreationDate -lt $versionFileTime -and $ageSec -gt 60) {
+            Write-Log "Killing stale process PID=$($proc.ProcessId) (started $($proc.CreationDate), version file updated $versionFileTime)" -Level "WARN"
+            try {
+                # Use taskkill /F /T instead of Stop-Process to kill the entire process tree
+                # (securevault → npx → node chain creates 8+ levels; Stop-Process only kills the target PID)
+                & taskkill /F /T /PID $proc.ProcessId 2>&1 | Out-Null
+            }
+            catch {
+                Write-Log "Failed to kill stale PID=$($proc.ProcessId): $_" -Level "WARN"
+            }
+        }
+    }
+}
+
+function Clear-NpxCache {
+    if (-not (Test-Path $NPX_CACHE_DIR)) { return }
+    Write-Log "Clearing sensorium-mcp from npx cache..."
+    Get-ChildItem -Path $NPX_CACHE_DIR -Directory -Force | ForEach-Object {
+        $pkg = Join-Path $_.FullName "node_modules\sensorium-mcp"
+        if (Test-Path $pkg) {
+            Write-Log "Removing cache entry: $($_.Name)"
+            Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Start-McpServer {
+    Write-Log "Starting MCP server..."
+
+    try {
+        $parts = $MCP_START_COMMAND -split " ", 2
+        Start-Process -FilePath $parts[0] -ArgumentList $parts[1] -WindowStyle Hidden | Out-Null
+    }
+    catch {
+        Write-Log "Failed to start MCP server: $_" -Level "ERROR"
+    }
+}
+
+function Test-McpServerRunning {
+    # First check: is anything listening on the MCP HTTP port?
+    $port = if ($env:MCP_HTTP_PORT) { $env:MCP_HTTP_PORT } else { 3847 }
+    $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+    if ($listener) { return $true }
+
+    # Fallback: check for sensorium-mcp node processes
+    $processes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match "sensorium-mcp" }
+
+    return ($processes.Count -gt 0)
+}
+
+# ============================================================================
+# Update Logic
+# ============================================================================
+
+function Invoke-UpdateCheck {
+
+    $timeSinceStart = (Get-Date) - $script:lastStartTime
+    if ($timeSinceStart.TotalSeconds -gt $STARTUP_GRACE_SECONDS -and -not (Test-McpServerRunning)) {
+        Write-Log "Server not running, restarting..." -Level "WARN"
+        Start-McpServer
+        $script:lastStartTime = Get-Date
+    }
+
+    $remoteVersion = Get-RemoteVersion
+    if (-not $remoteVersion) { return }
+
+    $localVersion = Get-LocalVersion
+
+    if (-not $localVersion) {
+        Set-LocalVersion $remoteVersion
+        return
+    }
+
+    if ($remoteVersion -eq $localVersion) {
+        Write-Log "Up to date: v$localVersion"
+        return
+    }
+
+    $uptime = (Get-Date) - $script:lastStartTime
+    if ($uptime.TotalSeconds -lt $MIN_UPTIME_SECONDS) {
+        Write-Log "Deferring update (uptime too low)" -Level "WARN"
+        return
+    }
+
+    Write-Log "Updating $localVersion -> $remoteVersion"
+
+    Write-MaintenanceFlag $remoteVersion
+    Start-Sleep $GRACE_PERIOD_SECONDS
+
+    Stop-McpServer
+    Clear-NpxCache
+
+    # Set version BEFORE starting server so stale detection won't kill the new process
+    Set-LocalVersion $remoteVersion
+
+    Start-McpServer
+
+    # Wait for new process to start, then kill any leftover old-version processes
+    Start-Sleep -Seconds 10
+    Stop-StaleProcesses
+
+    $script:lastStartTime = Get-Date
+
+    Remove-MaintenanceFlag
+
+    Write-Log "Update complete."
+}
+
+function Get-SecondsUntilHour {
+    param([int]$Hour)
+
+    $now = Get-Date
+    $target = Get-Date -Hour $Hour -Minute 0 -Second 0
+
+    if ($target -le $now) {
+        $target = $target.AddDays(1)
+    }
+
+    return [math]::Ceiling(($target - $now).TotalSeconds)
+}
+
+# ============================================================================
+# Startup
+# ============================================================================
+
+Write-Log "Watcher started (Mode: $Mode)"
+
+$script:lastStartTime = [datetime]::MinValue
+$STARTUP_GRACE_SECONDS = 30
+
+# Kill any leftover processes running outdated versions
+Stop-StaleProcesses
+
+if (-not (Test-McpServerRunning)) {
+    Start-McpServer
+    $script:lastStartTime = Get-Date
+}
+
+# Start watcher MCP server (HTTP mode -- stays alive across main server restarts)
+# Resolve the installed sensorium-mcp entry point from the npx cache instead of
+# downloading @latest (avoids re-fetching and possible version mismatch).
+$watcherEntry = (Get-ChildItem "$NPX_CACHE_DIR\*\node_modules\sensorium-mcp\dist\index.js" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+
+if ($watcherEntry) {
+    $watcherProcess = Start-Process -FilePath "node" -ArgumentList "`"$watcherEntry`" --watcher --watcher-port $WATCHER_PORT" -PassThru -NoNewWindow
+    Write-Log "Watcher MCP server started on port $WATCHER_PORT (PID: $($watcherProcess.Id)) from $watcherEntry"
+} else {
+    Write-Log "Cannot find installed sensorium-mcp in npx cache -- watcher not started" -Level "WARN"
+}
+
+# ============================================================================
+# Main Loop
+# ============================================================================
+
+try {
+
+if ($Mode -eq "production") {
+
+    while ($true) {
+        $sleep = Get-SecondsUntilHour $POLL_AT_HOUR
+        Write-Log "Next check in $sleep seconds"
+        Start-Sleep $sleep
+
+        try { Invoke-UpdateCheck }
+        catch {
+            Write-Log "Error: $_" -Level "ERROR"
+            Remove-MaintenanceFlag
+        }
+    }
+
+} else {
+
+    Write-Log "Development mode polling every $POLL_INTERVAL_SECONDS sec"
+
+    while ($true) {
+        try {
+            Stop-StaleProcesses
+            Invoke-UpdateCheck
+        }
+        catch {
+            Write-Log "Error: $_" -Level "ERROR"
+            Remove-MaintenanceFlag
+        }
+
+        Start-Sleep $POLL_INTERVAL_SECONDS
+    }
+}
+
+} finally {
+    # Cleanup: stop watcher MCP server
+    if ($watcherProcess -and -not $watcherProcess.HasExited) {
+        Write-Log "Stopping watcher MCP server (PID: $($watcherProcess.Id))..."
+        Stop-Process -Id $watcherProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+}
