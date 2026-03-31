@@ -18,6 +18,7 @@ import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { checkMaintenanceFlag, writeActivityHeartbeat } from "../../data/file-storage.js";
+import { getEffectiveAgentType } from "../../config.js";
 import { peekThreadMessages } from "../../dispatcher.js";
 import type { initMemoryDb } from "../../memory.js";
 import type { TelegramClient } from "../../telegram.js";
@@ -150,7 +151,12 @@ export async function handleWaitForInstructions(
   }
   const callNumber = ++state.waitCallCount;
   const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
-  const deadline = Date.now() + timeoutMs;
+  // Codex MCP client enforces a hard 120s tool-call timeout and ignores SSE
+  // keepalive progress notifications. Cap the loop to 90s so we always return
+  // a valid response before Codex gives up and exits.
+  const agentType = getEffectiveAgentType(effectiveThreadId);
+  const effectiveTimeoutMs = agentType === "codex" ? 90_000 : timeoutMs;
+  const deadline = Date.now() + effectiveTimeoutMs;
 
   // ── Pending task injection (pre-loop check) ────────────────────────────
   // If start_thread or send_message_to_thread wrote a task file for this
