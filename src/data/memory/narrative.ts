@@ -15,6 +15,7 @@ import { chatCompletion } from "../../integrations/openai/chat.js";
 import { type Episode } from "./episodes.js";
 import { type SemanticNote } from "./semantic.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
+import { parseJsonArray, parseJsonObject } from "./utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -95,8 +96,8 @@ function getEpisodesInPeriod(db: Database, threadId: number, start: string, end:
     timestamp: r.timestamp as string,
     type: r.type as Episode["type"],
     modality: r.modality as Episode["modality"],
-    content: JSON.parse((r.content as string) || "{}"),
-    topicTags: JSON.parse((r.topic_tags as string) || "[]"),
+    content: parseJsonObject(r.content as string),
+    topicTags: parseJsonArray(r.topic_tags as string),
     importance: r.importance as number,
     consolidated: (r.consolidated as number) === 1,
     accessedCount: r.accessed_count as number,
@@ -118,11 +119,11 @@ function getNotesInPeriod(db: Database, threadId: number, start: string): Semant
     noteId: r.note_id as string,
     type: r.type as SemanticNote["type"],
     content: r.content as string,
-    keywords: JSON.parse((r.keywords as string) || "[]"),
+    keywords: parseJsonArray(r.keywords as string),
     confidence: r.confidence as number,
-    sourceEpisodes: JSON.parse((r.source_episodes as string) || "[]"),
-    linkedNotes: JSON.parse((r.linked_notes as string) || "[]"),
-    linkReasons: JSON.parse((r.link_reasons as string) || "[]"),
+    sourceEpisodes: parseJsonArray(r.source_episodes as string),
+    linkedNotes: parseJsonArray(r.linked_notes as string),
+    linkReasons: parseJsonObject(r.link_reasons as string) as Record<string, string>,
     validFrom: r.valid_from as string,
     validTo: r.valid_to as string | null,
     supersededBy: r.superseded_by as string | null,
@@ -265,13 +266,15 @@ async function generateNarrative(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
+  const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+
   const { start, end } = getPeriodBounds(resolution);
-  const episodes = getEpisodesInPeriod(db, threadId, start, end);
+  const episodes = getEpisodesInPeriod(db, knowledgeThreadId, start, end);
 
   // Skip if too few episodes
   if (episodes.length < 3) return null;
 
-  const notes = getNotesInPeriod(db, threadId, start);
+  const notes = getNotesInPeriod(db, knowledgeThreadId, start);
   const maxChars = TOKEN_BUDGETS[resolution] * 4; // ~4 chars per token
 
   const episodesText = formatEpisodesForLLM(episodes, maxChars * 2);
@@ -292,6 +295,7 @@ async function generateNarrative(
       model: NARRATIVE_MODEL,
       temperature: 0.3,
       maxTokens: Math.ceil(TOKEN_BUDGETS[resolution] / 4), // rough token limit
+      timeoutMs: 60_000,
     },
   );
 
@@ -308,9 +312,9 @@ async function generateNarrative(
        source_note_count = excluded.source_note_count,
        model = excluded.model,
        created_at = datetime('now')`,
-  ).run(resolveKnowledgeThreadId(threadId), resolution, start, end, narrative.trim(), episodes.length, notes.length, NARRATIVE_MODEL);
+  ).run(knowledgeThreadId, resolution, start, end, narrative.trim(), episodes.length, notes.length, NARRATIVE_MODEL);
 
-  return getLastNarrative(db, threadId, resolution);
+  return getLastNarrative(db, knowledgeThreadId, resolution);
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
