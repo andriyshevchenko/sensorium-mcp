@@ -55,3 +55,20 @@ export interface KeepAliveSettings {
   keepAliveMaxRetries: number
   keepAliveCooldownMs: number
 }
+
+export interface ThreadEntry {
+  id: number
+  threadId: number
+  name: string
+  type: 'root' | 'daily' | 'branch' | 'worker'
+  rootThreadId: number | null
+  badge: string
+  client: string
+  maxRetries: number
+  cooldownMs: number
+  keepAlive: boolean
+  createdAt: string
+  lastActiveAt: string | null
+  sessionResetAt: string | null
+  status: 'active' | 'archived' | 'expired'
+}
