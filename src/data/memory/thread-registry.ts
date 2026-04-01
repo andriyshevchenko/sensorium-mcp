@@ -21,6 +21,7 @@ export interface ThreadRegistryEntry {
   maxRetries: number;
   cooldownMs: number;
   keepAlive: boolean;
+  dailyRotation: boolean;
   createdAt: string;
   lastActiveAt: string | null;
   sessionResetAt: string | null;
@@ -43,6 +44,7 @@ function rowToEntry(row: Record<string, unknown>): ThreadRegistryEntry {
     maxRetries: row.max_retries as number,
     cooldownMs: row.cooldown_ms as number,
     keepAlive: !!(row.keep_alive as number),
+    dailyRotation: !!(row.daily_rotation as number),
     createdAt: row.created_at as string,
     lastActiveAt: (row.last_active_at as string | null) ?? null,
     sessionResetAt: (row.session_reset_at as string | null) ?? null,
@@ -141,7 +143,7 @@ export function getActiveThreads(db: Database): ThreadRegistryEntry[] {
 export function updateThread(
   db: Database,
   threadId: number,
-  updates: Partial<Pick<ThreadRegistryEntry, 'name' | 'status' | 'lastActiveAt' | 'keepAlive' | 'client' | 'maxRetries' | 'cooldownMs' | 'badge'>>,
+  updates: Partial<Pick<ThreadRegistryEntry, 'name' | 'status' | 'lastActiveAt' | 'keepAlive' | 'dailyRotation' | 'client' | 'maxRetries' | 'cooldownMs' | 'badge'>>,
 ): boolean {
   const setClauses: string[] = [];
   const params: unknown[] = [];
@@ -150,6 +152,7 @@ export function updateThread(
   if (updates.status !== undefined) { setClauses.push('status = ?'); params.push(updates.status); }
   if (updates.lastActiveAt !== undefined) { setClauses.push('last_active_at = ?'); params.push(updates.lastActiveAt); }
   if (updates.keepAlive !== undefined) { setClauses.push('keep_alive = ?'); params.push(updates.keepAlive ? 1 : 0); }
+  if (updates.dailyRotation !== undefined) { setClauses.push('daily_rotation = ?'); params.push(updates.dailyRotation ? 1 : 0); }
   if (updates.client !== undefined) { setClauses.push('client = ?'); params.push(updates.client); }
   if (updates.maxRetries !== undefined) { setClauses.push('max_retries = ?'); params.push(updates.maxRetries); }
   if (updates.cooldownMs !== undefined) { setClauses.push('cooldown_ms = ?'); params.push(updates.cooldownMs); }
