@@ -13,7 +13,7 @@ import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
 import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "../sessions.js";
 import { synthesizeGhostMemory } from "../memory.js";
-import { archiveThread, getAllThreads, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
+import { archiveThread, getAllThreads, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 
@@ -460,24 +460,31 @@ export function spawnAgentProcess(
   };
   spawnedThreads.push(entry);
 
-  // Monitor process exit — clean up stale entries, PID file, and log health info
+  // Monitor process exit — clean up stale entries, PID file, update DB, and log health info
   child.on("exit", async (code) => {
     const idx = spawnedThreads.indexOf(entry);
     if (idx !== -1) spawnedThreads.splice(idx, 1);
     try { unlinkSync(pidFilePath); } catch { /* already removed */ }
 
-    // Synthesize ghost thread outcomes back to parent
-    if (entry.memorySourceThreadId !== undefined) {
-      try {
-        const { initMemoryDb: getDb } = await import("../memory.js");
-        const db = getDb();
-        const result = await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name);
-        if (result.synthesizedNotes > 0 || result.synthesizedEpisode) {
-          log.info(`[synthesis] Ghost ${threadId} → parent ${entry.memorySourceThreadId}: ${result.synthesizedNotes} notes, episode: ${result.synthesizedEpisode}`);
+    // Update thread registry DB status to 'exited'
+    try {
+      const { initMemoryDb: getDb } = await import("../memory.js");
+      const db = getDb();
+      updateThread(db, threadId, { status: 'exited', lastActiveAt: new Date().toISOString() });
+
+      // Synthesize ghost thread outcomes back to parent
+      if (entry.memorySourceThreadId !== undefined) {
+        try {
+          const result = await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name);
+          if (result.synthesizedNotes > 0 || result.synthesizedEpisode) {
+            log.info(`[synthesis] Ghost ${threadId} → parent ${entry.memorySourceThreadId}: ${result.synthesizedNotes} notes, episode: ${result.synthesizedEpisode}`);
+          }
+        } catch (err) {
+          log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`);
         }
-      } catch (err) {
-        log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`);
       }
+    } catch (err) {
+      log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
     }
 
     log.info(`[start_thread] Claude process PID=${pid} for thread ${threadId} exited with code ${code}`);
@@ -587,17 +594,24 @@ export function spawnCopilotProcess(
     if (idx !== -1) spawnedThreads.splice(idx, 1);
     try { unlinkSync(pidFilePath); } catch { /* already removed */ }
 
-    if (entry.memorySourceThreadId !== undefined) {
-      try {
-        const { initMemoryDb: getDb } = await import("../memory.js");
-        const db = getDb();
-        const result = await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name);
-        if (result.synthesizedNotes > 0 || result.synthesizedEpisode) {
-          log.info(`[synthesis] Ghost ${threadId} → parent ${entry.memorySourceThreadId}: ${result.synthesizedNotes} notes, episode: ${result.synthesizedEpisode}`);
+    // Update thread registry DB status to 'exited'
+    try {
+      const { initMemoryDb: getDb } = await import("../memory.js");
+      const db = getDb();
+      updateThread(db, threadId, { status: 'exited', lastActiveAt: new Date().toISOString() });
+
+      if (entry.memorySourceThreadId !== undefined) {
+        try {
+          const result = await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name);
+          if (result.synthesizedNotes > 0 || result.synthesizedEpisode) {
+            log.info(`[synthesis] Ghost ${threadId} → parent ${entry.memorySourceThreadId}: ${result.synthesizedNotes} notes, episode: ${result.synthesizedEpisode}`);
+          }
+        } catch (err) {
+          log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`);
         }
-      } catch (err) {
-        log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`);
       }
+    } catch (err) {
+      log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
     }
 
     log.info(`[start_thread] Copilot process PID=${pid} for thread ${threadId} exited with code ${code}`);
@@ -761,17 +775,24 @@ export function spawnCodexProcess(
     if (idx !== -1) spawnedThreads.splice(idx, 1);
     try { unlinkSync(pidFilePath); } catch { /* already removed */ }
 
-    if (entry.memorySourceThreadId !== undefined) {
-      try {
-        const { initMemoryDb: getDb } = await import("../memory.js");
-        const db = getDb();
-        const result = await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name);
-        if (result.synthesizedNotes > 0 || result.synthesizedEpisode) {
-          log.info(`[synthesis] Ghost ${threadId} → parent ${entry.memorySourceThreadId}: ${result.synthesizedNotes} notes, episode: ${result.synthesizedEpisode}`);
+    // Update thread registry DB status to 'exited'
+    try {
+      const { initMemoryDb: getDb } = await import("../memory.js");
+      const db = getDb();
+      updateThread(db, threadId, { status: 'exited', lastActiveAt: new Date().toISOString() });
+
+      if (entry.memorySourceThreadId !== undefined) {
+        try {
+          const result = await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name);
+          if (result.synthesizedNotes > 0 || result.synthesizedEpisode) {
+            log.info(`[synthesis] Ghost ${threadId} → parent ${entry.memorySourceThreadId}: ${result.synthesizedNotes} notes, episode: ${result.synthesizedEpisode}`);
+          }
+        } catch (err) {
+          log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`);
         }
-      } catch (err) {
-        log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`);
       }
+    } catch (err) {
+      log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
     }
 
     log.info(`[start_thread] Codex process PID=${pid} for thread ${threadId} exited with code ${code}`);
@@ -1073,6 +1094,7 @@ function classifyThreadStatus(t: CollectedThread): ThreadStatus {
   if (t.pid !== undefined && !t.alive) return "dead";
   // Use persistent registry status when ephemeral sources have no data
   if (t.registryStatus === "archived" || t.registryStatus === "expired") return "dead";
+  if (t.registryStatus === "exited") return "dead";
   if (t.registryStatus === "active" && t.keepAlive) return "dormant";
   if (t.registryStatus === "active") return "dormant";
   return "unknown";

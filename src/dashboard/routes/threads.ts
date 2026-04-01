@@ -31,7 +31,7 @@ import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./ty
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const VALID_STATUSES = ["active", "archived", "expired"] as const;
+const VALID_STATUSES = ["active", "archived", "expired", "exited"] as const;
 const VALID_CLIENTS = ["claude", "copilot", "codex"] as const;
 
 /** Extract valid update fields from a request body. Returns an error string on validation failure. */

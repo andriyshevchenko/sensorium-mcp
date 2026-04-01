@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -240,6 +240,32 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
     `);
     log.info("[migration-14] Widened temporal_narratives resolution CHECK to include quarter and half_year");
+  },
+  15: (db) => {
+    // Widen thread_registry status CHECK to include 'exited'.
+    // SQLite doesn't support ALTER CONSTRAINT, so recreate the table.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS thread_registry_new (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id       INTEGER NOT NULL UNIQUE,
+        name            TEXT NOT NULL,
+        type            TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
+        root_thread_id  INTEGER,
+        badge           TEXT NOT NULL DEFAULT 'root',
+        client          TEXT DEFAULT 'claude',
+        max_retries     INTEGER DEFAULT 5,
+        cooldown_ms     INTEGER DEFAULT 300000,
+        keep_alive      INTEGER DEFAULT 0,
+        created_at      TEXT NOT NULL,
+        last_active_at  TEXT,
+        session_reset_at TEXT,
+        status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited'))
+      );
+      INSERT OR IGNORE INTO thread_registry_new SELECT * FROM thread_registry;
+      DROP TABLE thread_registry;
+      ALTER TABLE thread_registry_new RENAME TO thread_registry;
+    `);
+    log.info("[migration-15] Widened thread_registry status CHECK to include 'exited'");
   },
 };
 
@@ -592,7 +618,7 @@ CREATE TABLE IF NOT EXISTS thread_registry (
   created_at      TEXT NOT NULL,
   last_active_at  TEXT,
   session_reset_at TEXT,
-  status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired'))
+  status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited','exited','exited'))
 );
 CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
 CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
