@@ -1,0 +1,1464 @@
+- application [ref=e7]:
+  - generic [ref=e11]:
+    - generic [ref=e15]:
+      - generic [ref=e17]:
+        - button "Open office app launcher" [ref=e18]:
+          - img [ref=e20]
+        - img [ref=e22]
+      - search [ref=e43]:
+        - button [ref=e44]:
+          - img [ref=e45]
+        - combobox "Look for people, messages, files and more" [expanded] [active] [ref=e2338]
+        - listbox "Search suggestions" [ref=e2339]:
+          - generic [ref=e2340]:
+            - group [ref=e2341]:
+              - generic [ref=e2342]:
+                - option "Messages" [ref=e2344]:
+                  - generic [ref=e2346]: Messages
+                - option "Files" [ref=e2348]:
+                  - generic [ref=e2350]: Files
+                - option "Channels" [ref=e2352]:
+                  - generic [ref=e2354]: Channels
+                - option "Group chats" [ref=e2356]:
+                  - generic [ref=e2358]: Group chats
+                - option "Meetings" [ref=e2360]:
+                  - generic [ref=e2362]: Meetings
+                - option "Images" [ref=e2364]:
+                  - generic [ref=e2366]: Images
+            - group "People" [ref=e2367]:
+              - text: People
+              - generic [ref=e2369]:
+                - option "Person Mykhailo Struk" [ref=e2371]:
+                  - img [ref=e2373]:
+                    - generic [ref=e2374]: M
+                    - img [ref=e2375]
+                  - generic [ref=e2376]:
+                    - paragraph [ref=e2378]: Mykhailo
+                    - paragraph [ref=e2380]:
+                      - generic [ref=e2381]: Struk
+                - option "Person Vitalii Tymokhin" [ref=e2383]:
+                  - img [ref=e2385]:
+                    - generic [ref=e2386]: V
+                    - img [ref=e2387]
+                  - generic [ref=e2388]:
+                    - paragraph [ref=e2390]: Vitalii
+                    - paragraph [ref=e2392]:
+                      - generic [ref=e2393]: Tymokhin
+                - option "Person Nataliia Velychko" [ref=e2395]:
+                  - img [ref=e2397]:
+                    - generic [ref=e2398]: "N"
+                    - img [ref=e2399]
+                  - generic [ref=e2400]:
+                    - paragraph [ref=e2402]: Nataliia
+                    - paragraph [ref=e2404]:
+                      - generic [ref=e2405]: Velychko
+                - option "Person Mark Heath" [ref=e2407]:
+                  - img [ref=e2409]:
+                    - generic [ref=e2410]: M
+                    - img [ref=e2411]
+                  - generic [ref=e2412]:
+                    - paragraph [ref=e2414]: Mark
+                    - paragraph [ref=e2416]:
+                      - generic [ref=e2417]: Heath
+                - option "Person Oleksandr Ivanov" [ref=e2419]:
+                  - img [ref=e2421]:
+                    - generic [ref=e2422]: O
+                    - img [ref=e2423]
+                  - generic [ref=e2424]:
+                    - paragraph [ref=e2426]: Oleksandr
+                    - paragraph [ref=e2428]:
+                      - generic [ref=e2429]: Ivanov
+          - status [ref=e2430]: 5 suggestions available for , 5 in People
+      - generic [ref=e53]:
+        - button "Settings and more" [ref=e55]:
+          - img [ref=e58]
+        - button "Your profile, status Available" [ref=e62]:
+          - img "Profile picture of Andrii Shevchenko." [ref=e63]:
+            - generic [ref=e64]: AS
+            - img [ref=e65]
+            - img "available" [ref=e66]:
+              - img [ref=e68]
+    - group [ref=e73]:
+      - img [ref=e75]
+      - generic [ref=e77]: Stay in the know. Turn on desktop notifications.
+      - button "Turn on" [ref=e79]
+      - button "Close" [ref=e81]:
+        - img [ref=e83]
+    - generic [ref=e87]:
+      - generic [ref=e89]:
+        - navigation "Apps" [ref=e91]:
+          - generic "Activity (Ctrl+Shift+1)" [ref=e93]:
+            - button "Activity (Ctrl+Shift+1)" [ref=e94]:
+              - generic [ref=e95]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Activity
+          - generic "Chat (Ctrl+Shift+2)" [ref=e97]:
+            - button "Chat (Ctrl+Shift+2)" [pressed] [ref=e98]:
+              - generic [ref=e99]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Chat
+          - generic "IT Support (Ctrl+Shift+3)" [ref=e101]:
+            - button "IT Support (Ctrl+Shift+3)" [ref=e102]:
+              - generic [ref=e103]:
+                - generic:
+                  - generic:
+                    - img "IT Support"
+                    - img
+                  - generic: IT Support
+          - generic "Teams (Ctrl+Shift+4)" [ref=e105]:
+            - button "Teams (Ctrl+Shift+4)" [ref=e106]:
+              - generic [ref=e107]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Teams
+        - generic [ref=e108]:
+          - generic "View more apps" [ref=e109]:
+            - button "View more apps" [ref=e110]:
+              - generic [ref=e111]:
+                - generic:
+                  - generic:
+                    - img
+          - generic "Apps" [ref=e113]:
+            - button "Apps" [ref=e114]:
+              - generic [ref=e115]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Apps
+      - generic [ref=e118]: Has context menu
+    - generic [ref=e121]:
+      - generic [ref=e122]:
+        - generic [ref=e123]:
+          - heading "Chat" [level=1] [ref=e124]
+          - toolbar "Rail actions" [ref=e125]:
+            - button "More list options" [ref=e127]:
+              - img [ref=e130]
+            - button "Show filter text box (Ctrl+Shift+F)" [ref=e132]:
+              - img [ref=e134]
+            - button "New message (Alt+Shift+N)" [ref=e136]:
+              - img [ref=e138]
+            - button "New items" [ref=e140]:
+              - img [ref=e142]
+        - tree [ref=e145]:
+          - generic [ref=e146]:
+            - treeitem "Mentions" [level=1] [ref=e147] [cursor=pointer]:
+              - generic [ref=e148]:
+                - img [ref=e151]
+                - generic [ref=e153]: Mentions
+            - separator [ref=e154]
+          - treeitem "Chats" [expanded] [level=1] [ref=e155] [cursor=pointer]:
+            - generic [ref=e156]:
+              - img [ref=e158]
+              - generic [ref=e161]: Chats
+            - group [ref=e162]:
+              - 'treeitem "Unread message Meeting chat AI-First Transition Approach for Investigate 2.7 Last message Serhii: I believe you could create one manually Muted 4:47 PM" [level=2] [ref=e2073]':
+                - generic [ref=e164]:
+                  - img [ref=e167]:
+                    - img [ref=e169]
+                  - generic [ref=e171]:
+                    - generic [ref=e2074]: Unread
+                    - generic [ref=e172]:
+                      - generic [ref=e175]: AI-First Transition Approach for Investigate 2.7
+                      - time [ref=e177]: 4:47 PM
+                    - generic [ref=e179]: "Serhii: I believe you could create one manually"
+              - 'treeitem "Group chat Team Vitalii T Has pinned messages Last message Volodymyr: ні Muted 3:47 PM" [level=2] [ref=e187]':
+                - generic [ref=e188]:
+                  - img [ref=e191]:
+                    - img [ref=e193]
+                  - generic [ref=e195]:
+                    - generic [ref=e196]:
+                      - generic [ref=e199]: Team Vitalii T
+                      - time [ref=e201]: 3:47 PM
+                    - generic [ref=e203]: "Volodymyr: ні"
+              - treeitem "Chat Mykhailo Struk Available Last message не планував 12:23 PM" [level=2] [ref=e204]:
+                - generic [ref=e205]:
+                  - generic [ref=e2076]:
+                    - img [ref=e2077]
+                    - img [ref=e2078]:
+                      - img [ref=e2080]
+                  - generic [ref=e214]:
+                    - generic [ref=e215]:
+                      - generic [ref=e218]: Mykhailo Struk
+                      - time [ref=e220]: 12:23 PM
+                    - generic [ref=e222]: не планував
+              - treeitem "Meeting chat NICE DSI Team Lumina Sync-Up Last message Recording is ready 3/31" [level=2] [ref=e223]:
+                - generic [ref=e224]:
+                  - img [ref=e227]:
+                    - img [ref=e229]
+                  - generic [ref=e231]:
+                    - generic [ref=e232]:
+                      - generic [ref=e235]: NICE DSI Team Lumina Sync-Up
+                      - time [ref=e237]: 3/31
+                    - generic [ref=e239]: Recording is ready
+              - treeitem "Meeting chat Team Vitalii Completion meeting Last message Recording is ready 3/31" [level=2] [ref=e240]:
+                - generic [ref=e241]:
+                  - img [ref=e244]:
+                    - img [ref=e246]
+                  - generic [ref=e248]:
+                    - generic [ref=e249]:
+                      - generic [ref=e252]: Team Vitalii Completion meeting
+                      - time [ref=e254]: 3/31
+                    - generic [ref=e256]: Recording is ready
+              - 'treeitem "Group chat SAS GL Last message Nataliia: нагадаю про вихідні у наступному спрінті 3/31" [level=2] [ref=e257]':
+                - generic [ref=e258]:
+                  - img [ref=e261]
+                  - generic [ref=e262]:
+                    - generic [ref=e263]:
+                      - generic [ref=e266]: SAS GL
+                      - time [ref=e268]: 3/31
+                    - generic [ref=e270]: "Nataliia: нагадаю про вихідні у наступному спрінті"
+              - 'treeitem "Meeting chat Review cards before completeon Last message Nataliia: оце всі задачі на квітень 3/30" [level=2] [ref=e271]':
+                - generic [ref=e272]:
+                  - img [ref=e275]:
+                    - img [ref=e277]
+                  - generic [ref=e279]:
+                    - generic [ref=e280]:
+                      - generic [ref=e283]: Review cards before completeon
+                      - time [ref=e285]: 3/30
+                    - generic [ref=e287]: "Nataliia: оце всі задачі на квітень"
+              - 'treeitem "Meeting chat Team Vitalii tea Last message Mykhailo: Tech Debt Item 224462: Request service: Revisit helpers usage to update request and … 3/26" [level=2] [ref=e288]':
+                - generic [ref=e289]:
+                  - img [ref=e292]:
+                    - img [ref=e294]
+                  - generic [ref=e296]:
+                    - generic [ref=e297]:
+                      - generic [ref=e300]: Team Vitalii tea
+                      - time [ref=e302]: 3/26
+                    - generic [ref=e304]: "Mykhailo: Tech Debt Item 224462: Request service: Revisit helpers usage to update request and …"
+              - 'treeitem "Meeting chat Review current state for tasks and bugs Last message You: Дякую 3/20" [level=2] [ref=e305]':
+                - generic [ref=e306]:
+                  - img [ref=e309]:
+                    - img [ref=e311]
+                  - generic [ref=e313]:
+                    - generic [ref=e314]:
+                      - generic [ref=e317]: Review current state for tasks and bugs
+                      - time [ref=e319]: 3/20
+                    - generic [ref=e321]: "You: Дякую"
+              - 'treeitem "Meeting chat Discuss next steps for the bug 279605 Last message Mark: I have added a comment about removing the Python test tool and marked as approved wi… 3/20" [level=2] [ref=e322]':
+                - generic [ref=e323]:
+                  - img [ref=e326]:
+                    - img [ref=e328]
+                  - generic [ref=e330]:
+                    - generic [ref=e331]:
+                      - generic [ref=e334]: Discuss next steps for the bug 279605
+                      - time [ref=e336]: 3/20
+                    - generic [ref=e338]: "Mark: I have added a comment about removing the Python test tool and marked as approved wi…"
+              - 'treeitem "Meeting chat SAS GL Team meeting Last message Mykhailo: Вибачаюсь, не вдається під''єднатися. Треба бути на іншому колі 3/19" [level=2] [ref=e339]':
+                - generic [ref=e340]:
+                  - img [ref=e343]:
+                    - img [ref=e345]
+                  - generic [ref=e347]:
+                    - generic [ref=e348]:
+                      - generic [ref=e351]: SAS GL Team meeting
+                      - time [ref=e353]: 3/19
+                    - generic [ref=e355]: "Mykhailo: Вибачаюсь, не вдається під'єднатися. Треба бути на іншому колі"
+              - treeitem "Chat Vitalii Tymokhin Available Last message запитаю його 3/19" [level=2] [ref=e2082]:
+                - generic [ref=e357]:
+                  - generic [ref=e2084]:
+                    - img [ref=e2085]
+                    - img [ref=e2086]:
+                      - img [ref=e2088]
+                  - generic [ref=e366]:
+                    - generic [ref=e367]:
+                      - generic [ref=e370]: Vitalii Tymokhin
+                      - time [ref=e372]: 3/19
+                    - generic [ref=e374]: запитаю його
+              - treeitem "Meeting chat How to set up and configure DSG for a deployed Investigate system Last message Recording is ready 3/19" [level=2] [ref=e375]:
+                - generic [ref=e376]:
+                  - img [ref=e379]:
+                    - img [ref=e381]
+                  - generic [ref=e383]:
+                    - generic [ref=e384]:
+                      - generic [ref=e387]: How to set up and configure DSG for a deployed Investigate system
+                      - time [ref=e389]: 3/19
+                    - generic [ref=e391]: Recording is ready
+              - 'treeitem "Chat Yevhenii Bondarenko Away Last message You: Є 3/19" [level=2] [ref=e392]':
+                - generic [ref=e393]:
+                  - generic [ref=e2091]:
+                    - img [ref=e2092]
+                    - img [ref=e2093]:
+                      - img [ref=e2095]
+                  - generic [ref=e402]:
+                    - generic [ref=e403]:
+                      - generic [ref=e406]: Yevhenii Bondarenko
+                      - time [ref=e408]: 3/19
+                    - generic [ref=e410]: "You: Є"
+              - 'treeitem "Chat Nataliia Velychko In a call Last message You: Дерил відмовився наскільки я зрозумів, коли я пропонував 3/19" [level=2] [ref=e411]':
+                - generic [ref=e412]:
+                  - generic [ref=e2098]:
+                    - img [ref=e2099]
+                    - img [ref=e2100]:
+                      - img [ref=e2102]
+                  - generic [ref=e421]:
+                    - generic [ref=e422]:
+                      - generic [ref=e425]: Nataliia Velychko
+                      - time [ref=e427]: 3/19
+                    - generic [ref=e429]: "You: Дерил відмовився наскільки я зрозумів, коли я пропонував"
+              - 'treeitem "Chat Andrii Shevchenko (You) You: You mentioned this. I want this Winner for richest detection: VANPY • 15+ … 3/11" [level=2] [ref=e430]':
+                - generic [ref=e431]:
+                  - generic [ref=e2105]:
+                    - img [ref=e2106]
+                    - img [ref=e2107]:
+                      - img [ref=e2109]
+                  - generic [ref=e440]:
+                    - generic [ref=e441]:
+                      - generic [ref=e444]: Andrii Shevchenko (You)
+                      - time [ref=e446]: 3/11
+                    - generic [ref=e448]: "You: You mentioned this. I want this Winner for richest detection: VANPY • 15+ …"
+              - treeitem "Meeting chat Public Safety & Justice Q1 all hands (option 2 of 2) Last message Recording is ready Muted 3/11" [level=2] [ref=e449]:
+                - generic [ref=e450]:
+                  - img [ref=e453]:
+                    - img [ref=e455]
+                  - generic [ref=e457]:
+                    - generic [ref=e458]:
+                      - generic [ref=e461]: Public Safety & Justice Q1 all hands (option 2 of 2)
+                      - time [ref=e463]: 3/11
+                    - generic [ref=e465]: Recording is ready
+              - treeitem "Meeting chat Public Safety Q1 all hands update (option 1 of 2) Last message Recording is ready 3/10" [level=2] [ref=e466]:
+                - generic [ref=e467]:
+                  - img [ref=e470]:
+                    - img [ref=e472]
+                  - generic [ref=e474]:
+                    - generic [ref=e475]:
+                      - generic [ref=e478]: Public Safety Q1 all hands update (option 1 of 2)
+                      - time [ref=e480]: 3/10
+                    - generic [ref=e482]: Recording is ready
+              - treeitem "Meeting chat Team Vitalii Feb26 kick-off meeting Last message Recording is ready 3/6" [level=2] [ref=e483]:
+                - generic [ref=e484]:
+                  - img [ref=e487]:
+                    - img [ref=e489]
+                  - generic [ref=e491]:
+                    - generic [ref=e492]:
+                      - generic [ref=e495]: Team Vitalii Feb26 kick-off meeting
+                      - time [ref=e497]: 3/6
+                    - generic [ref=e499]: Recording is ready
+              - 'treeitem "Meeting chat Knowledge sharing: Support tools Last message Halyna: все гуд дякую 3/5" [level=2] [ref=e500]':
+                - generic [ref=e501]:
+                  - img [ref=e504]:
+                    - img [ref=e506]
+                  - generic [ref=e508]:
+                    - generic [ref=e509]:
+                      - generic [ref=e512]: "Knowledge sharing: Support tools"
+                      - time [ref=e514]: 3/5
+                    - generic [ref=e516]: "Halyna: все гуд дякую"
+              - treeitem "Workflows Bot Away Workflows 1/16 Currently there is no description for flow \"Describe\"." [level=2] [ref=e2431]:
+                - generic [ref=e2112]:
+                  - button "Workflows Bot Away" [ref=e2432]:
+                    - img [ref=e2116]
+                  - generic [ref=e2117]:
+                    - generic [ref=e2118]:
+                      - generic [ref=e2121]: Workflows
+                      - time [ref=e2123]: 1/16
+                    - generic [ref=e2125]: Currently there is no description for flow "Describe".
+              - treeitem "See more" [level=2] [ref=e517]
+        - status [ref=e519]
+        - generic:
+          - generic [ref=e520]: Unread message
+          - generic [ref=e521]: Last message
+          - generic [ref=e522]: Group chat
+          - generic [ref=e523]: Meeting chat
+          - generic [ref=e524]: Chat
+          - generic [ref=e525]: Personal at mention
+          - generic [ref=e526]: Everyone at mention
+          - generic [ref=e527]: Important
+          - generic [ref=e528]: Urgent
+          - generic [ref=e529]: Draft
+          - generic [ref=e530]: Draft
+          - generic [ref=e531]: Muted
+          - generic [ref=e532]: Meeting in progress
+          - generic [ref=e533]: Meet now in progress
+          - generic [ref=e534]: You can't send messages because you are not a member of the chat.
+          - generic [ref=e535]: Private
+          - generic [ref=e536]: Shared
+          - generic [ref=e537]: Has context menu
+          - generic [ref=e538]: Channel at mention
+          - generic [ref=e539]: Team at mention
+          - generic [ref=e540]: Personal at mention
+          - generic [ref=e541]: Unread
+          - generic [ref=e542]: Unread
+          - generic [ref=e543]: Meeting in progress
+          - generic [ref=e544]: Unread
+          - generic [ref=e545]: Channel
+          - generic [ref=e546]: Team
+          - generic [ref=e547]: Has pinned messages
+          - generic [ref=e548]: See more
+          - generic [ref=e549]: Community
+          - generic [ref=e550]: Temporarily shown
+          - generic [ref=e551]: Has context menu
+          - generic [ref=e552]: Badged chat
+          - generic [ref=e553]: Badged chats
+        - generic [ref=e554]: Has context menu
+      - slider "Resize left panel" [ref=e556]
+    - generic [ref=e562]:
+      - generic [ref=e563]:
+        - img [ref=e565]
+        - generic [ref=e570]:
+          - heading "AI-First Transition Approach for Investigate 2.7" [level=2] [ref=e572]:
+            - generic "AI-First Transition Approach for Investigate 2.7" [ref=e574]
+          - list "Chat participants" [ref=e575]
+      - generic [ref=e576]:
+        - generic [ref=e577]:
+          - tablist [ref=e578]:
+            - tab "Chat" [selected] [ref=e580] [cursor=pointer]:
+              - generic [ref=e583]: Chat
+            - tab "4 more tabs." [ref=e584]: "+4"
+            - tab "Add a tab" [ref=e585]:
+              - img [ref=e587]
+          - generic [ref=e590]: Has context menu
+        - status [ref=e591]
+      - toolbar "Chat actions" [ref=e592]:
+        - button "Join" [ref=e595]
+        - button "Meeting details" [ref=e596]:
+          - img [ref=e598]
+        - separator [ref=e600]
+        - generic "Sidepane Features" [ref=e601]:
+          - button "Open Agents and bots" [ref=e602]:
+            - img [ref=e604]
+          - button "Find in chat (Ctrl+F)" [ref=e606]:
+            - img [ref=e608]
+          - button "Open chat details (Alt+P)" [ref=e610]:
+            - img [ref=e612]
+        - button "More chat options" [ref=e615]:
+          - img [ref=e617]
+    - generic [ref=e624]:
+      - generic [ref=e627]:
+        - generic [ref=e633]:
+          - generic [ref=e635]:
+            - img [ref=e637]
+            - 'heading "Meeting ended: at 12:56 PM after 1 hour 28 minutes 13 seconds, AI-First Transition Approach for Investigate 2.7, Wednesday, April 1, 2026 11:30 AM - 12:30 PM, link to view recap, This meeting contains 1 recording, 1 file, Press Enter to view more" [level=6] [ref=e639]'
+            - 'group "Meeting ended: at 12:56 PM after 1 hour 28 minutes 13 seconds, AI-First Transition Approach for Investigate 2.7, Wednesday, April 1, 2026 11:30 AM - 12:30 PM, link to view recap, This meeting contains 1 recording, 1 file, Press Enter to view more" [ref=e641]':
+              - generic [ref=e642]:
+                - generic [ref=e644]:
+                  - text: "12:56 PM Meeting ended:"
+                  - generic [ref=e645]: 1h 28m 13s
+                - generic [ref=e648]:
+                  - generic [ref=e649]:
+                    - generic [ref=e650]:
+                      - generic [ref=e651]:
+                        - generic [ref=e652]: AI-First Transition Approach for Investigate 2.7
+                        - generic [ref=e653]: Wednesday, April 1, 2026 11:30 AM - 12:30 PM
+                      - button "Share" [ref=e655]:
+                        - img [ref=e657]
+                    - button "View recap" [ref=e660]:
+                      - generic [ref=e661]: View recap
+                  - separator [ref=e662]
+                  - generic [ref=e663]:
+                    - generic [ref=e664]:
+                      - generic [ref=e666]: Content
+                      - button "Transcript" [ref=e673]:
+                        - img [ref=e675]
+                        - generic [ref=e683]: Transcript
+                    - button "Recording" [ref=e685]:
+                      - img [ref=e687]
+          - generic [ref=e692]:
+            - heading "Begin Reference, Can we have a shared, stan... by Mark Heath" [level=4] [ref=e693]
+            - generic [ref=e695]:
+              - generic [ref=e696]:
+                - generic [ref=e700]: Mark Heath
+                - time [ref=e701]: 1:00 PM
+              - generic [ref=e702]:
+                - generic [ref=e2127]:
+                  - img [ref=e2128]
+                  - img [ref=e2129]:
+                    - img [ref=e2131]
+                - group "Mark Heath Begin Reference, Can we have a shared, standardized skills template for bug fixing that everyone can use, or is it expected that each person creates their own skills file?, Vishal Kharade, 4/1/2026 12:55 PM, End reference Again I think we'd like to create one, but we need to battle-test it first, and ensure it is actually helping, not hindering by including mandatory steps that aren't always relevant or necessary. The value add of these skills should be us describing the steps and processes that are NiCE-specific - AI agents already understand the concept of bug-fixing, so we don't need to try to explain that to them. 1 Like reaction. Today at 1:00 PM." [ref=e711]:
+                  - button "More message options" [ref=e712]
+                  - generic "Begin Reference, Can we have a shared, standardized skills template for bug fixing that everyone can use, or is it expected that each person creates their own skills file?, Vishal Kharade, 4/1/2026 12:55 PM, End reference Again I think we'd like to create one, but we need to battle-test it first, and ensure it is actually helping, not hindering by including mandatory steps that aren't always relevant or necessary. The value add of these skills should be us describing the steps and processes that are NiCE-specific - AI agents already understand the concept of bug-fixing, so we don't need to try to explain that to them." [ref=e713]:
+                    - group "Begin Reference, Can we have a shared, standardized skills template for bug fixing that everyone can use, or is it expected that each person creates their own skills file?, Vishal Kharade, 4/1/2026 12:55 PM, End reference" [ref=e714] [cursor=pointer]:
+                      - generic [ref=e717]:
+                        - generic [ref=e718]:
+                          - generic [ref=e719]: Vishal Kharade
+                          - generic [ref=e720]: 4/1/2026 12:55 PM
+                        - generic [ref=e721]: Can we have a shared, standardized skills template for bug fixing that everyone can use, or is it expected that each person creates their own skills file?
+                    - paragraph [ref=e722]: Again I think we'd like to create one, but we need to battle-test it first, and ensure it is actually helping, not hindering by including mandatory steps that aren't always relevant or necessary. The value add of these skills should be us describing the steps and processes that are NiCE-specific - AI agents already understand the concept of bug-fixing, so we don't need to try to explain that to them.
+                  - toolbar "Reaction summary" [ref=e723]:
+                    - button "1 Like reaction." [ref=e725]:
+                      - generic [ref=e726]:
+                        - img "👍" [ref=e728]
+                        - generic [ref=e729]: 1 Like reaction.
+                    - button "More reactions" [ref=e731]:
+                      - img [ref=e733]
+          - generic [ref=e738]:
+            - img [ref=e740]
+            - heading "Recording has been saved to Caroline Hodgson's OneDrive." [level=6] [ref=e742]
+            - group "Recording has been saved to Caroline Hodgson's OneDrive." [ref=e744]:
+              - generic [ref=e746]: 1:02 PM Recording has been saved to Caroline Hodgson's OneDrive.
+          - generic [ref=e750]:
+            - heading "I also ran my \"PR readiness agent\" on the b... by Mark Heath" [level=4] [ref=e751]
+            - generic [ref=e753]:
+              - generic [ref=e754]:
+                - generic [ref=e758]: Mark Heath
+                - time [ref=e759]: 1:06 PM
+              - generic [ref=e760]:
+                - generic [ref=e2134]:
+                  - img [ref=e2135]
+                  - img [ref=e2136]:
+                    - img [ref=e2138]
+                - group [ref=e769]:
+                  - button "More message options" [ref=e770]
+                  - generic [ref=e771]:
+                    - paragraph [ref=e772]: "I also ran my \"PR readiness agent\" on the bugfix I started in the demo. It was only a 2-line code change, so not much for it to find, but here is the report it produced:"
+                    - paragraph [ref=e773]
+                    - blockquote [ref=e774]:
+                      - list [ref=e775]:
+                        - listitem [ref=e776]:
+                          - text: Summary
+                          - text: I ran the ready-for-PR workflow against this bugfix and validated it with code diff review plus executed tests.
+                          - text: "Scope reviewed:"
+                      - list [ref=e777]:
+                        - listitem [ref=e778]: InitiateFilesUploadHandler.cs:90
+                        - listitem [ref=e779]: InitiateFolderUploadHandler.cs:95
+                        - listitem [ref=e780]: InitiateFilesUploadHandlerTests.cs:252
+                        - listitem [ref=e781]: InitiateFolderUploadHandlerTests.cs:192
+                      - paragraph [ref=e782]: "Executed test evidence:"
+                      - list [ref=e783]:
+                        - listitem [ref=e784]: "Targeted unit tests: Passed 11, Failed 0"
+                        - listitem [ref=e785]: "Upload-management isolated regression slice: Passed 23, Failed 0"
+                      - list [ref=e786]:
+                        - listitem [ref=e787]: Critical issues (must fix before PR)
+                      - list [ref=e788]:
+                        - listitem [ref=e789]: None found in the code changes themselves.
+                      - list [ref=e790]:
+                        - listitem [ref=e791]: Non-critical issues (should fix)
+                      - list [ref=e792]:
+                        - listitem [ref=e793]: Consider adding one short release note/API behavior note that all-invalid upload-initiation requests now return RequestModelInvalid via ErrorInfos in addition to ValidationErrors.
+                        - listitem [ref=e794]:
+                          - text: "Working tree contains extra untracked instruction files not part of the bugfix scope:"
+                          - list [ref=e795]:
+                            - listitem [ref=e796]: bugfix-agent.instructions.md
+                            - listitem [ref=e797]:
+                              - text: ready-for-pr-agent.instructions.md
+                              - text: Confirm whether to include or exclude them from this PR.
+                      - list [ref=e798]:
+                        - listitem [ref=e799]: Test coverage assessment
+                      - list [ref=e800]:
+                        - listitem [ref=e801]:
+                          - text: "Coverage is good for the changed behavior:"
+                          - list [ref=e802]:
+                            - listitem [ref=e803]: File-initiation all-invalid path now asserts HasErrors true and RequestModelInvalid.
+                            - listitem [ref=e804]: Folder-initiation all-invalid path now asserts HasErrors true and RequestModelInvalid.
+                        - listitem [ref=e805]: Regression confidence improved by running UploadManagement isolated tests (23 passing), including max-size validation scenarios.
+                        - listitem [ref=e806]: "Optional improvement: add one API/controller contract-level assertion for payload shape if you want stronger consumer-contract protection."
+                      - list [ref=e807]:
+                        - listitem [ref=e808]: Performance assessment
+                      - list [ref=e809]:
+                        - listitem [ref=e810]: No performance regression risk from this change.
+                        - listitem [ref=e811]: Added work is constant-time error object creation and early return on invalid input.
+                      - list [ref=e812]:
+                        - listitem [ref=e813]: Resilience assessment
+                      - list [ref=e814]:
+                        - listitem [ref=e815]: "Positive resilience impact: invalid-all cases now fail explicitly instead of appearing successful at top level."
+                        - listitem [ref=e816]: No new retry/cancellation/idempotency concerns introduced.
+                      - list [ref=e817]:
+                        - listitem [ref=e818]: Maintainability assessment
+                      - list [ref=e819]:
+                        - listitem [ref=e820]: Change is small, localized, and consistent with existing error pattern using AddError/ErrorInfo.
+                        - listitem [ref=e821]: Test updates are clear and directly tied to behavior change.
+                      - list [ref=e822]:
+                        - listitem [ref=e823]: Security assessment
+                      - list [ref=e824]:
+                        - listitem [ref=e825]: No security impact detected.
+                        - listitem [ref=e826]: No new endpoints, permissions changes, secrets, or sensitive logging added.
+                      - list [ref=e827]:
+                        - listitem [ref=e828]: Documentation/ADR needs
+                      - list [ref=e829]:
+                        - listitem [ref=e830]: ADR not needed; no architectural decision introduced.
+                        - listitem [ref=e831]: "Suggested doc touch: brief note in PR/release notes about changed error signaling semantics for invalid-all upload init requests."
+                      - list [ref=e832]:
+                        - listitem [ref=e833]:
+                          - text: Suggested PR description
+                          - text: "Title:"
+                          - text: Fix upload-initiation all-invalid requests to return RequestModelInvalid
+                      - paragraph [ref=e834]: "Body:"
+                      - list [ref=e835]:
+                        - listitem [ref=e836]:
+                          - text: "Added explicit RequestModelInvalid error when all requested files fail validation in:"
+                          - list [ref=e837]:
+                            - listitem [ref=e838]: InitiateFilesUploadHandler.cs:90
+                            - listitem [ref=e839]: InitiateFolderUploadHandler.cs:95
+                        - listitem [ref=e840]: Kept per-file ValidationErrors unchanged.
+                        - listitem [ref=e841]:
+                          - text: "Updated unit tests to assert HasErrors and RequestModelInvalid in all-invalid scenarios:"
+                          - list [ref=e842]:
+                            - listitem [ref=e843]: InitiateFilesUploadHandlerTests.cs:252
+                            - listitem [ref=e844]: InitiateFolderUploadHandlerTests.cs:192
+                        - listitem [ref=e845]:
+                          - text: "Validation:"
+                          - list [ref=e846]:
+                            - listitem [ref=e847]: "dotnet test CaseAndEvidence.Tests filter for InitiateFilesUploadHandlerTests/InitiateFolderUploadHandlerTests: 11 passed"
+                            - listitem [ref=e848]: "dotnet test CaseAndEvidence.IsolatedService.Tests filter UploadManagement: 23 passed"
+                      - list [ref=e849]:
+                        - listitem [ref=e850]: Merge readiness status
+                      - list [ref=e851]:
+                        - listitem [ref=e852]: "Code: Ready"
+                        - listitem [ref=e853]: "Tests: Ready"
+                        - listitem [ref=e854]: "Merge risk: Low"
+                        - listitem [ref=e855]:
+                          - text: "Pre-merge checklist:"
+                          - list [ref=e856]:
+                            - listitem [ref=e857]: Confirm whether to include/exclude bugfix-agent.instructions.md and ready-for-pr-agent.instructions.md from this PR.
+                            - listitem [ref=e858]: Add short release note/API behavior note if your team tracks response-semantics changes.
+                      - list [ref=e859]:
+                        - listitem [ref=e860]:
+                          - text: "Overall verdict: Ready"
+                          - text: This bugfix is PR-ready with strong targeted and adjacent regression evidence.
+                      - paragraph [ref=e861]
+                    - paragraph [ref=e862]: I would then be able to instruct it to create this PR for me, and attach the info from this report to it
+          - generic [ref=e866]:
+            - heading "Begin Reference, Again I think we'd like to... by Oleksandr Antoniuk" [level=4] [ref=e867]
+            - generic [ref=e869]:
+              - generic [ref=e870]:
+                - generic [ref=e874]: Oleksandr Antoniuk
+                - time [ref=e875]: 1:07 PM
+              - generic [ref=e876]:
+                - generic [ref=e2141]:
+                  - img [ref=e2142]
+                  - img [ref=e2143]:
+                    - img [ref=e2145]
+                - group "Oleksandr Antoniuk Begin Reference, Again I think we'd like to create one, but we need to battle-test it first, and ensure it is actually helping, not hindering by including mandatory steps that aren't always relevant or necessary. The, Mark Heath, 4/1/2026 1:00 PM, End reference I know the Claude Code have recently introduced a Skill Creator plugin and many of colleagues have discarded their team-crafted broad skills and stick to more personalized and narrow ones. I guess Copilot can take similar path and introduce some alternative soon Today at 1:07 PM." [ref=e885]:
+                  - button "More message options" [ref=e886]
+                  - generic "Begin Reference, Again I think we'd like to create one, but we need to battle-test it first, and ensure it is actually helping, not hindering by including mandatory steps that aren't always relevant or necessary. The, Mark Heath, 4/1/2026 1:00 PM, End reference I know the Claude Code have recently introduced a Skill Creator plugin and many of colleagues have discarded their team-crafted broad skills and stick to more personalized and narrow ones. I guess Copilot can take similar path and introduce some alternative soon" [ref=e887]:
+                    - group "Begin Reference, Again I think we'd like to create one, but we need to battle-test it first, and ensure it is actually helping, not hindering by including mandatory steps that aren't always relevant or necessary. The, Mark Heath, 4/1/2026 1:00 PM, End reference" [ref=e888] [cursor=pointer]:
+                      - generic [ref=e891]:
+                        - generic [ref=e892]:
+                          - generic [ref=e893]: Mark Heath
+                          - generic [ref=e894]: 4/1/2026 1:00 PM
+                        - generic [ref=e895]: Again I think we'd like to create one, but we need to battle-test it first, and ensure it is actually helping, not hindering by including mandatory steps that aren't always relevant or necessary. The
+                    - paragraph [ref=e896]: I know the Claude Code have recently introduced a Skill Creator plugin and many of colleagues have discarded their team-crafted broad skills and stick to more personalized and narrow ones. I guess Copilot can take similar path and introduce some alternative soon
+          - generic [ref=e900]:
+            - heading "Copilot already supports skills and can cre... by Pete Burgess" [level=4] [ref=e901]
+            - generic [ref=e903]:
+              - generic [ref=e904]:
+                - generic [ref=e908]: Pete Burgess
+                - time [ref=e909]: 1:10 PM
+              - generic [ref=e910]:
+                - generic [ref=e2148]:
+                  - img [ref=e2149]
+                  - img [ref=e2150]:
+                    - img [ref=e2433]
+                - group "Pete Burgess Copilot already supports skills and can create them. There's a balance to be had between MCP servers which are more generic but support a broad range of actions and skills performing very specific tasks. Today at 1:10 PM." [ref=e919]:
+                  - button "More message options" [ref=e920]
+                  - generic "Copilot already supports skills and can create them. There's a balance to be had between MCP servers which are more generic but support a broad range of actions and skills performing very specific tasks." [ref=e921]:
+                    - paragraph [ref=e922]: Copilot already supports skills and can create them.
+                    - paragraph [ref=e923]
+                    - paragraph [ref=e924]: There's a balance to be had between MCP servers which are more generic but support a broad range of actions and skills performing very specific tasks.
+          - generic [ref=e928]:
+            - heading "Begin Reference, I know the Claude Code hav... by Omkar Phadke" [level=4] [ref=e929]
+            - generic [ref=e931]:
+              - generic [ref=e932]:
+                - generic [ref=e936]: Omkar Phadke
+                - time [ref=e937]: 1:15 PM
+              - generic [ref=e938]:
+                - generic [ref=e2155]:
+                  - img [ref=e2156]
+                  - img [ref=e2157]:
+                    - img [ref=e2159]
+                - group "Omkar Phadke Begin Reference, I know the Claude Code have recently introduced a Skill Creator plugin and many of colleagues have discarded their team-crafted broad skills and stick to more personalized and narrow ones. I guess C…, Oleksandr Antoniuk, 4/1/2026 1:07 PM, End reference We can already use skills required by all inside the .github/skills/<name-of-skill>/SKILL.md so that they get committed in the repository. For personal skills which might differ from person to person, we can use the \\.agents\\skills folder inside our user folder so that they can still be \"seen\" by Copilot but are not commited. 1 Like reaction. Today at 1:15 PM." [ref=e947]:
+                  - button "More message options" [ref=e948]
+                  - generic "Begin Reference, I know the Claude Code have recently introduced a Skill Creator plugin and many of colleagues have discarded their team-crafted broad skills and stick to more personalized and narrow ones. I guess C…, Oleksandr Antoniuk, 4/1/2026 1:07 PM, End reference We can already use skills required by all inside the .github/skills/<name-of-skill>/SKILL.md so that they get committed in the repository. For personal skills which might differ from person to person, we can use the \\.agents\\skills folder inside our user folder so that they can still be \"seen\" by Copilot but are not commited." [ref=e949]:
+                    - group "Begin Reference, I know the Claude Code have recently introduced a Skill Creator plugin and many of colleagues have discarded their team-crafted broad skills and stick to more personalized and narrow ones. I guess C…, Oleksandr Antoniuk, 4/1/2026 1:07 PM, End reference" [ref=e950] [cursor=pointer]:
+                      - generic [ref=e953]:
+                        - generic [ref=e954]:
+                          - generic [ref=e955]: Oleksandr Antoniuk
+                          - generic [ref=e956]: 4/1/2026 1:07 PM
+                        - generic [ref=e957]: I know the Claude Code have recently introduced a Skill Creator plugin and many of colleagues have discarded their team-crafted broad skills and stick to more personalized and narrow ones. I guess C…
+                    - paragraph [ref=e958]:
+                      - text: We can already use skills required by all inside the
+                      - code [ref=e959]: .github/skills/<name-of-skill>/SKILL.md
+                      - text: so that they get committed in the repository. For personal skills which might differ from person to person, we can use the
+                      - code [ref=e960]: \.agents\skills
+                      - text: folder inside our user folder so that they can still be "seen" by Copilot but are not commited.
+                  - toolbar "Reaction summary" [ref=e961]:
+                    - button "1 Like reaction." [ref=e963]:
+                      - generic [ref=e964]:
+                        - img "👍" [ref=e966]
+                        - generic [ref=e967]: 1 Like reaction.
+                    - button "More reactions" [ref=e969]:
+                      - img [ref=e971]
+          - generic [ref=e977]:
+            - heading "Begin Reference, Copilot already supports s... by Oleksandr Antoniuk" [level=4] [ref=e978]
+            - generic [ref=e980]:
+              - generic [ref=e981]:
+                - generic [ref=e985]: Oleksandr Antoniuk
+                - time [ref=e986]: 1:18 PM
+              - generic [ref=e987]:
+                - generic [ref=e2162]:
+                  - img [ref=e2163]
+                  - img [ref=e2164]:
+                    - img [ref=e2166]
+                - group "Oleksandr Antoniuk Begin Reference, Copilot already supports skills and can create them. There's a balance to be had between MCP servers which are more generic but support a broad range of actions and skills performing very specific…, Pete Burgess, 4/1/2026 1:10 PM, End reference I am saying that instead having a centralized sharable skills, we can have a standardize approach for skill creation. (similar to Link Claude Codes ). Also, correct me if I am wrong, but MCP server is a protocol to connect tools, while skill is just a detailed instruction/guidance for some kind of repeated task. 1 Like reaction. Today at 1:18 PM." [ref=e996]:
+                  - button "More message options" [ref=e997]
+                  - generic "Begin Reference, Copilot already supports skills and can create them. There's a balance to be had between MCP servers which are more generic but support a broad range of actions and skills performing very specific…, Pete Burgess, 4/1/2026 1:10 PM, End reference I am saying that instead having a centralized sharable skills, we can have a standardize approach for skill creation. (similar to Link Claude Codes ). Also, correct me if I am wrong, but MCP server is a protocol to connect tools, while skill is just a detailed instruction/guidance for some kind of repeated task." [ref=e998]:
+                    - group "Begin Reference, Copilot already supports skills and can create them. There's a balance to be had between MCP servers which are more generic but support a broad range of actions and skills performing very specific…, Pete Burgess, 4/1/2026 1:10 PM, End reference" [ref=e999] [cursor=pointer]:
+                      - generic [ref=e1002]:
+                        - generic [ref=e1003]:
+                          - generic [ref=e1004]: Pete Burgess
+                          - generic [ref=e1005]: 4/1/2026 1:10 PM
+                        - generic [ref=e1006]: Copilot already supports skills and can create them. There's a balance to be had between MCP servers which are more generic but support a broad range of actions and skills performing very specific…
+                    - paragraph [ref=e1007]:
+                      - text: I am saying that instead having a centralized sharable skills, we can have a standardize approach for skill creation. (similar to
+                      - link "Link Claude Codes" [ref=e1008] [cursor=pointer]:
+                        - /url: https://claude.com/plugins/skill-creator
+                        - text: Claude Codes
+                      - text: ).
+                    - paragraph [ref=e1009]
+                    - paragraph [ref=e1010]: Also, correct me if I am wrong, but MCP server is a protocol to connect tools, while skill is just a detailed instruction/guidance for some kind of repeated task.
+                  - toolbar "Reaction summary" [ref=e1011]:
+                    - button "1 Like reaction." [ref=e1013]:
+                      - generic [ref=e1014]:
+                        - img "👍" [ref=e1016]
+                        - generic [ref=e1017]: 1 Like reaction.
+                    - button "More reactions" [ref=e1019]:
+                      - img [ref=e1021]
+          - generic [ref=e1027]:
+            - heading "It is but there is some overlap. For exam... by Pete Burgess" [level=4] [ref=e1028]
+            - generic [ref=e1030]:
+              - generic [ref=e1031]:
+                - generic [ref=e1035]: Pete Burgess
+                - time [ref=e1036]: 1:22 PM
+              - generic [ref=e1037]:
+                - generic [ref=e2169]:
+                  - img [ref=e2170]
+                  - img [ref=e2171]:
+                    - img [ref=e2435]
+                - group "Pete Burgess It is but there is some overlap. For example, the ado-remote-mcp gives general access to Azure DevOps but a specific Skill can be created to deal with PRs, etc. using the command-line az tool (with the azure-devops extension). Similarly, if we decide that the ado-remote-mcp is the best approach to accessing ADO, the skill can use that. Today at 1:22 PM." [ref=e1046]:
+                  - button "More message options" [ref=e1047]
+                  - generic "It is but there is some overlap. For example, the ado-remote-mcp gives general access to Azure DevOps but a specific Skill can be created to deal with PRs, etc. using the command-line az tool (with the azure-devops extension). Similarly, if we decide that the ado-remote-mcp is the best approach to accessing ADO, the skill can use that." [ref=e1048]:
+                    - paragraph [ref=e1049]:
+                      - text: It is but there is some overlap. For example, the
+                      - code [ref=e1050]: ado-remote-mcp
+                      - text: gives general access to Azure DevOps but a specific Skill can be created to deal with PRs, etc. using the command-line
+                      - code [ref=e1051]: az
+                      - text: tool (with the
+                      - code [ref=e1052]: azure-devops
+                      - text: extension).
+                    - paragraph [ref=e1053]
+                    - paragraph [ref=e1054]:
+                      - text: Similarly, if we decide that the
+                      - code [ref=e1055]: ado-remote-mcp
+                      - text: is the best approach to accessing ADO, the skill can use that.
+          - generic [ref=e1059]:
+            - heading "And here's the PR Copilot created for my de... by Mark Heath" [level=4] [ref=e1060]
+            - generic [ref=e1062]:
+              - generic [ref=e1063]:
+                - generic [ref=e1067]: Mark Heath
+                - time [ref=e1068]: 1:25 PM
+              - generic [ref=e1069]:
+                - generic [ref=e2176]:
+                  - img [ref=e2177]
+                  - img [ref=e2178]:
+                    - img [ref=e2180]
+                - 'group "Mark Heath And here''s the PR Copilot created for my demo bugfix, including the readiness report I asked it to generate: Link Pull request 56045: Bug 292637: Return RequestModelInvalid for all-invalid upload init requests - R… Today at 1:25 PM." [ref=e1078]':
+                  - button "More message options" [ref=e1079]
+                  - 'generic "And here''s the PR Copilot created for my demo bugfix, including the readiness report I asked it to generate: Link Pull request 56045: Bug 292637: Return RequestModelInvalid for all-invalid upload init requests - R…" [ref=e1080]':
+                    - paragraph [ref=e1081]: "And here's the PR Copilot created for my demo bugfix, including the readiness report I asked it to generate:"
+                    - paragraph [ref=e1082]:
+                      - 'link "Link Pull request 56045: Bug 292637: Return RequestModelInvalid for all-invalid upload init requests - R…" [ref=e1083] [cursor=pointer]':
+                        - /url: https://dev.azure.com/NICEPSRND/Investigate/_git/Investigate.CaseAndEvidence/pullrequest/56045
+                        - text: "Pull request 56045: Bug 292637: Return RequestModelInvalid for all-invalid upload init requests - R…"
+          - generic [ref=e1087]:
+            - heading "Yes, an MCP server connects you to a tool, ... by Mark Heath" [level=4] [ref=e1088]
+            - generic [ref=e1090]:
+              - generic:
+                - generic [ref=e1094]: Mark Heath
+                - time [ref=e1095]: 1:28 PM
+              - group "Mark Heath Yes, an MCP server connects you to a tool, but a skill can be useful to help the agent to use that tool effectively. For example, we can tell it that our ADO server is called NICEPSRND and our repos are in the \"Investigate\" project. That saves it time having to work that out for itself. (e.g. when I asked it to create a Tech Debt work item it took it a while because that's a custom work item type that isn't out of the box in ADO, so it needed to work out the exact work item type name) 2 Like reactions. Today at 1:28 PM." [ref=e1098]:
+                - button "More message options" [ref=e1099]
+                - generic "Yes, an MCP server connects you to a tool, but a skill can be useful to help the agent to use that tool effectively. For example, we can tell it that our ADO server is called NICEPSRND and our repos are in the \"Investigate\" project. That saves it time having to work that out for itself. (e.g. when I asked it to create a Tech Debt work item it took it a while because that's a custom work item type that isn't out of the box in ADO, so it needed to work out the exact work item type name)" [ref=e1100]:
+                  - paragraph [ref=e1101]: Yes, an MCP server connects you to a tool, but a skill can be useful to help the agent to use that tool effectively. For example, we can tell it that our ADO server is called NICEPSRND and our repos are in the "Investigate" project. That saves it time having to work that out for itself. (e.g. when I asked it to create a Tech Debt work item it took it a while because that's a custom work item type that isn't out of the box in ADO, so it needed to work out the exact work item type name)
+                - toolbar "Reaction summary" [ref=e1102]:
+                  - button "2 Like reactions." [ref=e1104]:
+                    - generic [ref=e1105]:
+                      - img "👍" [ref=e1107]
+                      - generic [ref=e1108]: 2 Like reactions.
+                      - generic [ref=e1109]: "2"
+                  - button "More reactions" [ref=e1111]:
+                    - img [ref=e1113]
+          - generic [ref=e1119]:
+            - heading "We have this Link Pull Request guidelines ... by Oleksandr Ivanov" [level=4] [ref=e1120]
+            - generic [ref=e1122]:
+              - generic [ref=e1123]:
+                - generic [ref=e1127]: Oleksandr Ivanov
+                - time [ref=e1128]: 1:35 PM
+              - generic [ref=e1129]:
+                - generic [ref=e2183]:
+                  - img [ref=e2184]
+                  - img [ref=e2185]:
+                    - img [ref=e2187]
+                - group "Oleksandr Ivanov We have this Link Pull Request guidelines document , any changes according to AI-First approach? It states that work needs to be tested before creation of PR, but without details what it means (if Unit tests are sufficient etc.) Today at 1:35 PM." [ref=e1138]:
+                  - button "More message options" [ref=e1139]
+                  - generic "We have this Link Pull Request guidelines document , any changes according to AI-First approach? It states that work needs to be tested before creation of PR, but without details what it means (if Unit tests are sufficient etc.)" [ref=e1140]:
+                    - paragraph [ref=e1141]:
+                      - text: We have this
+                      - link "Link Pull Request guidelines document" [ref=e1142] [cursor=pointer]:
+                        - /url: https://dev.azure.com/NICEPSRND/Investigate/_git/Architecture?path=/docs/Process/PullRequests.md&_a=preview
+                        - text: Pull Request guidelines document
+                      - text: ", any changes according to AI-First approach? It states that work needs to be tested before creation of PR, but without details what it means (if Unit tests are sufficient etc.)"
+          - generic [ref=e1146]:
+            - heading "Begin Reference, Yes, an MCP server connect... by Pete Burgess" [level=4] [ref=e1147]
+            - generic [ref=e1149]:
+              - generic [ref=e1150]:
+                - generic [ref=e1154]: Pete Burgess
+                - time [ref=e1155]: 1:40 PM
+              - generic [ref=e1156]:
+                - generic [ref=e2190]:
+                  - img [ref=e2191]
+                  - img [ref=e2192]:
+                    - img [ref=e2437]
+                - 'group "Pete Burgess Begin Reference, Yes, an MCP server connects you to a tool, but a skill can be useful to help the agent to use that tool effectively. For example, we can tell it that our ADO server is called NICEPSRND and our repos…, Mark Heath, 4/1/2026 1:28 PM, End reference ado-remote-mcp is configured with the server URI including \"NICEPSRND\" and I''ve told Copilot to \"remember to use the Investigate project by default for all ado access\" which sets that and allows me to change it for a single prompt or session. Similarly you can tell it to remember to return specific fields by default in tables and to do so in a separate markdown window instead of inline within the chat: image Today at 1:40 PM." [ref=e1165]':
+                  - button "More message options" [ref=e1166]
+                  - 'generic "Begin Reference, Yes, an MCP server connects you to a tool, but a skill can be useful to help the agent to use that tool effectively. For example, we can tell it that our ADO server is called NICEPSRND and our repos…, Mark Heath, 4/1/2026 1:28 PM, End reference ado-remote-mcp is configured with the server URI including \"NICEPSRND\" and I''ve told Copilot to \"remember to use the Investigate project by default for all ado access\" which sets that and allows me to change it for a single prompt or session. Similarly you can tell it to remember to return specific fields by default in tables and to do so in a separate markdown window instead of inline within the chat: image" [ref=e1167]':
+                    - group "Begin Reference, Yes, an MCP server connects you to a tool, but a skill can be useful to help the agent to use that tool effectively. For example, we can tell it that our ADO server is called NICEPSRND and our repos…, Mark Heath, 4/1/2026 1:28 PM, End reference" [ref=e1168] [cursor=pointer]:
+                      - generic [ref=e1171]:
+                        - generic [ref=e1172]:
+                          - generic [ref=e1173]: Mark Heath
+                          - generic [ref=e1174]: 4/1/2026 1:28 PM
+                        - generic [ref=e1175]: Yes, an MCP server connects you to a tool, but a skill can be useful to help the agent to use that tool effectively. For example, we can tell it that our ADO server is called NICEPSRND and our repos…
+                    - paragraph [ref=e1176]
+                    - paragraph [ref=e1177]:
+                      - code [ref=e1178]: ado-remote-mcp
+                      - text: is configured with the server URI including "NICEPSRND" and I've told Copilot to "remember to use the Investigate project by default for all ado access" which sets that
+                      - strong [ref=e1179]: and
+                      - text: allows me to change it for a single prompt or session.
+                    - paragraph [ref=e1180]
+                    - paragraph [ref=e1181]: "Similarly you can tell it to remember to return specific fields by default in tables and to do so in a separate markdown window instead of inline within the chat:"
+                    - paragraph [ref=e1182]
+                    - paragraph [ref=e1183]:
+                      - img "image" [ref=e1185]
+          - generic [ref=e1189]:
+            - heading "Mark Heath are we promoting any specific... by Darryl Pullen" [level=4] [ref=e1190]
+            - generic [ref=e1192]:
+              - generic [ref=e1193]:
+                - generic [ref=e1197]: Darryl Pullen
+                - time [ref=e1198]: 1:45 PM
+              - generic [ref=e1199]:
+                - generic [ref=e2197]:
+                  - img [ref=e2198]
+                  - img [ref=e2199]:
+                    - img [ref=e2201]
+                - group "Darryl Pullen Mark Heath are we promoting any specific way to hook up VS Code of VS to ADO? MCP extension, Azure CLI, something else? DO we need to provide instructions? Today at 1:45 PM." [ref=e1208]:
+                  - button "More message options" [ref=e1209]
+                  - generic "Mark Heath are we promoting any specific way to hook up VS Code of VS to ADO? MCP extension, Azure CLI, something else? DO we need to provide instructions?" [ref=e1210]:
+                    - paragraph [ref=e1211]:
+                      - button "Mentioned Mark" [ref=e2203]: Mark
+                      - button "Mentioned Heath" [ref=e2204]: Heath
+                      - text: are we promoting any specific way to hook up VS Code of VS to ADO? MCP extension, Azure CLI, something else? DO we need to provide instructions?
+          - generic [ref=e1215]:
+            - heading "Begin Reference, Mark Heath are we promotin... by Mark Heath" [level=4] [ref=e1216]
+            - generic [ref=e1218]:
+              - generic [ref=e1219]:
+                - generic [ref=e1223]: Mark Heath
+                - time [ref=e1224]: 1:47 PM
+              - generic [ref=e1225]:
+                - generic [ref=e2206]:
+                  - img [ref=e2207]
+                  - img [ref=e2208]:
+                    - img [ref=e2210]
+                - group "Mark Heath Begin Reference, Mark Heath are we promoting any specific way to hook up VS Code of VS to ADO? MCP extension, Azure CLI, something else? DO we need to provide instructions?, Darryl Pullen, 4/1/2026 1:45 PM, End reference Interestingly Copilot likes to use a combination of both! I think it is a pretty useful MCP server to have, so makes sense for people to use it. But also the Azure CLI is something that we'd expect everyone has installed and authenticated as it is useful for much more. We could provide instructions. Or people can just ask Copilot to \"install the official ADO MCP server for me\" 1 Like reaction. Today at 1:47 PM." [ref=e1234]:
+                  - button "More message options" [ref=e1235]
+                  - generic "Begin Reference, Mark Heath are we promoting any specific way to hook up VS Code of VS to ADO? MCP extension, Azure CLI, something else? DO we need to provide instructions?, Darryl Pullen, 4/1/2026 1:45 PM, End reference Interestingly Copilot likes to use a combination of both! I think it is a pretty useful MCP server to have, so makes sense for people to use it. But also the Azure CLI is something that we'd expect everyone has installed and authenticated as it is useful for much more. We could provide instructions. Or people can just ask Copilot to \"install the official ADO MCP server for me\"" [ref=e1236]:
+                    - group "Begin Reference, Mark Heath are we promoting any specific way to hook up VS Code of VS to ADO? MCP extension, Azure CLI, something else? DO we need to provide instructions?, Darryl Pullen, 4/1/2026 1:45 PM, End reference" [ref=e1237] [cursor=pointer]:
+                      - generic [ref=e1240]:
+                        - generic [ref=e1241]:
+                          - generic [ref=e1242]: Darryl Pullen
+                          - generic [ref=e1243]: 4/1/2026 1:45 PM
+                        - generic [ref=e1244]: Mark Heath are we promoting any specific way to hook up VS Code of VS to ADO? MCP extension, Azure CLI, something else? DO we need to provide instructions?
+                    - paragraph [ref=e1245]: Interestingly Copilot likes to use a combination of both! I think it is a pretty useful MCP server to have, so makes sense for people to use it. But also the Azure CLI is something that we'd expect everyone has installed and authenticated as it is useful for much more.
+                    - paragraph [ref=e1246]: We could provide instructions. Or people can just ask Copilot to "install the official ADO MCP server for me"
+                  - toolbar "Reaction summary" [ref=e1247]:
+                    - button "1 Like reaction." [ref=e1249]:
+                      - generic [ref=e1250]:
+                        - img "👍" [ref=e1252]
+                        - generic [ref=e1253]: 1 Like reaction.
+                    - button "More reactions" [ref=e1255]:
+                      - img [ref=e1257]
+          - generic [ref=e1263]:
+            - heading "Are we sure tying ourselves deeper into the... by Ian Williams" [level=4] [ref=e1264]
+            - generic [ref=e1266]:
+              - generic [ref=e1267]:
+                - generic [ref=e1271]: Ian Williams
+                - time [ref=e1272]: 1:53 PM
+              - generic [ref=e1273]:
+                - generic [ref=e2213]:
+                  - img [ref=e2214]
+                  - img [ref=e2215]:
+                    - img [ref=e2217]
+                - group "Ian Williams Are we sure tying ourselves deeper into the Microsoft ecosystem is the best strategy still, given how easy it is to now recreate DevOps in a week? Today at 1:53 PM." [ref=e1282]:
+                  - button "More message options" [ref=e1283]
+                  - generic "Are we sure tying ourselves deeper into the Microsoft ecosystem is the best strategy still, given how easy it is to now recreate DevOps in a week?" [ref=e1284]:
+                    - paragraph [ref=e1285]: Are we sure tying ourselves deeper into the Microsoft ecosystem is the best strategy still, given how easy it is to now recreate DevOps in a week?
+          - generic [ref=e1289]:
+            - heading "ado-remote-mcp is \"prerelease\" atm but much... by Pete Burgess" [level=4] [ref=e1290]
+            - generic [ref=e1292]:
+              - generic [ref=e1293]:
+                - generic [ref=e1297]: Pete Burgess
+                - time [ref=e1298]: 1:56 PM
+              - generic [ref=e1299]:
+                - generic [ref=e2220]:
+                  - img [ref=e2221]
+                  - img [ref=e2222]:
+                    - img [ref=e2439]
+                - 'group "Pete Burgess ado-remote-mcp is \"prerelease\" atm but much simpler than the other ADO MCP server; literally just four lines in your mcp config file. \"ado-remote-mcp\" : { \"type\" : \"http\" , \"url\" : \"https://mcp.dev.azure.com/NICEPSRND\" }, Today at 1:56 PM." [ref=e1308]':
+                  - button "More message options" [ref=e1309]
+                  - 'generic "ado-remote-mcp is \"prerelease\" atm but much simpler than the other ADO MCP server; literally just four lines in your mcp config file. \"ado-remote-mcp\" : { \"type\" : \"http\" , \"url\" : \"https://mcp.dev.azure.com/NICEPSRND\" }," [ref=e1310]':
+                    - paragraph [ref=e1311]: ado-remote-mcp is "prerelease" atm but much simpler than the other ADO MCP server; literally just four lines in your mcp config file.
+                    - paragraph [ref=e1312]
+                    - generic [ref=e1314]:
+                      - img [ref=e1315]
+                      - generic [ref=e1317]: JSON
+                      - generic [ref=e1318]:
+                        - button "Copy" [ref=e1319]:
+                          - img [ref=e1321]
+                        - button "More options" [ref=e1323]:
+                          - img [ref=e1325]
+                    - code [ref=e1328]:
+                      - text: "\"ado-remote-mcp\": {"
+                      - text: "\"type\": \"http\","
+                      - text: "\"url\": \"https://mcp.dev.azure.com/NICEPSRND\""
+                      - text: "},"
+          - heading "Last read" [level=3] [ref=e1332]:
+            - generic [ref=e1333]: Last read
+          - generic [ref=e1336]:
+            - heading "I asked it to add one itself, and it gave m... by Richard Evans" [level=4] [ref=e1337]
+            - generic [ref=e1339]:
+              - generic [ref=e1340]:
+                - generic [ref=e1344]: Richard Evans
+                - time [ref=e1345]: 2:17 PM
+                - generic "Edited Today at 2:18 PM" [ref=e1348]: Edited
+              - generic [ref=e1349]:
+                - generic [ref=e2227]:
+                  - img [ref=e2228]
+                  - img [ref=e2229]:
+                    - img [ref=e2231]
+                - 'group "Richard Evans I asked it to add one itself, and it gave me this, which appears to be using Node, but seems to work nonetheless. \"azure-devops\" : { \"type\" : \"stdio\" , \"command\" : \"npx\" , \"args\" : [ \"-y\" , \"@azure-devops/mcp\" , \"${input:ado_org = NICEPSRND}\" , \"--authentication\" , \"interactive\" , \"--domains\" , \"core\" , \"work\" , \"work-items\" , \"repositories\" , \"wiki\" , \"pipelines\" ] } 1 Heart reaction. Today at 2:17 PM. Edited" [ref=e1358]':
+                  - button "More message options" [ref=e1359]
+                  - 'generic "I asked it to add one itself, and it gave me this, which appears to be using Node, but seems to work nonetheless. \"azure-devops\" : { \"type\" : \"stdio\" , \"command\" : \"npx\" , \"args\" : [ \"-y\" , \"@azure-devops/mcp\" , \"${input:ado_org = NICEPSRND}\" , \"--authentication\" , \"interactive\" , \"--domains\" , \"core\" , \"work\" , \"work-items\" , \"repositories\" , \"wiki\" , \"pipelines\" ] }" [ref=e1360]':
+                    - paragraph [ref=e1361]: I asked it to add one itself, and it gave me this, which appears to be using Node, but seems to work nonetheless.
+                    - generic [ref=e1363]:
+                      - img [ref=e1364]
+                      - generic [ref=e1366]: C#
+                      - generic [ref=e1367]:
+                        - button "Copy" [ref=e1368]:
+                          - img [ref=e1370]
+                        - button "More options" [ref=e1372]:
+                          - img [ref=e1374]
+                    - code [ref=e1377]:
+                      - text: "\"azure-devops\": {"
+                      - text: "\"type\": \"stdio\","
+                      - text: "\"command\": \"npx\","
+                      - text: "\"args\": ["
+                      - text: "\"-y\","
+                      - text: "\"@azure-devops/mcp\","
+                      - text: "\"${input:ado_org = NICEPSRND}\","
+                      - text: "\"--authentication\","
+                      - text: "\"interactive\","
+                      - text: "\"--domains\","
+                      - text: "\"core\","
+                      - text: "\"work\","
+                      - text: "\"work-items\","
+                      - text: "\"repositories\","
+                      - text: "\"wiki\","
+                      - text: "\"pipelines\""
+                      - text: "]"
+                      - text: "}"
+                  - toolbar "Reaction summary" [ref=e1378]:
+                    - button "1 Heart reaction." [ref=e1380]:
+                      - generic [ref=e1381]:
+                        - img "❤️" [ref=e1383]
+                        - generic [ref=e1384]: 1 Heart reaction.
+                    - button "More reactions" [ref=e1386]:
+                      - img [ref=e1388]
+          - generic [ref=e1394]:
+            - heading "Also, if you tell it to inspect the Investi... by Richard Evans" [level=4] [ref=e1395]
+            - generic [ref=e1397]:
+              - generic [ref=e1398]:
+                - generic [ref=e1402]: Richard Evans
+                - time [ref=e1403]: 2:23 PM
+              - generic [ref=e1404]:
+                - generic [ref=e2234]:
+                  - img [ref=e2235]
+                  - img [ref=e2236]:
+                    - img [ref=e2238]
+                - group "Richard Evans Also, if you tell it to inspect the Investigate.ReleaseManagement repo, it does a lot better at matching Marketing version to Semantic versions in the code base. Today at 2:23 PM." [ref=e1413]:
+                  - button "More message options" [ref=e1414]
+                  - generic "Also, if you tell it to inspect the Investigate.ReleaseManagement repo, it does a lot better at matching Marketing version to Semantic versions in the code base." [ref=e1415]:
+                    - paragraph [ref=e1416]: Also, if you tell it to inspect the Investigate.ReleaseManagement repo, it does a lot better at matching Marketing version to Semantic versions in the code base.
+          - generic [ref=e1420]:
+            - heading "Begin Reference, I asked it to add one itse... by Mykhailo Yermakov" [level=4] [ref=e1421]
+            - generic [ref=e1423]:
+              - generic [ref=e1424]:
+                - generic [ref=e1428]: Mykhailo Yermakov
+                - time [ref=e1429]: 2:33 PM
+              - generic [ref=e1430]:
+                - generic [ref=e2241]:
+                  - img [ref=e2242]
+                  - img [ref=e2243]:
+                    - img [ref=e2245]
+                - 'group "Mykhailo Yermakov Begin Reference, I asked it to add one itself, and it gave me this, which appears to be using Node, but seems to work nonetheless. \"azure-devops\": { \"type\": \"stdio\", \"command\": \"npx\", \"args\": [\"-…, Richard Evans, 4/1/2026 2:17 PM, End reference in case someone struggles with azure mcp config for Copilot CLI, here''s what worked for me (tiny change to pass org name properly) { \"mcpServers\" : { \"azure-mcp\" : { \"type\" : \"local\" , \"command\" : \"npx\" , \"tools\" : [ \"*\" ], \"args\" : [ \"-y\" , \"@azure-devops/mcp\" , \"NICEPSRND\" , \"--authentication\" , \"interactive\" , \"--domains\" , \"core\" , \"work\" , \"work-items\" , \"repositories\" , \"wiki\" , \"pipelines\" ] } } } Today at 2:33 PM." [ref=e1439]':
+                  - button "More message options" [ref=e1440]
+                  - 'generic "Begin Reference, I asked it to add one itself, and it gave me this, which appears to be using Node, but seems to work nonetheless. \"azure-devops\": { \"type\": \"stdio\", \"command\": \"npx\", \"args\": [\"-…, Richard Evans, 4/1/2026 2:17 PM, End reference in case someone struggles with azure mcp config for Copilot CLI, here''s what worked for me (tiny change to pass org name properly) { \"mcpServers\" : { \"azure-mcp\" : { \"type\" : \"local\" , \"command\" : \"npx\" , \"tools\" : [ \"*\" ], \"args\" : [ \"-y\" , \"@azure-devops/mcp\" , \"NICEPSRND\" , \"--authentication\" , \"interactive\" , \"--domains\" , \"core\" , \"work\" , \"work-items\" , \"repositories\" , \"wiki\" , \"pipelines\" ] } } }" [ref=e1441]':
+                    - 'group "Begin Reference, I asked it to add one itself, and it gave me this, which appears to be using Node, but seems to work nonetheless. \"azure-devops\": { \"type\": \"stdio\", \"command\": \"npx\", \"args\": [\"-…, Richard Evans, 4/1/2026 2:17 PM, End reference" [ref=e1442] [cursor=pointer]':
+                      - generic [ref=e1445]:
+                        - generic [ref=e1446]:
+                          - generic [ref=e1447]: Richard Evans
+                          - generic [ref=e1448]: 4/1/2026 2:17 PM
+                        - generic [ref=e1449]: "I asked it to add one itself, and it gave me this, which appears to be using Node, but seems to work nonetheless. \"azure-devops\": { \"type\": \"stdio\", \"command\": \"npx\", \"args\": [\"-…"
+                    - paragraph [ref=e1450]: in case someone struggles with azure mcp config for Copilot CLI, here's what worked for me (tiny change to pass org name properly)
+                    - paragraph
+                    - generic [ref=e1452]:
+                      - img [ref=e1453]
+                      - generic [ref=e1455]: JSON
+                      - generic [ref=e1456]:
+                        - button "Copy" [ref=e1457]:
+                          - img [ref=e1459]
+                        - button "More options" [ref=e1461]:
+                          - img [ref=e1463]
+                    - code [ref=e1466]:
+                      - text: "{"
+                      - text: "\"mcpServers\": {"
+                      - text: "\"azure-mcp\": {"
+                      - text: "\"type\": \"local\","
+                      - text: "\"command\": \"npx\","
+                      - text: "\"tools\": ["
+                      - text: "\"*\""
+                      - text: "],"
+                      - text: "\"args\": ["
+                      - text: "\"-y\","
+                      - text: "\"@azure-devops/mcp\","
+                      - text: "\"NICEPSRND\","
+                      - text: "\"--authentication\","
+                      - text: "\"interactive\","
+                      - text: "\"--domains\","
+                      - text: "\"core\","
+                      - text: "\"work\","
+                      - text: "\"work-items\","
+                      - text: "\"repositories\","
+                      - text: "\"wiki\","
+                      - text: "\"pipelines\""
+                      - text: "]"
+                      - text: "}"
+                      - text: "}"
+                      - text: "}"
+          - generic [ref=e1470]:
+            - heading "Can someone clarify which tool use for what... by Sergii Mudragel" [level=4] [ref=e1471]
+            - generic [ref=e1473]:
+              - generic [ref=e1474]:
+                - generic [ref=e1478]: Sergii Mudragel
+                - time [ref=e1479]: 2:46 PM
+              - generic [ref=e1480]:
+                - generic [ref=e2248]:
+                  - img [ref=e2249]
+                  - img [ref=e2250]:
+                    - img [ref=e2252]
+                - group "Sergii Mudragel Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used? Today at 2:46 PM." [ref=e1489]:
+                  - button "More message options" [ref=e1490]
+                  - generic "Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?" [ref=e1491]:
+                    - paragraph [ref=e1492]: Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?
+          - generic [ref=e1496]:
+            - heading "Begin Reference, Can someone clarify which ... by Ian Williams" [level=4] [ref=e1497]
+            - generic [ref=e1499]:
+              - generic [ref=e1500]:
+                - generic [ref=e1504]: Ian Williams
+                - time [ref=e1505]: 2:54 PM
+              - generic [ref=e1506]:
+                - generic [ref=e2255]:
+                  - img [ref=e2256]
+                  - img [ref=e2257]:
+                    - img [ref=e2259]
+                - 'group "Ian Williams Begin Reference, Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?, Sergii Mudragel, 4/1/2026 2:46 PM, End reference I think there me be more flexibility in tool choice than it at first seems. For example Link GitHub - anomalyco/opencode: The open source coding agent. · GitHub works with github copilot licensing and API proxies can allow claude-code to connect like VSCode. Today at 2:54 PM." [ref=e1515]':
+                  - button "More message options" [ref=e1516]
+                  - 'generic "Begin Reference, Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?, Sergii Mudragel, 4/1/2026 2:46 PM, End reference I think there me be more flexibility in tool choice than it at first seems. For example Link GitHub - anomalyco/opencode: The open source coding agent. · GitHub works with github copilot licensing and API proxies can allow claude-code to connect like VSCode." [ref=e1517]':
+                    - group "Begin Reference, Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?, Sergii Mudragel, 4/1/2026 2:46 PM, End reference" [ref=e1518] [cursor=pointer]:
+                      - generic [ref=e1521]:
+                        - generic [ref=e1522]:
+                          - generic [ref=e1523]: Sergii Mudragel
+                          - generic [ref=e1524]: 4/1/2026 2:46 PM
+                        - generic [ref=e1525]: Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?
+                    - paragraph [ref=e1526]:
+                      - text: I think there me be more flexibility in tool choice than it at first seems. For example
+                      - 'link "Link GitHub - anomalyco/opencode: The open source coding agent. · GitHub" [ref=e1527] [cursor=pointer]':
+                        - /url: https://github.com/anomalyco/opencode?tab=readme-ov-file
+                        - text: "GitHub - anomalyco/opencode: The open source coding agent. · GitHub"
+                      - text: works with github copilot licensing and API proxies can allow claude-code to connect like VSCode.
+          - generic [ref=e1531]:
+            - heading "Begin Reference, I asked it to add one itse... by Pete Burgess" [level=4] [ref=e1532]
+            - generic [ref=e1534]:
+              - generic [ref=e1535]:
+                - generic [ref=e1539]: Pete Burgess
+                - time [ref=e1540]: 2:55 PM
+                - generic "Edited Today at 3:00 PM" [ref=e1543]: Edited
+              - generic [ref=e1544]:
+                - generic [ref=e2262]:
+                  - img [ref=e2263]
+                  - img [ref=e2264]:
+                    - img [ref=e2441]
+                - group [ref=e1553]:
+                  - button "More message options" [ref=e1554]
+                  - generic [ref=e1555]:
+                    - 'group "Begin Reference, I asked it to add one itself, and it gave me this, which appears to be using Node, but seems to work nonetheless. \"azure-devops\": { \"type\": \"stdio\", \"command\": \"npx\", \"args\": [\"-…, Richard Evans, 4/1/2026 2:17 PM, End reference" [ref=e1556] [cursor=pointer]':
+                      - generic [ref=e1559]:
+                        - generic [ref=e1560]:
+                          - generic [ref=e1561]: Richard Evans
+                          - generic [ref=e1562]: 4/1/2026 2:17 PM
+                        - generic [ref=e1563]: "I asked it to add one itself, and it gave me this, which appears to be using Node, but seems to work nonetheless. \"azure-devops\": { \"type\": \"stdio\", \"command\": \"npx\", \"args\": [\"-…"
+                    - paragraph [ref=e1564]: Yeah, that's the "old" Azure DevOps MCP which runs locally, using local resources (memory, storage, CPU, etc.).
+                    - paragraph [ref=e1565]
+                    - paragraph [ref=e1566]: "Here's a Copilot comparison:"
+                    - paragraph [ref=e1567]
+                    - table [ref=e1568]:
+                      - rowgroup [ref=e1569]:
+                        - row "Feature ado‑remote‑mcp azure‑devops‑mcp (local)" [ref=e1570]:
+                          - columnheader "Feature" [ref=e1571]
+                          - columnheader "ado‑remote‑mcp" [ref=e1572]:
+                            - strong [ref=e1573]: ado‑remote‑mcp
+                          - columnheader "azure‑devops‑mcp (local)" [ref=e1574]:
+                            - strong [ref=e1575]: azure‑devops‑mcp (local)
+                      - rowgroup [ref=e1576]:
+                        - row "Installation None (cloud‑hosted) Link [learn.microsoft.com] Node.js + local server required Link [learn.microsoft.com]" [ref=e1577]:
+                          - cell "Installation" [ref=e1578]
+                          - cell "None (cloud‑hosted) Link [learn.microsoft.com]" [ref=e1579]:
+                            - strong [ref=e1580]: None (cloud‑hosted)
+                            - link "Link [learn.microsoft.com]" [ref=e1581] [cursor=pointer]:
+                              - /url: https://learn.microsoft.com/en-us/azure/devops/mcp-server/remote-mcp-server?view=azure-devops
+                              - text: "[learn.microsoft.com]"
+                          - cell "Node.js + local server required Link [learn.microsoft.com]" [ref=e1582]:
+                            - strong [ref=e1583]: Node.js + local server required
+                            - link "Link [learn.microsoft.com]" [ref=e1584] [cursor=pointer]:
+                              - /url: https://learn.microsoft.com/en-us/azure/devops/mcp-server/remote-mcp-server?view=azure-devops
+                              - text: "[learn.microsoft.com]"
+                        - row "Authentication Microsoft Entra OAuth Link [devops.com] PAT or Entra" [ref=e1585]:
+                          - cell "Authentication" [ref=e1586]
+                          - cell "Microsoft Entra OAuth Link [devops.com]" [ref=e1587]:
+                            - strong [ref=e1588]: Microsoft Entra OAuth
+                            - link "Link [devops.com]" [ref=e1589] [cursor=pointer]:
+                              - /url: https://devops.com/azure-devops-remote-mcp-server-lands-in-microsoft-foundry-giving-ai-agents-direct-access-to-your-devops-data/
+                              - text: "[devops.com]"
+                          - cell "PAT or Entra" [ref=e1590]
+                        - row "Access Controls Read‑only mode, toolset scoping Link [devops.com] None of these built‑in" [ref=e1591]:
+                          - cell "Access Controls" [ref=e1592]
+                          - cell "Read‑only mode, toolset scoping Link [devops.com]" [ref=e1593]:
+                            - text: Read‑only mode, toolset scoping
+                            - link "Link [devops.com]" [ref=e1594] [cursor=pointer]:
+                              - /url: https://devops.com/azure-devops-remote-mcp-server-lands-in-microsoft-foundry-giving-ai-agents-direct-access-to-your-devops-data/
+                              - text: "[devops.com]"
+                          - cell "None of these built‑in" [ref=e1595]
+                        - row "Supported Orgs Entra‑backed only Link [devblogs.m...rosoft.com] Any ADO org (PAT allowed)" [ref=e1596]:
+                          - cell "Supported Orgs" [ref=e1597]
+                          - cell "Entra‑backed only Link [devblogs.m...rosoft.com]" [ref=e1598]:
+                            - text: Entra‑backed only
+                            - link "Link [devblogs.m...rosoft.com]" [ref=e1599] [cursor=pointer]:
+                              - /url: https://devblogs.microsoft.com/devops/azure-devops-remote-mcp-server-public-preview/
+                              - text: "[devblogs.m...rosoft.com]"
+                          - cell "Any ADO org (PAT allowed)" [ref=e1600]
+                        - row "Setup complexity Very low Higher (needs local install & config)" [ref=e1601]:
+                          - cell "Setup complexity" [ref=e1602]
+                          - cell "Very low" [ref=e1603]:
+                            - strong [ref=e1604]: Very low
+                          - cell "Higher (needs local install & config)" [ref=e1605]
+                        - row "Stability Preview (still evolving) Link [learn.microsoft.com] Stable GA" [ref=e1606]:
+                          - cell "Stability" [ref=e1607]
+                          - cell "Preview (still evolving) Link [learn.microsoft.com]" [ref=e1608]:
+                            - text: Preview (still evolving)
+                            - link "Link [learn.microsoft.com]" [ref=e1609] [cursor=pointer]:
+                              - /url: https://learn.microsoft.com/en-us/azure/devops/mcp-server/remote-mcp-server?view=azure-devops
+                              - text: "[learn.microsoft.com]"
+                          - cell "Stable GA" [ref=e1610]
+                        - row "Customization Limited (hosted) Full (open‑source Node server)" [ref=e1611]:
+                          - cell "Customization" [ref=e1612]
+                          - cell "Limited (hosted)" [ref=e1613]
+                          - cell "Full (open‑source Node server)" [ref=e1614]
+                        - row "Offline use ❌ No ✅ Yes" [ref=e1615]:
+                          - cell "Offline use" [ref=e1616]
+                          - cell "❌ No" [ref=e1617]
+                          - cell "✅ Yes" [ref=e1618]
+                        - row "Future roadmap Primary direction (local to be archived) Link [devblogs.m...rosoft.com] Will be deprecated" [ref=e1619]:
+                          - cell "Future roadmap" [ref=e1620]
+                          - cell "Primary direction (local to be archived) Link [devblogs.m...rosoft.com]" [ref=e1621]:
+                            - text: Primary direction (local to be archived)
+                            - link "Link [devblogs.m...rosoft.com]" [ref=e1622] [cursor=pointer]:
+                              - /url: https://devblogs.microsoft.com/devops/azure-devops-remote-mcp-server-public-preview/
+                              - text: "[devblogs.m...rosoft.com]"
+                          - cell "Will be deprecated" [ref=e1623]:
+                            - paragraph [ref=e1624]: Will be deprecated
+                    - paragraph [ref=e1625]
+                  - toolbar "Reaction summary" [ref=e1626]:
+                    - button "2 Heart reactions." [ref=e1628]:
+                      - generic [ref=e1629]:
+                        - img "❤️" [ref=e1631]
+                        - generic [ref=e1632]: 2 Heart reactions.
+                        - generic [ref=e1633]: "2"
+                    - button "More reactions" [ref=e1635]:
+                      - img [ref=e1637]
+          - generic [ref=e1643]:
+            - heading "Begin Reference, Can someone clarify which ... by Pete Burgess" [level=4] [ref=e1644]
+            - generic [ref=e1646]:
+              - generic:
+                - generic [ref=e1650]: Pete Burgess
+                - time [ref=e1651]: 2:58 PM
+              - group "Pete Burgess Begin Reference, Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?, Sergii Mudragel, 4/1/2026 2:46 PM, End reference All of the GitHub Copilot usage described this morning works in either VS Code or VS 2026. Today at 2:58 PM." [ref=e1654]:
+                - button "More message options" [ref=e1655]
+                - generic "Begin Reference, Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?, Sergii Mudragel, 4/1/2026 2:46 PM, End reference All of the GitHub Copilot usage described this morning works in either VS Code or VS 2026." [ref=e1656]:
+                  - group "Begin Reference, Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?, Sergii Mudragel, 4/1/2026 2:46 PM, End reference" [ref=e1657] [cursor=pointer]:
+                    - generic [ref=e1660]:
+                      - generic [ref=e1661]:
+                        - generic [ref=e1662]: Sergii Mudragel
+                        - generic [ref=e1663]: 4/1/2026 2:46 PM
+                      - generic [ref=e1664]: Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?
+                  - paragraph [ref=e1665]: All of the GitHub Copilot usage described this morning works in either VS Code or VS 2026.
+          - generic [ref=e1669]:
+            - heading "Begin Reference, Can someone clarify which ... by Mark Heath" [level=4] [ref=e1670]
+            - generic [ref=e1672]:
+              - generic [ref=e1673]:
+                - generic [ref=e1677]: Mark Heath
+                - time [ref=e1678]: 3:03 PM
+              - generic [ref=e1679]:
+                - generic [ref=e2269]:
+                  - img [ref=e2270]
+                  - img [ref=e2271]:
+                    - img [ref=e2273]
+                - group [ref=e1688]:
+                  - button "More message options" [ref=e1689]
+                  - generic [ref=e1690]:
+                    - group "Begin Reference, Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?, Sergii Mudragel, 4/1/2026 2:46 PM, End reference" [ref=e1691] [cursor=pointer]:
+                      - generic [ref=e1694]:
+                        - generic [ref=e1695]:
+                          - generic [ref=e1696]: Sergii Mudragel
+                          - generic [ref=e1697]: 4/1/2026 2:46 PM
+                        - generic [ref=e1698]: Can someone clarify which tool use for what? I mean what AI-first operations we should do through VC Code and what through MS Visual Studio? Maybe something else can be used?
+                    - paragraph [ref=e1699]: The simple answer is you can continue to use your primary IDE. If that was Visual Studio, you can use Copilot in Visual Studio, and if it's VS Code you can use Copilot in VS Code. They have similar capabilities (although VS Code tends to get new features slightly quicker). There's also Copilot CLI, which is a much more similar experience to tools like Claude Code or Open Code and is definitely worth trying.
+                    - paragraph [ref=e1700]
+                    - paragraph [ref=e1701]: I would suggest avoiding using open code on our production code as we explicitly do not want to access LLM models via any other route (Open Code often offers free access to third-party models, but we wouldn't want to send our intellectual property to them)
+          - generic [ref=e1705]:
+            - heading "I asked Github Copilot, as suggested above ... by Sergii Mudragel" [level=4] [ref=e1706]
+            - generic [ref=e1708]:
+              - generic [ref=e1709]:
+                - generic [ref=e1713]: Sergii Mudragel
+                - time [ref=e1714]: 3:04 PM
+                - generic "Edited Today at 3:09 PM" [ref=e1717]: Edited
+              - generic [ref=e1718]:
+                - generic [ref=e2276]:
+                  - img [ref=e2277]
+                  - img [ref=e2278]:
+                    - img [ref=e2280]
+                - 'group "Sergii Mudragel I asked Github Copilot, as suggested above and received this: image So, I was thinking that VS2026 is not suitable ... Today at 3:04 PM. Edited" [ref=e1727]':
+                  - button "More message options" [ref=e1728]
+                  - 'generic "I asked Github Copilot, as suggested above and received this: image So, I was thinking that VS2026 is not suitable ..." [ref=e1729]':
+                    - paragraph [ref=e1730]: "I asked Github Copilot, as suggested above and received this:"
+                    - paragraph [ref=e1731]:
+                      - img "image" [ref=e1733]
+                    - paragraph [ref=e1734]: So, I was thinking that VS2026 is not suitable ...
+          - generic [ref=e1738]:
+            - heading "Can we write our own tools (MCPs) and APIs... by Ian Williams" [level=4] [ref=e1739]
+            - generic [ref=e1741]:
+              - generic [ref=e1742]:
+                - generic [ref=e1746]: Ian Williams
+                - time [ref=e1747]: 3:08 PM
+              - generic [ref=e1748]:
+                - generic [ref=e2283]:
+                  - img [ref=e2284]
+                  - img [ref=e2285]:
+                    - img [ref=e2287]
+                - group "Ian Williams Can we write our own tools (MCPs) and APIs using Copilot in VSCode? It will often be better to add missing features using the LLM tools to improve their own interfaces. Today at 3:08 PM." [ref=e1757]:
+                  - button "More message options" [ref=e1758]
+                  - generic "Can we write our own tools (MCPs) and APIs using Copilot in VSCode? It will often be better to add missing features using the LLM tools to improve their own interfaces." [ref=e1759]:
+                    - paragraph [ref=e1760]: Can we write our own tools (MCPs) and APIs using Copilot in VSCode? It will often be better to add missing features using the LLM tools to improve their own interfaces.
+          - generic [ref=e1764]:
+            - heading "Begin Reference, Can we write our own tools... by Mark Heath" [level=4] [ref=e1765]
+            - generic [ref=e1767]:
+              - generic [ref=e1768]:
+                - generic [ref=e1772]: Mark Heath
+                - time [ref=e1773]: 3:09 PM
+              - generic [ref=e1774]:
+                - generic [ref=e2290]:
+                  - img [ref=e2291]
+                  - img [ref=e2292]:
+                    - img [ref=e2294]
+                - group "Mark Heath Begin Reference, Can we write our own tools (MCPs) and APIs using Copilot in VSCode? It will often be better to add missing features using the LLM tools to improve their own interfaces., Ian Williams, 4/1/2026 3:08 PM, End reference yes, this is a good way of working with agentic coding tools. And if you create any that would be useful to the wider team, feel free to share them 1 Heart reaction. Today at 3:09 PM." [ref=e1783]:
+                  - button "More message options" [ref=e1784]
+                  - generic "Begin Reference, Can we write our own tools (MCPs) and APIs using Copilot in VSCode? It will often be better to add missing features using the LLM tools to improve their own interfaces., Ian Williams, 4/1/2026 3:08 PM, End reference yes, this is a good way of working with agentic coding tools. And if you create any that would be useful to the wider team, feel free to share them" [ref=e1785]:
+                    - group "Begin Reference, Can we write our own tools (MCPs) and APIs using Copilot in VSCode? It will often be better to add missing features using the LLM tools to improve their own interfaces., Ian Williams, 4/1/2026 3:08 PM, End reference" [ref=e1786] [cursor=pointer]:
+                      - generic [ref=e1789]:
+                        - generic [ref=e1790]:
+                          - generic [ref=e1791]: Ian Williams
+                          - generic [ref=e1792]: 4/1/2026 3:08 PM
+                        - generic [ref=e1793]: Can we write our own tools (MCPs) and APIs using Copilot in VSCode? It will often be better to add missing features using the LLM tools to improve their own interfaces.
+                    - paragraph [ref=e1794]: yes, this is a good way of working with agentic coding tools. And if you create any that would be useful to the wider team, feel free to share them
+                  - toolbar "Reaction summary" [ref=e1795]:
+                    - button "1 Heart reaction." [ref=e1797]:
+                      - generic [ref=e1798]:
+                        - img "❤️" [ref=e1800]
+                        - generic [ref=e1801]: 1 Heart reaction.
+                    - button "More reactions" [ref=e1803]:
+                      - img [ref=e1805]
+          - generic [ref=e1811]:
+            - heading "Mark> \"I would suggest avoiding using open ... by Robin Stevens" [level=4] [ref=e1812]
+            - generic [ref=e1814]:
+              - generic [ref=e1815]:
+                - generic [ref=e1819]: Robin Stevens
+                - time [ref=e1820]: 3:10 PM
+              - generic [ref=e1821]:
+                - generic [ref=e2297]:
+                  - img [ref=e2298]
+                  - img [ref=e2299]:
+                    - img [ref=e2301]
+                - group "Robin Stevens Mark> \"I would suggest avoiding using open code on our production code as we explicitly do not want to access LLM models via any other route\" Is anyone in NiCE looking at local LLMs? (On-prem, or hosted in remote compute.) Today at 3:10 PM." [ref=e1830]:
+                  - button "More message options" [ref=e1831]
+                  - generic "Mark> \"I would suggest avoiding using open code on our production code as we explicitly do not want to access LLM models via any other route\" Is anyone in NiCE looking at local LLMs? (On-prem, or hosted in remote compute.)" [ref=e1832]:
+                    - paragraph [ref=e1833]: Mark> "I would suggest avoiding using open code on our production code as we explicitly do not want to access LLM models via any other route"
+                    - paragraph [ref=e1834]
+                    - paragraph [ref=e1835]: Is anyone in NiCE looking at local LLMs? (On-prem, or hosted in remote compute.)
+          - generic [ref=e1839]:
+            - heading "^ I hear GLM-5 is \"good-enough\" and much mu... by Ian Williams" [level=4] [ref=e1840]
+            - generic [ref=e1842]:
+              - generic [ref=e1843]:
+                - generic [ref=e1847]: Ian Williams
+                - time [ref=e1848]: 3:11 PM
+              - generic [ref=e1849]:
+                - generic [ref=e2304]:
+                  - img [ref=e2305]
+                  - img [ref=e2306]:
+                    - img [ref=e2308]
+                - group "Ian Williams ^ I hear GLM-5 is \"good-enough\" and much much cheaper to host and run than Claude or Copilot Today at 3:11 PM." [ref=e1858]:
+                  - button "More message options" [ref=e1859]
+                  - generic "^ I hear GLM-5 is \"good-enough\" and much much cheaper to host and run than Claude or Copilot" [ref=e1860]:
+                    - paragraph [ref=e1861]: ^ I hear GLM-5 is "good-enough" and much much cheaper to host and run than Claude or Copilot
+          - generic [ref=e1865]:
+            - heading "Begin Reference, I asked Github Copilot, as... by Pete Burgess" [level=4] [ref=e1866]
+            - generic [ref=e1868]:
+              - generic [ref=e1869]:
+                - generic [ref=e1873]: Pete Burgess
+                - time [ref=e1874]: 3:15 PM
+              - generic [ref=e1875]:
+                - generic [ref=e2311]:
+                  - img [ref=e2312]
+                  - img [ref=e2313]:
+                    - img [ref=e2443]
+                - 'group "Pete Burgess Begin Reference, I asked Github Copilot, as suggested above and received this: 📷 So, I was thinking that VS2026 is not suitable ..., Sergii Mudragel, 4/1/2026 3:04 PM, End reference For VS 2026 you can simply open the %USERPROFILE%\\.mcp.json file and add these lines to the servers object: \"ado-remote-mcp\" : { \"type\" : \"http\" , \"url\" : \"https://mcp.dev.azure.com/NICEPSRND\" } Once saved, IntelliSense should display prompts above the entry allowing you to start and authorize it. Today at 3:15 PM." [ref=e1884]':
+                  - button "More message options" [ref=e1885]
+                  - 'generic "Begin Reference, I asked Github Copilot, as suggested above and received this: 📷 So, I was thinking that VS2026 is not suitable ..., Sergii Mudragel, 4/1/2026 3:04 PM, End reference For VS 2026 you can simply open the %USERPROFILE%\\.mcp.json file and add these lines to the servers object: \"ado-remote-mcp\" : { \"type\" : \"http\" , \"url\" : \"https://mcp.dev.azure.com/NICEPSRND\" } Once saved, IntelliSense should display prompts above the entry allowing you to start and authorize it." [ref=e1886]':
+                    - 'group "Begin Reference, I asked Github Copilot, as suggested above and received this: 📷 So, I was thinking that VS2026 is not suitable ..., Sergii Mudragel, 4/1/2026 3:04 PM, End reference" [ref=e1887] [cursor=pointer]':
+                      - generic [ref=e1890]:
+                        - generic [ref=e1891]:
+                          - generic [ref=e1892]: Sergii Mudragel
+                          - generic [ref=e1893]: 4/1/2026 3:04 PM
+                        - generic [ref=e1894]: "I asked Github Copilot, as suggested above and received this: 📷 So, I was thinking that VS2026 is not suitable ..."
+                    - paragraph [ref=e1895]:
+                      - text: For VS 2026 you can simply open the
+                      - code [ref=e1896]: "%USERPROFILE%\\.mcp.json"
+                      - text: file and add these lines to the
+                      - code [ref=e1897]: servers
+                      - text: "object:"
+                    - paragraph
+                    - generic [ref=e1899]:
+                      - img [ref=e1900]
+                      - generic [ref=e1902]: JSON
+                      - generic [ref=e1903]:
+                        - button "Copy" [ref=e1904]:
+                          - img [ref=e1906]
+                        - button "More options" [ref=e1908]:
+                          - img [ref=e1910]
+                    - code [ref=e1913]:
+                      - text: "\"ado-remote-mcp\": {"
+                      - text: "\"type\": \"http\","
+                      - text: "\"url\": \"https://mcp.dev.azure.com/NICEPSRND\""
+                      - text: "}"
+                    - paragraph
+                    - paragraph [ref=e1914]: Once saved, IntelliSense should display prompts above the entry allowing you to start and authorize it.
+          - generic [ref=e1918]:
+            - heading "If you create your agents in the User Data... by Richard Evans" [level=4] [ref=e1919]
+            - generic [ref=e1921]:
+              - generic [ref=e1922]:
+                - generic [ref=e1926]: Richard Evans
+                - time [ref=e1927]: 3:49 PM
+              - generic [ref=e1928]:
+                - generic [ref=e2318]:
+                  - img [ref=e2319]
+                  - img [ref=e2320]:
+                    - img [ref=e2322]
+                - group "Richard Evans If you create your agents in the User Data location (in VS Code), then they will follow you from workspace to workspace, otherwise you have to create/commit them into each project. image I think similar probably applies for VS2026, in the %USERPROFILE% location 1 yes-blob reaction. Today at 3:49 PM." [ref=e1937]:
+                  - button "More message options" [ref=e1938]
+                  - generic "If you create your agents in the User Data location (in VS Code), then they will follow you from workspace to workspace, otherwise you have to create/commit them into each project. image I think similar probably applies for VS2026, in the %USERPROFILE% location" [ref=e1939]:
+                    - paragraph [ref=e1940]:
+                      - text: If you create your agents in the
+                      - code [ref=e1941]: User Data
+                      - text: location (in VS Code), then they will follow you from workspace to workspace, otherwise you have to create/commit them into each project.
+                    - paragraph [ref=e1942]
+                    - paragraph [ref=e1943]:
+                      - img "image" [ref=e1945]
+                    - paragraph [ref=e1946]
+                    - paragraph [ref=e1947]:
+                      - text: I think similar probably applies for VS2026, in the
+                      - code [ref=e1948]: "%USERPROFILE%"
+                      - text: location
+                  - toolbar "Reaction summary" [ref=e1949]:
+                    - button "1 yes-blob reaction." [ref=e1951]:
+                      - generic [ref=e1952]:
+                        - img "yes-blob" [ref=e1954]
+                        - generic [ref=e1955]: 1 yes-blob reaction.
+                    - button "More reactions" [ref=e1957]:
+                      - img [ref=e1959]
+          - generic [ref=e1965]:
+            - heading "Is it right path? \"C:\\Program Files\\Microso... by Sergii Mudragel" [level=4] [ref=e1966]
+            - generic [ref=e1968]:
+              - generic [ref=e1969]:
+                - generic [ref=e1973]: Sergii Mudragel
+                - time [ref=e1974]: 3:55 PM
+              - generic [ref=e1975]:
+                - generic [ref=e2325]:
+                  - img [ref=e2326]
+                  - img [ref=e2327]:
+                    - img [ref=e2329]
+                - 'group "Sergii Mudragel Is it right path? \"C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\Common7\\IDE\\Extensions\\Microsoft\\Copilot\\Mcp\\mcp.json\" also there are these: \"C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\Common7\\IDE\\CommonExtensions\\Microsoft\\NuGet\\mcp.json\" \"C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\Common7\\IDE\\Extensions\\dgvaws1k.kfy\\Tools\\mcp.json\" Today at 3:55 PM." [ref=e1984]':
+                  - button "More message options" [ref=e1985]
+                  - 'generic "Is it right path? \"C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\Common7\\IDE\\Extensions\\Microsoft\\Copilot\\Mcp\\mcp.json\" also there are these: \"C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\Common7\\IDE\\CommonExtensions\\Microsoft\\NuGet\\mcp.json\" \"C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\Common7\\IDE\\Extensions\\dgvaws1k.kfy\\Tools\\mcp.json\"" [ref=e1986]':
+                    - paragraph [ref=e1987]: Is it right path?
+                    - paragraph [ref=e1988]: "\"C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\Common7\\IDE\\Extensions\\Microsoft\\Copilot\\Mcp\\mcp.json\""
+                    - paragraph [ref=e1989]: "also there are these:"
+                    - paragraph [ref=e1990]: "\"C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\Common7\\IDE\\CommonExtensions\\Microsoft\\NuGet\\mcp.json\""
+                    - paragraph [ref=e1991]: "\"C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\Common7\\IDE\\Extensions\\dgvaws1k.kfy\\Tools\\mcp.json\""
+          - generic [ref=e1995]:
+            - heading "better to have it in UserProfile by Serhii Lesnik" [level=4] [ref=e1996]
+            - generic [ref=e1998]:
+              - generic [ref=e1999]:
+                - generic [ref=e2003]: Serhii Lesnik
+                - time [ref=e2004]: 3:56 PM
+              - generic [ref=e2005]:
+                - generic [ref=e2332]:
+                  - img [ref=e2333]
+                  - img [ref=e2334]:
+                    - img [ref=e2336]
+                - group "Serhii Lesnik better to have it in UserProfile Today at 3:56 PM." [ref=e2014]:
+                  - button "More message options" [ref=e2015]
+                  - generic "better to have it in UserProfile" [ref=e2016]:
+                    - paragraph [ref=e2017]: better to have it in UserProfile
+        - generic [ref=e2020]: has context menu
+        - button "Jump to newest" [ref=e2021]:
+          - img [ref=e2023]
+          - text: Jump to newest
+      - generic [ref=e2033]:
+        - generic [ref=e2034]:
+          - textbox "Type a message" [ref=e2035]:
+            - paragraph [ref=e2036]: Type a message
+          - generic:
+            - log
+            - log
+        - generic [ref=e2037]:
+          - toolbar [ref=e2038]:
+            - button "Show Formatting options (Ctrl+Shift+X)" [ref=e2039] [cursor=pointer]:
+              - img [ref=e2041]
+            - button "Emoji, GIFs and Stickers" [ref=e2044] [cursor=pointer]:
+              - img [ref=e2046]
+            - button "Loop components (Ctrl+Alt+L)" [ref=e2048] [cursor=pointer]:
+              - img [ref=e2050]
+            - button "Actions and apps" [ref=e2053] [cursor=pointer]:
+              - img [ref=e2055]
+          - toolbar "Actions for new message" [ref=e2057]:
+            - generic [ref=e2059]:
+              - button "Send (Ctrl+Enter)" [ref=e2060] [cursor=pointer]:
+                - img [ref=e2062]
+              - generic [ref=e2065]: has context menu

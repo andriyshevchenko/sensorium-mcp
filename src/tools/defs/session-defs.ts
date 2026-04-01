@@ -264,6 +264,10 @@ export const sessionToolDefs: ToolDefinition[] = [
           type: "number",
           description: "The Telegram thread ID to send the message to.",
         },
+        targetThreadId: {
+          type: "number",
+          description: "Alias for threadId — preferred when session context already uses threadId.",
+        },
         message: {
           type: "string",
           description: "The task or message content to send.",

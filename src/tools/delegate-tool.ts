@@ -287,9 +287,11 @@ export async function handleStartThread(
 export function handleSendMessageToThread(
   args: Record<string, unknown>,
 ): ToolResult {
-  const threadId = typeof args.threadId === "number"
-    ? args.threadId
-    : typeof args.threadId === "string" ? Number(args.threadId) : undefined;
+  // Prefer targetThreadId (cross-thread callers pass threadId as session context)
+  const rawTarget = args.targetThreadId ?? args.threadId;
+  const threadId = typeof rawTarget === "number"
+    ? rawTarget
+    : typeof rawTarget === "string" ? Number(rawTarget) : undefined;
   const message = typeof args.message === "string" ? args.message.trim() : "";
   const rawMode = typeof args.mode === "string" ? args.mode : "";
   const mode: "one-shot" | "manager-worker" | "reply" =

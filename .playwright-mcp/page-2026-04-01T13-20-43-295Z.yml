@@ -1,0 +1,8 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - img [ref=e6]
+    - generic [ref=e8]:
+      - heading "Sensorium MCP" [level=2] [ref=e9]
+      - paragraph [ref=e10]: Enter your API token
+  - textbox "MCP_HTTP_SECRET" [ref=e11]
+  - button "Connect" [ref=e12] [cursor=pointer]
