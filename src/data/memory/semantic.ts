@@ -193,7 +193,7 @@ export function saveSemanticNote(
 export function searchSemanticNotes(
   db: Database,
   query: string,
-  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean; startTime?: string; endTime?: string }
+  options?: { types?: string[]; maxResults?: number; skipAccessTracking?: boolean; startTime?: string; endTime?: string; threadId?: number }
 ): SemanticNote[] {
   const maxResults = options?.maxResults ?? 10;
   const terms = query
@@ -224,7 +224,11 @@ export function searchSemanticNotes(
     sql += ` AND created_at <= ?`;
     params.push(options.endTime);
   }
-
+  // Thread filtering: only show notes from the requested thread (NULL = unassigned, excluded)
+  if (options?.threadId !== undefined) {
+    sql += ` AND thread_id = ?`;
+    params.push(options.threadId);
+  }
   if (options?.types && options.types.length > 0) {
     const placeholders = options.types.map(() => "?").join(",");
     sql += ` AND type IN (${placeholders})`;
