@@ -7,11 +7,11 @@ import { readFile, mkdir, writeFile, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { getEffectiveAgentType, type AgentType } from "../../config.js";
+import { getEffectiveAgentType, VALID_AGENT_TYPES, type AgentType } from "../../config.js";
 import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "../presets.js";
 import { readBody, type RouteHandler, type RouteArgs } from "./types.js";
 
-const AGENT_TYPES: AgentType[] = ["copilot", "copilot_claude", "copilot_codex", "claude", "cursor", "codex", "openai_codex"];
+const AGENT_TYPES = VALID_AGENT_TYPES as readonly AgentType[];
 
 // ─── GET /api/templates — list reminders template + agent-specific overrides ─
 
