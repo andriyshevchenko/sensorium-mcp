@@ -432,7 +432,7 @@ function ensureSchemaIntegrity(db: Database): void {
         created_at      TEXT NOT NULL,
         last_active_at  TEXT,
         session_reset_at TEXT,
-        status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired'))
+        status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited'))
       );
       CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
       CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
@@ -440,6 +440,7 @@ function ensureSchemaIntegrity(db: Database): void {
     `);
     stampVersion(12);
     stampVersion(13);
+    stampVersion(15);
   } else {
     const threadRegistryCols = db
       .prepare("PRAGMA table_info(thread_registry)")
@@ -618,7 +619,7 @@ CREATE TABLE IF NOT EXISTS thread_registry (
   created_at      TEXT NOT NULL,
   last_active_at  TEXT,
   session_reset_at TEXT,
-  status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited','exited','exited'))
+  status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited'))
 );
 CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
 CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
