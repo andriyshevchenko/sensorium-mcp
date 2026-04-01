@@ -99,13 +99,6 @@ export function getThread(db: Database, threadId: number): ThreadRegistryEntry |
   return row ? rowToEntry(row) : null;
 }
 
-export function getThreadsByType(db: Database, type: ThreadRegistryEntry['type']): ThreadRegistryEntry[] {
-  const rows = db.prepare(
-    `SELECT * FROM thread_registry WHERE type = ? ORDER BY created_at DESC`,
-  ).all(type) as Record<string, unknown>[];
-  return rows.map(rowToEntry);
-}
-
 export function getThreadsByRoot(db: Database, rootThreadId: number): ThreadRegistryEntry[] {
   const rows = db.prepare(
     `SELECT * FROM thread_registry WHERE root_thread_id = ? ORDER BY created_at DESC`,
@@ -160,12 +153,6 @@ export function updateThread(
   return result.changes > 0;
 }
 
-export function touchThread(db: Database, threadId: number): void {
-  db.prepare(
-    `UPDATE thread_registry SET last_active_at = ? WHERE thread_id = ?`,
-  ).run(nowISO(), threadId);
-}
-
 export function archiveThread(db: Database, threadId: number): boolean {
   const result = db.prepare(
     `UPDATE thread_registry SET status = 'archived' WHERE thread_id = ?`,
@@ -180,15 +167,6 @@ export function deleteThread(db: Database, threadId: number): boolean {
   return result.changes > 0;
 }
 
-export function getActiveDaily(db: Database, rootThreadId: number): ThreadRegistryEntry | null {
-  const row = db.prepare(
-    `SELECT * FROM thread_registry
-     WHERE root_thread_id = ? AND type = 'daily' AND status = 'active'
-     ORDER BY created_at DESC LIMIT 1`,
-  ).get(rootThreadId) as Record<string, unknown> | undefined;
-  return row ? rowToEntry(row) : null;
-}
-
 /**
  * Reset the daily session timestamp for a thread.
  * Sets session_reset_at = now, used by bootstrap to filter the message buffer.
@@ -200,16 +178,4 @@ export function resetDailySession(db: Database, threadId: number): boolean {
   return result.changes > 0;
 }
 
-// ─── Migration Helper ────────────────────────────────────────────────────────
 
-export function migrateExistingThreads(db: Database, existingThreadIds: number[]): void {
-  const now = nowISO();
-  const insert = db.prepare(
-    `INSERT OR IGNORE INTO thread_registry
-       (thread_id, name, type, badge, client, max_retries, cooldown_ms, keep_alive, created_at, last_active_at, status)
-     VALUES (?, ?, 'root', 'root', 'claude', 5, 300000, 0, ?, ?, 'active')`,
-  );
-  for (const threadId of existingThreadIds) {
-    insert.run(threadId, `root-${threadId}`, now, now);
-  }
-}

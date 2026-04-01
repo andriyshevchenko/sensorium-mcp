@@ -250,11 +250,6 @@ const REGISTRY_URL = "https://registry.npmjs.org/sensorium-mcp/latest";
 
 // Ghost thread re-spawn helpers -----------------------------------------------
 
-interface GhostThreadInfo {
-  threadId: number;
-  name: string;
-}
-
 /**
  * Parse a single PID file and return pid + name, or null if unparseable.
  */
@@ -290,11 +285,6 @@ function readGhostThreads(): void {
   } catch { /* pids dir may not exist */ }
 }
 
-/** @deprecated Keeper system handles restarts — retained as no-op. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function respawnGhostThreads(_threads: GhostThreadInfo[]): Promise<void> {
-  // No-op: keepers handle their own restart via scheduleRestart() and applyKeeperSettings().
-}
 async function getRemoteVersion(): Promise<string | null> {
   try {
     const r = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(15_000) });

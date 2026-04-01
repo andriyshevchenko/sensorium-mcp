@@ -22,7 +22,7 @@ import { initMemoryDb } from "./data/memory/schema.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface DailyRotationResult {
+interface DailyRotationResult {
   rootThreadId: number;
   previousSessionResetAt: string | null;
   newSessionResetAt: string;
