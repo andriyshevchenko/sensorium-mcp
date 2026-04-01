@@ -264,6 +264,9 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       INSERT OR IGNORE INTO thread_registry_new SELECT * FROM thread_registry;
       DROP TABLE thread_registry;
       ALTER TABLE thread_registry_new RENAME TO thread_registry;
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
     `);
     log.info("[migration-15] Widened thread_registry status CHECK to include 'exited'");
   },
@@ -326,6 +329,12 @@ function ensureSchemaIntegrity(db: Database): void {
         "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)"
       ).run(v, nowISO());
     } catch { /* non-critical */ }
+  };
+  const getTableSql = (tableName: string): string => {
+    const row = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?"
+    ).get(tableName) as { sql: string | null } | undefined;
+    return row?.sql ?? "";
   };
 
   const semanticNoteCols = db
@@ -410,6 +419,34 @@ function ensureSchemaIntegrity(db: Database): void {
       CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
     `);
     stampVersion(11);
+  } else {
+    const temporalNarrativesSql = getTableSql("temporal_narratives");
+    const hasExpandedNarrativeResolution =
+      temporalNarrativesSql.includes("'quarter'") &&
+      temporalNarrativesSql.includes("'half_year'");
+    if (!hasExpandedNarrativeResolution) {
+      log.info("[memory] Self-heal: widening temporal_narratives resolution CHECK");
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS temporal_narratives_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          thread_id INTEGER NOT NULL,
+          resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month', 'quarter', 'half_year')),
+          period_start TEXT NOT NULL,
+          period_end TEXT NOT NULL,
+          narrative TEXT NOT NULL,
+          source_episode_count INTEGER NOT NULL DEFAULT 0,
+          source_note_count INTEGER NOT NULL DEFAULT 0,
+          model TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(thread_id, resolution, period_start)
+        );
+        INSERT OR IGNORE INTO temporal_narratives_new SELECT * FROM temporal_narratives;
+        DROP TABLE temporal_narratives;
+        ALTER TABLE temporal_narratives_new RENAME TO temporal_narratives;
+        CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
+      `);
+      stampVersion(14);
+    }
   }
 
   const hasThreadRegistry = db
@@ -440,6 +477,7 @@ function ensureSchemaIntegrity(db: Database): void {
     `);
     stampVersion(12);
     stampVersion(13);
+    stampVersion(14);
     stampVersion(15);
   } else {
     const threadRegistryCols = db
@@ -451,6 +489,36 @@ function ensureSchemaIntegrity(db: Database): void {
       log.info("[memory] Self-heal: adding missing session_reset_at column to thread_registry");
       db.exec("ALTER TABLE thread_registry ADD COLUMN session_reset_at TEXT");
       stampVersion(13);
+    }
+
+    const threadRegistrySql = getTableSql("thread_registry");
+    if (!threadRegistrySql.includes("'exited'")) {
+      log.info("[memory] Self-heal: widening thread_registry status CHECK");
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS thread_registry_new (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          thread_id       INTEGER NOT NULL UNIQUE,
+          name            TEXT NOT NULL,
+          type            TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
+          root_thread_id  INTEGER,
+          badge           TEXT NOT NULL DEFAULT 'root',
+          client          TEXT DEFAULT 'claude',
+          max_retries     INTEGER DEFAULT 5,
+          cooldown_ms     INTEGER DEFAULT 300000,
+          keep_alive      INTEGER DEFAULT 0,
+          created_at      TEXT NOT NULL,
+          last_active_at  TEXT,
+          session_reset_at TEXT,
+          status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited'))
+        );
+        INSERT OR IGNORE INTO thread_registry_new SELECT * FROM thread_registry;
+        DROP TABLE thread_registry;
+        ALTER TABLE thread_registry_new RENAME TO thread_registry;
+        CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
+        CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
+        CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
+      `);
+      stampVersion(15);
     }
   }
 }
