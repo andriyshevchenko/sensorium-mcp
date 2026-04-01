@@ -277,8 +277,9 @@ export const sessionToolDefs: ToolDefinition[] = [
           description:
             "Delegation mode: 'one-shot' (default) \u2014 receiver reports to operator only, does not message sender back. " +
             "'manager-worker' \u2014 receiver reports back to sender thread when complete. " +
-            "'reply' \u2014 sending results/status BACK to a parent or orchestrator thread (no task boilerplate added).",
-          enum: ["one-shot", "manager-worker", "reply"],
+            "'reply' — sending results/status BACK to a parent or orchestrator thread (no task boilerplate added). " +
+            "'peer' — raw P2P message with sender attribution, no task instructions or skill loading. For equal-status thread conversations.",
+          enum: ["one-shot", "manager-worker", "reply", "peer"],
         },
         senderName: {
           type: "string",

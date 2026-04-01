@@ -1,0 +1,15 @@
+- generic [ref=e1]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e7]
+      - generic [ref=e10]:
+        - paragraph [ref=e11]: DeployBook
+        - heading "Shared environment manager" [level=1] [ref=e12]
+    - paragraph [ref=e13]: Shared environment manager - no more asking in the chat
+  - generic [ref=e15]:
+    - heading "Set your name" [level=2] [ref=e16]
+    - paragraph [ref=e17]: Your name is stored locally and attached to claim and release actions.
+    - generic [ref=e18]:
+      - textbox "Your name" [active] [ref=e19]
+      - button "Set Name" [ref=e20]
+  - alert [ref=e21]

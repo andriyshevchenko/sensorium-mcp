@@ -1,0 +1,648 @@
+- generic [active] [ref=e1]:
+  - link "Team accounts with unlimited members now available to everyone! Invite your teammates and ship faster together, even on the Free Plan." [ref=e2] [cursor=pointer]:
+    - /url: https://neon.com/docs/changelog/2026-03-13
+    - generic [ref=e3]:
+      - generic [ref=e4]: Team accounts with unlimited members now available to everyone! Invite your teammates and ship faster together, even on the Free Plan.
+      - img [ref=e5]
+  - generic [ref=e7]:
+    - banner [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - generic [ref=e11]:
+            - link "Neon" [ref=e12] [cursor=pointer]:
+              - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=
+              - generic [ref=e13]: Neon
+              - img [ref=e14]
+            - region "Notifications (F8)":
+              - list
+          - navigation [ref=e17]:
+            - list [ref=e18]:
+              - listitem [ref=e19]:
+                - button "Product" [ref=e20] [cursor=pointer]:
+                  - text: Product
+                  - img [ref=e21]
+              - listitem [ref=e23]:
+                - button "Solutions" [ref=e24] [cursor=pointer]:
+                  - text: Solutions
+                  - img [ref=e25]
+              - listitem [ref=e27]:
+                - link "Docs" [ref=e28] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs
+              - listitem [ref=e29]:
+                - link "Pricing" [ref=e30] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=pricing
+              - listitem [ref=e31]:
+                - button "Resources" [ref=e32] [cursor=pointer]:
+                  - text: Resources
+                  - img [ref=e33]
+            - generic:
+              - generic:
+                - navigation:
+                  - generic:
+                    - menu:
+                      - generic: Core Database
+                      - group:
+                        - menuitem:
+                          - generic: Neon's lakebase architecture
+                          - text: Storage-compute separation.
+                        - menuitem:
+                          - generic: Autoscaling
+                          - text: Automatic instance sizing
+                        - menuitem:
+                          - generic: Read Replicas
+                          - text: Instant, autoscaling replicas
+                        - menuitem:
+                          - generic: Instant Restore
+                          - text: Instant recovery when mistakes happen
+                      - generic: Built-In Features
+                      - group:
+                        - menuitem:
+                          - generic: Database Branches
+                          - text: Faster Postgres workflows
+                        - menuitem:
+                          - generic: Authentication
+                          - text: Auth for your App, built in to your DB
+                        - menuitem:
+                          - generic: Data API
+                          - text: REST HTTP API for your database
+                        - menuitem:
+                          - generic: Connection Pooling
+                          - text: Efficiently manage database connections
+                    - menuitem:
+                      - generic:
+                        - paragraph:
+                          - text: What is Neon
+                          - img
+                        - paragraph: Serverless Postgres, by Databricks
+                - navigation:
+                  - generic:
+                    - menu:
+                      - generic: Use cases
+                      - group:
+                        - menuitem:
+                          - generic: Serverless App
+                          - text: Autoscale with traffic
+                        - menuitem:
+                          - generic: Multi-TB
+                          - text: Scale and restore instantly
+                        - menuitem:
+                          - generic: Database per tenant
+                          - text: Data isolation without overhead
+                      - generic: Build & operate
+                      - group:
+                        - menuitem:
+                          - generic: Platforms
+                          - text: Offer Postgres for your users
+                        - menuitem:
+                          - generic: Dev/Tests
+                          - text: Production-like environment
+                        - menuitem:
+                          - generic: Agents
+                          - text: Build full-stack AI agents
+                - navigation:
+                  - generic:
+                    - menu:
+                      - generic: Learn
+                      - group:
+                        - menuitem:
+                          - generic: Blog
+                          - text: Technical posts & product updates
+                        - menuitem:
+                          - generic: Case studies
+                          - text: Explore customer stories
+                        - menuitem:
+                          - generic: Changelog
+                          - text: Product updates
+                        - menuitem:
+                          - generic: Community
+                          - text: Connect on Discord
+                        - menuitem:
+                          - generic: Startups
+                          - text: Build with Neon
+                      - generic: Company
+                      - group:
+                        - menuitem:
+                          - generic: About us
+                          - text: The company and the mission
+                        - menuitem:
+                          - generic: Careers
+                          - text: Join the team
+                        - menuitem:
+                          - generic: Contact sales
+                          - text: Contact sales team
+                        - menuitem:
+                          - generic: Security
+                          - text: Compliance & privacy
+                        - menuitem:
+                          - generic: Status
+                          - text: Service status
+        - generic [ref=e35]:
+          - generic [ref=e36]:
+            - link "Discord" [ref=e37] [cursor=pointer]:
+              - /url: https://discord.gg/92vNTzKDGp
+              - img [ref=e38]
+              - generic [ref=e41]: Discord
+            - link "Star us on GitHub (21377)" [ref=e42] [cursor=pointer]:
+              - /url: https://github.com/neondatabase/neon
+              - img [ref=e43]
+              - generic [ref=e45]: 21.4k
+          - generic [ref=e46]:
+            - link "Log in" [ref=e47] [cursor=pointer]:
+              - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=login
+            - link "Sign up" [ref=e48] [cursor=pointer]:
+              - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=signup
+    - main [ref=e49]:
+      - generic [ref=e51]:
+        - link "Databricks logo A DATABRICKS COMPANY" [ref=e52] [cursor=pointer]:
+          - /url: "#backed-by-giants"
+          - generic [ref=e53]:
+            - img "Databricks logo" [ref=e54]
+            - generic [ref=e55]: A DATABRICKS COMPANY
+        - heading "Fast Postgres Databases for Teams and Agents" [level=1] [ref=e56]:
+          - text: Fast Postgres Databases
+          - text: for Teams and Agents
+        - generic [ref=e57]:
+          - link "Get started" [ref=e58] [cursor=pointer]:
+            - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=signup
+          - link "Read the docs" [ref=e59] [cursor=pointer]:
+            - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs/introduction
+        - generic [ref=e63]:
+          - list [ref=e64]:
+            - listitem [ref=e65]:
+              - img [ref=e66]
+            - listitem [ref=e69]:
+              - img [ref=e70]
+            - listitem [ref=e75]:
+              - img [ref=e76]
+            - listitem [ref=e79]:
+              - img [ref=e80]
+            - listitem [ref=e84]:
+              - img [ref=e85]
+            - listitem [ref=e93]:
+              - img [ref=e94]
+            - listitem [ref=e98]:
+              - img [ref=e99]
+            - listitem [ref=e101]:
+              - img [ref=e102]
+            - listitem [ref=e104]:
+              - img [ref=e105]
+          - list [ref=e108]:
+            - listitem [ref=e109]:
+              - img [ref=e110]
+            - listitem [ref=e113]:
+              - img [ref=e114]
+            - listitem [ref=e119]:
+              - img [ref=e120]
+            - listitem [ref=e123]:
+              - img [ref=e124]
+            - listitem [ref=e128]:
+              - img [ref=e129]
+            - listitem [ref=e137]:
+              - img [ref=e138]
+            - listitem [ref=e142]:
+              - img [ref=e143]
+            - listitem [ref=e145]:
+              - img [ref=e146]
+            - listitem [ref=e148]:
+              - img [ref=e149]
+      - generic [ref=e153]:
+        - generic [ref=e156]:
+          - heading "Postgres for the AI Engineering era. Integrate with a single command and the LLM does the hard work." [level=2] [ref=e158]:
+            - strong [ref=e159]: Postgres for the AI Engineering era.
+            - text: Integrate with a single command and the LLM does the hard work.
+          - generic [ref=e161]:
+            - paragraph [ref=e162]: Try for yourself, start building with Neon now.
+            - button "$ npx neonctl init" [ref=e163] [cursor=pointer]:
+              - generic [ref=e164]: $ npx neonctl init
+              - img [ref=e165]
+          - generic [ref=e169]:
+            - paragraph [ref=e170]: "Connect MCP clients to Neon:"
+            - generic [ref=e173]:
+              - list [ref=e174]:
+                - listitem [ref=e175]:
+                  - img [ref=e176]
+                - listitem [ref=e179]:
+                  - img [ref=e180]
+                - listitem [ref=e182]:
+                  - img [ref=e183]
+                - listitem [ref=e185]:
+                  - img [ref=e186]
+                - listitem [ref=e190]:
+                  - img [ref=e191]
+                - listitem [ref=e194]:
+                  - img [ref=e195]
+                - listitem [ref=e197]:
+                  - img [ref=e198]
+              - list [ref=e208]:
+                - listitem [ref=e209]:
+                  - img [ref=e210]
+                - listitem [ref=e213]:
+                  - img [ref=e214]
+                - listitem [ref=e216]:
+                  - img [ref=e217]
+                - listitem [ref=e219]:
+                  - img [ref=e220]
+                - listitem [ref=e224]:
+                  - img [ref=e225]
+                - listitem [ref=e228]:
+                  - img [ref=e229]
+                - listitem [ref=e231]:
+                  - img [ref=e232]
+        - generic [ref=e244]:
+          - heading "Advanced autoscaling. Keep scaling without worrying about capacity. Never overpay for resources you don’t use." [level=2] [ref=e246]:
+            - strong [ref=e247]: Advanced autoscaling.
+            - text: Keep scaling without worrying about capacity. Never overpay for resources you don’t use.
+          - generic [ref=e248]:
+            - button "Avoid incidents" [ref=e249] [cursor=pointer]
+            - button "Save costs" [ref=e250] [cursor=pointer]
+          - paragraph [ref=e254]:
+            - generic [ref=e257]: "0"
+            - text: performance degradations prevented by Autoscaling every day
+          - generic [ref=e258]:
+            - list [ref=e259]:
+              - listitem [ref=e260]:
+                - paragraph [ref=e261]: Neon autoscaling
+              - listitem [ref=e262]:
+                - paragraph [ref=e263]: Database load
+              - listitem [ref=e264]:
+                - paragraph [ref=e265]: Fixed-resource provisioned
+            - paragraph [ref=e266]: By separating compute and storage, Neon automatically scales CPU, memory and storage to fit your workload.
+        - generic [ref=e269]:
+          - heading "Instant branching. Develop and test with efficient copies of any database to eliminate surprises in production deploys." [level=2] [ref=e271]:
+            - strong [ref=e272]: Instant branching.
+            - text: Develop and test with efficient copies of any database to eliminate surprises in production deploys.
+          - list [ref=e275]:
+            - listitem [ref=e276]:
+              - heading "Copy-on-write" [level=3] [ref=e278]
+              - paragraph [ref=e279]: Create editable copies of databases instantly with git-like branching, saving space and time.
+            - listitem [ref=e280]:
+              - heading "Anonymization" [level=3] [ref=e282]
+              - paragraph [ref=e283]: Mask sensitive data with realistic fake values, enabling safe testing and sharing of datasets.
+            - listitem [ref=e284]:
+              - heading "Ephemerality" [level=3] [ref=e286]
+              - paragraph [ref=e287]: Obsolete branches delete themselves automatically after work is complete.
+        - heading "Authentication included, free. Simplify your application with user authentication and management built in to the database." [level=2] [ref=e292]:
+          - strong [ref=e293]: Authentication included, free.
+          - text: Simplify your application with user authentication and management built in to the database.
+        - generic [ref=e299]:
+          - heading "No platform fees. Enterprise-grade features available to everyone, without fixed fees or monthly minimums." [level=2] [ref=e301]:
+            - strong [ref=e302]: No platform fees.
+            - text: Enterprise-grade features available to everyone, without fixed fees or monthly minimums.
+          - list [ref=e304]:
+            - listitem [ref=e305]:
+              - paragraph [ref=e306]: HIPAA and SOC2. Meet your compliance requirements without high spend commitments.
+            - listitem [ref=e307]:
+              - paragraph [ref=e308]: Private networking. Keep traffic off the public internet via PrivateLink, no additional costs.
+            - listitem [ref=e309]:
+              - paragraph [ref=e310]: Logs & metrics export. Forward them directly to Datadog or any OTel-compatible service — no extra fees.
+            - listitem [ref=e311]:
+              - paragraph [ref=e312]: Uptime SLAs. 99.95% uptime guaranteed by SLA for all workloads in Scale.
+            - listitem [ref=e313]:
+              - paragraph [ref=e314]: Point-in-time recovery. Restore your database instantly to any moment in time without flat monthly fees.
+            - listitem [ref=e315]:
+              - paragraph [ref=e316]: Single sign-on. Centralize your team access with SSO to manage logins securely.
+      - generic [ref=e320]:
+        - generic [ref=e322]:
+          - generic [ref=e324]: "SYSTEM: NEON DATABASE PLATFORM"
+          - generic [ref=e327]: "[ STATUS: ONLINE ]"
+          - generic [ref=e329]: "[ CONNECTION: STABLE ]"
+        - generic [ref=e330]:
+          - generic [ref=e331]:
+            - generic [ref=e333]:
+              - generic [ref=e334]:
+                - img [ref=e335]
+                - generic [ref=e337]: Agent platform
+              - heading "Speed and scale for agents. And devs." [level=2] [ref=e338]
+              - paragraph [ref=e339]: Codegen and agent platforms rely on Neon to run the backend for user-generated apps.
+              - link "I’m building an agent" [ref=e340] [cursor=pointer]:
+                - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=programs/agents
+            - list [ref=e341]:
+              - listitem [ref=e342]:
+                - generic [ref=e343]:
+                  - heading "Deploy thousands of databases that turn off when idle. Inactive databases pause on their own, keeping your fleet efficient and cost-effective." [level=3] [ref=e344]:
+                    - strong [ref=e345]: Deploy thousands of databases that turn off when idle.
+                    - text: Inactive databases pause on their own, keeping your fleet efficient and cost-effective.
+                  - link "Learn more" [ref=e346] [cursor=pointer]:
+                    - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs/guides/scale-to-zero-guide
+                    - generic [ref=e347]: Learn more
+                    - img [ref=e348]
+                - generic [ref=e351]:
+                  - generic [ref=e352]:
+                    - text: "Databases deployed:"
+                    - generic [ref=e355]: "0"
+                  - list [ref=e357]:
+                    - listitem [ref=e358]:
+                      - generic [ref=e359]:
+                        - generic [ref=e360]: Friday
+                        - generic [ref=e361]:
+                          - generic [ref=e362]:
+                            - text: "Active:"
+                            - generic [ref=e365]: "0"
+                          - generic [ref=e366]:
+                            - text: "Idle:"
+                            - generic [ref=e369]: "0"
+                      - list [ref=e370]:
+                        - listitem [ref=e371]:
+                          - time [ref=e493]: 09:00
+                        - listitem [ref=e494]:
+                          - time [ref=e616]: 10:00
+                        - listitem [ref=e617]:
+                          - time [ref=e739]: 11:00
+                        - listitem [ref=e740]:
+                          - time [ref=e862]: 12:00
+                        - listitem [ref=e863]:
+                          - time [ref=e985]: 13:00
+                        - listitem [ref=e986]:
+                          - time [ref=e1108]: 14:00
+                        - listitem [ref=e1109]:
+                          - time [ref=e1231]: 15:00
+                        - listitem [ref=e1232]:
+                          - time [ref=e1354]: 16:00
+                        - listitem [ref=e1355]:
+                          - time [ref=e1477]: 17:00
+                        - listitem [ref=e1478]:
+                          - time [ref=e1600]: 18:00
+                        - listitem [ref=e1601]:
+                          - time [ref=e1723]: 19:00
+                        - listitem [ref=e1724]:
+                          - time [ref=e1846]: 20:00
+                        - listitem [ref=e1847]:
+                          - time [ref=e1969]: 21:00
+                        - listitem [ref=e1970]:
+                          - time [ref=e2092]: 22:00
+                        - listitem [ref=e2093]:
+                          - time [ref=e2215]: 23:00
+                    - listitem [ref=e2216]:
+                      - generic [ref=e2217]:
+                        - generic [ref=e2218]: Saturday
+                        - generic [ref=e2219]:
+                          - generic [ref=e2220]:
+                            - text: "Active:"
+                            - generic [ref=e2223]: "0"
+                          - generic [ref=e2224]:
+                            - text: "Idle:"
+                            - generic [ref=e2227]: "0"
+                      - list [ref=e2228]:
+                        - listitem [ref=e2229]:
+                          - time [ref=e2351]: 09:00
+                        - listitem [ref=e2352]:
+                          - time [ref=e2474]: 10:00
+                        - listitem [ref=e2475]:
+                          - time [ref=e2597]: 11:00
+                        - listitem [ref=e2598]:
+                          - time [ref=e2720]: 12:00
+                        - listitem [ref=e2721]:
+                          - time [ref=e2843]: 13:00
+                        - listitem [ref=e2844]:
+                          - time [ref=e2966]: 14:00
+                        - listitem [ref=e2967]:
+                          - time [ref=e3089]: 15:00
+                        - listitem [ref=e3090]:
+                          - time [ref=e3212]: 16:00
+                        - listitem [ref=e3213]:
+                          - time [ref=e3335]: 17:00
+                        - listitem [ref=e3336]:
+                          - time [ref=e3458]: 18:00
+                        - listitem [ref=e3459]:
+                          - time [ref=e3581]: 19:00
+                        - listitem [ref=e3582]:
+                          - time [ref=e3704]: 20:00
+                        - listitem [ref=e3705]:
+                          - time [ref=e3827]: 21:00
+                        - listitem [ref=e3828]:
+                          - time [ref=e3950]: 22:00
+                        - listitem [ref=e3951]:
+                          - time [ref=e4073]: 23:00
+              - listitem [ref=e4074]:
+                - generic [ref=e4075]:
+                  - heading "Manage your fleet via API. Neon databases spin up in milliseconds, with APIs for quota controls and fleet scaling." [level=3] [ref=e4076]:
+                    - strong [ref=e4077]: Manage your fleet via API.
+                    - text: Neon databases spin up in milliseconds, with APIs for quota controls and fleet scaling.
+                  - link "Learn more" [ref=e4078] [cursor=pointer]:
+                    - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs/reference/api-reference
+                    - generic [ref=e4079]: Learn more
+                    - img [ref=e4080]
+                - list [ref=e4084]:
+                  - listitem [ref=e4085]:
+                    - generic [ref=e4086]:
+                      - generic "Step 1" [ref=e4088]: "01"
+                      - heading "Send API call and receive connection string in 120ms" [level=4] [ref=e4090]
+                      - generic [ref=e4091]:
+                        - code [ref=e4094]:
+                          - generic [ref=e4095]: curl -X POST https://api.neon.tech/v2/projects/:id/database
+                        - img "Dots pattern"
+                  - listitem [ref=e4096]:
+                    - generic [ref=e4097]:
+                      - generic "Step 2" [ref=e4099]: "02"
+                      - heading "Test and deploy >>" [level=4] [ref=e4100]
+                      - generic [ref=e4101]:
+                        - code [ref=e4104]:
+                          - generic [ref=e4105]: CREATE TABLE IF NOT EXISTS playing_with_neon(
+                          - generic [ref=e4106]: id SERIAL PRIMARY KEY, name TEXT NOT NULL, value REAL
+                          - generic [ref=e4107]: );
+                          - generic [ref=e4108]: INSERT INTO playing_with_neon(name, value)
+                          - generic [ref=e4109]: SELECT LEFT(md5(i::TEXT),10),random() FROM generate_series(1,10)s(i);
+                          - generic [ref=e4110]: SELECT * FROM playing_with_neon;
+                        - button "Run Query" [disabled] [ref=e4111] [cursor=pointer]:
+                          - img [ref=e4112]
+                          - text: Run Query
+          - heading "Database checkpoints. Copy-on-write storage makes it cheap and fast to save point-in-time versions of your database and restore a previous state when necessary." [level=3] [ref=e4116]:
+            - strong [ref=e4117]: Database checkpoints.
+            - text: Copy-on-write storage makes it cheap and fast to save point-in-time versions of your database and restore a previous state when necessary.
+      - generic [ref=e4123]:
+        - generic [ref=e4124]:
+          - generic [ref=e4125]:
+            - img [ref=e4126]
+            - generic [ref=e4128]: Backed by giants
+          - heading "Trusted Postgres, Backed by Giants. Neon was founded by Postgres committers, bringing decades of expertise. In 2025, Neon became a Databricks company." [level=2] [ref=e4129]:
+            - strong [ref=e4130]: Trusted Postgres, Backed by Giants.
+            - text: Neon was founded by Postgres committers, bringing decades of expertise. In 2025, Neon became a Databricks company.
+          - list [ref=e4131]:
+            - listitem [ref=e4132]:
+              - heading "150,000+" [level=3] [ref=e4133]
+              - paragraph [ref=e4134]: New Postgres compute endpoints provisioned daily.
+            - listitem [ref=e4135]:
+              - heading "Databricks" [level=3] [ref=e4136]
+              - paragraph [ref=e4137]: Neon has been a Databricks Company since May 2025.
+        - generic [ref=e4138]:
+          - generic [ref=e4139]:
+            - img [ref=e4140]
+            - generic [ref=e4142]: Trusted by the best
+          - figure "Edouard Bonlieu Co-founder at Koyeb" [ref=e4143]:
+            - blockquote [ref=e4144]:
+              - generic [ref=e4145]: "Neon's serverless philosophy is aligned with our vision: no infrastructure to manage, no servers to provision, no database cluster to maintain."
+              - text: Neon's serverless philosophyis
+              - generic [ref=e4146]: "aligned with our vision:"
+              - text: noinfrastructure to manage, noservers to provision, nodatabase cluster to maintain.
+            - generic [ref=e4147]:
+              - generic [ref=e4148]: Edouard Bonlieu Co-founder at Koyeb
+              - generic [ref=e4149]: Edouard Bonlieu
+              - generic [ref=e4150]: Co-founder at Koyeb
+      - generic [ref=e4153]:
+        - heading "The world's most advanced Postgres platform." [level=2] [ref=e4154]:
+          - text: The world's most advanced
+          - text: Postgres platform.
+        - generic [ref=e4155]:
+          - paragraph [ref=e4156]:
+            - text: Trusted by developers, ready for agents.
+            - text: Build and scale applications faster with Neon.
+          - generic [ref=e4157]:
+            - link "Get started" [ref=e4158] [cursor=pointer]:
+              - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=signup
+            - link "Read the docs" [ref=e4159] [cursor=pointer]:
+              - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs/introduction
+            - button "$ npx neonctl init" [ref=e4160] [cursor=pointer]:
+              - text: $ npx neonctl init
+              - img [ref=e4161]
+    - contentinfo [ref=e4165]:
+      - generic [ref=e4166]:
+        - generic [ref=e4167]:
+          - generic [ref=e4168]:
+            - generic [ref=e4169]:
+              - link "Neon" [ref=e4170] [cursor=pointer]:
+                - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=
+                - generic [ref=e4171]: Neon
+                - img [ref=e4172]
+              - region "Notifications (F8)":
+                - list
+            - generic [ref=e4175]: A Databricks Company
+          - generic [ref=e4176]:
+            - link "Neon status loading..." [ref=e4177] [cursor=pointer]:
+              - /url: https://neonstatus.com/
+              - generic [ref=e4179]: Neon status loading...
+            - paragraph [ref=e4180]:
+              - generic [ref=e4181]: Made in SF and the World.
+              - generic [ref=e4182]: Copyright Ⓒ 2022 – 2026 Neon, LLC
+        - generic [ref=e4183]:
+          - generic [ref=e4184]:
+            - generic [ref=e4185]: Company
+            - list [ref=e4186]:
+              - listitem [ref=e4187]:
+                - link "About" [ref=e4188] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=about-us
+              - listitem [ref=e4189]:
+                - link "Blog" [ref=e4190] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=blog
+              - listitem [ref=e4191]:
+                - link "Careers" [ref=e4192] [cursor=pointer]:
+                  - /url: https://www.databricks.com/company/careers/open-positions?department=engineering&location=all&itm_source=www&itm_category=company&itm_page=engineering-at-databricks&itm_location=body&itm_component=hero&itm_offer=open-positions
+              - listitem [ref=e4193]:
+                - link "Contact Sales" [ref=e4194] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=contact-sales
+              - listitem [ref=e4195]:
+                - link "Security" [ref=e4196] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=security
+              - listitem [ref=e4197]:
+                - generic [ref=e4198] [cursor=pointer]:
+                  - text: Legal
+                  - img [ref=e4199]
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Privacy Policy":
+                        - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=privacy-policy
+                    - listitem:
+                      - link "Terms of Service":
+                        - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=terms-of-service
+                    - listitem:
+                      - link "DPA":
+                        - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=dpa
+                    - listitem:
+                      - link "Subprocessors List":
+                        - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=subprocessors
+                    - listitem:
+                      - link "Cookie Policy":
+                        - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=cookie-policy
+                    - listitem:
+                      - link "Business Information":
+                        - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=business-info
+          - generic [ref=e4201]:
+            - generic [ref=e4202]: Resources
+            - list [ref=e4203]:
+              - listitem [ref=e4204]:
+                - link "Docs" [ref=e4205] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs
+              - listitem [ref=e4206]:
+                - link "Changelog" [ref=e4207] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs/changelog
+              - listitem [ref=e4208]:
+                - link "Support" [ref=e4209] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs/introduction/support
+              - listitem [ref=e4210]:
+                - link "Community Guides" [ref=e4211] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=guides
+              - listitem [ref=e4212]:
+                - link "PostgreSQL Tutorial" [ref=e4213] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=postgresql/tutorial
+              - listitem [ref=e4214]:
+                - link "Startups" [ref=e4215] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=startups
+          - generic [ref=e4216]:
+            - generic [ref=e4217]: Community
+            - list [ref=e4218]:
+              - listitem [ref=e4219]:
+                - link "Discord" [ref=e4220] [cursor=pointer]:
+                  - /url: https://discord.gg/92vNTzKDGp
+                  - text: Discord
+              - listitem [ref=e4222]:
+                - link "GitHub" [ref=e4223] [cursor=pointer]:
+                  - /url: https://github.com/neondatabase/neon
+                  - text: GitHub
+              - listitem [ref=e4225]:
+                - link "X.com" [ref=e4226] [cursor=pointer]:
+                  - /url: https://twitter.com/neondatabase/
+                  - text: X.com
+              - listitem [ref=e4228]:
+                - link "LinkedIn" [ref=e4229] [cursor=pointer]:
+                  - /url: https://www.linkedin.com/company/neon-inc/
+                  - text: LinkedIn
+              - listitem [ref=e4231]:
+                - link "YouTube" [ref=e4232] [cursor=pointer]:
+                  - /url: https://www.youtube.com/channel/UCoMzQTJSIr7-RU1QbomQI2w
+                  - text: YouTube
+          - generic [ref=e4234]:
+            - generic [ref=e4235]: Compliance
+            - list [ref=e4236]:
+              - listitem [ref=e4237]:
+                - link "CCPA Compliant" [ref=e4238] [cursor=pointer]:
+                  - /url: https://trust.neon.com/?itemUid=4064ac33-7b48-407b-aed7-ce02971d1ec1
+                  - text: CCPA
+                  - generic [ref=e4239]: Compliant
+              - listitem [ref=e4240]:
+                - link "GDPR Compliant" [ref=e4241] [cursor=pointer]:
+                  - /url: https://trust.neon.com/?itemUid=45220873-6e51-4dbb-b1b1-37d66ee9ef95
+                  - text: GDPR
+                  - generic [ref=e4242]: Compliant
+              - listitem [ref=e4243]:
+                - link "ISO 27001 Certified" [ref=e4244] [cursor=pointer]:
+                  - /url: https://trust.neon.com/?itemUid=1fed9faa-4a87-427c-9a95-96b4d6bf66b7
+                  - text: ISO 27001
+                  - generic [ref=e4245]: Certified
+              - listitem [ref=e4246]:
+                - link "ISO 27701 Certified" [ref=e4247] [cursor=pointer]:
+                  - /url: https://trust.neon.com/?itemUid=dc79cbc7-c99d-4eb9-891e-f5dc44b943d7
+                  - text: ISO 27701
+                  - generic [ref=e4248]: Certified
+              - listitem [ref=e4249]:
+                - link "SOC 2 Certified" [ref=e4250] [cursor=pointer]:
+                  - /url: https://trust.neon.com/?itemUid=7bfa66da-33ab-49de-8391-e329738a1ae9
+                  - text: SOC 2
+                  - generic [ref=e4251]: Certified
+              - listitem [ref=e4252]:
+                - link "HIPAA Compliant" [ref=e4253] [cursor=pointer]:
+                  - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs/security/hipaa
+                  - text: HIPAA
+                  - generic [ref=e4254]: Compliant
+                  - img [ref=e4255]
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Compliance Guide":
+                        - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=docs/security/hipaa
+                    - listitem:
+                      - link "Neon’s Sub Contractors":
+                        - /url: https://neon.tech/unify?a=d4eacd68-5b1e-4174-bf25-1188dfed4215&n=hipaa-contractors
+              - listitem [ref=e4257]:
+                - link "Trust Center" [ref=e4258] [cursor=pointer]:
+                  - /url: https://trust.neon.com
+  - alert [ref=e4259]

@@ -1,0 +1,40 @@
+- generic [ref=e5]:
+  - img "Organization background image" [ref=e6]
+  - generic [ref=e7]:
+    - generic [ref=e13]:
+      - img "Microsoft" [ref=e16]
+      - main [ref=e17]:
+        - generic [ref=e20]:
+          - heading "Pick an account" [level=1] [ref=e24]
+          - list "Pick an account" [ref=e27]:
+            - listitem [ref=e29] [cursor=pointer]:
+              - button "Sign in with GlobalLogic_andriis@nice.com work or school account." [active] [ref=e30]:
+                - generic [ref=e33]:
+                  - generic [ref=e34]: Andrii Shevchenko
+                  - generic [ref=e35]: GlobalLogic_andriis@nice.com
+                  - generic [ref=e36]: Connected to Windows
+            - listitem [ref=e38] [cursor=pointer]:
+              - button "Sign in with andrii.t.shevchenko@globallogic.com work or school account." [ref=e39]:
+                - generic [ref=e43]: andrii.t.shevchenko@globallogic.com
+              - button "Open menu" [ref=e45]
+            - listitem [ref=e47] [cursor=pointer]:
+              - button "Sign in with andrii.t.shevchenko_globallogic.com#EXT#@darrylpullennice.onmicrosoft.com work or school account." [ref=e48]:
+                - generic [ref=e52]: andrii.t.shevchenko_globallogic.com#EXT#@darrylpullennice.onmicrosoft.com
+              - button "Open menu" [ref=e54]
+            - listitem [ref=e56] [cursor=pointer]:
+              - button "Sign in with deploybook@outlook.com personal Microsoft account." [ref=e57]:
+                - generic [ref=e60]:
+                  - generic [ref=e61]: Andriy Shevchenko
+                  - generic [ref=e62]: deploybook@outlook.com
+                  - generic [ref=e63]: Signed in
+              - button "Open menu" [ref=e65]
+            - listitem [ref=e66] [cursor=pointer]:
+              - button "Use another account" [ref=e67]:
+                - generic [ref=e71]: Use another account
+    - contentinfo [ref=e72]:
+      - generic [ref=e73]:
+        - link "Terms of use" [ref=e74] [cursor=pointer]:
+          - /url: https://www.microsoft.com/en-US/servicesagreement/
+        - link "Privacy & cookies" [ref=e75] [cursor=pointer]:
+          - /url: https://privacy.microsoft.com/en-US/privacystatement
+        - button "Click here for troubleshooting information" [ref=e76] [cursor=pointer]: ...

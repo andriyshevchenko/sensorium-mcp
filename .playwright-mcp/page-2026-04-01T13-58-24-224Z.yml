@@ -1,0 +1,1478 @@
+- application [ref=e7]:
+  - generic [ref=e11]:
+    - generic [ref=e15]:
+      - generic [ref=e17]:
+        - button "Open office app launcher" [ref=e18]:
+          - img [ref=e20]
+        - img [ref=e22]
+      - search [ref=e43]:
+        - button [ref=e44]:
+          - img [ref=e45]
+        - combobox "Search (Ctrl+Alt+E)" [ref=e4945]
+      - generic [ref=e53]:
+        - button "Settings and more" [ref=e55]:
+          - generic [ref=e2753]:
+            - img [ref=e2754]
+            - generic [ref=e2756]: 53 days left
+          - img [ref=e58]
+        - button "Your profile, status Available" [ref=e62]:
+          - img "Profile picture of Andrii Shevchenko." [ref=e63]:
+            - generic [ref=e64]: AS
+            - img [ref=e65]
+            - img "available" [ref=e66]:
+              - img [ref=e68]
+    - group [ref=e73]:
+      - img [ref=e75]
+      - generic [ref=e77]: Stay in the know. Turn on desktop notifications.
+      - button "Turn on" [ref=e79]
+      - button "Close" [ref=e81]:
+        - img [ref=e83]
+    - generic [ref=e87]:
+      - generic [ref=e89]:
+        - navigation "Apps" [ref=e91]:
+          - generic "Activity (Ctrl+Shift+1)" [ref=e93]:
+            - button "Activity (Ctrl+Shift+1)" [ref=e94]:
+              - generic [ref=e95]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Activity
+          - generic "Chat (Ctrl+Shift+2)" [ref=e97]:
+            - button "Chat (Ctrl+Shift+2)" [pressed] [ref=e98]:
+              - generic [ref=e99]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Chat
+          - generic "IT Support (Ctrl+Shift+3)" [ref=e101]:
+            - button "IT Support (Ctrl+Shift+3)" [ref=e102]:
+              - generic [ref=e103]:
+                - generic:
+                  - generic:
+                    - img "IT Support"
+                    - img
+                  - generic: IT Support
+          - generic "Teams (Ctrl+Shift+4)" [ref=e105]:
+            - button "Teams (Ctrl+Shift+4)" [ref=e106]:
+              - generic [ref=e107]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Teams
+        - generic [ref=e108]:
+          - generic "View more apps" [ref=e109]:
+            - button "View more apps" [ref=e110]:
+              - generic [ref=e111]:
+                - generic:
+                  - generic:
+                    - img
+          - generic "Apps" [ref=e113]:
+            - button "Apps" [ref=e114]:
+              - generic [ref=e115]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Apps
+      - generic [ref=e118]: Has context menu
+    - generic [ref=e121]:
+      - generic [ref=e122]:
+        - generic [ref=e123]:
+          - heading "Chat" [level=1] [ref=e124]
+          - toolbar "Rail actions" [ref=e125]:
+            - button "More list options" [ref=e127]:
+              - img [ref=e130]
+            - button "Show filter text box (Ctrl+Shift+F)" [ref=e132]:
+              - img [ref=e134]
+            - button "New message (Alt+Shift+N)" [ref=e136]:
+              - img [ref=e138]
+            - button "New items" [ref=e140]:
+              - img [ref=e142]
+        - tree [ref=e145]:
+          - generic [ref=e146]:
+            - treeitem "Mentions" [level=1] [ref=e147] [cursor=pointer]:
+              - generic [ref=e148]:
+                - img [ref=e151]
+                - generic [ref=e153]: Mentions
+            - separator [ref=e154]
+          - treeitem "Chats" [expanded] [level=1] [ref=e155] [cursor=pointer]:
+            - generic [ref=e156]:
+              - img [ref=e158]
+              - generic [ref=e161]: Chats
+            - group [ref=e162]:
+              - treeitem "Chat Vitalii Kyian Available Last message Draft Draft" [level=2] [ref=e3160]:
+                - generic [ref=e2763]:
+                  - generic [ref=e2767]:
+                    - img [ref=e2768]
+                    - img [ref=e2769]:
+                      - img [ref=e5690]
+                  - generic [ref=e2773]:
+                    - generic [ref=e2774]:
+                      - generic [ref=e2777]: Vitalii Kyian
+                      - generic:
+                        - time
+                    - generic [ref=e2778]:
+                      - generic [ref=e2779]: Draft
+                      - img [ref=e3162]
+              - 'treeitem "Unread message Meeting chat AI-First Transition Approach for Investigate 2.7 Last message Pete: Then edit it as needed. Muted 4:56 PM" [level=2] [ref=e5937]':
+                - generic [ref=e164]:
+                  - img [ref=e167]:
+                    - img [ref=e169]
+                  - generic [ref=e171]:
+                    - generic [ref=e2074]: Unread
+                    - generic [ref=e172]:
+                      - generic [ref=e175]: AI-First Transition Approach for Investigate 2.7
+                      - time [ref=e177]: 4:56 PM
+                    - generic [ref=e179]: "Pete: Then edit it as needed."
+              - 'treeitem "Group chat Team Vitalii T Has pinned messages Last message Volodymyr: ні Muted 3:47 PM" [level=2] [ref=e187]':
+                - generic [ref=e188]:
+                  - img [ref=e191]:
+                    - img [ref=e193]
+                  - generic [ref=e195]:
+                    - generic [ref=e196]:
+                      - generic [ref=e199]: Team Vitalii T
+                      - time [ref=e201]: 3:47 PM
+                    - generic [ref=e203]: "Volodymyr: ні"
+              - treeitem "Chat Mykhailo Struk Available Last message не планував 12:23 PM" [level=2] [ref=e204]:
+                - generic [ref=e205]:
+                  - generic [ref=e2076]:
+                    - img [ref=e2077]
+                    - img [ref=e2078]:
+                      - img [ref=e2080]
+                  - generic [ref=e214]:
+                    - generic [ref=e215]:
+                      - generic [ref=e218]: Mykhailo Struk
+                      - time [ref=e220]: 12:23 PM
+                    - generic [ref=e222]: не планував
+              - treeitem "Meeting chat NICE DSI Team Lumina Sync-Up Last message Recording is ready 3/31" [level=2] [ref=e223]:
+                - generic [ref=e224]:
+                  - img [ref=e227]:
+                    - img [ref=e229]
+                  - generic [ref=e231]:
+                    - generic [ref=e232]:
+                      - generic [ref=e235]: NICE DSI Team Lumina Sync-Up
+                      - time [ref=e237]: 3/31
+                    - generic [ref=e239]: Recording is ready
+              - treeitem "Meeting chat Team Vitalii Completion meeting Last message Recording is ready 3/31" [level=2] [ref=e240]:
+                - generic [ref=e241]:
+                  - img [ref=e244]:
+                    - img [ref=e246]
+                  - generic [ref=e248]:
+                    - generic [ref=e249]:
+                      - generic [ref=e252]: Team Vitalii Completion meeting
+                      - time [ref=e254]: 3/31
+                    - generic [ref=e256]: Recording is ready
+              - 'treeitem "Group chat SAS GL Last message Nataliia: нагадаю про вихідні у наступному спрінті 3/31" [level=2] [ref=e257]':
+                - generic [ref=e258]:
+                  - img [ref=e261]
+                  - generic [ref=e262]:
+                    - generic [ref=e263]:
+                      - generic [ref=e266]: SAS GL
+                      - time [ref=e268]: 3/31
+                    - generic [ref=e270]: "Nataliia: нагадаю про вихідні у наступному спрінті"
+              - 'treeitem "Meeting chat Review cards before completeon Last message Nataliia: оце всі задачі на квітень 3/30" [level=2] [ref=e271]':
+                - generic [ref=e272]:
+                  - img [ref=e275]:
+                    - img [ref=e277]
+                  - generic [ref=e279]:
+                    - generic [ref=e280]:
+                      - generic [ref=e283]: Review cards before completeon
+                      - time [ref=e285]: 3/30
+                    - generic [ref=e287]: "Nataliia: оце всі задачі на квітень"
+              - 'treeitem "Meeting chat Team Vitalii tea Last message Mykhailo: Tech Debt Item 224462: Request service: Revisit helpers usage to update request and … 3/26" [level=2] [ref=e288]':
+                - generic [ref=e289]:
+                  - img [ref=e292]:
+                    - img [ref=e294]
+                  - generic [ref=e296]:
+                    - generic [ref=e297]:
+                      - generic [ref=e300]: Team Vitalii tea
+                      - time [ref=e302]: 3/26
+                    - generic [ref=e304]: "Mykhailo: Tech Debt Item 224462: Request service: Revisit helpers usage to update request and …"
+              - 'treeitem "Meeting chat Review current state for tasks and bugs Last message You: Дякую 3/20" [level=2] [ref=e305]':
+                - generic [ref=e306]:
+                  - img [ref=e309]:
+                    - img [ref=e311]
+                  - generic [ref=e313]:
+                    - generic [ref=e314]:
+                      - generic [ref=e317]: Review current state for tasks and bugs
+                      - time [ref=e319]: 3/20
+                    - generic [ref=e321]: "You: Дякую"
+              - 'treeitem "Meeting chat Discuss next steps for the bug 279605 Last message Mark: I have added a comment about removing the Python test tool and marked as approved wi… 3/20" [level=2] [ref=e322]':
+                - generic [ref=e323]:
+                  - img [ref=e326]:
+                    - img [ref=e328]
+                  - generic [ref=e330]:
+                    - generic [ref=e331]:
+                      - generic [ref=e334]: Discuss next steps for the bug 279605
+                      - time [ref=e336]: 3/20
+                    - generic [ref=e338]: "Mark: I have added a comment about removing the Python test tool and marked as approved wi…"
+              - 'treeitem "Meeting chat SAS GL Team meeting Last message Mykhailo: Вибачаюсь, не вдається під''єднатися. Треба бути на іншому колі 3/19" [level=2] [ref=e339]':
+                - generic [ref=e340]:
+                  - img [ref=e343]:
+                    - img [ref=e345]
+                  - generic [ref=e347]:
+                    - generic [ref=e348]:
+                      - generic [ref=e351]: SAS GL Team meeting
+                      - time [ref=e353]: 3/19
+                    - generic [ref=e355]: "Mykhailo: Вибачаюсь, не вдається під'єднатися. Треба бути на іншому колі"
+              - treeitem "Chat Vitalii Tymokhin Away Last message запитаю його 3/19" [level=2] [ref=e5891]:
+                - generic [ref=e357]:
+                  - generic [ref=e2084]:
+                    - img [ref=e2085]
+                    - img [ref=e2086]:
+                      - img [ref=e5892]
+                  - generic [ref=e366]:
+                    - generic [ref=e367]:
+                      - generic [ref=e370]: Vitalii Tymokhin
+                      - time [ref=e372]: 3/19
+                    - generic [ref=e374]: запитаю його
+              - treeitem "Meeting chat How to set up and configure DSG for a deployed Investigate system Last message Recording is ready 3/19" [level=2] [ref=e375]:
+                - generic [ref=e376]:
+                  - img [ref=e379]:
+                    - img [ref=e381]
+                  - generic [ref=e383]:
+                    - generic [ref=e384]:
+                      - generic [ref=e387]: How to set up and configure DSG for a deployed Investigate system
+                      - time [ref=e389]: 3/19
+                    - generic [ref=e391]: Recording is ready
+              - 'treeitem "Chat Yevhenii Bondarenko Away Last message You: Є 3/19" [level=2] [ref=e392]':
+                - generic [ref=e393]:
+                  - generic [ref=e2091]:
+                    - img [ref=e2092]
+                    - img [ref=e2093]:
+                      - img [ref=e2095]
+                  - generic [ref=e402]:
+                    - generic [ref=e403]:
+                      - generic [ref=e406]: Yevhenii Bondarenko
+                      - time [ref=e408]: 3/19
+                    - generic [ref=e410]: "You: Є"
+              - 'treeitem "Chat Nataliia Velychko Available Last message You: Дерил відмовився наскільки я зрозумів, коли я пропонував 3/19" [level=2] [ref=e5942]':
+                - generic [ref=e412]:
+                  - generic [ref=e2098]:
+                    - img [ref=e2099]
+                    - img [ref=e2100]:
+                      - img [ref=e5943]
+                  - generic [ref=e421]:
+                    - generic [ref=e422]:
+                      - generic [ref=e425]: Nataliia Velychko
+                      - time [ref=e427]: 3/19
+                    - generic [ref=e429]: "You: Дерил відмовився наскільки я зрозумів, коли я пропонував"
+              - 'treeitem "Chat Andrii Shevchenko (You) You: You mentioned this. I want this Winner for richest detection: VANPY • 15+ … 3/11" [level=2] [ref=e430]':
+                - generic [ref=e431]:
+                  - generic [ref=e2105]:
+                    - img [ref=e2106]
+                    - img [ref=e2107]:
+                      - img [ref=e2109]
+                  - generic [ref=e440]:
+                    - generic [ref=e441]:
+                      - generic [ref=e444]: Andrii Shevchenko (You)
+                      - time [ref=e446]: 3/11
+                    - generic [ref=e448]: "You: You mentioned this. I want this Winner for richest detection: VANPY • 15+ …"
+              - treeitem "Meeting chat Public Safety & Justice Q1 all hands (option 2 of 2) Last message Recording is ready Muted 3/11" [level=2] [ref=e449]:
+                - generic [ref=e450]:
+                  - img [ref=e453]:
+                    - img [ref=e455]
+                  - generic [ref=e457]:
+                    - generic [ref=e458]:
+                      - generic [ref=e461]: Public Safety & Justice Q1 all hands (option 2 of 2)
+                      - time [ref=e463]: 3/11
+                    - generic [ref=e465]: Recording is ready
+              - treeitem "Meeting chat Public Safety Q1 all hands update (option 1 of 2) Last message Recording is ready 3/10" [level=2] [ref=e466]:
+                - generic [ref=e467]:
+                  - img [ref=e470]:
+                    - img [ref=e472]
+                  - generic [ref=e474]:
+                    - generic [ref=e475]:
+                      - generic [ref=e478]: Public Safety Q1 all hands update (option 1 of 2)
+                      - time [ref=e480]: 3/10
+                    - generic [ref=e482]: Recording is ready
+              - treeitem "Meeting chat Team Vitalii Feb26 kick-off meeting Last message Recording is ready 3/6" [level=2] [ref=e483]:
+                - generic [ref=e484]:
+                  - img [ref=e487]:
+                    - img [ref=e489]
+                  - generic [ref=e491]:
+                    - generic [ref=e492]:
+                      - generic [ref=e495]: Team Vitalii Feb26 kick-off meeting
+                      - time [ref=e497]: 3/6
+                    - generic [ref=e499]: Recording is ready
+              - 'treeitem "Meeting chat Knowledge sharing: Support tools Last message Halyna: все гуд дякую 3/5" [level=2] [ref=e500]':
+                - generic [ref=e501]:
+                  - img [ref=e504]:
+                    - img [ref=e506]
+                  - generic [ref=e508]:
+                    - generic [ref=e509]:
+                      - generic [ref=e512]: "Knowledge sharing: Support tools"
+                      - time [ref=e514]: 3/5
+                    - generic [ref=e516]: "Halyna: все гуд дякую"
+              - 'treeitem "Meeting chat Team Vitalii Mar26 Lessons learned Last message Artem: Виглядає круто) Дякую 3/4" [level=2] [ref=e3737]':
+                - generic [ref=e3738]:
+                  - img [ref=e3741]:
+                    - img [ref=e3743]
+                  - generic [ref=e3745]:
+                    - generic [ref=e3746]:
+                      - generic [ref=e3749]: Team Vitalii Mar26 Lessons learned
+                      - time [ref=e3751]: 3/4
+                    - generic [ref=e3753]: "Artem: Виглядає круто) Дякую"
+              - 'treeitem "Meeting chat Assign cards for March iteration Last message Vitalii: можна крім реквест сервісу подивиться ще юніт тести в External API 3/3" [level=2] [ref=e3754]':
+                - generic [ref=e3755]:
+                  - img [ref=e3758]:
+                    - img [ref=e3760]
+                  - generic [ref=e3762]:
+                    - generic [ref=e3763]:
+                      - generic [ref=e3766]: Assign cards for March iteration
+                      - time [ref=e3768]: 3/3
+                    - generic [ref=e3770]: "Vitalii: можна крім реквест сервісу подивиться ще юніт тести в External API"
+              - treeitem "Meeting chat Team Vitalii Feb26 Completion meeting Last message Recording is ready 2/27" [level=2] [ref=e3771]:
+                - generic [ref=e3772]:
+                  - img [ref=e3775]:
+                    - img [ref=e3777]
+                  - generic [ref=e3779]:
+                    - generic [ref=e3780]:
+                      - generic [ref=e3783]: Team Vitalii Feb26 Completion meeting
+                      - time [ref=e3785]: 2/27
+                    - generic [ref=e3787]: Recording is ready
+              - treeitem "Meeting chat Team Vitalii March Pre-Planning Update Last message Recording is ready 2/26" [level=2] [ref=e3788]:
+                - generic [ref=e3789]:
+                  - img [ref=e3792]:
+                    - img [ref=e3794]
+                  - generic [ref=e3796]:
+                    - generic [ref=e3797]:
+                      - generic [ref=e3800]: Team Vitalii March Pre-Planning Update
+                      - time [ref=e3802]: 2/26
+                    - generic [ref=e3804]: Recording is ready
+              - 'treeitem "Group chat Mykhailo and Vitalii Last message You: Тепер я зрозумів в чому справа. На онсайті впало з помилкою Response status c… 2/26" [level=2] [ref=e3805]':
+                - generic [ref=e3806]:
+                  - img [ref=e3809]
+                  - generic [ref=e3810]:
+                    - generic [ref=e3811]:
+                      - generic [ref=e3814]: Mykhailo and Vitalii
+                      - time [ref=e3816]: 2/26
+                    - generic [ref=e3818]: "You: Тепер я зрозумів в чому справа. На онсайті впало з помилкою Response status c…"
+              - treeitem "Chat Mark Heath Away Last message I have a lot of meetings this morning, but I do want to get round to discussing this… 2/25" [level=2] [ref=e5950]:
+                - generic [ref=e3820]:
+                  - generic [ref=e3824]:
+                    - img [ref=e3825]
+                    - img [ref=e3826]:
+                      - img [ref=e5951]
+                  - generic [ref=e3830]:
+                    - generic [ref=e3831]:
+                      - generic [ref=e3834]: Mark Heath
+                      - time [ref=e3836]: 2/25
+                    - generic [ref=e3838]: I have a lot of meetings this morning, but I do want to get round to discussing this…
+              - treeitem "Chat Andrzej Siedy Away Last message I think we should removed them ask Jon Kipping 2/24" [level=2] [ref=e3839]:
+                - generic [ref=e3840]:
+                  - generic [ref=e3844]:
+                    - img [ref=e3845]
+                    - img [ref=e3846]:
+                      - img [ref=e3848]
+                  - generic [ref=e3850]:
+                    - generic [ref=e3851]:
+                      - generic [ref=e3854]: Andrzej Siedy
+                      - time [ref=e3856]: 2/24
+                    - generic [ref=e3858]: I think we should removed them ask Jon Kipping
+              - 'treeitem "Meeting chat Review open bugs Last message Mykhailo: https://dev.azure.com/NICEPSRND/Investigate/_workitems/edit/289467 2/24" [level=2] [ref=e3859]':
+                - generic [ref=e3860]:
+                  - img [ref=e3863]:
+                    - img [ref=e3865]
+                  - generic [ref=e3867]:
+                    - generic [ref=e3868]:
+                      - generic [ref=e3871]: Review open bugs
+                      - time [ref=e3873]: 2/24
+                    - generic [ref=e3875]: "Mykhailo: https://dev.azure.com/NICEPSRND/Investigate/_workitems/edit/289467"
+              - 'treeitem "Meeting chat Monthly SAS Architecture Update Last message Paul: If anyone is interested in the sales demo of the AI assistant then the link is here … 2/12" [level=2] [ref=e3876]':
+                - generic [ref=e3877]:
+                  - img [ref=e3880]:
+                    - img [ref=e3882]
+                  - generic [ref=e3884]:
+                    - generic [ref=e3885]:
+                      - generic [ref=e3888]: Monthly SAS Architecture Update
+                      - time [ref=e3890]: 2/12
+                    - generic [ref=e3892]: "Paul: If anyone is interested in the sales demo of the AI assistant then the link is here …"
+              - 'treeitem "Meeting chat Knowledge Sharing: Request Service Automation Tests (Isolated Tests) Last message Halyna: дякую 2/11" [level=2] [ref=e3893]':
+                - generic [ref=e3894]:
+                  - img [ref=e3897]:
+                    - img [ref=e3899]
+                  - generic [ref=e3901]:
+                    - generic [ref=e3902]:
+                      - generic [ref=e3905]: "Knowledge Sharing: Request Service Automation Tests (Isolated Tests)"
+                      - time [ref=e3907]: 2/11
+                    - generic [ref=e3909]: "Halyna: дякую"
+              - treeitem "Meeting chat Feb 26 Team Vitalii Commitment meeting Last message Recording is ready 2/10" [level=2] [ref=e3910]:
+                - generic [ref=e3911]:
+                  - img [ref=e3914]:
+                    - img [ref=e3916]
+                  - generic [ref=e3918]:
+                    - generic [ref=e3919]:
+                      - generic [ref=e3922]: Feb 26 Team Vitalii Commitment meeting
+                      - time [ref=e3924]: 2/10
+                    - generic [ref=e3926]: Recording is ready
+              - 'treeitem "Meeting chat Review tasks before Commitment meeting Last message Yevhenii: Напишу туди як впустять) 2/9" [level=2] [ref=e3927]':
+                - generic [ref=e3928]:
+                  - img [ref=e3931]:
+                    - img [ref=e3933]
+                  - generic [ref=e3935]:
+                    - generic [ref=e3936]:
+                      - generic [ref=e3939]: Review tasks before Commitment meeting
+                      - time [ref=e3941]: 2/9
+                    - generic [ref=e3943]: "Yevhenii: Напишу туди як впустять)"
+              - treeitem "Group chat Placeholder - DSI - Q&A You can't send messages because you are not a member of the chat. Last message 2/4" [level=2] [ref=e3944]:
+                - generic [ref=e3945]:
+                  - img [ref=e3948]
+                  - generic [ref=e3950]:
+                    - generic [ref=e3953]: Placeholder - DSI - Q&A
+                    - time [ref=e3955]: 2/4
+              - treeitem "Meeting chat Iteration process overview Last message Recording is ready 2/4" [level=2] [ref=e3956]:
+                - generic [ref=e3957]:
+                  - img [ref=e3960]:
+                    - img [ref=e3962]
+                  - generic [ref=e3964]:
+                    - generic [ref=e3965]:
+                      - generic [ref=e3968]: Iteration process overview
+                      - time [ref=e3970]: 2/4
+                    - generic [ref=e3972]: Recording is ready
+              - 'treeitem "Meeting chat Review and estimate cards before kick-off Last message Volodymyr: Mykhailo Struk у техдебті про налаштування, побачив Action як параметр, можливо піді… 2/3" [level=2] [ref=e3973]':
+                - generic [ref=e3974]:
+                  - img [ref=e3977]:
+                    - img [ref=e3979]
+                  - generic [ref=e3981]:
+                    - generic [ref=e3982]:
+                      - generic [ref=e3985]: Review and estimate cards before kick-off
+                      - time [ref=e3987]: 2/3
+                    - generic [ref=e3989]: "Volodymyr: Mykhailo Struk у техдебті про налаштування, побачив Action як параметр, можливо піді…"
+              - 'treeitem "Meeting chat Knownledge Sharing: Request Service Overview Last message Artem: і скачати теж можна. Дякую 2/3" [level=2] [ref=e3990]':
+                - generic [ref=e3991]:
+                  - img [ref=e3994]:
+                    - img [ref=e3996]
+                  - generic [ref=e3998]:
+                    - generic [ref=e3999]:
+                      - generic [ref=e4002]: "Knownledge Sharing: Request Service Overview"
+                      - time [ref=e4004]: 2/3
+                    - generic [ref=e4006]: "Artem: і скачати теж можна. Дякую"
+              - 'treeitem "Meeting chat Team Vitali Pre-planning February - placeholder Last message Mykhailo: Hi Darryl, Matthew, Can you advice which one of the tech debts it''s better to pick … 2/2" [level=2] [ref=e4007]':
+                - generic [ref=e4008]:
+                  - img [ref=e4011]:
+                    - img [ref=e4013]
+                  - generic [ref=e4015]:
+                    - generic [ref=e4016]:
+                      - generic [ref=e4019]: Team Vitali Pre-planning February - placeholder
+                      - time [ref=e4021]: 2/2
+                    - generic [ref=e4023]: "Mykhailo: Hi Darryl, Matthew, Can you advice which one of the tech debts it's better to pick …"
+              - 'treeitem "Meeting chat Discuss the tasks for Feb iteration Last message Mykhailo: Request service tech debts - https://dev.azure.com/NICEPSRND/Investigate/_queries/qu… 1/29" [level=2] [ref=e4024]':
+                - generic [ref=e4025]:
+                  - img [ref=e4028]:
+                    - img [ref=e4030]
+                  - generic [ref=e4032]:
+                    - generic [ref=e4033]:
+                      - generic [ref=e4036]: Discuss the tasks for Feb iteration
+                      - time [ref=e4038]: 1/29
+                    - generic [ref=e4040]: "Mykhailo: Request service tech debts - https://dev.azure.com/NICEPSRND/Investigate/_queries/qu…"
+              - treeitem "Chat Kondba Jatale Offline Last message Hi Andrii, just confirming that there’s no need to reopen the bug—the fix is working… 1/22" [level=2] [ref=e4041]:
+                - generic [ref=e4042]:
+                  - generic [ref=e4046]:
+                    - img [ref=e4047]
+                    - img [ref=e4048]:
+                      - img [ref=e4050]
+                  - generic [ref=e4052]:
+                    - generic [ref=e4053]:
+                      - generic [ref=e4056]: Kondba Jatale
+                      - time [ref=e4058]: 1/22
+                    - generic [ref=e4060]: Hi Andrii, just confirming that there’s no need to reopen the bug—the fix is working…
+              - 'treeitem "Group chat Amol, Nessa, and Ryan Last message Ryan: sorry had to pivot to a few other things while this conversation was going. Thanks f… 1/17" [level=2] [ref=e4061]':
+                - generic [ref=e4062]:
+                  - img [ref=e4065]
+                  - generic [ref=e4066]:
+                    - generic [ref=e4067]:
+                      - generic [ref=e4070]: Amol, Nessa, and Ryan
+                      - time [ref=e4072]: 1/17
+                    - generic [ref=e4074]: "Ryan: sorry had to pivot to a few other things while this conversation was going. Thanks f…"
+              - treeitem "Meeting chat Team Oleksandr Jan 26 Commitment Review Last message Recording is ready 1/16" [level=2] [ref=e4075]:
+                - generic [ref=e4076]:
+                  - img [ref=e4079]:
+                    - img [ref=e4081]
+                  - generic [ref=e4083]:
+                    - generic [ref=e4084]:
+                      - generic [ref=e4087]: Team Oleksandr Jan 26 Commitment Review
+                      - time [ref=e4089]: 1/16
+                    - generic [ref=e4091]: Recording is ready
+              - treeitem "Workflows Bot Away Workflows 1/16 Currently there is no description for flow \"Describe\"." [level=2] [ref=e5953]:
+                - generic [ref=e2112]:
+                  - button "Workflows Bot Away" [ref=e5954]:
+                    - img [ref=e2116]
+                  - generic [ref=e2117]:
+                    - generic [ref=e2118]:
+                      - generic [ref=e2121]: Workflows
+                      - time [ref=e2123]: 1/16
+                    - generic [ref=e2125]: Currently there is no description for flow "Describe".
+              - 'treeitem "Meeting chat Discuss net 10 update tech debts Last message Mykhailo: https://dev.azure.com/NICEPSRND/Investigate/_git/Investigate.RequestService?path=/sr… 1/14" [level=2] [ref=e4094]':
+                - generic [ref=e4095]:
+                  - img [ref=e4098]:
+                    - img [ref=e4100]
+                  - generic [ref=e4102]:
+                    - generic [ref=e4103]:
+                      - generic [ref=e4106]: Discuss net 10 update tech debts
+                      - time [ref=e4108]: 1/14
+                    - generic [ref=e4110]: "Mykhailo: https://dev.azure.com/NICEPSRND/Investigate/_git/Investigate.RequestService?path=/sr…"
+              - 'treeitem "Chat Sergii Grytsaienko Available Last message You: А, тоді найс 1/14" [level=2] [ref=e4111]':
+                - generic [ref=e4112]:
+                  - generic [ref=e4116]:
+                    - img [ref=e4117]
+                    - img [ref=e4118]:
+                      - img [ref=e4120]
+                  - generic [ref=e4122]:
+                    - generic [ref=e4123]:
+                      - generic [ref=e4126]: Sergii Grytsaienko
+                      - time [ref=e4128]: 1/14
+                    - generic [ref=e4130]: "You: А, тоді найс"
+              - 'treeitem "Meeting chat Jan 26 planning Last message Maryna: ntd 1/13" [level=2] [ref=e4131]':
+                - generic [ref=e4132]:
+                  - img [ref=e4135]:
+                    - img [ref=e4137]
+                  - generic [ref=e4139]:
+                    - generic [ref=e4140]:
+                      - generic [ref=e4143]: Jan 26 planning
+                      - time [ref=e4145]: 1/13
+                    - generic [ref=e4147]: "Maryna: ntd"
+              - treeitem "See more" [level=2] [ref=e517]
+        - status [ref=e519]
+        - generic:
+          - generic [ref=e520]: Unread message
+          - generic [ref=e521]: Last message
+          - generic [ref=e522]: Group chat
+          - generic [ref=e523]: Meeting chat
+          - generic [ref=e524]: Chat
+          - generic [ref=e525]: Personal at mention
+          - generic [ref=e526]: Everyone at mention
+          - generic [ref=e527]: Important
+          - generic [ref=e528]: Urgent
+          - generic [ref=e529]: Draft
+          - generic [ref=e530]: Draft
+          - generic [ref=e531]: Muted
+          - generic [ref=e532]: Meeting in progress
+          - generic [ref=e533]: Meet now in progress
+          - generic [ref=e534]: You can't send messages because you are not a member of the chat.
+          - generic [ref=e535]: Private
+          - generic [ref=e536]: Shared
+          - generic [ref=e537]: Has context menu
+          - generic [ref=e538]: Channel at mention
+          - generic [ref=e539]: Team at mention
+          - generic [ref=e540]: Personal at mention
+          - generic [ref=e541]: Unread
+          - generic [ref=e542]: Unread
+          - generic [ref=e543]: Meeting in progress
+          - generic [ref=e544]: Unread
+          - generic [ref=e545]: Channel
+          - generic [ref=e546]: Team
+          - generic [ref=e547]: Has pinned messages
+          - generic [ref=e548]: See more
+          - generic [ref=e549]: Community
+          - generic [ref=e550]: Temporarily shown
+          - generic [ref=e551]: Has context menu
+          - generic [ref=e552]: Badged chat
+          - generic [ref=e553]: Badged chats
+        - generic [ref=e554]: Has context menu
+      - slider "Resize left panel" [ref=e556]
+    - generic [ref=e4950]:
+      - generic [ref=e4951]:
+        - img [ref=e4953]
+        - generic [ref=e4956]:
+          - generic [ref=e4958]:
+            - heading "Team Vitalii T" [level=2] [ref=e4960]:
+              - generic "Team Vitalii T" [ref=e4962]
+            - list "Chat participants" [ref=e4963]
+          - button "Name group chat" [ref=e4964]:
+            - img [ref=e4966]
+      - generic [ref=e4968]:
+        - generic [ref=e4969]:
+          - tablist [ref=e4970]:
+            - tab "Chat" [selected] [ref=e4972] [cursor=pointer]:
+              - generic [ref=e4975]: Chat
+            - tab "Shared" [ref=e4976] [cursor=pointer]:
+              - generic [ref=e4979]: Shared
+            - tab "1 more tabs." [ref=e4980]: "+1"
+            - tab "Add a tab" [ref=e4981]:
+              - img [ref=e4983]
+          - generic [ref=e4986]: Has context menu
+        - status [ref=e4987]
+      - toolbar "Chat actions" [ref=e4988]:
+        - generic [ref=e4990]:
+          - button "Meet now" [ref=e4991]:
+            - img [ref=e4993]
+          - button "More call options" [ref=e4995]:
+            - img [ref=e4997]
+        - separator [ref=e4999]
+        - generic "Sidepane Features" [ref=e5000]:
+          - button "Open notes" [ref=e5002]:
+            - img [ref=e5004]
+          - button "Open Agents and bots" [ref=e5896]:
+            - img [ref=e5008]
+          - button "Find in chat (Ctrl+F)" [ref=e5010]:
+            - img [ref=e5012]
+        - button "More chat options" [ref=e5015]:
+          - img [ref=e5017]
+    - generic [ref=e624]:
+      - generic [ref=e627]:
+        - generic [ref=e5021]:
+          - 'button "Pinned message banner. Message from Volodymyr Sedler sent on 3/24, Наші середовища: Назва Версія Valinor 2.6.x Gondor 2.7.x Mandalor latest" [ref=e5022]':
+            - 'generic "Pinned message banner. Message from Volodymyr Sedler sent on 3/24, Наші середовища: Назва Версія Valinor 2.6.x Gondor 2.7.x Mandalor latest" [ref=e5023]':
+              - img [ref=e5025]
+              - generic [ref=e5027]: Volodymyr Sedler
+              - generic [ref=e5028]: "Наші середовища: Назва Версія Valinor 2.6.x Gondor 2.7.x Mandalor latest"
+              - generic [ref=e5029]: 3/24
+          - button "Pinned options" [ref=e5030]:
+            - img [ref=e5032]
+        - generic [ref=e633]:
+          - generic [ref=e7334]:
+            - heading "налаштовую поки гондор тут немає всіх типів... by Halyna Salivonova" [level=4] [ref=e7335]
+            - generic [ref=e7337]:
+              - generic [ref=e7338]:
+                - generic [ref=e7342]: Halyna Salivonova
+                - time [ref=e7343]: 3/4 11:52 AM
+                - button "Translate" [ref=e7346]:
+                  - generic [ref=e7347]: Translate
+              - generic [ref=e7348]:
+                - generic [ref=e7351]:
+                  - img [ref=e7352]
+                  - img [ref=e7353]:
+                    - img [ref=e7355]
+                - group "Halyna Salivonova налаштовую поки гондор тут немає всіх типів реквестів Wednesday, March 4, 2026 11:52 AM." [ref=e7358]:
+                  - button "More message options" [ref=e7359]
+                  - generic "налаштовую поки гондор тут немає всіх типів реквестів" [ref=e7360]:
+                    - paragraph [ref=e7361]: налаштовую поки гондор
+                    - paragraph [ref=e7362]: тут немає всіх типів реквестів
+          - generic [ref=e7366]:
+            - heading "Begin Reference, ну але там можливо не вист... by Mykhailo Struk" [level=4] [ref=e7367]
+            - generic [ref=e7369]:
+              - generic [ref=e7370]:
+                - generic [ref=e7374]: Mykhailo Struk
+                - time [ref=e7375]: 3/4 12:57 PM
+                - button "Translate" [ref=e7378]:
+                  - generic [ref=e7379]: Translate
+              - generic [ref=e7380]:
+                - generic [ref=e7383]:
+                  - img [ref=e7384]
+                  - img [ref=e7385]:
+                    - img [ref=e7387]
+                - group "Mykhailo Struk Begin Reference, ну але там можливо не вистачає типів, Volodymyr Sedler, 3/4/2026 11:39 AM, End reference У нас проблема у Deployment module чи у DataImporter? Wednesday, March 4, 2026 12:57 PM." [ref=e7390]:
+                  - button "More message options" [ref=e7391]
+                  - generic "Begin Reference, ну але там можливо не вистачає типів, Volodymyr Sedler, 3/4/2026 11:39 AM, End reference У нас проблема у Deployment module чи у DataImporter?" [ref=e7392]:
+                    - group "Begin Reference, ну але там можливо не вистачає типів, Volodymyr Sedler, 3/4/2026 11:39 AM, End reference" [ref=e7393] [cursor=pointer]:
+                      - generic [ref=e7396]:
+                        - generic [ref=e7397]:
+                          - generic [ref=e7398]: Volodymyr Sedler
+                          - generic [ref=e7399]: 3/4/2026 11:39 AM
+                        - generic [ref=e7400]: ну але там можливо не вистачає типів
+                    - paragraph [ref=e7401]: У нас проблема у Deployment module чи у DataImporter?
+          - generic [ref=e7405]:
+            - heading "на гондорі завалився сітізен реквест відраз... by Halyna Salivonova" [level=4] [ref=e7406]
+            - generic [ref=e7408]:
+              - generic [ref=e7409]:
+                - generic [ref=e7413]: Halyna Salivonova
+                - time [ref=e7414]: 3/4 12:57 PM
+                - button "Translate" [ref=e7417]:
+                  - generic [ref=e7418]: Translate
+              - generic [ref=e7419]:
+                - generic [ref=e7422]:
+                  - img [ref=e7423]
+                  - img [ref=e7424]:
+                    - img [ref=e7426]
+                - group "Halyna Salivonova на гондорі завалився сітізен реквест відразу та бага з 500 помилкою на мандалорі система навіть після фейла щось відправляла юзеру ну і після додавання нових реквестів через адмінку їх немає в списку на інвестігатор порталі, або я щось не докрутила Wednesday, March 4, 2026 12:57 PM." [ref=e7429]:
+                  - button "More message options" [ref=e7430]
+                  - generic "на гондорі завалився сітізен реквест відразу та бага з 500 помилкою на мандалорі система навіть після фейла щось відправляла юзеру ну і після додавання нових реквестів через адмінку їх немає в списку на інвестігатор порталі, або я щось не докрутила" [ref=e7431]:
+                    - paragraph [ref=e7432]: на гондорі завалився сітізен реквест відразу
+                    - paragraph [ref=e7433]: та бага з 500 помилкою
+                    - paragraph [ref=e7434]: на мандалорі система навіть після фейла щось відправляла юзеру
+                    - paragraph [ref=e7435]
+                    - paragraph [ref=e7436]
+                    - paragraph [ref=e7437]
+                    - paragraph [ref=e7438]: ну і після додавання нових реквестів через адмінку їх немає в списку на інвестігатор порталі, або я щось не докрутила
+          - generic [ref=e7442]:
+            - heading "Begin Reference, У нас проблема у Deploymen... by Volodymyr Sedler" [level=4] [ref=e7443]
+            - generic [ref=e7445]:
+              - generic [ref=e7446]:
+                - generic [ref=e7450]: Volodymyr Sedler
+                - time [ref=e7451]: 3/4 1:10 PM
+                - button "Translate" [ref=e7454]:
+                  - generic [ref=e7455]: Translate
+              - generic [ref=e7456]:
+                - generic [ref=e7459]:
+                  - img [ref=e7460]
+                  - img [ref=e7461]:
+                    - img [ref=e7463]
+                - group "Volodymyr Sedler Begin Reference, У нас проблема у Deployment module чи у DataImporter?, Mykhailo Struk, 3/4/2026 12:57 PM, End reference Та здається Importer, він не падає, але і не пише, що намагався щось імпортити. Wednesday, March 4, 2026 1:10 PM." [ref=e7466]:
+                  - button "More message options" [ref=e7467]
+                  - generic "Begin Reference, У нас проблема у Deployment module чи у DataImporter?, Mykhailo Struk, 3/4/2026 12:57 PM, End reference Та здається Importer, він не падає, але і не пише, що намагався щось імпортити." [ref=e7468]:
+                    - group "Begin Reference, У нас проблема у Deployment module чи у DataImporter?, Mykhailo Struk, 3/4/2026 12:57 PM, End reference" [ref=e7469] [cursor=pointer]:
+                      - generic [ref=e7472]:
+                        - generic [ref=e7473]:
+                          - generic [ref=e7474]: Mykhailo Struk
+                          - generic [ref=e7475]: 3/4/2026 12:57 PM
+                        - generic [ref=e7476]: У нас проблема у Deployment module чи у DataImporter?
+                    - paragraph [ref=e7477]: Та здається Importer, він не падає, але і не пише, що намагався щось імпортити.
+          - generic [ref=e7481]:
+            - heading "Зрозумів by Mykhailo Struk" [level=4] [ref=e7482]
+            - generic [ref=e7484]:
+              - generic [ref=e7485]:
+                - generic [ref=e7489]: Mykhailo Struk
+                - time [ref=e7490]: 3/4 1:11 PM
+              - generic [ref=e7491]:
+                - generic [ref=e7494]:
+                  - img [ref=e7495]
+                  - img [ref=e7496]:
+                    - img [ref=e7498]
+                - group "Mykhailo Struk Зрозумів Wednesday, March 4, 2026 1:11 PM." [ref=e7501]:
+                  - button "More message options" [ref=e7502]
+                  - generic "Зрозумів" [ref=e7503]:
+                    - paragraph [ref=e7504]: Зрозумів
+          - generic [ref=e7508]:
+            - heading "Зараз створю тимчасовий маніфест з фіксом д... by Mykhailo Struk" [level=4] [ref=e7509]
+            - generic [ref=e7511]:
+              - generic [ref=e7512]:
+                - generic [ref=e7516]: Mykhailo Struk
+                - time [ref=e7517]: 3/4 1:11 PM
+                - generic [ref=e7519]:
+                  - generic "Edited Wednesday, March 4, 2026 1:39 PM" [ref=e7520]: Edited
+                  - button "Translate" [ref=e7521]:
+                    - generic [ref=e7522]: Translate
+              - group "Mykhailo Struk Зараз створю тимчасовий маніфест з фіксом для 2.7 Нажаль схоже що проблема не у пакеті Stratus.Tools.DataImport Wednesday, March 4, 2026 1:11 PM. Edited" [ref=e7525]:
+                - button "More message options" [ref=e7526]
+                - generic "Зараз створю тимчасовий маніфест з фіксом для 2.7 Нажаль схоже що проблема не у пакеті Stratus.Tools.DataImport" [ref=e7527]:
+                  - paragraph [ref=e7528]:
+                    - generic [ref=e7529]: Зараз створю тимчасовий маніфест з фіксом для 2.7
+                    - text: Нажаль схоже що проблема не у пакеті Stratus.Tools.DataImport
+          - generic [ref=e7533]:
+            - heading "Сподіваюсь що Тім Ананд скоро виправлять цю... by Mykhailo Struk" [level=4] [ref=e7534]
+            - generic [ref=e7536]:
+              - generic [ref=e7537]:
+                - generic [ref=e7541]: Mykhailo Struk
+                - time [ref=e7542]: 3/4 1:13 PM
+                - button "Translate" [ref=e7545]:
+                  - generic [ref=e7546]: Translate
+              - group "Mykhailo Struk Сподіваюсь що Тім Ананд скоро виправлять цю проблему Wednesday, March 4, 2026 1:13 PM." [ref=e7549]:
+                - button "More message options" [ref=e7550]
+                - generic "Сподіваюсь що Тім Ананд скоро виправлять цю проблему" [ref=e7551]:
+                  - paragraph [ref=e7552]: Сподіваюсь що Тім Ананд скоро виправлять цю проблему
+          - generic [ref=e7556]:
+            - 'heading "Link Mykhailo Struk: Hi Anand, can you ask ... by Mykhailo Struk" [level=4] [ref=e7557]'
+            - generic [ref=e7559]:
+              - generic:
+                - generic [ref=e7563]: Mykhailo Struk
+                - time [ref=e7564]: 3/4 1:13 PM
+              - 'group "Mykhailo Struk Link Mykhailo Struk: Hi Anand, can you ask someone to update AdministratorPortal.DataIm... | PS – R&D Stratus App Services > General | Microsoft Teams Wednesday, March 4, 2026 1:13 PM." [ref=e7567]':
+                - button "More message options" [ref=e7568]
+                - 'generic "Link Mykhailo Struk: Hi Anand, can you ask someone to update AdministratorPortal.DataIm... | PS – R&D Stratus App Services > General | Microsoft Teams" [ref=e7569]':
+                  - paragraph [ref=e7570]:
+                    - 'link "Link Mykhailo Struk: Hi Anand, can you ask someone to update AdministratorPortal.DataIm... | PS – R&D Stratus App Services > General | Microsoft Teams" [ref=e7571] [cursor=pointer]':
+                      - /url: https://teams.microsoft.com/l/message/19:3503440d55d54ea0aea4662de847c4a4@thread.skype/1772194799921?tenantId=7123dabd-0e87-4da9-9cb9-b7ec82011aad&groupId=671e8582-dab6-496b-89f7-634bcf154b11&parentMessageId=1764685522328&teamName=PS%20%E2%80%93%20R%26D%20Stratus%20App%20Services&channelName=General&createdTime=1772194799921
+                      - text: "Mykhailo Struk: Hi Anand, can you ask someone to update AdministratorPortal.DataIm... | PS – R&D Stratus App Services > General | Microsoft Teams"
+          - generic [ref=e7575]:
+            - heading "Begin Reference, на гондорі завалився сітіз... by Volodymyr Sedler" [level=4] [ref=e7576]
+            - generic [ref=e7578]:
+              - generic [ref=e7579]:
+                - generic [ref=e7583]: Volodymyr Sedler
+                - time [ref=e7584]: 3/4 1:37 PM
+              - generic [ref=e7585]:
+                - generic [ref=e7588]:
+                  - img [ref=e7589]
+                  - img [ref=e7590]:
+                    - img [ref=e7592]
+                - group "Volodymyr Sedler Begin Reference, на гондорі завалився сітізен реквест відразу та бага з 500 помилкою на мандалорі система навіть після фейла щось відправляла юзеру ну і після додавання нових реквестів через адмінку їх немає в списку на інвестігатор порталі, або я щось не докрутила, Halyna Salivonova, 3/4/2026 12:57 PM, End reference не конектиться до PublicPortal... Wednesday, March 4, 2026 1:37 PM." [ref=e7595]:
+                  - button "More message options" [ref=e7596]
+                  - generic "Begin Reference, на гондорі завалився сітізен реквест відразу та бага з 500 помилкою на мандалорі система навіть після фейла щось відправляла юзеру ну і після додавання нових реквестів через адмінку їх немає в списку на інвестігатор порталі, або я щось не докрутила, Halyna Salivonova, 3/4/2026 12:57 PM, End reference не конектиться до PublicPortal..." [ref=e7597]:
+                    - group "Begin Reference, на гондорі завалився сітізен реквест відразу та бага з 500 помилкою на мандалорі система навіть після фейла щось відправляла юзеру ну і після додавання нових реквестів через адмінку їх немає в списку на інвестігатор порталі, або я щось не докрутила, Halyna Salivonova, 3/4/2026 12:57 PM, End reference" [ref=e7598] [cursor=pointer]:
+                      - generic [ref=e7601]:
+                        - generic [ref=e7602]:
+                          - generic [ref=e7603]: Halyna Salivonova
+                          - generic [ref=e7604]: 3/4/2026 12:57 PM
+                        - generic [ref=e7605]: на гондорі завалився сітізен реквест відразу та бага з 500 помилкою на мандалорі система навіть після фейла щось відправляла юзеру ну і після додавання нових реквестів через адмінку їх немає в списку на інвестігатор порталі, або я щось не докрутила
+                    - paragraph [ref=e7606]: не конектиться до PublicPortal...
+          - generic [ref=e7610]:
+            - heading "image by Mykhailo Struk" [level=4] [ref=e7611]
+            - generic [ref=e7613]:
+              - generic [ref=e7614]:
+                - generic [ref=e7618]: Mykhailo Struk
+                - time [ref=e7619]: 3/4 1:42 PM
+              - generic [ref=e7620]:
+                - generic [ref=e7623]:
+                  - img [ref=e7624]
+                  - img [ref=e7625]:
+                    - img [ref=e7627]
+                - group "Mykhailo Struk image Wednesday, March 4, 2026 1:42 PM." [ref=e7630]:
+                  - button "More message options" [ref=e7631]
+                  - generic "image" [ref=e7632]:
+                    - paragraph [ref=e7633]:
+                      - img "image" [ref=e7635]
+          - generic [ref=e7639]:
+            - heading "Не налаштовано CPP by Mykhailo Struk" [level=4] [ref=e7640]
+            - generic [ref=e7642]:
+              - generic [ref=e7643]:
+                - generic [ref=e7647]: Mykhailo Struk
+                - time [ref=e7648]: 3/4 1:42 PM
+                - generic "Edited Wednesday, March 4, 2026 1:42 PM" [ref=e7651]: Edited
+              - group "Mykhailo Struk Не налаштовано CPP Wednesday, March 4, 2026 1:42 PM. Edited" [ref=e7654]:
+                - button "More message options" [ref=e7655]
+                - generic "Не налаштовано CPP" [ref=e7656]:
+                  - paragraph [ref=e7657]: Не налаштовано CPP
+          - generic [ref=e7661]:
+            - heading "Можна на Мандалор задеплоїти свій CUSTOM... by Yevhenii Bondarenko" [level=4] [ref=e7662]
+            - generic [ref=e7664]:
+              - generic [ref=e7665]:
+                - generic [ref=e7669]: Yevhenii Bondarenko
+                - time [ref=e7670]: 3/4 1:43 PM
+                - button "Translate" [ref=e7673]:
+                  - generic [ref=e7674]: Translate
+              - generic [ref=e7675]:
+                - generic [ref=e7678]:
+                  - img [ref=e7679]
+                  - img [ref=e7680]:
+                    - img [ref=e7682]
+                - group "Yevhenii Bondarenko Можна на Мандалор задеплоїти свій CUSTOM-2.7.x-latest ? Wednesday, March 4, 2026 1:43 PM." [ref=e7685]:
+                  - button "More message options" [ref=e7686]
+                  - generic "Можна на Мандалор задеплоїти свій CUSTOM-2.7.x-latest ?" [ref=e7687]:
+                    - paragraph [ref=e7688]:
+                      - text: Можна на
+                      - strong [ref=e7689]: Мандалор
+                      - text: задеплоїти свій
+                      - strong [ref=e7691]: CUSTOM-2.7.x-latest
+                      - text: "?"
+          - generic [ref=e7695]:
+            - heading "Begin Reference, не конектиться до PublicPo... by Mykhailo Struk" [level=4] [ref=e7696]
+            - generic [ref=e7698]:
+              - generic [ref=e7699]:
+                - generic [ref=e7703]: Mykhailo Struk
+                - time [ref=e7704]: 3/4 1:44 PM
+              - generic [ref=e7705]:
+                - generic [ref=e7708]:
+                  - img [ref=e7709]
+                  - img [ref=e7710]:
+                    - img [ref=e7712]
+                - group "Mykhailo Struk Begin Reference, не конектиться до PublicPortal..., Volodymyr Sedler, 3/4/2026 1:37 PM, End reference Please try again Wednesday, March 4, 2026 1:44 PM." [ref=e7715]:
+                  - button "More message options" [ref=e7716]
+                  - generic "Begin Reference, не конектиться до PublicPortal..., Volodymyr Sedler, 3/4/2026 1:37 PM, End reference Please try again" [ref=e7717]:
+                    - group "Begin Reference, не конектиться до PublicPortal..., Volodymyr Sedler, 3/4/2026 1:37 PM, End reference" [ref=e7718] [cursor=pointer]:
+                      - generic [ref=e7721]:
+                        - generic [ref=e7722]:
+                          - generic [ref=e7723]: Volodymyr Sedler
+                          - generic [ref=e7724]: 3/4/2026 1:37 PM
+                        - generic [ref=e7725]: не конектиться до PublicPortal...
+                    - paragraph [ref=e7726]: Please try again
+          - generic [ref=e7730]:
+            - heading "оо by Volodymyr Sedler" [level=4] [ref=e7731]
+            - generic [ref=e7733]:
+              - generic [ref=e7734]:
+                - generic [ref=e7738]: Volodymyr Sedler
+                - time [ref=e7739]: 3/4 1:44 PM
+              - generic [ref=e7740]:
+                - generic [ref=e7743]:
+                  - img [ref=e7744]
+                  - img [ref=e7745]:
+                    - img [ref=e7747]
+                - group "Volodymyr Sedler оо Wednesday, March 4, 2026 1:44 PM." [ref=e7750]:
+                  - button "More message options" [ref=e7751]
+                  - generic "оо" [ref=e7752]:
+                    - paragraph [ref=e7753]: оо
+          - generic [ref=e7757]:
+            - heading "пішло by Volodymyr Sedler" [level=4] [ref=e7758]
+            - generic [ref=e7760]:
+              - generic:
+                - generic [ref=e7764]: Volodymyr Sedler
+                - time [ref=e7765]: 3/4 1:44 PM
+              - group "Volodymyr Sedler пішло 1 Like reaction. Wednesday, March 4, 2026 1:44 PM." [ref=e7768]:
+                - button "More message options" [ref=e7769]
+                - generic "пішло" [ref=e7770]:
+                  - paragraph [ref=e7771]: пішло
+                - toolbar "Reaction summary" [ref=e7772]:
+                  - button "1 Like reaction." [ref=e7774]:
+                    - generic [ref=e7775]:
+                      - img "👍" [ref=e7777]
+                      - generic [ref=e7778]: 1 Like reaction.
+                  - button "More reactions" [ref=e7780]:
+                    - img [ref=e7782]
+          - generic [ref=e7788]:
+            - heading "Комусь Мандалор треба? Можу забрати Гондор,... by Volodymyr Sedler" [level=4] [ref=e7789]
+            - generic [ref=e7791]:
+              - generic [ref=e7792]:
+                - generic [ref=e7796]: Volodymyr Sedler
+                - time [ref=e7797]: 3/4 2:49 PM
+                - button "Translate" [ref=e7800]:
+                  - generic [ref=e7801]: Translate
+              - generic [ref=e7802]:
+                - generic [ref=e7805]:
+                  - img [ref=e7806]
+                  - img [ref=e7807]:
+                    - img [ref=e7809]
+                - group "Volodymyr Sedler Комусь Мандалор треба? Можу забрати Гондор, якщо вже не використовується 2 Like reactions. Wednesday, March 4, 2026 2:49 PM." [ref=e7812]:
+                  - button "More message options" [ref=e7813]
+                  - generic "Комусь Мандалор треба? Можу забрати Гондор, якщо вже не використовується" [ref=e7814]:
+                    - paragraph [ref=e7815]: Комусь Мандалор треба? Можу забрати Гондор, якщо вже не використовується
+                  - toolbar "Reaction summary" [ref=e7816]:
+                    - button "2 Like reactions." [ref=e7818]:
+                      - generic [ref=e7819]:
+                        - img "👍" [ref=e7821]
+                        - generic [ref=e7822]: 2 Like reactions.
+                        - generic [ref=e7823]: "2"
+                    - button "More reactions" [ref=e7825]:
+                      - img [ref=e7827]
+          - generic [ref=e7833]:
+            - heading "Запустив на Гондорі by Volodymyr Sedler" [level=4] [ref=e7834]
+            - generic [ref=e7836]:
+              - generic [ref=e7837]:
+                - generic [ref=e7841]: Volodymyr Sedler
+                - time [ref=e7842]: 3/4 3:02 PM
+              - generic [ref=e7843]:
+                - generic [ref=e7846]:
+                  - img [ref=e7847]
+                  - img [ref=e7848]:
+                    - img [ref=e7850]
+                - group "Volodymyr Sedler Запустив на Гондорі Wednesday, March 4, 2026 3:02 PM." [ref=e7853]:
+                  - button "More message options" [ref=e7854]
+                  - generic "Запустив на Гондорі" [ref=e7855]:
+                    - paragraph [ref=e7856]: Запустив на Гондорі
+          - generic [ref=e7860]:
+            - heading "Begin Reference, Можна на Мандалор задеплої... by Yevhenii Bondarenko" [level=4] [ref=e7861]
+            - generic [ref=e7863]:
+              - generic [ref=e7864]:
+                - generic [ref=e7868]: Yevhenii Bondarenko
+                - time [ref=e7869]: 3/4 4:46 PM
+              - generic [ref=e7870]:
+                - generic [ref=e7873]:
+                  - img [ref=e7874]
+                  - img [ref=e7875]:
+                    - img [ref=e7877]
+                - group "Yevhenii Bondarenko Begin Reference, Можна на Мандалор задеплоїти свій CUSTOM-2.7.x-latest?, Yevhenii Bondarenko, 3/4/2026 1:43 PM, End reference деплою? чи хтось проти? 4 Like reactions. Wednesday, March 4, 2026 4:46 PM." [active] [ref=e7880]:
+                  - button "More message options" [ref=e7881]
+                  - generic "Begin Reference, Можна на Мандалор задеплоїти свій CUSTOM-2.7.x-latest?, Yevhenii Bondarenko, 3/4/2026 1:43 PM, End reference деплою? чи хтось проти?" [ref=e7882]:
+                    - group "Begin Reference, Можна на Мандалор задеплоїти свій CUSTOM-2.7.x-latest?, Yevhenii Bondarenko, 3/4/2026 1:43 PM, End reference" [ref=e7883] [cursor=pointer]:
+                      - generic [ref=e7886]:
+                        - generic [ref=e7887]:
+                          - generic [ref=e7888]: Yevhenii Bondarenko
+                          - generic [ref=e7889]: 3/4/2026 1:43 PM
+                        - generic [ref=e7890]: Можна на Мандалор задеплоїти свій CUSTOM-2.7.x-latest?
+                    - paragraph [ref=e7891]: деплою? чи хтось проти?
+                  - toolbar "Reaction summary" [ref=e7892]:
+                    - button "4 Like reactions." [ref=e7894]:
+                      - generic [ref=e7895]:
+                        - img "👍" [ref=e7897]
+                        - generic [ref=e7898]: 4 Like reactions.
+                        - generic [ref=e7899]: "4"
+                    - button "More reactions" [ref=e7901]:
+                      - img [ref=e7903]
+                  - group [ref=e7906]:
+                    - toolbar "Reactions and message actions" [ref=e7909]:
+                      - generic [ref=e7911]:
+                        - button "Like" [ref=e7912]:
+                          - img "👍" [ref=e7915]
+                        - button "Heart" [ref=e7916]:
+                          - img "❤️" [ref=e7919]
+                        - button "Laugh" [ref=e7920]:
+                          - img "😆" [ref=e7923]
+                        - button "Surprised" [ref=e7924]:
+                          - img "😮" [ref=e7927]
+                        - button "More reactions" [ref=e7928]:
+                          - img [ref=e7930]
+                        - separator [ref=e7932]
+                      - generic "Reply with quote" [ref=e7934]:
+                        - button "Reply with quote" [ref=e7935]:
+                          - img [ref=e7937]
+                      - button "More options" [ref=e7939]:
+                        - img [ref=e7941]
+          - heading "Thursday, March 5" [level=3] [ref=e6063]:
+            - generic [ref=e6064]: Thursday, March 5
+          - generic [ref=e6067]:
+            - heading "Привіт всім, на рахунок цих карток. GHASDO ... by Andrii Shevchenko" [level=4] [ref=e6068]
+            - generic [ref=e6070]:
+              - generic [ref=e6071]:
+                - time [ref=e6072]: 3/5 10:00 AM
+                - generic [ref=e6076]: Andrii Shevchenko
+              - group "Andrii Shevchenko Привіт всім, на рахунок цих карток. GHASDO вже було увімкнено і вразливостей там я не виявив. Переведу в closed image 1 Like reaction. Thursday, March 5, 2026 10:00 AM." [ref=e6079]:
+                - button "More message options" [ref=e6080]
+                - generic "Привіт всім, на рахунок цих карток. GHASDO вже було увімкнено і вразливостей там я не виявив. Переведу в closed image" [ref=e6081]:
+                  - paragraph [ref=e6082]: Привіт всім, на рахунок цих карток. GHASDO вже було увімкнено і вразливостей там я не виявив. Переведу в closed
+                  - paragraph [ref=e6083]:
+                    - img "image" [ref=e6085]
+                - toolbar "Reaction summary" [ref=e6086]:
+                  - button "1 Like reaction." [ref=e6088]:
+                    - generic [ref=e6089]:
+                      - img "👍" [ref=e6091]
+                      - generic [ref=e6092]: 1 Like reaction.
+                  - button "More reactions" [ref=e6094]:
+                    - img [ref=e6096]
+          - generic [ref=e6102]:
+            - heading "Begin Reference, Привіт всім, на рахунок ци... by Vitalii Tymokhin" [level=4] [ref=e6103]
+            - generic [ref=e6105]:
+              - generic [ref=e6106]:
+                - generic [ref=e6110]: Vitalii Tymokhin
+                - time [ref=e6111]: 3/5 10:26 AM
+              - generic [ref=e6112]:
+                - generic [ref=e6115]:
+                  - img [ref=e6116]
+                  - img [ref=e6117]:
+                    - img [ref=e6119]
+                - group "Vitalii Tymokhin Begin Reference, Привіт всім, на рахунок цих карток. GHASDO вже було увімкнено і вразливостей там я не виявив. Переведу в closed📷, Andrii Shevchenko, 3/5/2026 10:00 AM, End reference Супер, дякую Thursday, March 5, 2026 10:26 AM." [ref=e6122]:
+                  - button "More message options" [ref=e6123]
+                  - generic "Begin Reference, Привіт всім, на рахунок цих карток. GHASDO вже було увімкнено і вразливостей там я не виявив. Переведу в closed📷, Andrii Shevchenko, 3/5/2026 10:00 AM, End reference Супер, дякую" [ref=e6124]:
+                    - group "Begin Reference, Привіт всім, на рахунок цих карток. GHASDO вже було увімкнено і вразливостей там я не виявив. Переведу в closed📷, Andrii Shevchenko, 3/5/2026 10:00 AM, End reference" [ref=e6125] [cursor=pointer]:
+                      - generic [ref=e6128]:
+                        - generic [ref=e6129]:
+                          - generic [ref=e6130]: Andrii Shevchenko
+                          - generic [ref=e6131]: 3/5/2026 10:00 AM
+                        - generic [ref=e6132]: Привіт всім, на рахунок цих карток. GHASDO вже було увімкнено і вразливостей там я не виявив. Переведу в closed📷
+                    - paragraph [ref=e6133]: Супер, дякую
+          - generic [ref=e6137]:
+            - 'heading "Всім привіт, я забукав ''Knowledge sharing: ... by Mykhailo Struk" [level=4] [ref=e6138]'
+            - generic [ref=e6140]:
+              - generic [ref=e6141]:
+                - generic [ref=e6145]: Mykhailo Struk
+                - time [ref=e6146]: 3/5 10:49 AM
+                - button "Translate" [ref=e6149]:
+                  - generic [ref=e6150]: Translate
+              - generic [ref=e6151]:
+                - generic [ref=e6154]:
+                  - img [ref=e6155]
+                  - img [ref=e6156]:
+                    - img [ref=e6158]
+                - 'group "Mykhailo Struk Всім привіт, я забукав ''Knowledge sharing: Support tools'' мітинг на 15:00. Думаю буде корисно та допоможе розібратися як створювати нові саппорт тули та запускати їх. 5 Like reactions. Thursday, March 5, 2026 10:49 AM." [ref=e6161]':
+                  - button "More message options" [ref=e6162]
+                  - 'generic "Всім привіт, я забукав ''Knowledge sharing: Support tools'' мітинг на 15:00. Думаю буде корисно та допоможе розібратися як створювати нові саппорт тули та запускати їх." [ref=e6163]':
+                    - paragraph [ref=e6164]: "Всім привіт, я забукав 'Knowledge sharing: Support tools' мітинг на 15:00. Думаю буде корисно та допоможе розібратися як створювати нові саппорт тули та запускати їх."
+                  - toolbar "Reaction summary" [ref=e6165]:
+                    - button "5 Like reactions." [pressed] [ref=e6167]:
+                      - generic [ref=e6168]:
+                        - img "👍" [ref=e6170]
+                        - generic [ref=e6171]: 5 Like reactions.
+                        - generic [ref=e6172]: "5"
+                    - button "More reactions" [ref=e6174]:
+                      - img [ref=e6176]
+          - generic [ref=e6182]:
+            - heading "Begin Reference, Всім привіт, я забукав 'Kn... by Nataliia Velychko" [level=4] [ref=e6183]
+            - generic [ref=e6185]:
+              - generic [ref=e6186]:
+                - generic [ref=e6190]: Nataliia Velychko
+                - time [ref=e6191]: 3/5 11:02 AM
+                - button "Translate" [ref=e6194]:
+                  - generic [ref=e6195]: Translate
+              - generic [ref=e6196]:
+                - generic [ref=e6199]:
+                  - img [ref=e6200]
+                  - img [ref=e6201]:
+                    - img [ref=e6203]
+                - 'group "Nataliia Velychko Begin Reference, Всім привіт, я забукав ''Knowledge sharing: Support tools'' мітинг на 15:00. Думаю буде корисно та допоможе розібратися як створювати нові саппорт тули та запускати їх., Mykhailo Struk, 3/5/2026 10:49 AM, End reference можна форвардну на іншу команду теж? може теж буде корисно Thursday, March 5, 2026 11:02 AM." [ref=e6206]':
+                  - button "More message options" [ref=e6207]
+                  - 'generic "Begin Reference, Всім привіт, я забукав ''Knowledge sharing: Support tools'' мітинг на 15:00. Думаю буде корисно та допоможе розібратися як створювати нові саппорт тули та запускати їх., Mykhailo Struk, 3/5/2026 10:49 AM, End reference можна форвардну на іншу команду теж? може теж буде корисно" [ref=e6208]':
+                    - 'group "Begin Reference, Всім привіт, я забукав ''Knowledge sharing: Support tools'' мітинг на 15:00. Думаю буде корисно та допоможе розібратися як створювати нові саппорт тули та запускати їх., Mykhailo Struk, 3/5/2026 10:49 AM, End reference" [ref=e6209] [cursor=pointer]':
+                      - generic [ref=e6212]:
+                        - generic [ref=e6213]:
+                          - generic [ref=e6214]: Mykhailo Struk
+                          - generic [ref=e6215]: 3/5/2026 10:49 AM
+                        - generic [ref=e6216]: "Всім привіт, я забукав 'Knowledge sharing: Support tools' мітинг на 15:00. Думаю буде корисно та допоможе розібратися як створювати нові саппорт тули та запускати їх."
+                    - paragraph [ref=e6217]: можна форвардну на іншу команду теж? може теж буде корисно
+          - generic [ref=e6221]:
+            - heading "Begin Reference, можна форвардну на іншу ко... by Mykhailo Struk" [level=4] [ref=e6222]
+            - generic [ref=e6224]:
+              - generic [ref=e6225]:
+                - generic [ref=e6229]: Mykhailo Struk
+                - time [ref=e6230]: 3/5 11:02 AM
+              - generic [ref=e6231]:
+                - generic [ref=e6234]:
+                  - img [ref=e6235]
+                  - img [ref=e6236]:
+                    - img [ref=e6238]
+                - group "Mykhailo Struk Begin Reference, можна форвардну на іншу команду теж? може теж буде корисно, Nataliia Velychko, 3/5/2026 11:02 AM, End reference Я не проти 2 Like reactions. Thursday, March 5, 2026 11:02 AM." [ref=e6241]:
+                  - button "More message options" [ref=e6242]
+                  - generic "Begin Reference, можна форвардну на іншу команду теж? може теж буде корисно, Nataliia Velychko, 3/5/2026 11:02 AM, End reference Я не проти" [ref=e6243]:
+                    - group "Begin Reference, можна форвардну на іншу команду теж? може теж буде корисно, Nataliia Velychko, 3/5/2026 11:02 AM, End reference" [ref=e6244] [cursor=pointer]:
+                      - generic [ref=e6247]:
+                        - generic [ref=e6248]:
+                          - generic [ref=e6249]: Nataliia Velychko
+                          - generic [ref=e6250]: 3/5/2026 11:02 AM
+                        - generic [ref=e6251]: можна форвардну на іншу команду теж? може теж буде корисно
+                    - paragraph [ref=e6252]: Я не проти
+                  - toolbar "Reaction summary" [ref=e6253]:
+                    - button "2 Like reactions." [pressed] [ref=e6255]:
+                      - generic [ref=e6256]:
+                        - img "👍" [ref=e6258]
+                        - generic [ref=e6259]: 2 Like reactions.
+                        - generic [ref=e6260]: "2"
+                    - button "More reactions" [ref=e6262]:
+                      - img [ref=e6264]
+          - generic [ref=e6270]:
+            - heading "Запущу новий деплой на Гондорі by Volodymyr Sedler" [level=4] [ref=e6271]
+            - generic [ref=e6273]:
+              - generic [ref=e6274]:
+                - generic [ref=e6278]: Volodymyr Sedler
+                - time [ref=e6279]: 3/5 4:41 PM
+              - generic [ref=e6280]:
+                - generic [ref=e6283]:
+                  - img [ref=e6284]
+                  - img [ref=e6285]:
+                    - img [ref=e6287]
+                - group "Volodymyr Sedler Запущу новий деплой на Гондорі Thursday, March 5, 2026 4:41 PM." [ref=e6290]:
+                  - button "More message options" [ref=e6291]
+                  - generic "Запущу новий деплой на Гондорі" [ref=e6292]:
+                    - paragraph [ref=e6293]: Запущу новий деплой на Гондорі
+          - heading "Friday, March 6" [level=3] [ref=e6297]:
+            - generic [ref=e6298]: Friday, March 6
+          - generic [ref=e6301]:
+            - heading "Запрацювало на бранчі з оновленою версією. by Volodymyr Sedler" [level=4] [ref=e6302]
+            - generic [ref=e6304]:
+              - generic [ref=e6305]:
+                - generic [ref=e6309]: Volodymyr Sedler
+                - time [ref=e6310]: 3/6 12:19 PM
+                - button "Translate" [ref=e6313]:
+                  - generic [ref=e6314]: Translate
+              - generic [ref=e6315]:
+                - generic [ref=e6318]:
+                  - img [ref=e6319]
+                  - img [ref=e6320]:
+                    - img [ref=e6322]
+                - group "Volodymyr Sedler Запрацювало на бранчі з оновленою версією. 2 Like reactions. Friday, March 6, 2026 12:19 PM." [ref=e6325]:
+                  - button "More message options" [ref=e6326]
+                  - generic "Запрацювало на бранчі з оновленою версією." [ref=e6327]:
+                    - paragraph [ref=e6328]: Запрацювало на бранчі з оновленою версією.
+                  - toolbar "Reaction summary" [ref=e6329]:
+                    - button "2 Like reactions." [ref=e6331]:
+                      - generic [ref=e6332]:
+                        - img "👍" [ref=e6334]
+                        - generic [ref=e6335]: 2 Like reactions.
+                        - generic [ref=e6336]: "2"
+                    - button "More reactions" [ref=e6338]:
+                      - img [ref=e6340]
+          - generic [ref=e6346]:
+            - heading "image 😊 by Andrii Shevchenko" [level=4] [ref=e6347]
+            - generic [ref=e6349]:
+              - generic [ref=e6350]:
+                - time [ref=e6351]: 3/6 12:32 PM
+                - generic [ref=e6355]: Andrii Shevchenko
+              - generic [ref=e6356]:
+                - group "Andrii Shevchenko Seen by everyone image 😊 1 Laugh reaction. 1 Beaming face with smiling eyes reaction. 1 Fire reaction. Friday, March 6, 2026 12:32 PM." [ref=e6358]:
+                  - button "More message options" [ref=e6359]
+                  - generic "image 😊" [ref=e6360]:
+                    - paragraph [ref=e6361]:
+                      - img "image" [ref=e6363]
+                    - paragraph [ref=e6364]: 😊
+                  - toolbar "Reaction summary" [ref=e6365]:
+                    - button "1 Fire reaction." [ref=e6367]:
+                      - generic [ref=e6368]:
+                        - img "🔥" [ref=e6370]
+                        - generic [ref=e6371]: 1 Fire reaction.
+                    - button "1 Beaming face with smiling eyes reaction." [ref=e6372]:
+                      - generic [ref=e6373]:
+                        - img "😁" [ref=e6375]
+                        - generic [ref=e6376]: 1 Beaming face with smiling eyes reaction.
+                    - button "1 Laugh reaction." [ref=e6377]:
+                      - generic [ref=e6378]:
+                        - img "😆" [ref=e6380]
+                        - generic [ref=e6381]: 1 Laugh reaction.
+                    - button "More reactions" [ref=e6383]:
+                      - img [ref=e6385]
+                - img "Seen by everyone" [ref=e6389]:
+                  - img [ref=e6390]
+          - generic [ref=e6394]:
+            - heading "Message by Polls" [level=4] [ref=e6395]
+            - generic [ref=e6397]:
+              - generic [ref=e6398]:
+                - generic [ref=e6402]: Yevhenii Bondarenko via Polls
+                - time [ref=e6403]: 3/6 5:29 PM
+              - generic [ref=e6404]:
+                - button "Polls Bot Away" [ref=e6406]:
+                  - img [ref=e6407]
+                - 'group "Yevhenii Bondarenko via Polls This is a card message. Poll: Names not recorded ; Results shared Назва нового енва з latest Isengard (місце експерементів, нових розробок) Isengard (місце експерементів, нових розробок) Osgiliath (місце постійних битв з багами) Osgiliath (місце постійних битв з багами) Rohan (багів як коней) Rohan (багів як коней) Mordor (місце де все ламається) Mordor (місце де все ламається) Свій варіант в коментарях (з LOTR, Rivendell зайнято) Свій варіант в коментарях (з LOTR, Rivendell зайнято) Submit Vote Friday, March 6, 2026 5:29 PM." [ref=e6409]':
+                  - button "More message options" [ref=e6410]
+                  - list [ref=e6413]:
+                    - listitem [ref=e6414]:
+                      - generic [ref=e6418]:
+                        - generic [ref=e6419]:
+                          - progressbar
+                        - group "This is a card message." [ref=e6423]:
+                          - generic [ref=e6426]:
+                            - generic [ref=e6427]:
+                              - paragraph [ref=e7946]: "Poll: Names not recorded ; Results shared"
+                              - generic [ref=e6438]:
+                                - generic [ref=e6439]: Назва нового енва з latest
+                                - generic [ref=e6441]:
+                                  - generic [ref=e6442] [cursor=pointer]:
+                                    - checkbox "Назва нового енва з latest Isengard (місце експерементів, нових розробок)" [ref=e6443]
+                                    - generic [ref=e6444]: Isengard (місце експерементів, нових розробок)
+                                  - generic [ref=e6445] [cursor=pointer]:
+                                    - checkbox "Назва нового енва з latest Osgiliath (місце постійних битв з багами)" [ref=e6446]
+                                    - generic [ref=e6447]: Osgiliath (місце постійних битв з багами)
+                                  - generic [ref=e6448] [cursor=pointer]:
+                                    - checkbox "Назва нового енва з latest Rohan (багів як коней)" [ref=e6449]
+                                    - generic [ref=e6450]: Rohan (багів як коней)
+                                  - generic [ref=e6451] [cursor=pointer]:
+                                    - checkbox "Назва нового енва з latest Mordor (місце де все ламається)" [ref=e6452]
+                                    - generic [ref=e6453]: Mordor (місце де все ламається)
+                                  - generic [ref=e6454] [cursor=pointer]:
+                                    - checkbox "Назва нового енва з latest Свій варіант в коментарях (з LOTR, Rivendell зайнято)" [ref=e6455]
+                                    - generic [ref=e6456]: Свій варіант в коментарях (з LOTR, Rivendell зайнято)
+                            - group "Submit Vote" [ref=e6461]:
+                              - generic [ref=e6463]: Submit Vote
+          - generic [ref=e6467]:
+            - heading "Message by Polls" [level=4] [ref=e6468]
+            - generic [ref=e6470]:
+              - generic [ref=e6471]:
+                - generic [ref=e6475]: Yevhenii Bondarenko via Polls
+                - time [ref=e6476]: 3/6 5:29 PM
+                - generic "Edited Monday, March 9, 2026 10:04 AM" [ref=e6479]: Edited
+              - group "Yevhenii Bondarenko via Polls This is a card message. Friday, March 6, 2026 5:29 PM. Edited" [ref=e6482]:
+                - button "More message options" [ref=e6483]
+                - list [ref=e6486]:
+                  - listitem [ref=e6487]:
+                    - group "This is a card message." [ref=e6495]:
+                      - generic [ref=e6499]:
+                        - generic [ref=e6501]:
+                          - generic [ref=e6503]:
+                            - paragraph [ref=e7947]: Isengard (місце експерементів, нових розробок)
+                            - paragraph [ref=e7948]: 71% (5)
+                          - button [ref=e6516]
+                        - generic [ref=e6519]:
+                          - generic [ref=e6521]:
+                            - paragraph [ref=e7949]: Osgiliath (місце постійних битв з багами)
+                            - paragraph [ref=e7950]: 0% (0)
+                          - button [ref=e6534]
+                        - generic [ref=e6537]:
+                          - generic [ref=e6539]:
+                            - paragraph [ref=e7951]: Rohan (багів як коней)
+                            - paragraph [ref=e7952]: 0% (0)
+                          - button [ref=e6552]
+                        - generic [ref=e6555]:
+                          - generic [ref=e6557]:
+                            - paragraph [ref=e7953]: Mordor (місце де все ламається)
+                            - paragraph [ref=e7954]: 28% (2)
+                          - button [ref=e6570]
+                        - generic [ref=e6573]:
+                          - generic [ref=e6575]:
+                            - paragraph [ref=e7955]: Свій варіант в коментарях (з LOTR, Rivendell зайнято)
+                            - paragraph [ref=e7956]: 0% (0)
+                          - button [ref=e6588]
+                        - paragraph [ref=e7957]: 7 responses
+          - heading "Monday, March 9" [level=3] [ref=e6603]:
+            - generic [ref=e6604]: Monday, March 9
+          - generic [ref=e6607]:
+            - heading "Всім привіт, візьму сіклів сьогодні by Oleksandr Ladanai" [level=4] [ref=e6608]
+            - generic [ref=e6610]:
+              - generic [ref=e6611]:
+                - generic [ref=e6615]: Oleksandr Ladanai
+                - time [ref=e6616]: 3/9 6:08 AM
+                - button "Translate" [ref=e6619]:
+                  - generic [ref=e6620]: Translate
+              - generic [ref=e6621]:
+                - generic [ref=e6624]:
+                  - img [ref=e6625]
+                  - img [ref=e6626]:
+                    - img [ref=e6628]
+                - group "Oleksandr Ladanai Всім привіт, візьму сіклів сьогодні Monday, March 9, 2026 6:08 AM." [ref=e6631]:
+                  - button "More message options" [ref=e6632]
+                  - generic "Всім привіт, візьму сіклів сьогодні" [ref=e6633]:
+                    - paragraph [ref=e6634]: Всім привіт, візьму сіклів сьогодні
+          - generic [ref=e6638]:
+            - heading "Mykhailo Struk Vitalii Tymokhin наче... by Nataliia Velychko" [level=4] [ref=e6639]
+            - generic [ref=e6641]:
+              - generic [ref=e6642]:
+                - generic [ref=e6646]: Nataliia Velychko
+                - time [ref=e6647]: 3/9 11:25 AM
+                - button "Translate" [ref=e6650]:
+                  - generic [ref=e6651]: Translate
+              - generic [ref=e6652]:
+                - generic [ref=e6655]:
+                  - img [ref=e6656]
+                  - img [ref=e6657]:
+                    - img [ref=e6659]
+                - group "Nataliia Velychko Mykhailo Struk Vitalii Tymokhin наче видалила. якщо буде ще щось прилітати, то пишіть - можливо ще в якихось полісі вручну додано 1 Like reaction. 1 Heart reaction. Monday, March 9, 2026 11:25 AM." [ref=e6662]:
+                  - button "More message options" [ref=e6663]
+                  - generic "Mykhailo Struk Vitalii Tymokhin наче видалила. якщо буде ще щось прилітати, то пишіть - можливо ще в якихось полісі вручну додано" [ref=e6664]:
+                    - paragraph [ref=e6665]:
+                      - button "Mentioned Mykhailo" [ref=e6666]: Mykhailo
+                      - button "Mentioned Struk" [ref=e6667]: Struk
+                      - button "Mentioned Vitalii" [ref=e6668]: Vitalii
+                      - button "Mentioned Tymokhin" [ref=e6669]: Tymokhin
+                      - text: наче видалила. якщо буде ще щось прилітати, то пишіть - можливо ще в якихось полісі вручну додано
+                  - toolbar "Reaction summary" [ref=e6670]:
+                    - button "1 Heart reaction." [ref=e6672]:
+                      - generic [ref=e6673]:
+                        - img "❤️" [ref=e6675]
+                        - generic [ref=e6676]: 1 Heart reaction.
+                    - button "1 Like reaction." [ref=e6677]:
+                      - generic [ref=e6678]:
+                        - img "👍" [ref=e6680]
+                        - generic [ref=e6681]: 1 Like reaction.
+                    - button "More reactions" [ref=e6683]:
+                      - img [ref=e6685]
+          - generic [ref=e6691]:
+            - heading "Дякую by Mykhailo Struk" [level=4] [ref=e6692]
+            - generic [ref=e6694]:
+              - generic [ref=e6695]:
+                - generic [ref=e6699]: Mykhailo Struk
+                - time [ref=e6700]: 3/9 11:26 AM
+              - generic [ref=e6701]:
+                - generic [ref=e6704]:
+                  - img [ref=e6705]
+                  - img [ref=e6706]:
+                    - img [ref=e6708]
+                - group "Mykhailo Struk Дякую 1 Like reaction. Monday, March 9, 2026 11:26 AM." [ref=e6711]:
+                  - button "More message options" [ref=e6712]
+                  - generic "Дякую" [ref=e6713]:
+                    - paragraph [ref=e6714]: Дякую
+                  - toolbar "Reaction summary" [ref=e6715]:
+                    - button "1 Like reaction." [ref=e6717]:
+                      - generic [ref=e6718]:
+                        - img "👍" [ref=e6720]
+                        - generic [ref=e6721]: 1 Like reaction.
+                    - button "More reactions" [ref=e6723]:
+                      - img [ref=e6725]
+          - generic [ref=e6731]:
+            - heading "Ніхто останнім часом не запускав .\\localde... by Mykhailo Struk" [level=4] [ref=e6732]
+            - generic [ref=e6734]:
+              - generic [ref=e6735]:
+                - generic [ref=e6739]: Mykhailo Struk
+                - time [ref=e6740]: 3/9 11:52 AM
+                - button "Translate" [ref=e6743]:
+                  - generic [ref=e6744]: Translate
+              - generic [ref=e6745]:
+                - generic [ref=e6748]:
+                  - img [ref=e6749]
+                  - img [ref=e6750]:
+                    - img [ref=e6752]
+                - 'group "Mykhailo Struk Ніхто останнім часом не запускав .\\localdev InitDocker ? Постійно падає підчас виконнання rкоманди docker pull з помилкою failed to copy: local error: tls: bad record MAC VPN постійно під''єднаний, так як тепер він навіть потрібен для доступу до dvdat. Можливо у ньому проблема. Monday, March 9, 2026 11:52 AM." [ref=e6755]':
+                  - button "More message options" [ref=e6756]
+                  - 'generic "Ніхто останнім часом не запускав .\\localdev InitDocker ? Постійно падає підчас виконнання rкоманди docker pull з помилкою failed to copy: local error: tls: bad record MAC VPN постійно під''єднаний, так як тепер він навіть потрібен для доступу до dvdat. Можливо у ньому проблема." [ref=e6757]':
+                    - paragraph [ref=e6758]:
+                      - text: Ніхто останнім часом не запускав
+                      - code [ref=e6759]: .\localdev InitDocker
+                      - text: "?"
+                    - paragraph [ref=e6760]:
+                      - text: Постійно падає підчас виконнання rкоманди docker pull з помилкою
+                      - code [ref=e6761]: "failed to copy: local error: tls: bad record MAC"
+                    - paragraph [ref=e6762]
+                    - paragraph [ref=e6763]: VPN постійно під'єднаний, так як тепер він навіть потрібен для доступу до dvdat. Можливо у ньому проблема.
+          - generic [ref=e6767]:
+            - heading "Begin Reference, Ніхто останнім часом не за... by Vitalii Tymokhin" [level=4] [ref=e6768]
+            - generic [ref=e6770]:
+              - generic [ref=e6771]:
+                - generic [ref=e6775]: Vitalii Tymokhin
+                - time [ref=e6776]: 3/9 11:52 AM
+                - button "Translate" [ref=e6779]:
+                  - generic [ref=e6780]: Translate
+              - generic [ref=e6781]:
+                - generic [ref=e6784]:
+                  - img [ref=e6785]
+                  - img [ref=e6786]:
+                    - img [ref=e6788]
+                - 'group "Vitalii Tymokhin Begin Reference, Ніхто останнім часом не запускав .\\localdev InitDocker? Постійно падає підчас виконнання rкоманди docker pull з помилкою failed to copy: local error: tls: bad record MAC VPN постійно під''єднаний, так як тепер він навіть потрібен для доступу до dvdat. Можливо у ньому проблема., Mykhailo Struk, 3/9/2026 11:52 AM, End reference у мене таке було, я десь тричі перезапускав і пройшов той степ Monday, March 9, 2026 11:52 AM." [ref=e6791]':
+                  - button "More message options" [ref=e6792]
+                  - 'generic "Begin Reference, Ніхто останнім часом не запускав .\\localdev InitDocker? Постійно падає підчас виконнання rкоманди docker pull з помилкою failed to copy: local error: tls: bad record MAC VPN постійно під''єднаний, так як тепер він навіть потрібен для доступу до dvdat. Можливо у ньому проблема., Mykhailo Struk, 3/9/2026 11:52 AM, End reference у мене таке було, я десь тричі перезапускав і пройшов той степ" [ref=e6793]':
+                    - 'group "Begin Reference, Ніхто останнім часом не запускав .\\localdev InitDocker? Постійно падає підчас виконнання rкоманди docker pull з помилкою failed to copy: local error: tls: bad record MAC VPN постійно під''єднаний, так як тепер він навіть потрібен для доступу до dvdat. Можливо у ньому проблема., Mykhailo Struk, 3/9/2026 11:52 AM, End reference" [ref=e6794] [cursor=pointer]':
+                      - generic [ref=e6797]:
+                        - generic [ref=e6798]:
+                          - generic [ref=e6799]: Mykhailo Struk
+                          - generic [ref=e6800]: 3/9/2026 11:52 AM
+                        - generic [ref=e6801]: "Ніхто останнім часом не запускав .\\localdev InitDocker? Постійно падає підчас виконнання rкоманди docker pull з помилкою failed to copy: local error: tls: bad record MAC VPN постійно під'єднаний, так як тепер він навіть потрібен для доступу до dvdat. Можливо у ньому проблема."
+                    - paragraph [ref=e6802]: у мене таке було, я десь тричі перезапускав і пройшов той степ
+        - generic [ref=e2020]: has context menu
+      - generic [ref=e2033]:
+        - generic [ref=e2034]:
+          - textbox "Type a message" [ref=e2035]:
+            - paragraph [ref=e2036]: Type a message
+          - generic:
+            - log
+            - log
+        - generic [ref=e2037]:
+          - toolbar [ref=e2038]:
+            - button "Show Formatting options (Ctrl+Shift+X)" [ref=e2039] [cursor=pointer]:
+              - img [ref=e2041]
+            - button "Emoji, GIFs and Stickers" [ref=e2044] [cursor=pointer]:
+              - img [ref=e2046]
+            - button "Loop components (Ctrl+Alt+L)" [ref=e2048] [cursor=pointer]:
+              - img [ref=e2050]
+            - button "Actions and apps" [ref=e2053] [cursor=pointer]:
+              - img [ref=e2055]
+          - toolbar "Actions for new message" [ref=e2057]:
+            - generic [ref=e3394]:
+              - button "Send (Ctrl+Enter)" [ref=e3395] [cursor=pointer]:
+                - img [ref=e3397]
+              - generic [ref=e3400]: has context menu
+    - generic [ref=e5702]:
+      - slider "Resize right panel" [ref=e5704]
+      - generic [ref=e5908]:
+        - generic [ref=e5909]:
+          - heading "Find in chat" [level=2] [ref=e5911]
+          - toolbar "Actions" [ref=e5912]:
+            - button "Dismiss" [ref=e5914]:
+              - img [ref=e5916]
+        - generic [ref=e5921]:
+          - textbox "Enter a search keyword..." [ref=e5923]: доступ
+          - button "Clear query" [ref=e5955]:
+            - generic [ref=e5956]: Clear
+        - toolbar "search filters" [ref=e5926]:
+          - button "Has attachment" [ref=e5928]:
+            - generic [ref=e5929]: Has attachment
+        - grid [ref=e5964]:
+          - heading "March 2026" [level=3] [ref=e5966]
+          - row "Mykhailo Struk Monday, March 30, 2026 Це нова віча що реалізували перед Новим Роком, щоб покращити сек'юріті..." [ref=e5968] [cursor=pointer]:
+            - generic [ref=e5970]:
+              - generic [ref=e5972]:
+                - img [ref=e5973]
+                - img [ref=e5974]:
+                  - img [ref=e5976]
+              - generic [ref=e5978]:
+                - generic [ref=e5979]:
+                  - generic [ref=e5980]: Mykhailo Struk
+                  - generic "Monday, March 30, 2026" [ref=e5981]: 3/30
+                - generic [ref=e5982]: Це нова віча що реалізували перед Новим Роком, щоб покращити сек'юріті...
+          - row "Vitalii Tymokhin Monday, March 9, 2026 ...під'єднаний, так як тепер він навіть потрібен для доступ у до dvdat...." [selected] [ref=e5985] [cursor=pointer]:
+            - generic [ref=e5987]:
+              - generic [ref=e5989]:
+                - img [ref=e5990]
+                - img [ref=e5991]:
+                  - img [ref=e5993]
+              - generic [ref=e5995]:
+                - generic [ref=e5996]:
+                  - generic [ref=e5997]: Vitalii Tymokhin
+                  - generic "Monday, March 9, 2026" [ref=e5998]: 3/9
+                - generic [ref=e5999]:
+                  - text: ...під'єднаний, так як тепер він навіть потрібен для
+                  - generic [ref=e6000]: доступ
+                  - text: у до dvdat....
+          - row "Mykhailo Struk Monday, March 9, 2026 ...під'єднаний, так як тепер він навіть потрібен для доступ у до dvdat...." [ref=e6003] [cursor=pointer]:
+            - generic [ref=e6005]:
+              - generic [ref=e6007]:
+                - img [ref=e6008]
+                - img [ref=e6009]:
+                  - img [ref=e6011]
+              - generic [ref=e6013]:
+                - generic [ref=e6014]:
+                  - generic [ref=e6015]: Mykhailo Struk
+                  - generic "Monday, March 9, 2026" [ref=e6016]: 3/9
+                - generic [ref=e6017]:
+                  - text: ...під'єднаний, так як тепер він навіть потрібен для
+                  - generic [ref=e6018]: доступ
+                  - text: у до dvdat....
+          - heading "February 2026" [level=3] [ref=e6021]
+          - row "Mykhailo Struk Monday, February 16, 2026 ...TearDown, але він не всім доступ ний та про нього часто забувають коли..." [ref=e6023] [cursor=pointer]:
+            - generic [ref=e6025]:
+              - generic [ref=e6027]:
+                - img [ref=e6028]
+                - img [ref=e6029]:
+                  - img [ref=e6031]
+              - generic [ref=e6033]:
+                - generic [ref=e6034]:
+                  - generic [ref=e6035]: Mykhailo Struk
+                  - generic "Monday, February 16, 2026" [ref=e6036]: 2/16
+                - generic [ref=e6037]:
+                  - text: ...TearDown, але він не всім
+                  - generic [ref=e6038]: доступ
+                  - text: ний та про нього часто забувають коли...
+          - heading "January 2026" [level=3] [ref=e6041]
+          - row "Nataliia Velychko Thursday, January 29, 2026 ...перелопатила, куди у мене є доступ и. воно має падати на тіму Ананда" [ref=e6043] [cursor=pointer]:
+            - generic [ref=e6045]:
+              - generic [ref=e6047]:
+                - img [ref=e6048]
+                - img [ref=e6049]:
+                  - img [ref=e6051]
+              - generic [ref=e6053]:
+                - generic [ref=e6054]:
+                  - generic [ref=e6055]: Nataliia Velychko
+                  - generic "Thursday, January 29, 2026" [ref=e6056]: 1/29
+                - generic [ref=e6057]:
+                  - text: ...перелопатила, куди у мене є
+                  - generic [ref=e6058]: доступ
+                  - text: и. воно має падати на тіму Ананда
+  - generic [ref=e2068]: Press Enter to explore message content, then use Escape to shift focus back to the message.

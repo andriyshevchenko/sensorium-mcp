@@ -1,0 +1,920 @@
+- application [ref=e7]:
+  - generic [ref=e11]:
+    - generic [ref=e15]:
+      - generic [ref=e17]:
+        - button "Open office app launcher" [ref=e18]:
+          - img [ref=e20]
+        - img [ref=e22]
+      - search [ref=e43]:
+        - button [ref=e44]:
+          - img [ref=e45]
+        - combobox "Look for people, messages, files and more" [expanded] [active] [ref=e4603]
+        - listbox "Search suggestions" [ref=e2339]:
+          - generic [ref=e4604]:
+            - group [ref=e4605]:
+              - generic [ref=e4606]:
+                - option "Messages" [ref=e4608]:
+                  - generic [ref=e4610]: Messages
+                - option "Files" [ref=e4612]:
+                  - generic [ref=e4614]: Files
+                - option "Channels" [ref=e4616]:
+                  - generic [ref=e4618]: Channels
+                - option "Group chats" [ref=e4620]:
+                  - generic [ref=e4622]: Group chats
+                - option "Meetings" [ref=e4624]:
+                  - generic [ref=e4626]: Meetings
+                - option "Images" [ref=e4628]:
+                  - generic [ref=e4630]: Images
+            - group "People" [ref=e4631]:
+              - text: People
+              - generic [ref=e4633]:
+                - option "Person Vitalii Tymokhin" [ref=e4635]:
+                  - img [ref=e4637]:
+                    - generic [ref=e4638]: V
+                    - img [ref=e4639]
+                  - generic [ref=e4640]:
+                    - paragraph [ref=e4642]: Vitalii
+                    - paragraph [ref=e4644]:
+                      - generic [ref=e4645]: Tymokhin
+                - option "Person Nataliia Velychko" [ref=e4647]:
+                  - img [ref=e4649]:
+                    - generic [ref=e4650]: "N"
+                    - img [ref=e4651]
+                  - generic [ref=e4652]:
+                    - paragraph [ref=e4654]: Nataliia
+                    - paragraph [ref=e4656]:
+                      - generic [ref=e4657]: Velychko
+                - option "Person Mark Heath" [ref=e4659]:
+                  - img [ref=e4661]:
+                    - generic [ref=e4662]: M
+                    - img [ref=e4663]
+                  - generic [ref=e4664]:
+                    - paragraph [ref=e4666]: Mark
+                    - paragraph [ref=e4668]:
+                      - generic [ref=e4669]: Heath
+                - option "Person Andrzej Siedy" [ref=e4671]:
+                  - img [ref=e4673]:
+                    - generic [ref=e4674]: A
+                    - img [ref=e4675]
+                  - generic [ref=e4676]:
+                    - paragraph [ref=e4678]: Andrzej
+                    - paragraph [ref=e4680]:
+                      - generic [ref=e4681]: Siedy
+                - option "Person Oleksandr Ivanov" [ref=e4683]:
+                  - img [ref=e4685]:
+                    - generic [ref=e4686]: O
+                    - img [ref=e4687]
+                  - generic [ref=e4688]:
+                    - paragraph [ref=e4690]: Oleksandr
+                    - paragraph [ref=e4692]:
+                      - generic [ref=e4693]: Ivanov
+            - group "Suggestions" [ref=e4694]:
+              - text: Suggestions
+              - generic [ref=e4695]:
+                - option "Group chat Team Vitalii Feb26 kick-off meeting, Use arrow keys to access controls" [ref=e4696]:
+                  - img [ref=e4698]
+                  - paragraph [ref=e4702]: Team Vitalii Feb26 kick-off meeting
+                - option "Group chat Team Vitalii Completion meeting, Use arrow keys to access controls" [ref=e4703]:
+                  - img [ref=e4705]
+                  - paragraph [ref=e4709]: Team Vitalii Completion meeting
+                - option "Discuss cards for Kick-off April meeting 2 Apr Thursday, 12:00 pm - 1:00 pm" [ref=e4710]:
+                  - generic [ref=e4711]:
+                    - paragraph [ref=e4712]: "2"
+                    - paragraph [ref=e4713]: Apr
+                  - generic [ref=e4714]:
+                    - paragraph [ref=e4716]: Discuss cards for Kick-off April meeting
+                    - generic [ref=e4717]:
+                      - paragraph [ref=e4719]: Thursday, 12:00 pm - 1:00 pm
+                      - paragraph [ref=e4722]: Vitalii invited you, Mykhailo, Yevhenii, Artem, Volodymyr +5 others
+                - option "Group chat Team Vitalii T, Halyna, Artem, Mykhailo, +6" [ref=e4723]:
+                  - img [ref=e4725]:
+                    - generic [ref=e4726]: TT
+                    - img [ref=e4727]
+                  - generic [ref=e4728]:
+                    - paragraph [ref=e4730]: Team Vitalii T
+                    - paragraph [ref=e4732]:
+                      - generic [ref=e4733]: Halyna, Artem, Mykhailo, +6
+                - option "Word file result NICE Investigate Investigator portal product specification (1).docx, Created by Oleksandr Ivanov, Use arrow keys to access controls" [ref=e4734]:
+                  - img [ref=e4736]
+                  - generic [ref=e4746]:
+                    - paragraph [ref=e4748]: NICE Investigate Investigator portal product specification (1).docx
+                    - paragraph [ref=e4750]:
+                      - generic [ref=e4751]: Created by Oleksandr Ivanov
+          - status [ref=e4752]: 10 suggestions available for , 5 in People, 5 in Suggestions
+      - generic [ref=e53]:
+        - button "Settings and more" [ref=e55]:
+          - generic [ref=e2753]:
+            - img [ref=e2754]
+            - generic [ref=e2756]: 53 days left
+          - img [ref=e58]
+        - button "Your profile, status Available" [ref=e62]:
+          - img "Profile picture of Andrii Shevchenko." [ref=e63]:
+            - generic [ref=e64]: AS
+            - img [ref=e65]
+            - img "available" [ref=e66]:
+              - img [ref=e68]
+    - group [ref=e73]:
+      - img [ref=e75]
+      - generic [ref=e77]: Stay in the know. Turn on desktop notifications.
+      - button "Turn on" [ref=e79]
+      - button "Close" [ref=e81]:
+        - img [ref=e83]
+    - generic [ref=e87]:
+      - generic [ref=e89]:
+        - navigation "Apps" [ref=e91]:
+          - generic "Activity (Ctrl+Shift+1)" [ref=e93]:
+            - button "Activity (Ctrl+Shift+1)" [ref=e94]:
+              - generic [ref=e95]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Activity
+          - generic "Chat (Ctrl+Shift+2)" [ref=e97]:
+            - button "Chat (Ctrl+Shift+2)" [pressed] [ref=e98]:
+              - generic [ref=e99]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Chat
+          - generic "IT Support (Ctrl+Shift+3)" [ref=e101]:
+            - button "IT Support (Ctrl+Shift+3)" [ref=e102]:
+              - generic [ref=e103]:
+                - generic:
+                  - generic:
+                    - img "IT Support"
+                    - img
+                  - generic: IT Support
+          - generic "Teams (Ctrl+Shift+4)" [ref=e105]:
+            - button "Teams (Ctrl+Shift+4)" [ref=e106]:
+              - generic [ref=e107]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Teams
+        - generic [ref=e108]:
+          - generic "View more apps" [ref=e109]:
+            - button "View more apps" [ref=e110]:
+              - generic [ref=e111]:
+                - generic:
+                  - generic:
+                    - img
+          - generic "Apps" [ref=e113]:
+            - button "Apps" [ref=e114]:
+              - generic [ref=e115]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Apps
+      - generic [ref=e118]: Has context menu
+    - generic [ref=e121]:
+      - generic [ref=e122]:
+        - generic [ref=e123]:
+          - heading "Chat" [level=1] [ref=e124]
+          - toolbar "Rail actions" [ref=e125]:
+            - button "More list options" [ref=e127]:
+              - img [ref=e130]
+            - button "Show filter text box (Ctrl+Shift+F)" [ref=e132]:
+              - img [ref=e134]
+            - button "New message (Alt+Shift+N)" [ref=e136]:
+              - img [ref=e138]
+            - button "New items" [ref=e140]:
+              - img [ref=e142]
+        - tree [ref=e145]:
+          - generic [ref=e146]:
+            - treeitem "Mentions" [level=1] [ref=e147] [cursor=pointer]:
+              - generic [ref=e148]:
+                - img [ref=e151]
+                - generic [ref=e153]: Mentions
+            - separator [ref=e154]
+          - treeitem "Chats" [expanded] [level=1] [ref=e155] [cursor=pointer]:
+            - generic [ref=e156]:
+              - img [ref=e158]
+              - generic [ref=e161]: Chats
+            - group [ref=e162]:
+              - treeitem "Chat Vitalii Kyian Available Last message Draft Draft" [level=2] [ref=e3160]:
+                - generic [ref=e2763]:
+                  - generic [ref=e2767]:
+                    - img [ref=e2768]
+                    - img [ref=e2769]:
+                      - img [ref=e2771]
+                  - generic [ref=e2773]:
+                    - generic [ref=e2774]:
+                      - generic [ref=e2777]: Vitalii Kyian
+                      - generic:
+                        - time
+                    - generic [ref=e2778]:
+                      - generic [ref=e2779]: Draft
+                      - img [ref=e3162]
+              - 'treeitem "Unread message Meeting chat AI-First Transition Approach for Investigate 2.7 Last message Serhii: I believe you could create one manually Muted 4:47 PM" [level=2] [ref=e2073]':
+                - generic [ref=e164]:
+                  - img [ref=e167]:
+                    - img [ref=e169]
+                  - generic [ref=e171]:
+                    - generic [ref=e2074]: Unread
+                    - generic [ref=e172]:
+                      - generic [ref=e175]: AI-First Transition Approach for Investigate 2.7
+                      - time [ref=e177]: 4:47 PM
+                    - generic [ref=e179]: "Serhii: I believe you could create one manually"
+              - 'treeitem "Group chat Team Vitalii T Has pinned messages Last message Volodymyr: ні Muted 3:47 PM" [level=2] [ref=e187]':
+                - generic [ref=e188]:
+                  - img [ref=e191]:
+                    - img [ref=e193]
+                  - generic [ref=e195]:
+                    - generic [ref=e196]:
+                      - generic [ref=e199]: Team Vitalii T
+                      - time [ref=e201]: 3:47 PM
+                    - generic [ref=e203]: "Volodymyr: ні"
+              - treeitem "Chat Mykhailo Struk Available Last message не планував 12:23 PM" [level=2] [ref=e204]:
+                - generic [ref=e205]:
+                  - generic [ref=e2076]:
+                    - img [ref=e2077]
+                    - img [ref=e2078]:
+                      - img [ref=e2080]
+                  - generic [ref=e214]:
+                    - generic [ref=e215]:
+                      - generic [ref=e218]: Mykhailo Struk
+                      - time [ref=e220]: 12:23 PM
+                    - generic [ref=e222]: не планував
+              - treeitem "Meeting chat NICE DSI Team Lumina Sync-Up Last message Recording is ready 3/31" [level=2] [ref=e223]:
+                - generic [ref=e224]:
+                  - img [ref=e227]:
+                    - img [ref=e229]
+                  - generic [ref=e231]:
+                    - generic [ref=e232]:
+                      - generic [ref=e235]: NICE DSI Team Lumina Sync-Up
+                      - time [ref=e237]: 3/31
+                    - generic [ref=e239]: Recording is ready
+              - treeitem "Meeting chat Team Vitalii Completion meeting Last message Recording is ready 3/31" [level=2] [ref=e240]:
+                - generic [ref=e241]:
+                  - img [ref=e244]:
+                    - img [ref=e246]
+                  - generic [ref=e248]:
+                    - generic [ref=e249]:
+                      - generic [ref=e252]: Team Vitalii Completion meeting
+                      - time [ref=e254]: 3/31
+                    - generic [ref=e256]: Recording is ready
+              - 'treeitem "Group chat SAS GL Last message Nataliia: нагадаю про вихідні у наступному спрінті 3/31" [level=2] [ref=e257]':
+                - generic [ref=e258]:
+                  - img [ref=e261]
+                  - generic [ref=e262]:
+                    - generic [ref=e263]:
+                      - generic [ref=e266]: SAS GL
+                      - time [ref=e268]: 3/31
+                    - generic [ref=e270]: "Nataliia: нагадаю про вихідні у наступному спрінті"
+              - 'treeitem "Meeting chat Review cards before completeon Last message Nataliia: оце всі задачі на квітень 3/30" [level=2] [ref=e271]':
+                - generic [ref=e272]:
+                  - img [ref=e275]:
+                    - img [ref=e277]
+                  - generic [ref=e279]:
+                    - generic [ref=e280]:
+                      - generic [ref=e283]: Review cards before completeon
+                      - time [ref=e285]: 3/30
+                    - generic [ref=e287]: "Nataliia: оце всі задачі на квітень"
+              - 'treeitem "Meeting chat Team Vitalii tea Last message Mykhailo: Tech Debt Item 224462: Request service: Revisit helpers usage to update request and … 3/26" [level=2] [ref=e288]':
+                - generic [ref=e289]:
+                  - img [ref=e292]:
+                    - img [ref=e294]
+                  - generic [ref=e296]:
+                    - generic [ref=e297]:
+                      - generic [ref=e300]: Team Vitalii tea
+                      - time [ref=e302]: 3/26
+                    - generic [ref=e304]: "Mykhailo: Tech Debt Item 224462: Request service: Revisit helpers usage to update request and …"
+              - 'treeitem "Meeting chat Review current state for tasks and bugs Last message You: Дякую 3/20" [level=2] [ref=e305]':
+                - generic [ref=e306]:
+                  - img [ref=e309]:
+                    - img [ref=e311]
+                  - generic [ref=e313]:
+                    - generic [ref=e314]:
+                      - generic [ref=e317]: Review current state for tasks and bugs
+                      - time [ref=e319]: 3/20
+                    - generic [ref=e321]: "You: Дякую"
+              - 'treeitem "Meeting chat Discuss next steps for the bug 279605 Last message Mark: I have added a comment about removing the Python test tool and marked as approved wi… 3/20" [level=2] [ref=e322]':
+                - generic [ref=e323]:
+                  - img [ref=e326]:
+                    - img [ref=e328]
+                  - generic [ref=e330]:
+                    - generic [ref=e331]:
+                      - generic [ref=e334]: Discuss next steps for the bug 279605
+                      - time [ref=e336]: 3/20
+                    - generic [ref=e338]: "Mark: I have added a comment about removing the Python test tool and marked as approved wi…"
+              - 'treeitem "Meeting chat SAS GL Team meeting Last message Mykhailo: Вибачаюсь, не вдається під''єднатися. Треба бути на іншому колі 3/19" [level=2] [ref=e339]':
+                - generic [ref=e340]:
+                  - img [ref=e343]:
+                    - img [ref=e345]
+                  - generic [ref=e347]:
+                    - generic [ref=e348]:
+                      - generic [ref=e351]: SAS GL Team meeting
+                      - time [ref=e353]: 3/19
+                    - generic [ref=e355]: "Mykhailo: Вибачаюсь, не вдається під'єднатися. Треба бути на іншому колі"
+              - treeitem "Chat Vitalii Tymokhin Available Last message запитаю його 3/19" [level=2] [ref=e2082]:
+                - generic [ref=e357]:
+                  - generic [ref=e2084]:
+                    - img [ref=e2085]
+                    - img [ref=e2086]:
+                      - img [ref=e2088]
+                  - generic [ref=e366]:
+                    - generic [ref=e367]:
+                      - generic [ref=e370]: Vitalii Tymokhin
+                      - time [ref=e372]: 3/19
+                    - generic [ref=e374]: запитаю його
+              - treeitem "Meeting chat How to set up and configure DSG for a deployed Investigate system Last message Recording is ready 3/19" [level=2] [ref=e375]:
+                - generic [ref=e376]:
+                  - img [ref=e379]:
+                    - img [ref=e381]
+                  - generic [ref=e383]:
+                    - generic [ref=e384]:
+                      - generic [ref=e387]: How to set up and configure DSG for a deployed Investigate system
+                      - time [ref=e389]: 3/19
+                    - generic [ref=e391]: Recording is ready
+              - 'treeitem "Chat Yevhenii Bondarenko Away Last message You: Є 3/19" [level=2] [ref=e392]':
+                - generic [ref=e393]:
+                  - generic [ref=e2091]:
+                    - img [ref=e2092]
+                    - img [ref=e2093]:
+                      - img [ref=e2095]
+                  - generic [ref=e402]:
+                    - generic [ref=e403]:
+                      - generic [ref=e406]: Yevhenii Bondarenko
+                      - time [ref=e408]: 3/19
+                    - generic [ref=e410]: "You: Є"
+              - 'treeitem "Chat Nataliia Velychko In a call Last message You: Дерил відмовився наскільки я зрозумів, коли я пропонував 3/19" [level=2] [ref=e411]':
+                - generic [ref=e412]:
+                  - generic [ref=e2098]:
+                    - img [ref=e2099]
+                    - img [ref=e2100]:
+                      - img [ref=e2102]
+                  - generic [ref=e421]:
+                    - generic [ref=e422]:
+                      - generic [ref=e425]: Nataliia Velychko
+                      - time [ref=e427]: 3/19
+                    - generic [ref=e429]: "You: Дерил відмовився наскільки я зрозумів, коли я пропонував"
+              - 'treeitem "Chat Andrii Shevchenko (You) You: You mentioned this. I want this Winner for richest detection: VANPY • 15+ … 3/11" [level=2] [ref=e430]':
+                - generic [ref=e431]:
+                  - generic [ref=e2105]:
+                    - img [ref=e2106]
+                    - img [ref=e2107]:
+                      - img [ref=e2109]
+                  - generic [ref=e440]:
+                    - generic [ref=e441]:
+                      - generic [ref=e444]: Andrii Shevchenko (You)
+                      - time [ref=e446]: 3/11
+                    - generic [ref=e448]: "You: You mentioned this. I want this Winner for richest detection: VANPY • 15+ …"
+              - treeitem "Meeting chat Public Safety & Justice Q1 all hands (option 2 of 2) Last message Recording is ready Muted 3/11" [level=2] [ref=e449]:
+                - generic [ref=e450]:
+                  - img [ref=e453]:
+                    - img [ref=e455]
+                  - generic [ref=e457]:
+                    - generic [ref=e458]:
+                      - generic [ref=e461]: Public Safety & Justice Q1 all hands (option 2 of 2)
+                      - time [ref=e463]: 3/11
+                    - generic [ref=e465]: Recording is ready
+              - treeitem "Meeting chat Public Safety Q1 all hands update (option 1 of 2) Last message Recording is ready 3/10" [level=2] [ref=e466]:
+                - generic [ref=e467]:
+                  - img [ref=e470]:
+                    - img [ref=e472]
+                  - generic [ref=e474]:
+                    - generic [ref=e475]:
+                      - generic [ref=e478]: Public Safety Q1 all hands update (option 1 of 2)
+                      - time [ref=e480]: 3/10
+                    - generic [ref=e482]: Recording is ready
+              - treeitem "Meeting chat Team Vitalii Feb26 kick-off meeting Last message Recording is ready 3/6" [level=2] [ref=e483]:
+                - generic [ref=e484]:
+                  - img [ref=e487]:
+                    - img [ref=e489]
+                  - generic [ref=e491]:
+                    - generic [ref=e492]:
+                      - generic [ref=e495]: Team Vitalii Feb26 kick-off meeting
+                      - time [ref=e497]: 3/6
+                    - generic [ref=e499]: Recording is ready
+              - 'treeitem "Meeting chat Knowledge sharing: Support tools Last message Halyna: все гуд дякую 3/5" [level=2] [ref=e500]':
+                - generic [ref=e501]:
+                  - img [ref=e504]:
+                    - img [ref=e506]
+                  - generic [ref=e508]:
+                    - generic [ref=e509]:
+                      - generic [ref=e512]: "Knowledge sharing: Support tools"
+                      - time [ref=e514]: 3/5
+                    - generic [ref=e516]: "Halyna: все гуд дякую"
+              - 'treeitem "Meeting chat Team Vitalii Mar26 Lessons learned Last message Artem: Виглядає круто) Дякую 3/4" [level=2] [ref=e3737]':
+                - generic [ref=e3738]:
+                  - img [ref=e3741]:
+                    - img [ref=e3743]
+                  - generic [ref=e3745]:
+                    - generic [ref=e3746]:
+                      - generic [ref=e3749]: Team Vitalii Mar26 Lessons learned
+                      - time [ref=e3751]: 3/4
+                    - generic [ref=e3753]: "Artem: Виглядає круто) Дякую"
+              - 'treeitem "Meeting chat Assign cards for March iteration Last message Vitalii: можна крім реквест сервісу подивиться ще юніт тести в External API 3/3" [level=2] [ref=e3754]':
+                - generic [ref=e3755]:
+                  - img [ref=e3758]:
+                    - img [ref=e3760]
+                  - generic [ref=e3762]:
+                    - generic [ref=e3763]:
+                      - generic [ref=e3766]: Assign cards for March iteration
+                      - time [ref=e3768]: 3/3
+                    - generic [ref=e3770]: "Vitalii: можна крім реквест сервісу подивиться ще юніт тести в External API"
+              - treeitem "Meeting chat Team Vitalii Feb26 Completion meeting Last message Recording is ready 2/27" [level=2] [ref=e3771]:
+                - generic [ref=e3772]:
+                  - img [ref=e3775]:
+                    - img [ref=e3777]
+                  - generic [ref=e3779]:
+                    - generic [ref=e3780]:
+                      - generic [ref=e3783]: Team Vitalii Feb26 Completion meeting
+                      - time [ref=e3785]: 2/27
+                    - generic [ref=e3787]: Recording is ready
+              - treeitem "Meeting chat Team Vitalii March Pre-Planning Update Last message Recording is ready 2/26" [level=2] [ref=e3788]:
+                - generic [ref=e3789]:
+                  - img [ref=e3792]:
+                    - img [ref=e3794]
+                  - generic [ref=e3796]:
+                    - generic [ref=e3797]:
+                      - generic [ref=e3800]: Team Vitalii March Pre-Planning Update
+                      - time [ref=e3802]: 2/26
+                    - generic [ref=e3804]: Recording is ready
+              - 'treeitem "Group chat Mykhailo and Vitalii Last message You: Тепер я зрозумів в чому справа. На онсайті впало з помилкою Response status c… 2/26" [level=2] [ref=e3805]':
+                - generic [ref=e3806]:
+                  - img [ref=e3809]
+                  - generic [ref=e3810]:
+                    - generic [ref=e3811]:
+                      - generic [ref=e3814]: Mykhailo and Vitalii
+                      - time [ref=e3816]: 2/26
+                    - generic [ref=e3818]: "You: Тепер я зрозумів в чому справа. На онсайті впало з помилкою Response status c…"
+              - treeitem "Chat Mark Heath In a call Last message I have a lot of meetings this morning, but I do want to get round to discussing this… 2/25" [level=2] [ref=e3819]:
+                - generic [ref=e3820]:
+                  - generic [ref=e3824]:
+                    - img [ref=e3825]
+                    - img [ref=e3826]:
+                      - img [ref=e3828]
+                  - generic [ref=e3830]:
+                    - generic [ref=e3831]:
+                      - generic [ref=e3834]: Mark Heath
+                      - time [ref=e3836]: 2/25
+                    - generic [ref=e3838]: I have a lot of meetings this morning, but I do want to get round to discussing this…
+              - treeitem "Chat Andrzej Siedy Away Last message I think we should removed them ask Jon Kipping 2/24" [level=2] [ref=e3839]:
+                - generic [ref=e3840]:
+                  - generic [ref=e3844]:
+                    - img [ref=e3845]
+                    - img [ref=e3846]:
+                      - img [ref=e3848]
+                  - generic [ref=e3850]:
+                    - generic [ref=e3851]:
+                      - generic [ref=e3854]: Andrzej Siedy
+                      - time [ref=e3856]: 2/24
+                    - generic [ref=e3858]: I think we should removed them ask Jon Kipping
+              - 'treeitem "Meeting chat Review open bugs Last message Mykhailo: https://dev.azure.com/NICEPSRND/Investigate/_workitems/edit/289467 2/24" [level=2] [ref=e3859]':
+                - generic [ref=e3860]:
+                  - img [ref=e3863]:
+                    - img [ref=e3865]
+                  - generic [ref=e3867]:
+                    - generic [ref=e3868]:
+                      - generic [ref=e3871]: Review open bugs
+                      - time [ref=e3873]: 2/24
+                    - generic [ref=e3875]: "Mykhailo: https://dev.azure.com/NICEPSRND/Investigate/_workitems/edit/289467"
+              - 'treeitem "Meeting chat Monthly SAS Architecture Update Last message Paul: If anyone is interested in the sales demo of the AI assistant then the link is here … 2/12" [level=2] [ref=e3876]':
+                - generic [ref=e3877]:
+                  - img [ref=e3880]:
+                    - img [ref=e3882]
+                  - generic [ref=e3884]:
+                    - generic [ref=e3885]:
+                      - generic [ref=e3888]: Monthly SAS Architecture Update
+                      - time [ref=e3890]: 2/12
+                    - generic [ref=e3892]: "Paul: If anyone is interested in the sales demo of the AI assistant then the link is here …"
+              - 'treeitem "Meeting chat Knowledge Sharing: Request Service Automation Tests (Isolated Tests) Last message Halyna: дякую 2/11" [level=2] [ref=e3893]':
+                - generic [ref=e3894]:
+                  - img [ref=e3897]:
+                    - img [ref=e3899]
+                  - generic [ref=e3901]:
+                    - generic [ref=e3902]:
+                      - generic [ref=e3905]: "Knowledge Sharing: Request Service Automation Tests (Isolated Tests)"
+                      - time [ref=e3907]: 2/11
+                    - generic [ref=e3909]: "Halyna: дякую"
+              - treeitem "Meeting chat Feb 26 Team Vitalii Commitment meeting Last message Recording is ready 2/10" [level=2] [ref=e3910]:
+                - generic [ref=e3911]:
+                  - img [ref=e3914]:
+                    - img [ref=e3916]
+                  - generic [ref=e3918]:
+                    - generic [ref=e3919]:
+                      - generic [ref=e3922]: Feb 26 Team Vitalii Commitment meeting
+                      - time [ref=e3924]: 2/10
+                    - generic [ref=e3926]: Recording is ready
+              - 'treeitem "Meeting chat Review tasks before Commitment meeting Last message Yevhenii: Напишу туди як впустять) 2/9" [level=2] [ref=e3927]':
+                - generic [ref=e3928]:
+                  - img [ref=e3931]:
+                    - img [ref=e3933]
+                  - generic [ref=e3935]:
+                    - generic [ref=e3936]:
+                      - generic [ref=e3939]: Review tasks before Commitment meeting
+                      - time [ref=e3941]: 2/9
+                    - generic [ref=e3943]: "Yevhenii: Напишу туди як впустять)"
+              - treeitem "Group chat Placeholder - DSI - Q&A You can't send messages because you are not a member of the chat. Last message 2/4" [level=2] [ref=e3944]:
+                - generic [ref=e3945]:
+                  - img [ref=e3948]
+                  - generic [ref=e3950]:
+                    - generic [ref=e3953]: Placeholder - DSI - Q&A
+                    - time [ref=e3955]: 2/4
+              - treeitem "Meeting chat Iteration process overview Last message Recording is ready 2/4" [level=2] [ref=e3956]:
+                - generic [ref=e3957]:
+                  - img [ref=e3960]:
+                    - img [ref=e3962]
+                  - generic [ref=e3964]:
+                    - generic [ref=e3965]:
+                      - generic [ref=e3968]: Iteration process overview
+                      - time [ref=e3970]: 2/4
+                    - generic [ref=e3972]: Recording is ready
+              - 'treeitem "Meeting chat Review and estimate cards before kick-off Last message Volodymyr: Mykhailo Struk у техдебті про налаштування, побачив Action як параметр, можливо піді… 2/3" [level=2] [ref=e3973]':
+                - generic [ref=e3974]:
+                  - img [ref=e3977]:
+                    - img [ref=e3979]
+                  - generic [ref=e3981]:
+                    - generic [ref=e3982]:
+                      - generic [ref=e3985]: Review and estimate cards before kick-off
+                      - time [ref=e3987]: 2/3
+                    - generic [ref=e3989]: "Volodymyr: Mykhailo Struk у техдебті про налаштування, побачив Action як параметр, можливо піді…"
+              - 'treeitem "Meeting chat Knownledge Sharing: Request Service Overview Last message Artem: і скачати теж можна. Дякую 2/3" [level=2] [ref=e3990]':
+                - generic [ref=e3991]:
+                  - img [ref=e3994]:
+                    - img [ref=e3996]
+                  - generic [ref=e3998]:
+                    - generic [ref=e3999]:
+                      - generic [ref=e4002]: "Knownledge Sharing: Request Service Overview"
+                      - time [ref=e4004]: 2/3
+                    - generic [ref=e4006]: "Artem: і скачати теж можна. Дякую"
+              - 'treeitem "Meeting chat Team Vitali Pre-planning February - placeholder Last message Mykhailo: Hi Darryl, Matthew, Can you advice which one of the tech debts it''s better to pick … 2/2" [level=2] [ref=e4007]':
+                - generic [ref=e4008]:
+                  - img [ref=e4011]:
+                    - img [ref=e4013]
+                  - generic [ref=e4015]:
+                    - generic [ref=e4016]:
+                      - generic [ref=e4019]: Team Vitali Pre-planning February - placeholder
+                      - time [ref=e4021]: 2/2
+                    - generic [ref=e4023]: "Mykhailo: Hi Darryl, Matthew, Can you advice which one of the tech debts it's better to pick …"
+              - 'treeitem "Meeting chat Discuss the tasks for Feb iteration Last message Mykhailo: Request service tech debts - https://dev.azure.com/NICEPSRND/Investigate/_queries/qu… 1/29" [level=2] [ref=e4024]':
+                - generic [ref=e4025]:
+                  - img [ref=e4028]:
+                    - img [ref=e4030]
+                  - generic [ref=e4032]:
+                    - generic [ref=e4033]:
+                      - generic [ref=e4036]: Discuss the tasks for Feb iteration
+                      - time [ref=e4038]: 1/29
+                    - generic [ref=e4040]: "Mykhailo: Request service tech debts - https://dev.azure.com/NICEPSRND/Investigate/_queries/qu…"
+              - treeitem "Chat Kondba Jatale Offline Last message Hi Andrii, just confirming that there’s no need to reopen the bug—the fix is working… 1/22" [level=2] [ref=e4041]:
+                - generic [ref=e4042]:
+                  - generic [ref=e4046]:
+                    - img [ref=e4047]
+                    - img [ref=e4048]:
+                      - img [ref=e4050]
+                  - generic [ref=e4052]:
+                    - generic [ref=e4053]:
+                      - generic [ref=e4056]: Kondba Jatale
+                      - time [ref=e4058]: 1/22
+                    - generic [ref=e4060]: Hi Andrii, just confirming that there’s no need to reopen the bug—the fix is working…
+              - 'treeitem "Group chat Amol, Nessa, and Ryan Last message Ryan: sorry had to pivot to a few other things while this conversation was going. Thanks f… 1/17" [level=2] [ref=e4061]':
+                - generic [ref=e4062]:
+                  - img [ref=e4065]
+                  - generic [ref=e4066]:
+                    - generic [ref=e4067]:
+                      - generic [ref=e4070]: Amol, Nessa, and Ryan
+                      - time [ref=e4072]: 1/17
+                    - generic [ref=e4074]: "Ryan: sorry had to pivot to a few other things while this conversation was going. Thanks f…"
+              - treeitem "Meeting chat Team Oleksandr Jan 26 Commitment Review Last message Recording is ready 1/16" [level=2] [ref=e4075]:
+                - generic [ref=e4076]:
+                  - img [ref=e4079]:
+                    - img [ref=e4081]
+                  - generic [ref=e4083]:
+                    - generic [ref=e4084]:
+                      - generic [ref=e4087]: Team Oleksandr Jan 26 Commitment Review
+                      - time [ref=e4089]: 1/16
+                    - generic [ref=e4091]: Recording is ready
+              - treeitem "Workflows Bot Available Workflows 1/16 Currently there is no description for flow \"Describe\"." [level=2] [ref=e4092]:
+                - generic [ref=e2112]:
+                  - button "Workflows Bot Available" [ref=e4093]:
+                    - img [ref=e2116]
+                  - generic [ref=e2117]:
+                    - generic [ref=e2118]:
+                      - generic [ref=e2121]: Workflows
+                      - time [ref=e2123]: 1/16
+                    - generic [ref=e2125]: Currently there is no description for flow "Describe".
+              - 'treeitem "Meeting chat Discuss net 10 update tech debts Last message Mykhailo: https://dev.azure.com/NICEPSRND/Investigate/_git/Investigate.RequestService?path=/sr… 1/14" [level=2] [ref=e4094]':
+                - generic [ref=e4095]:
+                  - img [ref=e4098]:
+                    - img [ref=e4100]
+                  - generic [ref=e4102]:
+                    - generic [ref=e4103]:
+                      - generic [ref=e4106]: Discuss net 10 update tech debts
+                      - time [ref=e4108]: 1/14
+                    - generic [ref=e4110]: "Mykhailo: https://dev.azure.com/NICEPSRND/Investigate/_git/Investigate.RequestService?path=/sr…"
+              - 'treeitem "Chat Sergii Grytsaienko Available Last message You: А, тоді найс 1/14" [level=2] [ref=e4111]':
+                - generic [ref=e4112]:
+                  - generic [ref=e4116]:
+                    - img [ref=e4117]
+                    - img [ref=e4118]:
+                      - img [ref=e4120]
+                  - generic [ref=e4122]:
+                    - generic [ref=e4123]:
+                      - generic [ref=e4126]: Sergii Grytsaienko
+                      - time [ref=e4128]: 1/14
+                    - generic [ref=e4130]: "You: А, тоді найс"
+              - 'treeitem "Meeting chat Jan 26 planning Last message Maryna: ntd 1/13" [level=2] [ref=e4131]':
+                - generic [ref=e4132]:
+                  - img [ref=e4135]:
+                    - img [ref=e4137]
+                  - generic [ref=e4139]:
+                    - generic [ref=e4140]:
+                      - generic [ref=e4143]: Jan 26 planning
+                      - time [ref=e4145]: 1/13
+                    - generic [ref=e4147]: "Maryna: ntd"
+              - treeitem "See more" [level=2] [ref=e517]
+        - status [ref=e519]
+        - generic:
+          - generic [ref=e520]: Unread message
+          - generic [ref=e521]: Last message
+          - generic [ref=e522]: Group chat
+          - generic [ref=e523]: Meeting chat
+          - generic [ref=e524]: Chat
+          - generic [ref=e525]: Personal at mention
+          - generic [ref=e526]: Everyone at mention
+          - generic [ref=e527]: Important
+          - generic [ref=e528]: Urgent
+          - generic [ref=e529]: Draft
+          - generic [ref=e530]: Draft
+          - generic [ref=e531]: Muted
+          - generic [ref=e532]: Meeting in progress
+          - generic [ref=e533]: Meet now in progress
+          - generic [ref=e534]: You can't send messages because you are not a member of the chat.
+          - generic [ref=e535]: Private
+          - generic [ref=e536]: Shared
+          - generic [ref=e537]: Has context menu
+          - generic [ref=e538]: Channel at mention
+          - generic [ref=e539]: Team at mention
+          - generic [ref=e540]: Personal at mention
+          - generic [ref=e541]: Unread
+          - generic [ref=e542]: Unread
+          - generic [ref=e543]: Meeting in progress
+          - generic [ref=e544]: Unread
+          - generic [ref=e545]: Channel
+          - generic [ref=e546]: Team
+          - generic [ref=e547]: Has pinned messages
+          - generic [ref=e548]: See more
+          - generic [ref=e549]: Community
+          - generic [ref=e550]: Temporarily shown
+          - generic [ref=e551]: Has context menu
+          - generic [ref=e552]: Badged chat
+          - generic [ref=e553]: Badged chats
+        - generic [ref=e554]: Has context menu
+      - slider "Resize left panel" [ref=e556]
+    - generic [ref=e4150]:
+      - generic [ref=e4151]:
+        - img [ref=e4153]
+        - generic [ref=e4158]:
+          - heading "Team Vitalii Feb26 kick-off meeting" [level=2] [ref=e4160]:
+            - generic "Team Vitalii Feb26 kick-off meeting" [ref=e4162]
+          - list "Chat participants" [ref=e4163]
+      - generic [ref=e4164]:
+        - generic [ref=e4165]:
+          - tablist [ref=e4166]:
+            - tab "Chat" [selected] [ref=e4168] [cursor=pointer]:
+              - generic [ref=e4171]: Chat
+            - tab "4 more tabs." [ref=e4172]: "+4"
+            - tab "Add a tab" [ref=e4173]:
+              - img [ref=e4175]
+          - generic [ref=e4178]: Has context menu
+        - status [ref=e4179]
+      - toolbar "Chat actions" [ref=e4180]:
+        - button "Join" [ref=e4183]
+        - button "Meeting details" [ref=e4184]:
+          - img [ref=e4186]
+        - separator [ref=e4188]
+        - generic "Sidepane Features" [ref=e4189]:
+          - button "Open Agents and bots" [ref=e4190]:
+            - img [ref=e4192]
+          - button "Find in chat (Ctrl+F)" [ref=e4194]:
+            - img [ref=e4196]
+          - button "Open chat details (Alt+P)" [ref=e4198]:
+            - img [ref=e4200]
+        - button "More chat options" [ref=e4203]:
+          - img [ref=e4205]
+    - generic [ref=e624]:
+      - generic [ref=e627]:
+        - generic [ref=e633]:
+          - generic [ref=e4209]:
+            - heading "Darryl Pullen and 13 others were invited to the meeting." [level=6] [ref=e4210]
+            - group "Darryl Pullen and 13 others were invited to the meeting." [ref=e4212]:
+              - generic [ref=e4214]:
+                - img [ref=e4215]
+                - img [ref=e4217]
+                - group "Collapsed message, press Enter to expand, then move through the items using the Up and Down arrow" [ref=e4219]:
+                  - generic [ref=e4220]:
+                    - button "Darryl Pullen" [ref=e4221]:
+                      - button "Darryl Pullen" [ref=e4222]
+                    - text: and 13 others were invited to the meeting.
+          - heading "Wednesday, February 4" [level=3] [ref=e4226]:
+            - generic [ref=e4227]: Wednesday, February 4
+          - generic [ref=e4229]:
+            - img [ref=e4231]
+            - heading "Meeting started at 2/4 2:59 PM" [level=6] [ref=e4233]
+            - group "Meeting started at 2/4 2:59 PM" [ref=e4235]:
+              - generic [ref=e4237]: 2/4 2:59 PM Meeting started
+          - generic [ref=e4240]:
+            - img [ref=e4242]
+            - heading "Daniel Pearce and John Shuttleworth were invited to the meeting." [level=6] [ref=e4244]
+            - group "Daniel Pearce and John Shuttleworth were invited to the meeting." [ref=e4246]:
+              - generic [ref=e4248]:
+                - button "Daniel Pearce" [ref=e4249]:
+                  - button "Daniel Pearce" [ref=e4250]
+                - text: and
+                - button "John Shuttleworth" [ref=e4251]:
+                  - button "John Shuttleworth" [ref=e4252]
+                - text: were invited to the meeting.
+          - generic [ref=e4255]:
+            - img [ref=e4257]
+            - heading "Vitalii Tymokhin started recording." [level=6] [ref=e4259]
+            - group "Vitalii Tymokhin started recording." [ref=e4261]:
+              - generic [ref=e4263]: 2/4 3:03 PM Vitalii Tymokhin started recording.
+          - generic [ref=e4267]:
+            - heading "ntd - but great work preparing the sprint f... by Darryl Pullen" [level=4] [ref=e4268]
+            - generic [ref=e4270]:
+              - generic [ref=e4271]:
+                - generic [ref=e4275]: Darryl Pullen
+                - time [ref=e4276]: 2/4 3:40 PM
+              - generic [ref=e4277]:
+                - generic [ref=e4280]:
+                  - img [ref=e4281]
+                  - img [ref=e4282]:
+                    - img [ref=e4284]
+                - group "Darryl Pullen ntd - but great work preparing the sprint for Kick off Wednesday, February 4, 2026 3:40 PM." [ref=e4287]:
+                  - button "More message options" [ref=e4288]
+                  - generic "ntd - but great work preparing the sprint for Kick off" [ref=e4289]:
+                    - paragraph [ref=e4290]: ntd - but great work preparing the sprint for Kick off
+          - generic [ref=e4293]:
+            - img [ref=e4295]
+            - 'heading "Meeting ended: at 2/4 3:43 PM after 43 minutes 44 seconds, Team Vitalii Feb26 kick-off meeting, Wednesday, February 4, 2026 3:00 PM - 4:00 PM, link to view recap, This meeting contains 1 recording, 1 file, Press Enter to view more" [level=6] [ref=e4297]'
+            - 'group "Meeting ended: at 2/4 3:43 PM after 43 minutes 44 seconds, Team Vitalii Feb26 kick-off meeting, Wednesday, February 4, 2026 3:00 PM - 4:00 PM, link to view recap, This meeting contains 1 recording, 1 file, Press Enter to view more" [ref=e4299]':
+              - generic [ref=e4300]:
+                - generic [ref=e4302]:
+                  - text: "2/4 3:43 PM Meeting ended:"
+                  - generic [ref=e4303]: 43m 44s
+                - generic [ref=e4306]:
+                  - generic [ref=e4307]:
+                    - generic [ref=e4308]:
+                      - generic [ref=e4309]:
+                        - generic [ref=e4310]: Team Vitalii Feb26 kick-off meeting
+                        - generic [ref=e4311]: Wednesday, February 4, 2026 3:00 PM - 4:00 PM
+                      - button "Share" [ref=e4313]:
+                        - img [ref=e4315]
+                    - button "View recap" [ref=e4318]:
+                      - generic [ref=e4319]: View recap
+                  - separator [ref=e4320]
+                  - generic [ref=e4321]:
+                    - generic [ref=e4322]:
+                      - generic [ref=e4324]: Content
+                      - button "Transcript" [ref=e4331]:
+                        - img [ref=e4333]
+                        - generic [ref=e4341]: Transcript
+                    - button "Recording" [ref=e4343]:
+                      - img [ref=e4345]
+          - generic [ref=e4349]:
+            - img [ref=e4351]
+            - heading "Recording stopped." [level=6] [ref=e4353]
+            - group "Recording stopped." [ref=e4355]:
+              - generic [ref=e4357]: 2/4 3:43 PM Recording stopped.
+          - generic [ref=e4360]:
+            - img [ref=e4362]
+            - heading "Recording has been saved to Vitalii Tymokhin's OneDrive." [level=6] [ref=e4364]
+            - group "Recording has been saved to Vitalii Tymokhin's OneDrive." [ref=e4366]:
+              - generic [ref=e4368]: 2/4 3:45 PM Recording has been saved to Vitalii Tymokhin's OneDrive.
+          - heading "Wednesday, March 4" [level=3] [ref=e4372]:
+            - generic [ref=e4373]: Wednesday, March 4
+          - generic [ref=e4375]:
+            - img [ref=e4377]
+            - heading "Meeting started at 3/4 2:58 PM" [level=6] [ref=e4379]
+            - group "Meeting started at 3/4 2:58 PM" [ref=e4381]:
+              - generic [ref=e4383]: 3/4 2:58 PM Meeting started
+          - generic [ref=e4386]:
+            - img [ref=e4388]
+            - heading "Sys Aitkenhead was invited to the meeting." [level=6] [ref=e4390]
+            - group "Sys Aitkenhead was invited to the meeting." [ref=e4392]:
+              - generic [ref=e4394]:
+                - button "Sys Aitkenhead" [ref=e4395]:
+                  - button "Sys Aitkenhead" [ref=e4396]
+                - text: was invited to the meeting.
+          - generic [ref=e4399]:
+            - img [ref=e4401]
+            - heading "Vitalii Tymokhin started recording." [level=6] [ref=e4403]
+            - group "Vitalii Tymokhin started recording." [ref=e4405]:
+              - generic [ref=e4407]: 3/4 3:02 PM Vitalii Tymokhin started recording.
+          - generic [ref=e4410]:
+            - img [ref=e4412]
+            - 'heading "Meeting ended: at 3/4 3:55 PM after 57 minutes 32 seconds, Team Vitalii Feb26 kick-off meeting, Wednesday, March 4, 2026 2:58 PM - 3:55 PM, link to view recap, This meeting contains 1 recording, 1 file, Press Enter to view more" [level=6] [ref=e4414]'
+            - 'group "Meeting ended: at 3/4 3:55 PM after 57 minutes 32 seconds, Team Vitalii Feb26 kick-off meeting, Wednesday, March 4, 2026 2:58 PM - 3:55 PM, link to view recap, This meeting contains 1 recording, 1 file, Press Enter to view more" [ref=e4416]':
+              - generic [ref=e4417]:
+                - generic [ref=e4419]:
+                  - text: "3/4 3:55 PM Meeting ended:"
+                  - generic [ref=e4420]: 57m 32s
+                - generic [ref=e4423]:
+                  - generic [ref=e4424]:
+                    - generic [ref=e4425]:
+                      - generic [ref=e4426]:
+                        - generic [ref=e4427]: Team Vitalii Feb26 kick-off meeting
+                        - generic [ref=e4428]: Wednesday, March 4, 2026 2:58 PM - 3:55 PM
+                      - button "Share" [ref=e4430]:
+                        - img [ref=e4432]
+                    - button "View recap" [ref=e4435]:
+                      - generic [ref=e4436]: View recap
+                  - separator [ref=e4437]
+                  - generic [ref=e4438]:
+                    - generic [ref=e4439]:
+                      - generic [ref=e4441]: Content
+                      - button "Transcript" [ref=e4448]:
+                        - img [ref=e4450]
+                        - generic [ref=e4458]: Transcript
+                    - button "Recording" [ref=e4460]:
+                      - img [ref=e4462]
+          - generic [ref=e4466]:
+            - img [ref=e4468]
+            - heading "Recording stopped." [level=6] [ref=e4470]
+            - group "Recording stopped." [ref=e4472]:
+              - generic [ref=e4474]: 3/4 3:55 PM Recording stopped.
+          - generic [ref=e4477]:
+            - img [ref=e4479]
+            - heading "Recording has been saved to Vitalii Tymokhin's OneDrive." [level=6] [ref=e4481]
+            - group "Recording has been saved to Vitalii Tymokhin's OneDrive." [ref=e4483]:
+              - generic [ref=e4485]: 3/4 3:56 PM Recording has been saved to Vitalii Tymokhin's OneDrive.
+          - heading "Friday, March 6" [level=3] [ref=e4489]:
+            - generic [ref=e4490]: Friday, March 6
+          - generic [ref=e4492]:
+            - img [ref=e4494]
+            - heading "Meeting started at 3/6 2:59 PM" [level=6] [ref=e4496]
+            - group "Meeting started at 3/6 2:59 PM" [ref=e4498]:
+              - generic [ref=e4500]: 3/6 2:59 PM Meeting started
+          - generic [ref=e4503]:
+            - img [ref=e4505]
+            - heading "Vitalii Tymokhin started recording." [level=6] [ref=e4507]
+            - group "Vitalii Tymokhin started recording." [ref=e4509]:
+              - generic [ref=e4511]: 3/6 3:02 PM Vitalii Tymokhin started recording.
+          - generic [ref=e4514]:
+            - img [ref=e4516]
+            - 'heading "Meeting ended: at 3/6 3:26 PM after 27 minutes 1 second, Team Vitalii Feb26 kick-off meeting, Friday, March 6, 2026 2:59 PM - 3:26 PM, link to view recap, This meeting contains 1 recording, 9 speakers, 1 task, 1 file, Press Enter to view more" [level=6] [ref=e4518]'
+            - 'group "Meeting ended: at 3/6 3:26 PM after 27 minutes 1 second, Team Vitalii Feb26 kick-off meeting, Friday, March 6, 2026 2:59 PM - 3:26 PM, link to view recap, This meeting contains 1 recording, 9 speakers, 1 task, 1 file, Press Enter to view more" [ref=e4520]':
+              - generic [ref=e4521]:
+                - generic [ref=e4523]:
+                  - text: "3/6 3:26 PM Meeting ended:"
+                  - generic [ref=e4524]: 27m 1s
+                - generic [ref=e4527]:
+                  - generic [ref=e4528]:
+                    - generic [ref=e4529]:
+                      - generic [ref=e4530]:
+                        - generic [ref=e4531]: Team Vitalii Feb26 kick-off meeting
+                        - generic [ref=e4532]: Friday, March 6, 2026 2:59 PM - 3:26 PM
+                      - button "Share" [ref=e4534]:
+                        - img [ref=e4536]
+                    - button "View recap" [ref=e4539]:
+                      - generic [ref=e4540]: View recap
+                  - separator [ref=e4541]
+                  - generic [ref=e4542]:
+                    - generic [ref=e4543]:
+                      - generic [ref=e4544]:
+                        - button "9 people spoke in this meeting" [ref=e4545]:
+                          - img [ref=e4548]
+                          - generic [ref=e4550]: 9 speakers
+                        - button "1 task for people to follow up on" [ref=e4551]:
+                          - img [ref=e4554]
+                          - generic [ref=e4556]: 1 task
+                      - button "Transcript" [ref=e4563]:
+                        - img [ref=e4565]
+                        - generic [ref=e4573]: Transcript
+                    - button "Recording 23 minutes 41 seconds" [ref=e4575]:
+                      - img [ref=e4577]
+                      - generic [ref=e4578]: 23m 41s
+          - generic [ref=e4581]:
+            - img [ref=e4583]
+            - heading "Recording stopped." [level=6] [ref=e4585]
+            - group "Recording stopped." [ref=e4587]:
+              - generic [ref=e4589]: 3/6 3:26 PM Recording stopped.
+          - generic [ref=e4592]:
+            - img [ref=e4594]
+            - heading "Recording has been saved to Vitalii Tymokhin's OneDrive." [level=6] [ref=e4596]
+            - group "Recording has been saved to Vitalii Tymokhin's OneDrive." [ref=e4598]:
+              - generic [ref=e4600]: 3/6 3:27 PM Recording has been saved to Vitalii Tymokhin's OneDrive.
+        - generic [ref=e2020]: has context menu
+      - generic [ref=e2033]:
+        - generic [ref=e2034]:
+          - textbox "Type a message" [ref=e2035]:
+            - paragraph [ref=e2036]: Type a message
+          - generic:
+            - log
+            - log
+        - generic [ref=e2037]:
+          - toolbar [ref=e2038]:
+            - button "Show Formatting options (Ctrl+Shift+X)" [ref=e2039] [cursor=pointer]:
+              - img [ref=e2041]
+            - button "Emoji, GIFs and Stickers" [ref=e2044] [cursor=pointer]:
+              - img [ref=e2046]
+            - button "Loop components (Ctrl+Alt+L)" [ref=e2048] [cursor=pointer]:
+              - img [ref=e2050]
+            - button "Actions and apps" [ref=e2053] [cursor=pointer]:
+              - img [ref=e2055]
+          - toolbar "Actions for new message" [ref=e2057]:
+            - generic [ref=e3394]:
+              - button "Send (Ctrl+Enter)" [ref=e3395] [cursor=pointer]:
+                - img [ref=e3397]
+              - generic [ref=e3400]: has context menu

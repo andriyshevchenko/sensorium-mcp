@@ -1,0 +1,40 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - img [ref=e7]
+        - generic [ref=e10]:
+          - paragraph [ref=e11]: DeployBook
+          - heading "Shared environment manager" [level=1] [ref=e12]
+      - paragraph [ref=e13]: Shared environment manager - no more asking in the chat
+    - generic [ref=e22]:
+      - article [ref=e23]:
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - heading "Valinor" [level=2] [ref=e26]
+            - paragraph [ref=e27]: Stable branch — QA & regression
+          - generic [ref=e28]: 2.6.x
+        - generic [ref=e31]: In use by Andrii
+        - generic [ref=e62]:
+          - img [ref=e63]
+          - generic [ref=e66]: for 0h 0m
+        - button "Release" [ref=e67]
+      - article [ref=e33]:
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - heading "Gondor" [level=2] [ref=e36]
+            - paragraph [ref=e37]: Active development branch
+          - generic [ref=e38]: 2.7.x
+        - generic [ref=e41]: Available
+        - button "Claim" [ref=e42]
+      - article [ref=e43]:
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - heading "Mandalor" [level=2] [ref=e46]
+            - paragraph [ref=e47]: Cutting edge — experimental features
+          - generic [ref=e48]: latest
+        - generic [ref=e51]: Available
+        - button "Claim" [ref=e52]
+  - button "Open Next.js Dev Tools" [ref=e58] [cursor=pointer]:
+    - img [ref=e59]
+  - alert [ref=e21]

@@ -1,0 +1,55 @@
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - img "Neon" [ref=e6]
+    - generic [ref=e7]:
+      - text: Build on Postgres without
+      - text: slowing down.
+  - generic [ref=e8]:
+    - button "Home" [ref=e9] [cursor=pointer]:
+      - img [ref=e11]
+      - generic [ref=e13]: Home
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - heading "Create your free account" [level=1] [ref=e16]
+        - heading "Connect to Neon with:" [level=2] [ref=e17]
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - button "Google" [ref=e20] [cursor=pointer]:
+            - img [ref=e22]
+            - generic [ref=e28]: Google
+          - button "GitHub" [ref=e29] [cursor=pointer]:
+            - img [ref=e31]
+            - generic [ref=e34]: GitHub
+          - button "Microsoft" [ref=e35] [cursor=pointer]:
+            - img [ref=e37]
+            - generic [ref=e43]: Microsoft
+        - generic [ref=e44]:
+          - separator [ref=e45]
+          - generic [ref=e46]: Or continue with Email
+          - separator [ref=e47]
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - generic [ref=e51]: Email
+            - textbox "Email" [ref=e55]:
+              - /placeholder: youremail@email.com
+          - generic [ref=e56]:
+            - generic [ref=e57]: Password
+            - generic [ref=e59]:
+              - textbox "Password" [ref=e61]:
+                - /placeholder: Enter a unique password
+              - button [ref=e62] [cursor=pointer]:
+                - img [ref=e64]
+          - button "Continue" [disabled] [ref=e67]:
+            - generic [ref=e68]: Continue
+          - generic [ref=e69]:
+            - text: By creating an account you agree to the
+            - link "Terms of Service" [ref=e70] [cursor=pointer]:
+              - /url: https://neon.tech/terms-of-service
+            - text: and our
+            - link "Privacy Policy" [ref=e71] [cursor=pointer]:
+              - /url: https://neon.tech/privacy-policy
+            - text: . We'll occasionally send you emails about news, products, and services; you can opt-out anytime.
+        - generic [ref=e72]:
+          - text: Already have an account?
+          - link "Log in" [ref=e73] [cursor=pointer]:
+            - /url: /realms/prod-realm/login-actions/authenticate?client_id=neon-console&tab_id=ux-ScJRosfI&client_data=eyJydSI6Imh0dHBzOi8vY29uc29sZS5uZW9uLnRlY2gvYXV0aC9rZXljbG9hay9jYWxsYmFjayIsInJ0IjoiY29kZSIsInN0IjoiaXZmUmVlLWo3VFZhV2ZWNjI0MWdoQT09LCwsIn0&
