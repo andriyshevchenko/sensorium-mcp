@@ -63,5 +63,5 @@ export interface ThreadEntry {
   createdAt: string
   lastActiveAt: string | null
   sessionResetAt: string | null
-  status: 'active' | 'archived' | 'expired'
+  status: 'active' | 'archived' | 'expired' | 'exited'
 }

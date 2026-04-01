@@ -34,6 +34,10 @@ import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./ty
 const VALID_STATUSES = ["active", "archived", "expired", "exited"] as const;
 const VALID_CLIENTS = ["claude", "copilot", "codex"] as const;
 
+function isKeeperClient(client: string): client is KeeperClient {
+    return client === "claude" || client === "copilot";
+}
+
 /** Extract valid update fields from a request body. Returns an error string on validation failure. */
 function buildThreadUpdates(
     body: Record<string, unknown>,
@@ -73,15 +77,7 @@ function buildThreadUpdates(
 
 export const handleGetThreads: RouteHandler = ({ json, db }) => {
     const threads = getActiveThreads(db);
-    const roots = threads.filter(t => t.type === "root");
-    const grouped = roots.map(root => ({
-        ...root,
-        children: threads.filter(t => t.rootThreadId === root.threadId && t.type !== "root"),
-    }));
-    const orphans = threads.filter(
-        t => t.type !== "root" && !threads.some(r => r.type === "root" && r.threadId === t.rootThreadId),
-    );
-    json({ threads: grouped, orphans });
+    json({ threads });
     return true;
 };
 
@@ -123,6 +119,16 @@ export const handleCreateThread: RouteHandler = ({ req, json, db }) => {
                 return;
             }
 
+            const client =
+                typeof body.client === "string" && (VALID_CLIENTS as readonly string[]).includes(body.client)
+                    ? body.client
+                    : undefined;
+            const keepAlive = typeof body.keepAlive === "boolean" ? body.keepAlive : undefined;
+            if (keepAlive && client && !isKeeperClient(client)) {
+                json({ error: "keepAlive threads must use client claude or copilot" }, 400);
+                return;
+            }
+
             // Check for duplicate
             const existing = getThread(db, threadId);
             if (existing) {
@@ -136,8 +142,8 @@ export const handleCreateThread: RouteHandler = ({ req, json, db }) => {
                 type: type as ThreadRegistryEntry["type"],
                 rootThreadId: typeof body.rootThreadId === "number" ? body.rootThreadId : undefined,
                 badge: typeof body.badge === "string" ? body.badge : undefined,
-                client: typeof body.client === "string" && (VALID_CLIENTS as readonly string[]).includes(body.client) ? body.client : undefined,
-                keepAlive: typeof body.keepAlive === "boolean" ? body.keepAlive : undefined,
+                client,
+                keepAlive,
             });
 
             json(entry, 201);
@@ -197,6 +203,13 @@ export function handleUpdateThread(args: RouteArgs, threadId: number): boolean {
                 return;
             }
 
+            const nextClient = updates.client ?? existing.client;
+            const nextKeepAlive = updates.keepAlive ?? existing.keepAlive;
+            if (nextKeepAlive && !isKeeperClient(nextClient)) {
+                json({ error: "keepAlive threads must use client claude or copilot" }, 400);
+                return;
+            }
+
             const updated = updateThread(db, threadId, updates);
             if (!updated) {
                 json({ error: "No changes applied" }, 400);
@@ -206,7 +219,7 @@ export function handleUpdateThread(args: RouteArgs, threadId: number): boolean {
             json(getThread(db, threadId));
 
             // Sync keepAlive to settings.json for watcher backward compatibility
-            if ("keepAlive" in updates || "client" in updates) {
+            if ("keepAlive" in updates || "client" in updates || "maxRetries" in updates || "cooldownMs" in updates) {
                 syncKeepAliveToSettings(db);
             }
         } catch (err) {
@@ -234,6 +247,10 @@ export function handleDeleteThread(args: RouteArgs, threadId: number): boolean {
         archiveThread(db, threadId);
         json({ ok: true, action: "archived", threadId });
     }
+
+    if (existing.keepAlive || existing.type === "root") {
+        syncKeepAliveToSettings(db);
+    }
     return true;
 }
 
@@ -251,7 +268,9 @@ function syncKeepAliveToSettings(db: Database): void {
         if (activeKeepAlive) {
             setKeepAliveEnabled(true);
             setKeepAliveThreadId(activeKeepAlive.threadId);
-            setKeepAliveClient(activeKeepAlive.client as KeeperClient);
+            if (isKeeperClient(activeKeepAlive.client)) {
+                setKeepAliveClient(activeKeepAlive.client);
+            }
             setKeepAliveMaxRetries(activeKeepAlive.maxRetries);
             setKeepAliveCooldownMs(activeKeepAlive.cooldownMs);
         } else {
@@ -260,10 +279,10 @@ function syncKeepAliveToSettings(db: Database): void {
 
         // Sync per-thread overrides
         for (const root of roots) {
-            if (root.keepAlive) {
+            if (root.keepAlive && isKeeperClient(root.client)) {
                 setThreadKeepAlive(root.threadId, {
                     enabled: true,
-                    client: root.client as KeeperClient,
+                    client: root.client,
                     maxRetries: root.maxRetries,
                     cooldownMs: root.cooldownMs,
                 });
