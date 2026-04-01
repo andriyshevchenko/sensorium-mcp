@@ -92,7 +92,8 @@ export async function handleStartThread(
 
   // ── Validate args ─────────────────────────────────────────────────────
   const name = typeof args.name === "string" ? args.name.trim() : "";
-  const rawThreadId = args.threadId;
+  // Prefer targetThreadId over threadId (session context may collide with explicit target)
+  const rawThreadId = args.targetThreadId ?? args.threadId;
   const explicitThreadId = typeof rawThreadId === "number" ? rawThreadId
     : typeof rawThreadId === "string" ? (Number.isFinite(Number(rawThreadId)) ? Number(rawThreadId) : undefined)
     : undefined;
