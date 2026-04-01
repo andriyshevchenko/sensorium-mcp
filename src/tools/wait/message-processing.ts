@@ -108,7 +108,7 @@ export async function processIncomingMessages(
     // Voice messages: transcribe using OpenAI Whisper.
     if (msg.message.voice) {
       hasVoiceMessages = true;
-      const mediaCtx: MediaContext = { telegram, openaiApiKey: OPENAI_API_KEY, voiceAnalysisUrl: VOICE_ANALYSIS_URL, effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt, getMemoryDb };
+      const mediaCtx: MediaContext = { telegram, openaiApiKey: OPENAI_API_KEY, voiceAnalysisUrl: VOICE_ANALYSIS_URL, effectiveThreadId: effectiveThreadId, sessionStartedAt: state.sessionStartedAt, getMemoryDb };
       const result = await processVoice(msg, mediaCtx);
       contentBlocks.push(...result.blocks);
       if (result.episodeSaved) savedEpisodeUpdateIds.add(msg.update_id);
@@ -116,7 +116,7 @@ export async function processIncomingMessages(
     // Animations / GIFs: download full file, extract frames, run multi-frame vision analysis
     // (same pipeline as video_notes — uses extractVideoFrames + analyzeVideoFrames).
     if (msg.message.animation) {
-      const mediaCtx: MediaContext = { telegram, openaiApiKey: OPENAI_API_KEY, voiceAnalysisUrl: VOICE_ANALYSIS_URL, effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt, getMemoryDb };
+      const mediaCtx: MediaContext = { telegram, openaiApiKey: OPENAI_API_KEY, voiceAnalysisUrl: VOICE_ANALYSIS_URL, effectiveThreadId: effectiveThreadId, sessionStartedAt: state.sessionStartedAt, getMemoryDb };
       const animBlocks = await processAnimation(msg, mediaCtx);
       contentBlocks.push(...animBlocks);
     }
@@ -124,7 +124,7 @@ export async function processIncomingMessages(
     // optionally transcribe the audio track.
     if (msg.message.video_note) {
       hasVoiceMessages = true; // Video notes often contain speech
-      const mediaCtx: MediaContext = { telegram, openaiApiKey: OPENAI_API_KEY, voiceAnalysisUrl: VOICE_ANALYSIS_URL, effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt, getMemoryDb };
+      const mediaCtx: MediaContext = { telegram, openaiApiKey: OPENAI_API_KEY, voiceAnalysisUrl: VOICE_ANALYSIS_URL, effectiveThreadId: effectiveThreadId, sessionStartedAt: state.sessionStartedAt, getMemoryDb };
       const result = await processVideoNote(msg, mediaCtx);
       contentBlocks.push(...result.blocks);
       if (result.episodeSaved) savedEpisodeUpdateIds.add(msg.update_id);
@@ -134,7 +134,7 @@ export async function processIncomingMessages(
   log.info(`[wait] ${contentBlocks.length} content blocks built. Saving episodes...`);
 
   // Auto-ingest episodes for messages not already saved by voice/video handlers
-  autoIngestEpisodes(stored, savedEpisodeUpdateIds, { getMemoryDb, effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt });
+  autoIngestEpisodes(stored, savedEpisodeUpdateIds, { getMemoryDb, effectiveThreadId: effectiveThreadId, sessionStartedAt: state.sessionStartedAt });
 
   // ── Check for pending operator reactions ─────────────────────────
   await handleReactionWithMessages(contentBlocks, {
@@ -188,7 +188,7 @@ export async function processIncomingMessages(
     operatorText,
     hasVoiceMessages,
     autoMemoryContext,
-    { effectiveThreadId: effectiveThreadId!, sessionStartedAt: state.sessionStartedAt, autonomousMode: AUTONOMOUS_MODE },
+    { effectiveThreadId: effectiveThreadId, sessionStartedAt: state.sessionStartedAt, autonomousMode: AUTONOMOUS_MODE },
     intent,
   );
 }

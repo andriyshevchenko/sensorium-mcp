@@ -200,7 +200,7 @@ export async function handleWaitForInstructions(
         ).catch(() => {});
       }
 
-      return buildMaintenanceResponse(effectiveThreadId!, getShortReminder(effectiveThreadId, state.sessionStartedAt));
+      return buildMaintenanceResponse(effectiveThreadId, getShortReminder(effectiveThreadId, state.sessionStartedAt));
     }
 
     // Peek first (non-destructive) to avoid consuming messages when the
