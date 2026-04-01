@@ -255,21 +255,6 @@ export interface ThreadKeepAliveSettings {
   cooldownMs?: number;
 }
 
-/** Returns per-thread keep-alive settings, or null if none set. */
-function getThreadKeepAlive(threadId: number): ThreadKeepAliveSettings | null {
-  const map = readSettings().threadKeepAlive as Record<string, unknown> | undefined;
-  if (!map || typeof map !== "object") return null;
-  const entry = map[String(threadId)];
-  if (!entry || typeof entry !== "object") return null;
-  const e = entry as Record<string, unknown>;
-  return {
-    enabled: typeof e.enabled === "boolean" ? e.enabled : false,
-    client: isValidKeeperClient(e.client) ? e.client : undefined,
-    cooldownMs: typeof e.cooldownMs === "number" && e.cooldownMs >= 1000 ? e.cooldownMs : undefined,
-    maxRetries: typeof e.maxRetries === "number" && e.maxRetries > 0 ? e.maxRetries : undefined,
-  };
-}
-
 /** Sets keep-alive settings for a specific thread. */
 export function setThreadKeepAlive(threadId: number, settings: ThreadKeepAliveSettings): void {
   updateSettings(s => {
