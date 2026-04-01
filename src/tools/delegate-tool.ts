@@ -294,9 +294,10 @@ export function handleSendMessageToThread(
     : typeof rawTarget === "string" ? Number(rawTarget) : undefined;
   const message = typeof args.message === "string" ? args.message.trim() : "";
   const rawMode = typeof args.mode === "string" ? args.mode : "";
-  const mode: "one-shot" | "manager-worker" | "reply" =
+  const mode: "one-shot" | "manager-worker" | "reply" | "peer" =
     rawMode === "manager-worker" ? "manager-worker"
     : rawMode === "reply" ? "reply"
+    : rawMode === "peer" ? "peer"
     : "one-shot";
   const senderName = typeof args.senderName === "string" ? args.senderName.trim() : "";
   const senderThreadId = typeof args.senderThreadId === "number"
@@ -332,6 +333,17 @@ export function handleSendMessageToThread(
         ? ` (thread ${senderThreadId})`
         : "") +
       ` reports back:\n` +
+      `---\n` +
+      `${message}\n` +
+      `---`;
+  } else if (mode === "peer") {
+    // P2P communication — raw message with sender attribution, no task boilerplate
+    structuredMessage =
+      `Thread "${senderLabel}"` +
+      (senderThreadId !== undefined && Number.isFinite(senderThreadId)
+        ? ` (thread ${senderThreadId})`
+        : "") +
+      ` says:\n` +
       `---\n` +
       `${message}\n` +
       `---`;

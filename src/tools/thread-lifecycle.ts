@@ -869,7 +869,7 @@ export function cleanupStalePidFiles(): void {
   }
 }
 
-const DEFAULT_WORKER_TTL_MS = 60 * 60 * 1000; // 1 hour
+const DEFAULT_WORKER_TTL_MS = 30 * 60 * 1000; // 30 minutes — one-shot threads auto-cleanup
 
 /**
  * Clean up expired worker threads.
