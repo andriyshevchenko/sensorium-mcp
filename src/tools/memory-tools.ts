@@ -106,13 +106,15 @@ async function handleMemorySearch(
     }
 
     const results: string[] = [];
+    // Scope memory search to the thread's knowledge thread (respects MEMORY_TARGET_THREAD_ID)
+    const knowledgeThreadId = threadId !== undefined ? resolveKnowledgeThreadId(threadId) : undefined;
 
     if (layers.includes("semantic")) {
       let embeddingSearchDone = false;
       if (apiKey) {
         try {
           const queryEmb = await generateEmbedding(query, apiKey);
-          const embNotes = searchByEmbedding(db, queryEmb, { maxResults: 10, minSimilarity: 0.25, startTime, endTime });
+          const embNotes = searchByEmbedding(db, queryEmb, { maxResults: 10, minSimilarity: 0.25, startTime, endTime, threadId: knowledgeThreadId });
           if (embNotes.length > 0) {
             results.push("### Semantic Memory (embedding search)");
             for (const n of embNotes) {
@@ -125,7 +127,7 @@ async function handleMemorySearch(
         }
       }
       if (!embeddingSearchDone) {
-        const notes = searchSemanticNotes(db, query, { types, maxResults: 10, startTime, endTime });
+        const notes = searchSemanticNotes(db, query, { types, maxResults: 10, startTime, endTime, threadId: knowledgeThreadId });
         if (notes.length > 0) {
           results.push("### Semantic Memory");
           for (const n of notes) {
