@@ -150,15 +150,4 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
   }
 }
 
-// ─── Query helper ────────────────────────────────────────────────────────────
 
-/**
- * Get the current daily session's start time for a root thread.
- * Used by bootstrap to filter the message buffer to today's messages only.
- * Returns null if no session reset has occurred (backward compat — show all).
- */
-export function getDailySessionStart(rootThreadId: number): string | null {
-  const db = initMemoryDb();
-  const thread = getThread(db, rootThreadId);
-  return thread?.sessionResetAt ?? null;
-}
