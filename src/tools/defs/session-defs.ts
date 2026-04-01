@@ -208,6 +208,10 @@ export const sessionToolDefs: ToolDefinition[] = [
           type: "number",
           description: "Explicit Telegram thread ID (optional — auto-created if not provided)",
         },
+        targetThreadId: {
+          type: "number",
+          description: "Alias for threadId — preferred when session context already uses threadId.",
+        },
         threadType: {
           type: "string",
           enum: ["worker", "branch"],
