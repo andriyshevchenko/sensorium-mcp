@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -171,7 +171,7 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       CREATE TABLE IF NOT EXISTS temporal_narratives (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         thread_id INTEGER NOT NULL,
-        resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month')),
+        resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month', 'quarter', 'half_year')),
         period_start TEXT NOT NULL,
         period_end TEXT NOT NULL,
         narrative TEXT NOT NULL,
@@ -216,6 +216,30 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       db.exec("ALTER TABLE thread_registry ADD COLUMN session_reset_at TEXT");
     }
     log.info("[migration-13] Added session_reset_at column to thread_registry");
+  },
+  14: (db) => {
+    // Widen temporal_narratives resolution CHECK to include 'quarter' and 'half_year'.
+    // SQLite doesn't support ALTER CONSTRAINT, so recreate the table.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS temporal_narratives_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id INTEGER NOT NULL,
+        resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month', 'quarter', 'half_year')),
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        narrative TEXT NOT NULL,
+        source_episode_count INTEGER NOT NULL DEFAULT 0,
+        source_note_count INTEGER NOT NULL DEFAULT 0,
+        model TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(thread_id, resolution, period_start)
+      );
+      INSERT OR IGNORE INTO temporal_narratives_new SELECT * FROM temporal_narratives;
+      DROP TABLE temporal_narratives;
+      ALTER TABLE temporal_narratives_new RENAME TO temporal_narratives;
+      CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
+    `);
+    log.info("[migration-14] Widened temporal_narratives resolution CHECK to include quarter and half_year");
   },
 };
 
@@ -347,7 +371,7 @@ function ensureSchemaIntegrity(db: Database): void {
       CREATE TABLE IF NOT EXISTS temporal_narratives (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         thread_id INTEGER NOT NULL,
-        resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month')),
+        resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month', 'quarter', 'half_year')),
         period_start TEXT NOT NULL,
         period_end TEXT NOT NULL,
         narrative TEXT NOT NULL,
@@ -542,7 +566,7 @@ CREATE TABLE IF NOT EXISTS topic_registry (
 CREATE TABLE IF NOT EXISTS temporal_narratives (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   thread_id INTEGER NOT NULL,
-  resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month')),
+  resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month', 'quarter', 'half_year')),
   period_start TEXT NOT NULL,
   period_end TEXT NOT NULL,
   narrative TEXT NOT NULL,

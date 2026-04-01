@@ -2,9 +2,11 @@
  * Temporal Narrative Generator
  *
  * Produces multi-resolution narratives from episodes and semantic notes:
- * - day:   detailed events (~500 tokens)
- * - week:  key decisions and progress (~300 tokens)
- * - month: high-level arc (~200 tokens)
+ * - day:       detailed events (~500 tokens)
+ * - week:      key decisions and progress (~300 tokens)
+ * - month:     high-level arc (~200 tokens)
+ * - quarter:   strategic 3-month arc (~150 tokens)
+ * - half_year: bird's-eye 6-month arc (~120 tokens)
  *
  * These narratives replace raw note dumps in bootstrap and give the agent
  * coherent temporal awareness across long-running sessions.
@@ -19,7 +21,7 @@ import { parseJsonArray, parseJsonObject } from "./utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type NarrativeResolution = "day" | "week" | "month";
+type NarrativeResolution = "day" | "week" | "month" | "quarter" | "half_year";
 
 interface TemporalNarrative {
   id: number;
@@ -38,16 +40,20 @@ interface TemporalNarrative {
 
 /** Cooldown per resolution before regenerating */
 const COOLDOWNS: Record<NarrativeResolution, number> = {
-  day: 2 * 60 * 60 * 1000,   // 2 hours
-  week: 12 * 60 * 60 * 1000,  // 12 hours
-  month: 24 * 60 * 60 * 1000, // 24 hours
+  day: 2 * 60 * 60 * 1000,        // 2 hours
+  week: 12 * 60 * 60 * 1000,      // 12 hours
+  month: 24 * 60 * 60 * 1000,     // 24 hours
+  quarter: 7 * 24 * 60 * 60 * 1000,   // 7 days
+  half_year: 14 * 24 * 60 * 60 * 1000, // 14 days
 };
 
 /** Max tokens (approximate via chars) for each resolution */
 const TOKEN_BUDGETS: Record<NarrativeResolution, number> = {
-  day: 2000,   // ~500 tokens
-  week: 1200,  // ~300 tokens
-  month: 800,  // ~200 tokens
+  day: 2000,       // ~500 tokens
+  week: 1200,      // ~300 tokens
+  month: 800,      // ~200 tokens
+  quarter: 600,    // ~150 tokens
+  half_year: 500,  // ~120 tokens
 };
 
 const NARRATIVE_MODEL =
@@ -70,7 +76,19 @@ function getPeriodBounds(resolution: NarrativeResolution): { start: string; end:
     start.setUTCHours(0, 0, 0, 0);
     return { start: start.toISOString(), end };
   }
-  // month
+  if (resolution === "quarter") {
+    const start = new Date(now);
+    start.setDate(start.getDate() - 90);
+    start.setUTCHours(0, 0, 0, 0);
+    return { start: start.toISOString(), end };
+  }
+  if (resolution === "half_year") {
+    const start = new Date(now);
+    start.setDate(start.getDate() - 180);
+    start.setUTCHours(0, 0, 0, 0);
+    return { start: start.toISOString(), end };
+  }
+  // month (default)
   const start = new Date(now);
   start.setDate(start.getDate() - 30);
   start.setUTCHours(0, 0, 0, 0);
@@ -192,6 +210,8 @@ function buildPrompt(
     day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. Target ~500 tokens.`,
     week: `Write a concise narrative of the key developments this past week (${periodLabel}). Focus on: major decisions, direction changes, breakthroughs, blockers resolved. Group by theme rather than strict chronology. Target ~300 tokens.`,
     month: `Write a high-level narrative arc for this past month (${periodLabel}). Capture: the overall trajectory of the project, the operator's evolving priorities, major milestones, and where things stand now. Be strategic, not tactical. Target ~200 tokens.`,
+    quarter: `Write a strategic narrative arc for this quarter (${periodLabel}). Capture: the major phases of work, how priorities shifted over three months, key turning points, and the overall trajectory. Identify patterns and recurring themes. Be executive-level, not detailed. Target ~150 tokens.`,
+    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture: the broadest arcs of the project over six months — where it started, how it evolved, major pivots, and where it stands now. Focus on transformation and long-term patterns. Target ~120 tokens.`,
   };
 
   return `You are a temporal memory narrator. You create coherent stories from raw interaction data.
@@ -280,11 +300,16 @@ async function generateNarrative(
   const episodesText = formatEpisodesForLLM(episodes, maxChars * 2);
   const notesText = formatNotesForLLM(notes, maxChars);
 
-  const periodLabel = resolution === "day"
-    ? new Date(start).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-    : resolution === "week"
-      ? `${new Date(start).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(end).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-      : `Month of ${new Date(end).toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
+  const fmtShort = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const fmtRange = `${fmtShort(start)} – ${fmtShort(end)}`;
+  const periodLabels: Record<NarrativeResolution, string> = {
+    day: fmtShort(start),
+    week: fmtRange,
+    month: `Month of ${new Date(end).toLocaleDateString("en-US", { month: "long", year: "numeric" })}`,
+    quarter: `Quarter: ${fmtRange}`,
+    half_year: `Half-year: ${fmtRange}`,
+  };
+  const periodLabel = periodLabels[resolution];
 
   const prompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel);
 
@@ -334,7 +359,7 @@ export async function runNarrativeGeneration(
     errors: [],
   };
 
-  const resolutions: NarrativeResolution[] = ["day", "week", "month"];
+  const resolutions: NarrativeResolution[] = ["day", "week", "month", "quarter", "half_year"];
 
   for (const res of resolutions) {
     try {
@@ -369,10 +394,12 @@ export function getNarrativesForBootstrap(
     day: null,
     week: null,
     month: null,
+    quarter: null,
+    half_year: null,
   };
 
   try {
-    for (const res of ["day", "week", "month"] as NarrativeResolution[]) {
+    for (const res of ["day", "week", "month", "quarter", "half_year"] as NarrativeResolution[]) {
       const last = getLastNarrative(db, threadId, res);
       if (last) {
         result[res] = last.narrative;

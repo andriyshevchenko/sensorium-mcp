@@ -179,9 +179,19 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   // Temporal narrative — multi-resolution "story so far"
   try {
     const narratives = getNarrativesForBootstrap(db, knowledgeThreadId);
-    const hasNarrative = narratives.month || narratives.week || narratives.day;
+    const hasNarrative = narratives.half_year || narratives.quarter || narratives.month || narratives.week || narratives.day;
     if (hasNarrative) {
       lines.push("## Temporal Context");
+      if (narratives.half_year) {
+        lines.push("### This Half-Year");
+        lines.push(narratives.half_year);
+        lines.push("");
+      }
+      if (narratives.quarter) {
+        lines.push("### This Quarter");
+        lines.push(narratives.quarter);
+        lines.push("");
+      }
       if (narratives.month) {
         lines.push("### This Month");
         lines.push(narratives.month);
