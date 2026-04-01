@@ -120,6 +120,13 @@ export function getRootThreads(db: Database): ThreadRegistryEntry[] {
   return rows.map(rowToEntry);
 }
 
+export function getAllThreads(db: Database): ThreadRegistryEntry[] {
+  const rows = db.prepare(
+    `SELECT * FROM thread_registry ORDER BY last_active_at DESC`,
+  ).all() as Record<string, unknown>[];
+  return rows.map(rowToEntry);
+}
+
 export function getActiveThreads(db: Database): ThreadRegistryEntry[] {
   const rows = db.prepare(
     `SELECT * FROM thread_registry WHERE status = 'active' ORDER BY last_active_at DESC`,

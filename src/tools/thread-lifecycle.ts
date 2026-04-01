@@ -13,7 +13,7 @@ import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
 import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "../sessions.js";
 import { synthesizeGhostMemory } from "../memory.js";
-import { archiveThread } from "../data/memory/thread-registry.js";
+import { archiveThread, getAllThreads, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 
@@ -951,6 +951,12 @@ interface CollectedThread {
   sessionCount: number;
   lastActivity: number | undefined;
   spawnedStartedAt: number | undefined;
+  /** From thread_registry: persistent status across restarts. */
+  registryStatus: string | undefined;
+  /** From thread_registry: whether this thread should be kept alive. */
+  keepAlive: boolean;
+  /** From thread_registry: last known activity timestamp from DB. */
+  registryLastActive: number | undefined;
 }
 
 /**
@@ -963,6 +969,14 @@ function collectThreadData(): CollectedThread[] {
   const spawned = getAllSpawnedThreads();
   const pidFiles = readPidFiles();
   const now = Date.now();
+
+  // 5th source: persistent thread_registry DB
+  let registryByThread = new Map<number, ThreadRegistryEntry>();
+  try {
+    const db = initMemoryDb();
+    const allRegistered = getAllThreads(db);
+    for (const entry of allRegistered) registryByThread.set(entry.threadId, entry);
+  } catch { /* DB unavailable — degrade gracefully */ }
 
   // Build Maps for O(1) lookups
   const spawnedByThread = new Map<number, SpawnedThread>();
@@ -987,6 +1001,13 @@ function collectThreadData(): CollectedThread[] {
   }
   for (const s of spawned) allThreadIds.add(s.threadId);
   for (const p of pidFiles) allThreadIds.add(p.threadId);
+  for (const id of registryByThread.keys()) {
+    allThreadIds.add(id);
+    if (!threadNames.has(id)) {
+      const entry = registryByThread.get(id);
+      if (entry?.name) threadNames.set(id, entry.name);
+    }
+  }
 
   // Group sessions by threadId for O(1) lookup
   const sessionsByThread = new Map<number, typeof sessions>();
@@ -1010,16 +1031,24 @@ function collectThreadData(): CollectedThread[] {
     const hasRecentWait = anySession?.lastWaitCallAt != null
       && (now - anySession.lastWaitCallAt) < WAIT_LIVENESS_MS;
 
+    const regEntry = registryByThread.get(threadId);
+    const regLastActive = regEntry?.lastActiveAt
+      ? new Date(regEntry.lastActiveAt).getTime()
+      : undefined;
+
     result.push({
       threadId,
-      name: threadNames.get(threadId) ?? "unnamed",
+      name: threadNames.get(threadId) ?? regEntry?.name ?? "unnamed",
       pid,
       alive,
       hasActiveSession: !!activeSession,
       hasRecentWait,
       sessionCount: threadSessions.length,
-      lastActivity: anySession?.lastActivity,
+      lastActivity: anySession?.lastActivity ?? regLastActive,
       spawnedStartedAt: spawnedEntry?.startedAt,
+      registryStatus: regEntry?.status,
+      keepAlive: regEntry?.keepAlive ?? false,
+      registryLastActive: regLastActive,
     });
   }
 
@@ -1042,6 +1071,10 @@ function classifyThreadStatus(t: CollectedThread): ThreadStatus {
   if (t.hasActiveSession) return "dormant";
   if (t.alive) return "dormant";
   if (t.pid !== undefined && !t.alive) return "dead";
+  // Use persistent registry status when ephemeral sources have no data
+  if (t.registryStatus === "archived" || t.registryStatus === "expired") return "dead";
+  if (t.registryStatus === "active" && t.keepAlive) return "dormant";
+  if (t.registryStatus === "active") return "dormant";
   return "unknown";
 }
 
