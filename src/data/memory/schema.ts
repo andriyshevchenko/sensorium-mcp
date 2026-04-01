@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -270,6 +270,16 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     `);
     log.info("[migration-15] Widened thread_registry status CHECK to include 'exited'");
   },
+  16: (db) => {
+    // Add daily_rotation column to thread_registry (default OFF).
+    // Decouples daily session rotation from keepAlive.
+    try {
+      db.exec(`ALTER TABLE thread_registry ADD COLUMN daily_rotation INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      // Column may already exist from schema self-heal
+    }
+    log.info("[migration-16] Added daily_rotation column to thread_registry (default OFF)");
+  },
 };
 
 /**
@@ -469,7 +479,8 @@ function ensureSchemaIntegrity(db: Database): void {
         created_at      TEXT NOT NULL,
         last_active_at  TEXT,
         session_reset_at TEXT,
-        status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited'))
+        status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
+        daily_rotation  INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
       CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
@@ -477,7 +488,8 @@ function ensureSchemaIntegrity(db: Database): void {
     `);
     stampVersion(12);
     stampVersion(13);
-    stampVersion(14);
+    stampVersion(15);
+    stampVersion(16);
     stampVersion(15);
   } else {
     const threadRegistryCols = db
@@ -687,7 +699,8 @@ CREATE TABLE IF NOT EXISTS thread_registry (
   created_at      TEXT NOT NULL,
   last_active_at  TEXT,
   session_reset_at TEXT,
-  status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited'))
+  status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
+  daily_rotation  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
 CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);

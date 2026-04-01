@@ -127,8 +127,7 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
   const results: DailyRotationResult[] = [];
 
   for (const root of roots) {
-    if (!root.keepAlive) continue;
-
+      if (!root.dailyRotation) continue;
     // Skip if already rotated today
     if (root.sessionResetAt) {
       const resetDate = root.sessionResetAt.slice(0, 10);
