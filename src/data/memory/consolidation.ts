@@ -245,7 +245,7 @@ export async function runIntelligentConsolidation(
       if (c && typeof c === "object") {
         content = (c.text as string) ?? (c.caption as string) ?? JSON.stringify(c);
       } else {
-        content = String(ep.content);
+        content = JSON.stringify(ep.content);
       }
       return `[${i + 1}] (${ep.type}/${ep.modality}, ${ep.timestamp}) ${content}`;
     })

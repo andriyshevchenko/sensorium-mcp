@@ -51,13 +51,13 @@ mkdirSync(TEMPLATES_DIR, { recursive: true });
 
 export type AgentType = "copilot" | "copilot_claude" | "copilot_codex" | "claude" | "cursor" | "codex" | "openai_codex";
 
-const VALID_AGENT_TYPES: readonly string[] = [
+export const VALID_AGENT_TYPES: readonly string[] = [
   "copilot", "copilot_claude", "copilot_codex",
   "claude", "cursor",
   "codex", "openai_codex",
 ];
 
-function isValidAgentType(v: unknown): v is AgentType {
+export function isValidAgentType(v: unknown): v is AgentType {
   return typeof v === "string" && VALID_AGENT_TYPES.includes(v);
 }
 

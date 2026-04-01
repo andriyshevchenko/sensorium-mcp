@@ -8,6 +8,7 @@ import {
     setAgentType,
     setThreadAgentType,
     getAllThreadAgentTypes,
+    isValidAgentType,
     getClaudeMcpConfigPath,
     setClaudeMcpConfigPath,
     getGuardrailsEnabled,
@@ -79,12 +80,11 @@ export const handlePostAgentType: RouteHandler = ({ req, json }) => {
         try {
             const body = await readBody(req);
             const parsed = JSON.parse(body) as { agentType?: string };
-            const valid = ["copilot", "copilot_claude", "copilot_codex", "claude", "cursor", "codex", "openai_codex"];
-            if (!parsed.agentType || !valid.includes(parsed.agentType)) {
-                json({ error: "Invalid agent type. Must be: copilot, copilot_claude, copilot_codex, claude, cursor, codex, openai_codex" }, 400);
+            if (!parsed.agentType || !isValidAgentType(parsed.agentType)) {
+                json({ error: "Invalid agent type" }, 400);
                 return;
             }
-            setAgentType(parsed.agentType as AgentType);
+            setAgentType(parsed.agentType);
             json({ ok: true, agentType: parsed.agentType });
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
@@ -105,16 +105,15 @@ export const handlePostThreadAgentType: RouteHandler = ({ req, json }) => {
         try {
             const body = await readBody(req);
             const parsed = JSON.parse(body) as { threadId?: number; agentType?: string };
-            const valid = ["copilot", "copilot_claude", "copilot_codex", "claude", "cursor", "codex", "openai_codex"];
             if (parsed.threadId == null || !Number.isFinite(parsed.threadId)) {
                 json({ error: "Missing or invalid threadId (must be a number)" }, 400);
                 return;
             }
-            if (!parsed.agentType || !valid.includes(parsed.agentType)) {
-                json({ error: "Invalid agent type. Must be: copilot, copilot_claude, copilot_codex, claude, cursor, codex, openai_codex" }, 400);
+            if (!parsed.agentType || !isValidAgentType(parsed.agentType)) {
+                json({ error: "Invalid agent type" }, 400);
                 return;
             }
-            setThreadAgentType(parsed.threadId, parsed.agentType as AgentType);
+            setThreadAgentType(parsed.threadId, parsed.agentType);
             json({ ok: true, threadId: parsed.threadId, agentType: parsed.agentType });
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
