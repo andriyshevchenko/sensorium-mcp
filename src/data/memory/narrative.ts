@@ -88,11 +88,14 @@ function getPeriodBounds(resolution: NarrativeResolution): { start: string; end:
     start.setUTCHours(0, 0, 0, 0);
     return { start: start.toISOString(), end };
   }
-  // month (default)
-  const start = new Date(now);
-  start.setDate(start.getDate() - 30);
-  start.setUTCHours(0, 0, 0, 0);
-  return { start: start.toISOString(), end };
+  if (resolution === "month") {
+    const start = new Date(now);
+    start.setDate(start.getDate() - 30);
+    start.setUTCHours(0, 0, 0, 0);
+    return { start: start.toISOString(), end };
+  }
+  const _exhaustive: never = resolution;
+  throw new Error(`Unhandled narrative resolution: ${_exhaustive}`);
 }
 
 // ─── Source Data Collection ──────────────────────────────────────────────────

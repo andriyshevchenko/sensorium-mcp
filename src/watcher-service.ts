@@ -423,7 +423,7 @@ async function readAllKeeperSettings(): Promise<KeeperSettings[]> {
       const roots = body.threads ?? [];
       return roots
         .filter((r) => r.keepAlive)
-        .filter((r) => typeof r.threadId === 'number' && Number.isFinite(r.threadId) && r.threadId > 0 && r.threadId === Math.floor(r.threadId))
+        .filter((r) => Number.isInteger(r.threadId) && (r.threadId as number) > 0)
         .map((r) => ({
           enabled: true,
           threadId: r.threadId as number,

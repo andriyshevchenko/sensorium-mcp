@@ -132,7 +132,6 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
     // Skip if already rotated today
     if (root.sessionResetAt) {
       const resetDate = root.sessionResetAt.slice(0, 10);
-      const todayDate = new Date().toISOString().slice(0, 10);
       if (resetDate === todayDate) {
         log.info(`Root ${root.threadId} already rotated today, skipping`);
         continue;
@@ -143,7 +142,8 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
     results.push(result);
   }
 
-  _lastRotationDate = todayDate;
+  const allSucceeded = results.every(r => !r.error);
+  if (allSucceeded) _lastRotationDate = todayDate;
   return results;
   } finally {
     _rotating = false;
