@@ -204,7 +204,7 @@ export function startHttpServer(
         // connect to one transport, so concurrent clients each need their own.
         const sessionServer = createMcpServerFn(
           () => capturedSid,
-          () => { try { transport.close()?.catch(() => {}); } catch (_) { /* best-effort */ } },
+          () => { try { transport.close(); } catch (_) { /* best-effort */ } },
         );
         await sessionServer.connect(transport);
         // Store server reference so it can be closed during shutdown
@@ -322,7 +322,7 @@ export function startHttpServer(
       // 1. Close truly stale transports (was session-reaper)
       if (entry.transport && now - entry.lastActivity > STALE_SESSION_MS) {
         log.info(`[session-sweep] Closing stale session ${sid.slice(0, 8)}… (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
-        try { entry.transport.close()?.catch(() => {}); } catch (_) { /* best-effort */ }
+        try { entry.transport.close(); } catch (_) { /* best-effort */ }
         sessions.delete(sid);
         removeDashboardSession(sid);
         reaped++;
@@ -376,7 +376,7 @@ export function startHttpServer(
     // Tear down transports and HTTP server.
     for (const [sid, entry] of sessions) {
       if (entry.transport) {
-        try { entry.transport.close()?.catch(() => {}); } catch (_) { /* best-effort */ }
+        try { entry.transport.close(); } catch (_) { /* best-effort */ }
       }
       if (entry.server) {
         try { await entry.server.close(); } catch (_) { /* best-effort */ }

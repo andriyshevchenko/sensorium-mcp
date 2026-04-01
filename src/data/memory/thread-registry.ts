@@ -68,9 +68,20 @@ export function registerThread(
 ): ThreadRegistryEntry {
   const now = nowISO();
   db.prepare(
-    `INSERT OR IGNORE INTO thread_registry
+    `INSERT INTO thread_registry
        (thread_id, name, type, root_thread_id, badge, client, max_retries, cooldown_ms, keep_alive, created_at, last_active_at, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+     ON CONFLICT(thread_id) DO UPDATE SET
+       name = excluded.name,
+       type = excluded.type,
+       root_thread_id = excluded.root_thread_id,
+       badge = excluded.badge,
+       client = excluded.client,
+       max_retries = excluded.max_retries,
+       cooldown_ms = excluded.cooldown_ms,
+       keep_alive = excluded.keep_alive,
+       last_active_at = excluded.last_active_at,
+       status = 'active'`,
   ).run(
     entry.threadId,
     entry.name,

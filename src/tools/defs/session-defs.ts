@@ -6,6 +6,23 @@
 import type { ToolDefinition } from "../definitions.js";
 import { OPENAI_TTS_MAX_CHARS } from "../../utils.js";
 
+const AGENT_TYPE_ENUM = [
+  "copilot",
+  "copilot_claude",
+  "copilot_codex",
+  "claude",
+  "cursor",
+  "codex",
+  "openai_codex",
+] as const;
+
+const SEND_MESSAGE_MODE_ENUM = [
+  "one-shot",
+  "manager-worker",
+  "reply",
+  "peer",
+] as const;
+
 export const sessionToolDefs: ToolDefinition[] = [
   {
     name: "start_session",
@@ -36,13 +53,15 @@ export const sessionToolDefs: ToolDefinition[] = [
           description:
             "Optional. The Telegram message_thread_id of an existing topic to resume. " +
             "When provided, no new topic is created \u2014 the session continues in the existing thread.",
-        },        agentType: {
+        },
+        agentType: {
           type: "string",
           description:
             'Which agent type is connecting: "copilot" | "copilot_claude" | "copilot_codex" | "claude" | "cursor" | "codex" | "openai_codex". ' +
             "Determines agent-specific reminders and routing. Defaults to the dashboard setting.",
-          enum: ["copilot", "copilot_claude", "copilot_codex", "claude", "cursor", "codex", "openai_codex"],
-        },},
+          enum: [...AGENT_TYPE_ENUM],
+        },
+      },
       required: [],
     },
   },
@@ -225,7 +244,7 @@ export const sessionToolDefs: ToolDefinition[] = [
         },
         agentType: {
           type: "string",
-          enum: ["copilot", "copilot_claude", "copilot_codex", "claude", "cursor", "codex", "openai_codex"],
+          enum: [...AGENT_TYPE_ENUM],
         },
         workingDirectory: {
           type: "string",
@@ -266,7 +285,9 @@ export const sessionToolDefs: ToolDefinition[] = [
       properties: {
         threadId: {
           type: "number",
-          description: "The Telegram thread ID to send the message to.",
+          description:
+            "The Telegram thread ID to send the message to. " +
+            "Use targetThreadId instead when session context already uses threadId.",
         },
         targetThreadId: {
           type: "number",
@@ -283,7 +304,7 @@ export const sessionToolDefs: ToolDefinition[] = [
             "'manager-worker' \u2014 receiver reports back to sender thread when complete. " +
             "'reply' — sending results/status BACK to a parent or orchestrator thread (no task boilerplate added). " +
             "'peer' — raw P2P message with sender attribution, no task instructions or skill loading. For equal-status thread conversations.",
-          enum: ["one-shot", "manager-worker", "reply", "peer"],
+          enum: [...SEND_MESSAGE_MODE_ENUM],
         },
         senderName: {
           type: "string",
@@ -294,7 +315,7 @@ export const sessionToolDefs: ToolDefinition[] = [
           description: "Thread ID of the sender (used in manager-worker mode for reply routing).",
         },
       },
-      required: ["threadId", "message"],
+      required: ["message"],
     },
   },
 ];
