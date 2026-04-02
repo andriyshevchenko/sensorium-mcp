@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -289,6 +289,52 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       // Column may already exist from schema self-heal
     }
     log.info("[migration-17] Added autonomous_mode column to thread_registry (default OFF)");
+  },
+  18: (db) => {
+    // Backfill thread_registry from settings.json threadAgentTypes + keepAlive config.
+    // This ensures threads created before the registry existed are properly represented.
+    try {
+      const { readFileSync } = require("fs") as typeof import("fs");
+      const settingsPath = join(homedir(), ".remote-copilot-mcp", "settings.json");
+      let settings: Record<string, unknown> = {};
+      try { settings = JSON.parse(readFileSync(settingsPath, "utf-8")); } catch { /* no settings */ }
+
+      const agentTypes = (settings.threadAgentTypes ?? {}) as Record<string, string>;
+      const keepAliveThreadId = settings.keepAliveThreadId as number | undefined;
+      const keepAliveClient = (settings.keepAliveClient ?? "claude") as string;
+      const keepAliveEnabled = !!settings.keepAliveEnabled;
+
+      const upsert = db.prepare(
+        `INSERT INTO thread_registry (thread_id, name, type, client, keep_alive, created_at, last_active_at, status)
+         VALUES (?, ?, 'root', ?, ?, ?, ?, 'active')
+         ON CONFLICT(thread_id) DO UPDATE SET
+           client = CASE WHEN excluded.client != 'claude' THEN excluded.client ELSE thread_registry.client END,
+           keep_alive = CASE WHEN excluded.keep_alive = 1 THEN 1 ELSE thread_registry.keep_alive END,
+           status = CASE WHEN thread_registry.status = 'archived' AND excluded.keep_alive = 1 THEN 'active' ELSE thread_registry.status END`
+      );
+
+      let backfilled = 0;
+      const now = nowISO();
+      for (const [threadIdStr, client] of Object.entries(agentTypes)) {
+        const tid = Number(threadIdStr);
+        if (!Number.isFinite(tid)) continue;
+        const isKeepAlive = keepAliveEnabled && keepAliveThreadId === tid ? 1 : 0;
+        const effectiveClient = isKeepAlive ? keepAliveClient : client;
+        upsert.run(tid, `Thread ${tid}`, effectiveClient, isKeepAlive, now, now);
+        backfilled++;
+      }
+
+      // Specifically fix thread 1327 if it exists and keepAlive is set for it
+      if (keepAliveEnabled && keepAliveThreadId) {
+        db.prepare(
+          `UPDATE thread_registry SET keep_alive = 1, status = 'active', client = ? WHERE thread_id = ?`
+        ).run(keepAliveClient, keepAliveThreadId);
+      }
+
+      log.info(`[migration-18] Backfilled ${backfilled} threads from settings.json threadAgentTypes`);
+    } catch (err) {
+      log.warn(`[migration-18] Backfill from settings.json failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   },
 };
 

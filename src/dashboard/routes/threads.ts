@@ -32,7 +32,7 @@ import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./ty
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const VALID_STATUSES = ["active", "archived", "expired", "exited"] as const;
-const VALID_CLIENTS = ["claude", "copilot", "codex"] as const;
+const VALID_CLIENTS = ["claude", "copilot", "codex", "openai_codex", "copilot_claude", "copilot_codex", "cursor"] as const;
 
 function isKeeperClient(client: string): client is KeeperClient {
     return client === "claude" || client === "copilot";
