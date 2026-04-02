@@ -18,15 +18,10 @@ export interface ToolDefinition {
   };
 }
 
-const ALL_TOOL_DEFINITIONS: ToolDefinition[] = [
+export const ALL_TOOL_DEFINITIONS: ToolDefinition[] = [
   ...sessionToolDefs,
   ...waitToolDefs,
   ...utilityToolDefs,
   ...memoryToolDefs,
   ...skillToolDefs,
 ];
-
-/** @deprecated Use ALL_TOOL_DEFINITIONS directly. Kept for backward compat. */
-export function getToolDefinitions(): ToolDefinition[] {
-  return ALL_TOOL_DEFINITIONS;
-}

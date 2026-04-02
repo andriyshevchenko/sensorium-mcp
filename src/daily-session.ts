@@ -122,28 +122,28 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
   _rotating = true;
 
   try {
-  const db = initMemoryDb();
-  const roots = getRootThreads(db);
-  const results: DailyRotationResult[] = [];
+    const db = initMemoryDb();
+    const roots = getRootThreads(db);
+    const results: DailyRotationResult[] = [];
 
-  for (const root of roots) {
+    for (const root of roots) {
       if (!root.dailyRotation) continue;
-    // Skip if already rotated today
-    if (root.sessionResetAt) {
-      const resetDate = root.sessionResetAt.slice(0, 10);
-      if (resetDate === todayDate) {
-        log.info(`Root ${root.threadId} already rotated today, skipping`);
-        continue;
+      // Skip if already rotated today
+      if (root.sessionResetAt) {
+        const resetDate = root.sessionResetAt.slice(0, 10);
+        if (resetDate === todayDate) {
+          log.info(`Root ${root.threadId} already rotated today, skipping`);
+          continue;
+        }
       }
+
+      const result = await rotateDailySession(root.threadId);
+      results.push(result);
     }
 
-    const result = await rotateDailySession(root.threadId);
-    results.push(result);
-  }
-
-  const allSucceeded = results.every(r => !r.error);
-  if (allSucceeded) _lastRotationDate = todayDate;
-  return results;
+    const allSucceeded = results.every(r => !r.error);
+    if (allSucceeded) _lastRotationDate = todayDate;
+    return results;
   } finally {
     _rotating = false;
   }

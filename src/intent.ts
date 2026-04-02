@@ -61,7 +61,10 @@ function parseSkillFile(filePath: string): Skill | null {
     }
   }
 
-  if (!name || triggers.length === 0) return null;
+  if (!name || triggers.length === 0) {
+    log.warn(`[skills] ${filePath}: frontmatter found but missing ${!name ? "name" : "triggers"} — skipping`);
+    return null;
+  }
   if (replacesOrchestrator && !body) return null;
   return { name, triggers, replacesOrchestrator, content: body, source: filePath };
 }
