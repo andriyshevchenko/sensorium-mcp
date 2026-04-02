@@ -21,9 +21,12 @@ const creating = ref(false)
 
 // Branch creation
 const branchingRoot = ref<number | null>(null)
-const branchForm = ref({ name: '', threadId: 0 })
+const branchForm = ref({ name: '', threadId: 0, client: 'claude' })
 const branchStatus = ref('')
 const branchCreating = ref(false)
+
+// Agent type options
+const agentTypes = ['claude', 'copilot', 'codex', 'openai_codex', 'copilot_claude', 'copilot_codex', 'cursor'] as const
 
 // ── Badge config ─────────────────────────────────────────────────────────────
 
@@ -129,6 +132,7 @@ async function createBranch(rootThreadId: number) {
         name: branchForm.value.name.trim(),
         type: 'branch',
         rootThreadId,
+        client: branchForm.value.client,
       }),
     })
     if (!r.ok) {
@@ -136,7 +140,7 @@ async function createBranch(rootThreadId: number) {
       throw new Error(err.error ?? r.statusText)
     }
     branchStatus.value = 'Branch created ✓'
-    branchForm.value = { name: '', threadId: 0 }
+    branchForm.value = { name: '', threadId: 0, client: 'claude' }
     branchingRoot.value = null
     setTimeout(() => { branchStatus.value = '' }, 3000)
     await load()
@@ -164,6 +168,23 @@ async function toggleKeepAlive(thread: ThreadEntry) {
     await load()
   } catch (e: unknown) {
     error.value = 'Failed to toggle keep-alive: ' + (e as Error).message
+  }
+}
+
+async function changeClient(thread: ThreadEntry, newClient: string) {
+  try {
+    const r = await fetch(`/api/threads/${thread.threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ client: newClient }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    await load()
+  } catch (e: unknown) {
+    error.value = 'Failed to change agent type: ' + (e as Error).message
   }
 }
 
@@ -290,8 +311,7 @@ onMounted(load)
               v-model="createForm.client"
               class="w-full px-3 py-2 rounded-lg bg-card border border-gray-700 text-sm text-textPrimary focus:outline-none focus:border-accent transition appearance-none"
             >
-              <option value="claude">Claude</option>
-              <option value="copilot">Copilot</option>
+              <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
             </select>
           </div>
         </div>
@@ -329,7 +349,15 @@ onMounted(load)
               <!-- Status -->
               <span :class="['text-xs font-medium', statusClass(t.status)]">{{ t.status }}</span>
               <span class="text-xs text-muted font-mono">ID: {{ t.threadId }}</span>
-              <span class="text-xs text-textSecondary">{{ t.client }}</span>
+              <!-- Agent type selector -->
+              <select
+                :value="t.client"
+                @change="changeClient(t, ($event.target as HTMLSelectElement).value)"
+                class="px-2 py-0.5 rounded-lg bg-card border border-gray-700 text-xs text-textPrimary focus:outline-none focus:border-accent transition appearance-none cursor-pointer"
+                title="Agent type"
+              >
+                <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
+              </select>
               <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
 
               <div class="ml-auto flex items-center gap-3">
@@ -379,7 +407,7 @@ onMounted(load)
 
                 <!-- Create branch -->
                 <button
-                  @click="branchingRoot = branchingRoot === t.threadId ? null : t.threadId; branchForm = { name: '', threadId: 0 }; branchStatus = ''"
+                  @click="branchingRoot = branchingRoot === t.threadId ? null : t.threadId; branchForm = { name: '', threadId: 0, client: 'claude' }; branchStatus = ''"
                   class="px-2 py-1 rounded-lg text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 transition"
                 >
                   + Branch
@@ -389,7 +417,7 @@ onMounted(load)
 
             <!-- Branch creation form (inline) -->
             <div v-if="branchingRoot === t.threadId" class="mt-3 p-3 rounded-lg bg-surface border border-purple-500/20 space-y-2">
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <input
                   v-model="branchForm.name"
                   type="text"
@@ -403,6 +431,12 @@ onMounted(load)
                   placeholder="Thread ID"
                   class="px-3 py-1.5 rounded-lg bg-card border border-gray-700 text-sm text-textPrimary placeholder-muted focus:outline-none focus:border-accent transition"
                 />
+                <select
+                  v-model="branchForm.client"
+                  class="px-3 py-1.5 rounded-lg bg-card border border-gray-700 text-sm text-textPrimary focus:outline-none focus:border-accent transition appearance-none"
+                >
+                  <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
+                </select>
               </div>
               <div class="flex items-center gap-2">
                 <button
@@ -431,9 +465,28 @@ onMounted(load)
               <span class="text-sm font-medium">{{ child.name }}</span>
               <span :class="['text-xs', statusClass(child.status)]">{{ child.status }}</span>
               <span class="text-xs text-muted font-mono">ID: {{ child.threadId }}</span>
-              <span class="text-xs text-textSecondary">{{ child.client }}</span>
+              <!-- Agent type selector for children -->
+              <select
+                :value="child.client"
+                @change="changeClient(child, ($event.target as HTMLSelectElement).value)"
+                class="px-2 py-0.5 rounded-lg bg-card border border-gray-700 text-xs text-textPrimary focus:outline-none focus:border-accent transition appearance-none cursor-pointer"
+                title="Agent type"
+              >
+                <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
+              </select>
               <span class="text-xs text-muted">{{ formatDate(child.lastActiveAt) }}</span>
               <div class="ml-auto flex items-center gap-3">
+                <!-- Keep-alive toggle for branches -->
+                <div v-if="child.type === 'branch'" class="flex items-center gap-1.5">
+                  <button
+                    @click="toggleKeepAlive(child)"
+                    :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', child.keepAlive ? 'bg-accent' : 'bg-gray-700']"
+                    title="Toggle keep-alive"
+                  >
+                    <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', child.keepAlive ? 'translate-x-4' : 'translate-x-0.5']" />
+                  </button>
+                  <span class="text-xs text-muted">Keep-alive</span>
+                </div>
                 <!-- Autonomous Mode toggle for branches -->
                 <div v-if="child.type === 'branch'" class="flex items-center gap-1.5">
                   <button
@@ -501,9 +554,26 @@ onMounted(load)
           <span class="font-medium">{{ t.name }}</span>
           <span :class="['text-xs font-medium', statusClass(t.status)]">{{ t.status }}</span>
           <span class="text-xs text-muted font-mono">ID: {{ t.threadId }}</span>
-          <span class="text-xs text-textSecondary">{{ t.client }}</span>
+          <select
+            :value="t.client"
+            @change="changeClient(t, ($event.target as HTMLSelectElement).value)"
+            class="px-2 py-0.5 rounded-lg bg-card border border-gray-700 text-xs text-textPrimary focus:outline-none focus:border-accent transition appearance-none cursor-pointer"
+            title="Agent type"
+          >
+            <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
+          </select>
           <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
           <div class="ml-auto flex items-center gap-3">
+            <div class="flex items-center gap-1.5">
+              <button
+                @click="toggleKeepAlive(t)"
+                :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', t.keepAlive ? 'bg-accent' : 'bg-gray-700']"
+                title="Toggle keep-alive"
+              >
+                <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', t.keepAlive ? 'translate-x-4' : 'translate-x-0.5']" />
+              </button>
+              <span class="text-xs text-muted">Keep-alive</span>
+            </div>
             <div class="flex items-center gap-1.5">
               <button
                 @click="toggleAutonomousMode(t)"
@@ -540,7 +610,14 @@ onMounted(load)
           <span class="font-medium">{{ t.name }}</span>
           <span :class="['text-xs font-medium', statusClass(t.status)]">{{ t.status }}</span>
           <span class="text-xs text-muted font-mono">ID: {{ t.threadId }}</span>
-          <span class="text-xs text-textSecondary">{{ t.client }}</span>
+          <select
+            :value="t.client"
+            @change="changeClient(t, ($event.target as HTMLSelectElement).value)"
+            class="px-2 py-0.5 rounded-lg bg-card border border-gray-700 text-xs text-textPrimary focus:outline-none focus:border-accent transition appearance-none cursor-pointer"
+            title="Agent type"
+          >
+            <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
+          </select>
           <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
           <button
             @click="archiveThread(t)"
