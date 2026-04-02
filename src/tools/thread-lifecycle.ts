@@ -7,7 +7,7 @@
 
 import { execSync, spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
@@ -494,6 +494,13 @@ export function spawnCopilotProcess(
   }
   const httpSecret = process.env.MCP_HTTP_SECRET || null;
 
+  // Validate workingDirectory — a non-existent cwd causes ENOENT on spawn
+  if (workingDirectory && !existsSync(workingDirectory)) {
+    const fallback = tmpdir();
+    log.warn(`workingDirectory "${workingDirectory}" does not exist, falling back to "${fallback}"`);
+    workingDirectory = fallback;
+  }
+
   writeCopilotHomeFiles(COPILOT_HOME_DIR, httpPort, httpSecret);
 
   const dateStr = new Date().toISOString().slice(0, 10);
@@ -594,6 +601,14 @@ export function spawnCodexProcess(
   }
   const httpSecret = process.env.MCP_HTTP_SECRET || null;
   const httpMcpUrl = `http://127.0.0.1:${httpPort}/mcp`;
+
+  // Validate workingDirectory — a non-existent cwd causes ENOENT on spawn
+  // (error message misleadingly shows the binary path, not the bad cwd).
+  if (workingDirectory && !existsSync(workingDirectory)) {
+    const fallback = tmpdir();
+    log.warn(`workingDirectory "${workingDirectory}" does not exist, falling back to "${fallback}"`);
+    workingDirectory = fallback;
+  }
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
