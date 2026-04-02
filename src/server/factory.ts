@@ -301,8 +301,12 @@ function createMcpServer(
     schedule_wake_up: (typedArgs) =>
       handleUtilityTool("schedule_wake_up", typedArgs, buildUtilityCtx()),
 
-    start_thread: (typedArgs) =>
-      handleStartThread(typedArgs, delegateCtx),
+    start_thread: (typedArgs) => {
+      // Strip threadId from args — MCP session context injects it, but
+      // start_thread must only use targetThreadId to avoid restarting the caller's own thread.
+      const { threadId: _sessionCtx, ...safeArgs } = typedArgs;
+      return handleStartThread(safeArgs, delegateCtx);
+    },
 
     send_message_to_thread: (typedArgs) =>
       handleSendMessageToThreadFile({ ...typedArgs, _callerThreadId: currentThreadId }),

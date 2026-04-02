@@ -223,13 +223,9 @@ export const sessionToolDefs: ToolDefinition[] = [
           type: "string",
           description: "Thread name",
         },
-        threadId: {
-          type: "number",
-          description: "Explicit Telegram thread ID (optional — auto-created if not provided)",
-        },
         targetThreadId: {
           type: "number",
-          description: "Alias for threadId — preferred when session context already uses threadId.",
+          description: "Explicit Telegram thread ID to restart (optional — auto-created if not provided).",
         },
         threadType: {
           type: "string",
