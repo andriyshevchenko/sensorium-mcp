@@ -369,8 +369,7 @@ async function handleProcessExit(
 
   // Update thread registry DB status to 'exited'
   try {
-    const { initMemoryDb: getDb } = await import("../memory.js");
-    const db = getDb();
+    const db = initMemoryDb();
     updateThread(db, threadId, { status: 'exited', lastActiveAt: new Date().toISOString() });
 
     // Synthesize ghost thread outcomes back to parent
