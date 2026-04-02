@@ -41,8 +41,8 @@ function isKeeperClient(client: string): client is KeeperClient {
 /** Extract valid update fields from a request body. Returns an error string on validation failure. */
 function buildThreadUpdates(
     body: Record<string, unknown>,
-): Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "client" | "maxRetries" | "cooldownMs" | "badge">> | string {
-    const updates: Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "client" | "maxRetries" | "cooldownMs" | "badge">> = {};
+): Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge">> | string {
+    const updates: Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge">> = {};
     if (typeof body.name === "string" && body.name.trim()) updates.name = body.name.trim();
     if (typeof body.status === "string") {
         if (!(VALID_STATUSES as readonly string[]).includes(body.status)) {
@@ -52,6 +52,7 @@ function buildThreadUpdates(
     }
     if (typeof body.keepAlive === "boolean") updates.keepAlive = body.keepAlive;
     if (typeof body.dailyRotation === "boolean") updates.dailyRotation = body.dailyRotation;
+    if (typeof body.autonomousMode === "boolean") updates.autonomousMode = body.autonomousMode;
     if (typeof body.client === "string") {
         if (!(VALID_CLIENTS as readonly string[]).includes(body.client)) {
             return `client must be one of: ${VALID_CLIENTS.join(", ")}`;

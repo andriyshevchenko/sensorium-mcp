@@ -149,6 +149,18 @@ export async function handleWaitForInstructions(
       "Error: No active session. Call start_session first, then pass the returned threadId to this tool.",
     );
   }
+
+  // Per-thread autonomousMode overrides global AUTONOMOUS_MODE
+  let autonomousMode = AUTONOMOUS_MODE;
+  try {
+    const { getThread } = await import("../../data/memory/thread-registry.js");
+    const threadEntry = getThread(getMemoryDb(), effectiveThreadId);
+    if (threadEntry) autonomousMode = threadEntry.autonomousMode || AUTONOMOUS_MODE;
+  } catch { /* fallback to global */ }
+  // Override config for downstream consumers so they see per-thread value
+  if (autonomousMode !== AUTONOMOUS_MODE) {
+    Object.assign(ctx, { config: { ...config, AUTONOMOUS_MODE: autonomousMode } });
+  }
   const callNumber = ++state.waitCallCount;
   const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
   // Codex MCP client enforces a hard 120s tool-call timeout and ignores SSE
@@ -221,7 +233,7 @@ export async function handleWaitForInstructions(
         getMemoryDb,
         effectiveThreadId,
         sessionStartedAt: state.sessionStartedAt,
-        autonomousMode: AUTONOMOUS_MODE,
+        autonomousMode: autonomousMode,
       });
       if (reactionResult) return reactionResult;
     }
@@ -245,10 +257,11 @@ export async function handleWaitForInstructions(
     // ── In-loop drive activation check (every 30 min) ──────────────────
     // Without this, the drive only fires on poll TIMEOUT (every 2h default).
     // Checking inside the loop ensures consistent activation during long polls.
-    if (effectiveThreadId !== undefined && AUTONOMOUS_MODE && Date.now() - lastDriveCheck >= DRIVE_CHECK_INTERVAL_MS) {
+    if (effectiveThreadId !== undefined && autonomousMode && Date.now() - lastDriveCheck >= DRIVE_CHECK_INTERVAL_MS) {
       lastDriveCheck = Date.now();
-      runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
-      const driveResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
+      const driveConfig = { ...config, AUTONOMOUS_MODE: autonomousMode };
+      runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config: driveConfig, memoryRefresh: "", scheduleHint: "" });
+      const driveResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config: driveConfig, memoryRefresh: "", scheduleHint: "" });
       if (driveResult) return driveResult;
     }
 
