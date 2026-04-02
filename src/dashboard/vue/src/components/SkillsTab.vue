@@ -10,6 +10,7 @@ const editContent = ref('')
 const editTriggers = ref('')
 const editReplacesOrch = ref(false)
 const saveStatus = ref('')
+const deleteStatus = ref('')
 const showNewForm = ref(false)
 const newSkillName = ref('')
 const newSkillTriggers = ref('')
@@ -54,6 +55,7 @@ function openEditor(skill: Skill) {
 
 function closeEditor() {
   selectedSkill.value = null
+  deleteStatus.value = ''
 }
 
 function buildSkillMarkdown(name: string, triggers: string[], replacesOrchestrator: boolean, body: string): string {
@@ -87,6 +89,22 @@ async function saveSkill() {
     await load()
   } catch (e: unknown) {
     saveStatus.value = 'Error: ' + (e as Error).message
+  }
+}
+
+async function deleteSkillOverride() {
+  if (!selectedSkill.value) return
+  const name = selectedSkill.value.name
+  try {
+    const r = await fetch(`/api/skills/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    closeEditor()
+    await load()
+  } catch (e: unknown) {
+    deleteStatus.value = 'Error: ' + (e as Error).message
   }
 }
 
@@ -211,6 +229,13 @@ onMounted(load)
         </div>
         <div class="flex items-center gap-2">
           <span v-if="saveStatus" class="text-sm text-success">{{ saveStatus }}</span>
+          <span v-if="deleteStatus" class="text-sm text-warn">{{ deleteStatus }}</span>
+          <button
+            v-if="skillSourceType(selectedSkill.source) === 'user'"
+            @click="deleteSkillOverride"
+            class="px-4 py-2 rounded-xl bg-card hover:bg-red-900/40 border border-gray-700 hover:border-red-700 text-sm text-textSecondary hover:text-red-400 transition"
+            title="Remove user override (reverts to default)"
+          >Remove override</button>
           <button @click="closeEditor" class="px-4 py-2 rounded-xl bg-card hover:bg-cardHover border border-gray-700 text-sm text-textSecondary hover:text-textPrimary transition">Close</button>
           <button @click="saveSkill" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Save</button>
         </div>
