@@ -167,6 +167,40 @@ async function toggleKeepAlive(thread: ThreadEntry) {
   }
 }
 
+async function toggleDailyRotation(thread: ThreadEntry) {
+  try {
+    const r = await fetch(`/api/threads/${thread.threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ dailyRotation: !thread.dailyRotation }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    await load()
+  } catch (e: unknown) {
+    error.value = 'Failed to toggle daily rotation: ' + (e as Error).message
+  }
+}
+
+async function toggleAutonomousMode(thread: ThreadEntry) {
+  try {
+    const r = await fetch(`/api/threads/${thread.threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ autonomousMode: !thread.autonomousMode }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    await load()
+  } catch (e: unknown) {
+    error.value = 'Failed to toggle autonomous mode: ' + (e as Error).message
+  }
+}
+
 // ── Archive thread ───────────────────────────────────────────────────────────
 
 async function archiveThread(thread: ThreadEntry) {
@@ -298,16 +332,42 @@ onMounted(load)
               <span class="text-xs text-textSecondary">{{ t.client }}</span>
               <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
 
-              <div class="ml-auto flex items-center gap-2">
+              <div class="ml-auto flex items-center gap-3">
                 <!-- Keep-alive toggle -->
-                <button
-                  @click="toggleKeepAlive(t)"
-                  :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', t.keepAlive ? 'bg-accent' : 'bg-gray-700']"
-                  title="Toggle keep-alive"
-                >
-                  <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', t.keepAlive ? 'translate-x-4' : 'translate-x-0.5']" />
-                </button>
-                <span class="text-xs text-muted">Keep-alive</span>
+                <div class="flex items-center gap-1.5">
+                  <button
+                    @click="toggleKeepAlive(t)"
+                    :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', t.keepAlive ? 'bg-accent' : 'bg-gray-700']"
+                    title="Toggle keep-alive"
+                  >
+                    <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', t.keepAlive ? 'translate-x-4' : 'translate-x-0.5']" />
+                  </button>
+                  <span class="text-xs text-muted">Keep-alive</span>
+                </div>
+
+                <!-- Daily Rotation toggle -->
+                <div class="flex items-center gap-1.5">
+                  <button
+                    @click="toggleDailyRotation(t)"
+                    :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', t.dailyRotation ? 'bg-blue-500' : 'bg-gray-700']"
+                    title="Toggle daily rotation"
+                  >
+                    <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', t.dailyRotation ? 'translate-x-4' : 'translate-x-0.5']" />
+                  </button>
+                  <span class="text-xs text-muted">Daily</span>
+                </div>
+
+                <!-- Autonomous Mode toggle -->
+                <div class="flex items-center gap-1.5">
+                  <button
+                    @click="toggleAutonomousMode(t)"
+                    :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', t.autonomousMode ? 'bg-orange-500' : 'bg-gray-700']"
+                    title="Toggle autonomous mode"
+                  >
+                    <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', t.autonomousMode ? 'translate-x-4' : 'translate-x-0.5']" />
+                  </button>
+                  <span class="text-xs text-muted">Auto</span>
+                </div>
 
                 <!-- Expand children -->
                 <button
@@ -373,13 +433,26 @@ onMounted(load)
               <span class="text-xs text-muted font-mono">ID: {{ child.threadId }}</span>
               <span class="text-xs text-textSecondary">{{ child.client }}</span>
               <span class="text-xs text-muted">{{ formatDate(child.lastActiveAt) }}</span>
-              <button
-                v-if="child.type !== 'root'"
-                @click="archiveThread(child)"
-                class="ml-auto px-2 py-0.5 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
-              >
-                Archive
-              </button>
+              <div class="ml-auto flex items-center gap-3">
+                <!-- Autonomous Mode toggle for branches -->
+                <div v-if="child.type === 'branch'" class="flex items-center gap-1.5">
+                  <button
+                    @click="toggleAutonomousMode(child)"
+                    :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', child.autonomousMode ? 'bg-orange-500' : 'bg-gray-700']"
+                    title="Toggle autonomous mode"
+                  >
+                    <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', child.autonomousMode ? 'translate-x-4' : 'translate-x-0.5']" />
+                  </button>
+                  <span class="text-xs text-muted">Auto</span>
+                </div>
+                <button
+                  v-if="child.type !== 'root'"
+                  @click="archiveThread(child)"
+                  class="px-2 py-0.5 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
+                >
+                  Archive
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -430,12 +503,24 @@ onMounted(load)
           <span class="text-xs text-muted font-mono">ID: {{ t.threadId }}</span>
           <span class="text-xs text-textSecondary">{{ t.client }}</span>
           <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
-          <button
-            @click="archiveThread(t)"
-            class="ml-auto px-2 py-1 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
-          >
-            Archive
-          </button>
+          <div class="ml-auto flex items-center gap-3">
+            <div class="flex items-center gap-1.5">
+              <button
+                @click="toggleAutonomousMode(t)"
+                :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', t.autonomousMode ? 'bg-orange-500' : 'bg-gray-700']"
+                title="Toggle autonomous mode"
+              >
+                <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', t.autonomousMode ? 'translate-x-4' : 'translate-x-0.5']" />
+              </button>
+              <span class="text-xs text-muted">Auto</span>
+            </div>
+            <button
+              @click="archiveThread(t)"
+              class="px-2 py-1 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
+            >
+              Archive
+            </button>
+          </div>
         </div>
       </div>
     </div>

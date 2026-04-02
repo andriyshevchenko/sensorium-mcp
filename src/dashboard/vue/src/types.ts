@@ -60,6 +60,8 @@ export interface ThreadEntry {
   maxRetries: number
   cooldownMs: number
   keepAlive: boolean
+  dailyRotation: boolean
+  autonomousMode: boolean
   createdAt: string
   lastActiveAt: string | null
   sessionResetAt: string | null
