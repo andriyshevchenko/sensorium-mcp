@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -280,6 +280,16 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     }
     log.info("[migration-16] Added daily_rotation column to thread_registry (default OFF)");
   },
+  17: (db) => {
+    // Add autonomous_mode column to thread_registry (default OFF).
+    // Per-thread toggle for drive system autonomous mode.
+    try {
+      db.exec(`ALTER TABLE thread_registry ADD COLUMN autonomous_mode INTEGER NOT NULL DEFAULT 0`);
+    } catch {
+      // Column may already exist from schema self-heal
+    }
+    log.info("[migration-17] Added autonomous_mode column to thread_registry (default OFF)");
+  },
 };
 
 /**
@@ -480,7 +490,8 @@ function ensureSchemaIntegrity(db: Database): void {
         last_active_at  TEXT,
         session_reset_at TEXT,
         status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
-        daily_rotation  INTEGER NOT NULL DEFAULT 0
+        daily_rotation  INTEGER NOT NULL DEFAULT 0,
+        autonomous_mode INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
       CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
@@ -490,6 +501,7 @@ function ensureSchemaIntegrity(db: Database): void {
     stampVersion(13);
     stampVersion(15);
     stampVersion(16);
+    stampVersion(17);
     stampVersion(15);
   } else {
     const threadRegistryCols = db
@@ -700,7 +712,8 @@ CREATE TABLE IF NOT EXISTS thread_registry (
   last_active_at  TEXT,
   session_reset_at TEXT,
   status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
-  daily_rotation  INTEGER NOT NULL DEFAULT 0
+  daily_rotation  INTEGER NOT NULL DEFAULT 0,
+  autonomous_mode INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
 CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
