@@ -3,7 +3,7 @@
  * Covers: listing loaded skills, saving user skill overrides.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -60,6 +60,28 @@ export async function handleSkillPut(args: RouteArgs, name: string): Promise<boo
         json({ ok: true });
     } catch (err) {
         json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+    return true;
+}
+
+// ─── DELETE /api/skills/:name — remove a user skill override ──────────────
+
+export async function handleSkillDelete(args: RouteArgs, name: string): Promise<boolean> {
+    const { req, json } = args;
+    if (req.method !== "DELETE") return false;
+
+    try {
+        const skillPath = join(homedir(), ".remote-copilot-mcp", "skills", `${name}.md`);
+        await unlink(skillPath);
+        invalidateSkillCache();
+        json({ ok: true });
+    } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") {
+            json({ error: `Skill "${name}" not found` }, 404);
+        } else {
+            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+        }
     }
     return true;
 }
