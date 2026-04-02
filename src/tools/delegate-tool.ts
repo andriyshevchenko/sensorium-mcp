@@ -92,8 +92,9 @@ export async function handleStartThread(
 
   // ── Validate args ─────────────────────────────────────────────────────
   const name = typeof args.name === "string" ? args.name.trim() : "";
-  // Prefer targetThreadId over threadId (session context may collide with explicit target)
-  const rawThreadId = args.targetThreadId ?? args.threadId;
+  // ONLY use targetThreadId — args.threadId is always the MCP session context,
+  // not an explicit target. Using it would restart the caller's own thread.
+  const rawThreadId = args.targetThreadId;
   const explicitThreadId = typeof rawThreadId === "number" ? rawThreadId
     : typeof rawThreadId === "string" ? (Number.isFinite(Number(rawThreadId)) ? Number(rawThreadId) : undefined)
     : undefined;
