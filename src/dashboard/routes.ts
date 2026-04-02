@@ -71,6 +71,7 @@ import {
 // Domain handlers — skills
 import {
     handleGetSkills,
+    handleSkillDelete,
     handleSkillPut,
 } from "./routes/skills.js";
 
@@ -214,11 +215,17 @@ async function dispatchApiRoute(
             if (result) return true;
         }
 
-        // 3. Dynamic skill route: PUT /api/skills/:name
+        // 3. Dynamic skill routes: PUT/DELETE /api/skills/:name
         const skillMatch = path.match(/^\/api\/skills\/([\w-]+)$/);
         if (skillMatch) {
-            const result = await handleSkillPut(args, skillMatch[1]);
-            if (result) return true;
+            if (method === "PUT") {
+                const result = await handleSkillPut(args, skillMatch[1]);
+                if (result) return true;
+            }
+            if (method === "DELETE") {
+                const result = await handleSkillDelete(args, skillMatch[1]);
+                if (result) return true;
+            }
         }
 
         // 4. Dynamic thread routes: /api/threads/:threadId[/children]
