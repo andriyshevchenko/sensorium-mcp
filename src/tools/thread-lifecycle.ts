@@ -16,6 +16,11 @@ import { synthesizeGhostMemory } from "../memory.js";
 import { archiveThread, getAllThreads, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
+import {
+  COPILOT_HOME_DIR,
+  DEFAULT_COPILOT_MODEL,
+  writeCopilotHomeFiles,
+} from "./shared-agent-utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -199,26 +204,6 @@ export function resolveCopilotPath(): string | null {
 // ---------------------------------------------------------------------------
 // Copilot home helpers
 // ---------------------------------------------------------------------------
-
-const COPILOT_HOME_DIR = join(BASE_DIR, "copilot-home");
-const COPILOT_MCP_CONFIG_FILENAME = "mcp-config.json";
-const COPILOT_INSTRUCTIONS_FILENAME = "copilot-instructions.md";
-const COPILOT_SYSTEM_PROMPT =
-  "You are a remote Copilot agent. " +
-  "Start remote session with sensorium. Pass agentType='copilot' to start_session.";
-const DEFAULT_COPILOT_MODEL = "claude-opus-4.6";
-
-function writeCopilotHomeFiles(copilotHome: string, port: number, secret: string | null): void {
-  mkdirSync(copilotHome, { recursive: true });
-  const serverConfig: Record<string, unknown> = {
-    type: "http",
-    url: `http://127.0.0.1:${port}/mcp`,
-  };
-  if (secret) serverConfig.headers = { Authorization: `Bearer ${secret}` };
-  const mcpConfig = { mcpServers: { "sensorium-mcp": serverConfig } };
-  writeFileSync(join(copilotHome, COPILOT_MCP_CONFIG_FILENAME), JSON.stringify(mcpConfig, null, 2), "utf-8");
-  writeFileSync(join(copilotHome, COPILOT_INSTRUCTIONS_FILENAME), COPILOT_SYSTEM_PROMPT, "utf-8");
-}
 
 // ---------------------------------------------------------------------------
 // Codex home helpers
@@ -501,7 +486,8 @@ export function spawnCopilotProcess(
     workingDirectory = fallback;
   }
 
-  writeCopilotHomeFiles(COPILOT_HOME_DIR, httpPort, httpSecret);
+  const copilotHomeDir = join(BASE_DIR, COPILOT_HOME_DIR);
+  writeCopilotHomeFiles(copilotHomeDir, httpPort, httpSecret);
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -522,7 +508,7 @@ export function spawnCopilotProcess(
     "--autopilot",
   ];
 
-  const spawnEnv: NodeJS.ProcessEnv = { ...process.env, COPILOT_HOME: COPILOT_HOME_DIR };
+  const spawnEnv: NodeJS.ProcessEnv = { ...process.env, COPILOT_HOME: copilotHomeDir };
   if (memorySourceThreadId !== undefined) {
     spawnEnv.MEMORY_SOURCE_THREAD_ID = String(memorySourceThreadId);
   }
@@ -556,7 +542,7 @@ export function spawnCopilotProcess(
 
   const pidFilePath = join(PIDS_DIR, `${threadId}.pid`);
   try {
-    const pidMeta = { pid, name, configPath: COPILOT_HOME_DIR, startedAt: Date.now() };
+    const pidMeta = { pid, name, configPath: copilotHomeDir, startedAt: Date.now() };
     writeFileSync(pidFilePath, JSON.stringify(pidMeta), "utf-8");
   } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
 
