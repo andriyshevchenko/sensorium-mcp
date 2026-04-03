@@ -140,8 +140,17 @@ export function startHttpServer(
 
     // Ensure Accept header includes required MIME types for Streamable HTTP.
     // Internal callers (e.g. keeper) may omit it, causing a 406 from the SDK.
+    // Must patch rawHeaders (used by @hono/node-server), not just headers.
     if (req.method === "POST" && !req.headers.accept?.includes("text/event-stream")) {
-      req.headers.accept = "application/json, text/event-stream";
+      const acceptValue = "application/json, text/event-stream";
+      req.headers.accept = acceptValue;
+      // rawHeaders is the source of truth for @hono/node-server's header conversion
+      const idx = req.rawHeaders.findIndex((h) => h.toLowerCase() === "accept");
+      if (idx >= 0) {
+        req.rawHeaders[idx + 1] = acceptValue;
+      } else {
+        req.rawHeaders.push("Accept", acceptValue);
+      }
     }
 
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
