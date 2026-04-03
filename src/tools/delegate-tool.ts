@@ -131,7 +131,8 @@ export async function handleStartThread(
   // ── Mode-specific validation & memory resolution ────────────────────
   let memorySourceThreadId: number | undefined;
   let memoryTargetThreadId: number | undefined;
-  let threadRegistryType: "worker" | "branch" = "worker";
+  let threadRegistryType: "daily" | "worker" | "branch" = "worker";
+  let runtimeThreadType: "worker" | "branch" | undefined = "worker";
 
   switch (mode) {
     case "worker":
@@ -146,7 +147,8 @@ export async function handleStartThread(
       if (!name) return errorResult("Error: 'name' is required for daily mode.");
       memorySourceThreadId = rootThreadId;
       memoryTargetThreadId = rootThreadId;
-      threadRegistryType = "branch";
+      threadRegistryType = "daily";
+      runtimeThreadType = "branch";
       break;
 
     case "branch":
@@ -154,11 +156,13 @@ export async function handleStartThread(
       if (!name) return errorResult("Error: 'name' is required for branch mode.");
       // Memory is forked AFTER thread creation (needs threadId first)
       threadRegistryType = "branch";
+      runtimeThreadType = "branch";
       break;
 
     case "resume":
       if (!explicitThreadId) return errorResult("Error: 'targetThreadId' is required for resume mode.");
       // Resume uses existing memory config — no source/target overrides
+      runtimeThreadType = undefined;
       break;
 
     default:
@@ -175,6 +179,7 @@ export async function handleStartThread(
       if (rootThreadId) {
         memorySourceThreadId = rootThreadId;
         memoryTargetThreadId = rootThreadId;
+        runtimeThreadType = "branch";
       }
       break;
   }
@@ -283,10 +288,10 @@ export async function handleStartThread(
   }
 
   const result = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex"
-    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, agentType, threadRegistryType)
+    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, agentType, runtimeThreadType)
     : agentType === "codex" || agentType === "openai_codex"
-    ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, threadRegistryType)
-    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId, memoryTargetThreadId, threadRegistryType);
+    ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, runtimeThreadType)
+    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
   // ── 5. Branch mode: fork memory ─────────────────────────────────────
