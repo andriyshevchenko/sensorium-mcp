@@ -242,7 +242,7 @@ export function getKeepAliveClient(): KeeperClient {
   return isValidKeeperClient(v) ? v : "claude";
 }
 
-export function setKeepAliveClient(client: KeeperClient): void {
+export function setKeepAliveClient(client: string): void {
   updateSettings(s => { s.keepAliveClient = client; });
 }
 
@@ -250,7 +250,7 @@ export function setKeepAliveClient(client: KeeperClient): void {
 
 export interface ThreadKeepAliveSettings {
   enabled: boolean;
-  client?: KeeperClient;
+  client?: string;
   maxRetries?: number;
   cooldownMs?: number;
 }
