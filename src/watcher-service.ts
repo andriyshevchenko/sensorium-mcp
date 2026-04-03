@@ -185,15 +185,11 @@ function startMcpServer(): void {
 async function stopMcpServer(): Promise<void> {
   const pid = readPid();
   if (!pid || !alive(pid)) { rmPid(); return; }
-  log("INFO", `Waiting for PID ${pid} to idle...`);
-  let waited = 0;
-  while (waited < CONFIG.maxIdleWaitSeconds) {
-    const age = activityAgeSec();
-    if (age === null || age >= CONFIG.idleThresholdSeconds) { log("INFO", "Server idle."); break; }
-    log("INFO", `Active (${Math.round(age)}s ago) — waiting...`);
-    await sleep(5000); waited += 5;
-  }
-  if (waited >= CONFIG.maxIdleWaitSeconds) log("WARN", "Max idle wait exceeded — force-killing.");
+  // The grace period in checkAndUpdate already waits for in-flight requests
+  // to finish. Skip the idle-poll here — the poll loop's activity heartbeat
+  // keeps last-activity.txt permanently fresh, causing a guaranteed 5-min
+  // timeout that serves no purpose.
+  log("INFO", `Stopping MCP server (PID ${pid})...`);
   await killPid(pid);
   rmPid(); managedChild = null;
   log("INFO", `PID ${pid} stopped.`);
