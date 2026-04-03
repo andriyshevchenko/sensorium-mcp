@@ -43,7 +43,10 @@ function keeperLog(level: "INFO" | "WARN" | "ERROR", msg: string): void {
 }
 
 function authHeaders(secret: string | null): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
+  const h: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
+  };
   if (secret) h["Authorization"] = `Bearer ${secret}`;
   return h;
 }
