@@ -215,36 +215,46 @@ export const sessionToolDefs: ToolDefinition[] = [
     description:
       "Ensure an agent session is running on a named thread. " +
       "Creates the thread if it doesn't exist. Restarts if dormant. No-op if already active. " +
-      "Use this before send_message_to_thread.",
+      "Use mode to specify the thread's purpose and memory behavior.",
     inputSchema: {
       type: "object",
       properties: {
+        mode: {
+          type: "string",
+          enum: ["worker", "daily", "branch", "resume"],
+          description:
+            "Thread purpose. " +
+            "'worker': temporary task executor — reads parent's memory, writes to own (discarded later). Requires parentThreadId. " +
+            "'daily': daily session for a root thread — reads AND writes to the root's memory. Requires rootThreadId. " +
+            "'branch': fork for independent work — copies root memory at fork time, then reads/writes own copy. Requires rootThreadId. " +
+            "'resume': restart an existing dormant thread as-is. Requires targetThreadId.",
+        },
         name: {
           type: "string",
-          description: "Thread name",
+          description: "Thread name. Required for worker, daily, branch. Ignored for resume.",
         },
         targetThreadId: {
           type: "number",
-          description: "Explicit Telegram thread ID to restart (optional — auto-created if not provided).",
-        },
-        threadType: {
-          type: "string",
-          enum: ["worker", "branch"],
           description:
-            "Thread type. 'worker': temporary thread with read-only memory, auto-cleaned after 1 hour. " +
-            "'branch': long-lived thread that reads AND writes to the memory bank.",
+            "Explicit Telegram thread ID. Required for resume mode. " +
+            "Optional for other modes (auto-created if not provided).",
         },
-        memoryBankId: {
+        parentThreadId: {
           type: "number",
-          description: "Memory bank thread ID. Workers read from it. Branches read from AND write to it.",
+          description: "Parent thread ID for worker mode. Workers read this thread's memory.",
+        },
+        rootThreadId: {
+          type: "number",
+          description: "Root thread ID for daily and branch modes.",
         },
         agentType: {
           type: "string",
           enum: [...AGENT_TYPE_ENUM],
+          description: "Agent type. Defaults to 'claude'.",
         },
         workingDirectory: {
           type: "string",
-          description: "Absolute path for cwd",
+          description: "Absolute path for cwd. Defaults to server's working directory.",
         },
         task: {
           type: "string",
@@ -253,16 +263,8 @@ export const sessionToolDefs: ToolDefinition[] = [
             "Written to pending-tasks before the agent spawns, guaranteeing delivery on first poll. " +
             "Equivalent to calling send_message_to_thread immediately after start_thread but without the timing race.",
         },
-        memorySourceThreadId: {
-          type: "number",
-          description: "Advanced: explicit source memory thread (use memoryBankId + threadType instead)",
-        },
-        targetMemoryThreadId: {
-          type: "number",
-          description: "Advanced: explicit target memory thread (use memoryBankId + threadType instead)",
-        },
       },
-      required: ["workingDirectory"],
+      required: [],
     },
   },
   {

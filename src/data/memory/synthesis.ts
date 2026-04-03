@@ -215,3 +215,33 @@ export async function synthesizeGhostMemory(
 
   return result;
 }
+
+/**
+ * Fork memory from a source thread to a new branch thread.
+ * Copies semantic_notes and temporal_narratives (not episodes — those are session-specific).
+ * Returns the number of items copied.
+ */
+export function forkMemory(
+  db: Database,
+  sourceThreadId: number,
+  targetThreadId: number,
+): { notesCopied: number; narrativesCopied: number } {
+  // Copy semantic notes (generate new IDs)
+  const notes = db.prepare(
+    `INSERT INTO semantic_notes (id, thread_id, type, content, keywords, confidence, source_episode_id, created_at, updated_at, access_count, embedding)
+     SELECT 'sn_' || lower(hex(randomblob(6))), ?, type, content, keywords, confidence, source_episode_id, created_at, created_at, 0, embedding
+     FROM semantic_notes WHERE thread_id = ?`
+  ).run(targetThreadId, sourceThreadId);
+
+  // Copy temporal narratives
+  const narratives = db.prepare(
+    `INSERT INTO temporal_narratives (thread_id, period_start, period_end, summary, key_decisions, open_questions, created_at)
+     SELECT ?, period_start, period_end, summary, key_decisions, open_questions, ?
+     FROM temporal_narratives WHERE thread_id = ?`
+  ).run(targetThreadId, new Date().toISOString(), sourceThreadId);
+
+  return {
+    notesCopied: notes.changes,
+    narrativesCopied: narratives.changes,
+  };
+}
