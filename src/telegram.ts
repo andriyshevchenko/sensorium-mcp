@@ -45,8 +45,27 @@ export class TelegramClient {
   /** Optional lazy DB getter for persisting message_id → thread_id mapping. */
   private dbGetter: (() => Database) | null = null;
 
+  /** Optional resolver for logical threadId → actual Telegram topic ID. */
+  private topicResolver: ((threadId: number) => number) | null = null;
+
   constructor(private readonly token: string) {
     this.baseUrl = `https://api.telegram.org/bot${token}`;
+  }
+
+  /** Set a resolver that maps logical thread IDs to actual Telegram topic IDs. */
+  setTopicResolver(resolver: (threadId: number) => number): void {
+    this.topicResolver = resolver;
+  }
+
+  /** Resolve a logical threadId to the actual Telegram topic ID. */
+  private resolveTopicId(threadId: number | undefined): number | undefined {
+    if (threadId === undefined) return undefined;
+    if (!this.topicResolver) return threadId;
+    try {
+      return this.topicResolver(threadId);
+    } catch {
+      return threadId;
+    }
   }
 
   /**
@@ -147,7 +166,7 @@ export class TelegramClient {
     formData.append(fieldName, blob, filename);
     if (options?.caption) formData.append("caption", options.caption);
     if (options?.threadId !== undefined) {
-      formData.append("message_thread_id", String(options.threadId));
+      formData.append("message_thread_id", String(this.resolveTopicId(options.threadId)));
     }
 
     const response = await this.safeFetch(url, { method: "POST", body: formData });
@@ -256,7 +275,7 @@ export class TelegramClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        message_thread_id: messageThreadId,
+        message_thread_id: this.resolveTopicId(messageThreadId) ?? messageThreadId,
       }),
     });
     const data = await this.tryParseJson<{ ok: boolean; description?: string }>(response);
@@ -278,7 +297,7 @@ export class TelegramClient {
     const url = `${this.baseUrl}/sendMessage`;
     const body: Record<string, unknown> = { chat_id: chatId, text };
     if (parseMode) body.parse_mode = parseMode;
-    if (threadId !== undefined) body.message_thread_id = threadId;
+    if (threadId !== undefined) body.message_thread_id = this.resolveTopicId(threadId);
 
     const response = await this.safeFetch(url, {
       method: "POST",
@@ -394,7 +413,7 @@ export class TelegramClient {
   ): Promise<void> {
     const url = `${this.baseUrl}/sendSticker`;
     const body: Record<string, unknown> = { chat_id: chatId, sticker: stickerId };
-    if (threadId !== undefined) body.message_thread_id = threadId;
+    if (threadId !== undefined) body.message_thread_id = this.resolveTopicId(threadId);
 
     const response = await this.safeFetch(url, {
       method: "POST",
