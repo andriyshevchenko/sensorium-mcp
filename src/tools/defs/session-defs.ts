@@ -246,6 +246,13 @@ export const sessionToolDefs: ToolDefinition[] = [
           type: "string",
           description: "Absolute path for cwd",
         },
+        task: {
+          type: "string",
+          description:
+            "Optional task message to pre-queue for the worker. " +
+            "Written to pending-tasks before the agent spawns, guaranteeing delivery on first poll. " +
+            "Equivalent to calling send_message_to_thread immediately after start_thread but without the timing race.",
+        },
         memorySourceThreadId: {
           type: "number",
           description: "Advanced: explicit source memory thread (use memoryBankId + threadType instead)",

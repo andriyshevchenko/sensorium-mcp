@@ -108,6 +108,7 @@ export async function handleStartThread(
   let targetMemoryThreadId = typeof args.targetMemoryThreadId === "number" ? args.targetMemoryThreadId
     : typeof args.targetMemoryThreadId === "string" ? (Number.isFinite(Number(args.targetMemoryThreadId)) ? Number(args.targetMemoryThreadId) : undefined)
     : undefined;
+  const task = typeof args.task === "string" ? args.task.trim() : "";
 
   // Thread type shorthand — resolves to source/target memory settings
   const threadType = args.threadType as string | undefined;
@@ -233,6 +234,18 @@ export async function handleStartThread(
 
   // ── 4. Dormant (topic existed, process dead) → restart ────────────────
   ensureDirs();
+
+  // Pre-queue task message if provided (written before agent starts polling)
+  if (task) {
+    const taskFilePath = join(PENDING_TASKS_DIR, `${threadId}.txt`);
+    try {
+      appendFileSync(taskFilePath, task + "\n", "utf-8");
+      log.info(`[start_thread] Pre-queued task for thread ${threadId}: ${task.slice(0, 120)}`);
+    } catch (err) {
+      log.warn(`[start_thread] Failed to pre-queue task: ${errorMessage(err)}`);
+    }
+  }
+
   const result = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex"
     ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, agentType, threadType as 'worker' | 'branch' | undefined)
     : agentType === "codex" || agentType === "openai_codex"
