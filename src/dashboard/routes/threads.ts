@@ -24,7 +24,6 @@ import {
     setKeepAliveCooldownMs,
     setThreadKeepAlive,
     removeThreadKeepAlive,
-    type KeeperClient,
 } from "../../config.js";
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
@@ -33,10 +32,6 @@ import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./ty
 
 const VALID_STATUSES = ["active", "archived", "expired", "exited"] as const;
 const VALID_CLIENTS = ["claude", "copilot", "codex", "openai_codex", "copilot_claude", "copilot_codex", "cursor"] as const;
-
-function isKeeperClient(client: string): client is KeeperClient {
-    return client === "claude" || client === "copilot";
-}
 
 /** Extract valid update fields from a request body. Returns an error string on validation failure. */
 function buildThreadUpdates(
@@ -126,10 +121,6 @@ export const handleCreateThread: RouteHandler = ({ req, json, db }) => {
                     ? body.client
                     : undefined;
             const keepAlive = typeof body.keepAlive === "boolean" ? body.keepAlive : undefined;
-            if (keepAlive && client && !isKeeperClient(client)) {
-                json({ error: "keepAlive threads must use client claude or copilot" }, 400);
-                return;
-            }
 
             // Check for duplicate
             const existing = getThread(db, threadId);
@@ -205,13 +196,6 @@ export function handleUpdateThread(args: RouteArgs, threadId: number): boolean {
                 return;
             }
 
-            const nextClient = updates.client ?? existing.client;
-            const nextKeepAlive = updates.keepAlive ?? existing.keepAlive;
-            if (nextKeepAlive && !isKeeperClient(nextClient)) {
-                // Auto-disable keepAlive when switching to a non-keeper client
-                updates.keepAlive = false;
-            }
-
             const updated = updateThread(db, threadId, updates);
             if (!updated) {
                 json({ error: "No changes applied" }, 400);
@@ -270,9 +254,7 @@ function syncKeepAliveToSettings(db: Database): void {
         if (activeKeepAlive) {
             setKeepAliveEnabled(true);
             setKeepAliveThreadId(activeKeepAlive.threadId);
-            if (isKeeperClient(activeKeepAlive.client)) {
-                setKeepAliveClient(activeKeepAlive.client);
-            }
+            setKeepAliveClient(activeKeepAlive.client);
             setKeepAliveMaxRetries(activeKeepAlive.maxRetries);
             setKeepAliveCooldownMs(activeKeepAlive.cooldownMs);
         } else {
@@ -281,7 +263,7 @@ function syncKeepAliveToSettings(db: Database): void {
 
         // Sync per-thread overrides
         for (const root of roots) {
-            if (root.keepAlive && isKeeperClient(root.client)) {
+            if (root.keepAlive) {
                 setThreadKeepAlive(root.threadId, {
                     enabled: true,
                     client: root.client,
