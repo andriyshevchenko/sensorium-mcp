@@ -27,6 +27,7 @@ import {
 } from "../../config.js";
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
+import { isThreadRunning } from "../../tools/thread-lifecycle.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -162,6 +163,13 @@ export function handleGetThread(args: RouteArgs, threadId: number): boolean {
     } else {
         args.json({ error: `Thread ${threadId} not found` }, 404);
     }
+    return true;
+}
+
+/** GET /api/threads/:threadId/running — check if an agent process is alive for this thread */
+export function handleGetThreadRunning(args: RouteArgs, threadId: number): boolean {
+    const running = isThreadRunning(threadId);
+    args.json({ threadId, running });
     return true;
 }
 

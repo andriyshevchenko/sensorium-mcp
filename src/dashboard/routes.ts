@@ -82,6 +82,7 @@ import {
     handleCreateThread,
     handleGetThread,
     handleGetThreadChildren,
+    handleGetThreadRunning,
     handleUpdateThread,
     handleDeleteThread,
 } from "./routes/threads.js";
@@ -228,10 +229,14 @@ async function dispatchApiRoute(
             }
         }
 
-        // 4. Dynamic thread routes: /api/threads/:threadId[/children]
+        // 4. Dynamic thread routes: /api/threads/:threadId[/children|/running]
         const threadChildrenMatch = /^\/api\/threads\/(\d+)\/children$/.exec(path);
         if (threadChildrenMatch) {
             return handleGetThreadChildren(args, Number.parseInt(threadChildrenMatch[1], 10));
+        }
+        const threadRunningMatch = /^\/api\/threads\/(\d+)\/running$/.exec(path);
+        if (threadRunningMatch) {
+            return handleGetThreadRunning(args, Number.parseInt(threadRunningMatch[1], 10));
         }
         const threadMatch = /^\/api\/threads\/(\d+)$/.exec(path);
         if (threadMatch) {
