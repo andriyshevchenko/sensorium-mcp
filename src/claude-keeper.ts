@@ -65,14 +65,13 @@ async function waitForMcpReady(port: number, secret: string | null): Promise<boo
 
 async function isThreadRunning(port: number, secret: string | null, threadId: number): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/threads/${threadId}`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/threads/${threadId}/running`, {
       headers: authHeaders(secret),
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) return false;
-    const data = await res.json() as { status?: string; thread?: { status?: string } };
-    const status = data.status ?? data.thread?.status;
-    return status === "running" || status === "active";
+    const data = await res.json() as { running?: boolean };
+    return data.running === true;
   } catch {
     return false;
   }
