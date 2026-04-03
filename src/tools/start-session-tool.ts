@@ -24,7 +24,7 @@ import type { AppConfig, ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
 import { readThreadMessages } from "../dispatcher.js";
-import { updateThread } from "../data/memory/thread-registry.js";
+import { getThread, registerThread, updateThread } from "../data/memory/thread-registry.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -254,6 +254,15 @@ export async function handleStartSession(
       // Persist so the same name resumes this thread next time.
       persistSession(TELEGRAM_CHAT_ID, topicName, session.currentThreadId);
       registerTopic(TELEGRAM_CHAT_ID, topicName, session.currentThreadId);
+      // Register in thread_registry so the dashboard can see it
+      try {
+        registerThread(getMemoryDb(), {
+          threadId: session.currentThreadId,
+          name: topicName,
+          type: 'root',
+          client: agentType ?? 'claude',
+        });
+      } catch { /* best-effort — DB may not be ready */ }
     } catch (err) {
       // Forum topics not available (e.g. plain group or DM) — cannot proceed
       // without thread isolation. Return an error so the agent knows.
@@ -382,8 +391,20 @@ export async function handleStartSession(
   // Set per-thread agent type if declared — determines agent-specific reminders
   if (threadId !== undefined && agentType) {
     setThreadAgentType(threadId, agentType);
-    // Sync agent type to the thread_registry DB
-    try { updateThread(getMemoryDb(), threadId, { client: agentType }); } catch { /* best-effort */ }
+    // Sync agent type to thread_registry (also ensures thread is registered)
+    try {
+      const db = getMemoryDb();
+      if (!getThread(db, threadId)) {
+        registerThread(db, {
+          threadId,
+          name: customName ?? `Thread ${threadId}`,
+          type: 'root',
+          client: agentType,
+        });
+      } else {
+        updateThread(db, threadId, { client: agentType });
+      }
+    } catch { /* best-effort */ }
   }
   const reminders = ctx.getReminders(threadId, session.sessionStartedAt, config.AUTONOMOUS_MODE);
   // Mark session as fully initialized — subsequent start_session calls with
