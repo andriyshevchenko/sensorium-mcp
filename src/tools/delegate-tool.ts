@@ -21,6 +21,7 @@ import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
 import { registerThread } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
+import { forkMemory } from "../data/memory/synthesis.js";
 import {
   findAliveThread,
   isThreadRunning,
@@ -90,47 +91,24 @@ export async function handleStartThread(
 ): Promise<ToolResult> {
   const { telegram, telegramChatId } = ctx;
 
-  // ── Validate args ─────────────────────────────────────────────────────
+  // ── Parse args ──────────────────────────────────────────────────────
+  const mode = typeof args.mode === "string" ? args.mode : "";
   const name = typeof args.name === "string" ? args.name.trim() : "";
-  // ONLY use targetThreadId — args.threadId is always the MCP session context,
-  // not an explicit target. Using it would restart the caller's own thread.
-  const rawThreadId = args.targetThreadId;
-  const explicitThreadId = typeof rawThreadId === "number" ? rawThreadId
-    : typeof rawThreadId === "string" ? (Number.isFinite(Number(rawThreadId)) ? Number(rawThreadId) : undefined)
-    : undefined;
-  const rawAgentType = typeof args.agentType === "string" ? args.agentType.trim() : "claude";
-  const workingDirectory = typeof args.workingDirectory === "string" ? args.workingDirectory.trim() : undefined;
-  // NOTE: No access control — any thread can read any thread's memory via memorySourceThreadId.
-  // Acceptable in single-user architecture. Review if multi-tenant support is added.
-  let memorySourceThreadId = typeof args.memorySourceThreadId === "number" ? args.memorySourceThreadId
-    : typeof args.memorySourceThreadId === "string" ? (Number.isFinite(Number(args.memorySourceThreadId)) ? Number(args.memorySourceThreadId) : undefined)
-    : undefined;
-  let targetMemoryThreadId = typeof args.targetMemoryThreadId === "number" ? args.targetMemoryThreadId
-    : typeof args.targetMemoryThreadId === "string" ? (Number.isFinite(Number(args.targetMemoryThreadId)) ? Number(args.targetMemoryThreadId) : undefined)
-    : undefined;
   const task = typeof args.task === "string" ? args.task.trim() : "";
+  const workingDirectory = typeof args.workingDirectory === "string"
+    ? args.workingDirectory.trim()
+    : process.cwd();
 
-  // Thread type shorthand — resolves to source/target memory settings
-  const threadType = args.threadType as string | undefined;
-  const memoryBankId = args.memoryBankId as number | undefined;
+  const parseNumArg = (v: unknown): number | undefined =>
+    typeof v === "number" ? v
+    : typeof v === "string" && Number.isFinite(Number(v)) ? Number(v)
+    : undefined;
 
-  if (memoryBankId !== undefined && threadType) {
-    if (threadType === "worker") {
-      // Workers: read from bank, write to own temp memory
-      memorySourceThreadId = memoryBankId;
-      // targetMemoryThreadId stays undefined (temp/own memory)
-    } else if (threadType === "branch") {
-      // Branches: read from AND write to bank
-      memorySourceThreadId = memoryBankId;
-      targetMemoryThreadId = memoryBankId;
-    }
-  }
+  const explicitThreadId = parseNumArg(args.targetThreadId);
+  const parentThreadId = parseNumArg(args.parentThreadId);
+  const rootThreadId = parseNumArg(args.rootThreadId);
 
-  // name is required unless an explicit threadId is provided
-  if (!name && explicitThreadId === undefined) {
-    return errorResult("Error: 'name' parameter is required for start_thread (unless threadId is provided).");
-  }
-
+  const rawAgentType = typeof args.agentType === "string" ? args.agentType.trim() : "claude";
   const agentType: AgentType =
     rawAgentType === "copilot" || rawAgentType === "copilot_claude" || rawAgentType === "copilot_codex"
     || rawAgentType === "claude" || rawAgentType === "cursor"
@@ -138,7 +116,58 @@ export async function handleStartThread(
       ? rawAgentType
       : "claude";
 
-  // ── Verify CLI availability ───────────────────────────────────────────
+  // ── Mode-specific validation & memory resolution ────────────────────
+  let memorySourceThreadId: number | undefined;
+  let memoryTargetThreadId: number | undefined;
+  let threadRegistryType: "worker" | "branch" = "worker";
+
+  switch (mode) {
+    case "worker":
+      if (!parentThreadId) return errorResult("Error: 'parentThreadId' is required for worker mode.");
+      if (!name) return errorResult("Error: 'name' is required for worker mode.");
+      memorySourceThreadId = parentThreadId;
+      threadRegistryType = "worker";
+      break;
+
+    case "daily":
+      if (!rootThreadId) return errorResult("Error: 'rootThreadId' is required for daily mode.");
+      if (!name) return errorResult("Error: 'name' is required for daily mode.");
+      memorySourceThreadId = rootThreadId;
+      memoryTargetThreadId = rootThreadId;
+      threadRegistryType = "branch";
+      break;
+
+    case "branch":
+      if (!rootThreadId) return errorResult("Error: 'rootThreadId' is required for branch mode.");
+      if (!name) return errorResult("Error: 'name' is required for branch mode.");
+      // Memory is forked AFTER thread creation (needs threadId first)
+      threadRegistryType = "branch";
+      break;
+
+    case "resume":
+      if (!explicitThreadId) return errorResult("Error: 'targetThreadId' is required for resume mode.");
+      // Resume uses existing memory config — no source/target overrides
+      break;
+
+    default:
+      // Backward-compatible: no mode = infer from args
+      if (explicitThreadId && !name) {
+        // Looks like resume
+        break;
+      }
+      if (!name && !explicitThreadId) {
+        return errorResult("Error: 'name' is required for start_thread (unless using resume mode with targetThreadId).");
+      }
+      // Legacy: parentThreadId acts as memorySourceThreadId
+      if (parentThreadId) memorySourceThreadId = parentThreadId;
+      if (rootThreadId) {
+        memorySourceThreadId = rootThreadId;
+        memoryTargetThreadId = rootThreadId;
+      }
+      break;
+  }
+
+  // ── Verify CLI availability ─────────────────────────────────────────
   let cliPath: string;
   let mcpConfigPath: string | undefined;
 
@@ -179,12 +208,7 @@ export async function handleStartThread(
     mcpConfigPath = resolvedConfig;
   }
 
-  // ── 1. Resolve or create Telegram forum topic ─────────────────────────
-  // Resolution order:
-  //   0. Explicit threadId parameter (beats everything)
-  //   1. Topic registry (SQLite – source of truth)
-  //   2. Session store (fallback for topics not in the registry)
-  //   3. Create new topic via Telegram API (only if no match above)
+  // ── 1. Resolve or create Telegram forum topic ───────────────────────
   let threadId: number;
   let topicExisted = false;
 
@@ -232,7 +256,7 @@ export async function handleStartThread(
     };
   }
 
-  // ── 4. Dormant (topic existed, process dead) → restart ────────────────
+  // ── 4. Pre-queue task & spawn ───────────────────────────────────────
   ensureDirs();
 
   // Pre-queue task message if provided (written before agent starts polling)
@@ -247,21 +271,32 @@ export async function handleStartThread(
   }
 
   const result = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex"
-    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, agentType, threadType as 'worker' | 'branch' | undefined)
+    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, agentType, threadRegistryType)
     : agentType === "codex" || agentType === "openai_codex"
-    ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, threadType as 'worker' | 'branch' | undefined)
-    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId, targetMemoryThreadId, threadType as 'worker' | 'branch' | undefined);
+    ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, threadRegistryType)
+    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId, memoryTargetThreadId, threadRegistryType);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
-  // Register thread in the memory registry (best-effort)
+  // ── 5. Branch mode: fork memory ─────────────────────────────────────
+  if (mode === "branch" && rootThreadId) {
+    try {
+      const db = initMemoryDb();
+      const forkResult = forkMemory(db, rootThreadId, threadId);
+      log.info(`[start_thread] Forked memory from ${rootThreadId} → ${threadId}: ${forkResult.notesCopied} notes, ${forkResult.narrativesCopied} narratives`);
+    } catch (err) {
+      log.warn(`[start_thread] Memory fork failed (non-fatal): ${errorMessage(err)}`);
+    }
+  }
+
+  // ── 6. Register in memory thread registry ───────────────────────────
   try {
     const db = initMemoryDb();
     registerThread(db, {
       threadId,
       name,
-      type: (threadType === 'worker' || threadType === 'branch') ? threadType : 'worker',
-      rootThreadId: memorySourceThreadId ?? undefined,
-      badge: threadType || 'worker',
+      type: threadRegistryType,
+      rootThreadId: memorySourceThreadId ?? rootThreadId ?? parentThreadId ?? undefined,
+      badge: mode || threadRegistryType,
       client: agentType,
     });
   } catch { /* registration is best-effort */ }
@@ -271,7 +306,7 @@ export async function handleStartThread(
   try {
     await telegram.sendMessage(
       telegramChatId,
-      `🧵 Thread ${status}.\nAgent: ${agentType} (PID ${result.pid})`,
+      `🧵 Thread ${status}.\nAgent: ${agentType} (PID ${result.pid})` + (mode ? `\nMode: ${mode}` : ""),
       undefined,
       threadId,
     );
@@ -288,8 +323,9 @@ export async function handleStartThread(
         name,
         pid: result.pid,
         logFile: result.logFile,
+        mode: mode || "default",
         ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
-        ...(targetMemoryThreadId !== undefined ? { targetMemoryThreadId } : {}),
+        ...(memoryTargetThreadId !== undefined ? { memoryTargetThreadId } : {}),
       }),
     }],
   };
