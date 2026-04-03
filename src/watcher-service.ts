@@ -31,10 +31,7 @@ const CONFIG = {
   mcpStartCommand: process.env.MCP_START_COMMAND || "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM",
   dataDir: join(homedir(), ".remote-copilot-mcp"),
   // Always-on CLI keeper
-  alwaysOnThreadId: parseInt(process.env.ALWAYS_ON_THREAD_ID || "0", 10),
-  alwaysOnSessionName: process.env.ALWAYS_ON_SESSION_NAME || "always-on-keepalive",
-  claudeCmd: process.env.CLAUDE_CLI_CMD || "claude",
-  copilotCmd: process.env.COPILOT_CLI_CMD || "copilot",
+
   mcpHttpPort: parseInt(process.env.MCP_HTTP_PORT || "0", 10),
   mcpHttpSecret: process.env.MCP_HTTP_SECRET || null,
 };
@@ -336,7 +333,6 @@ async function checkAndUpdate(): Promise<void> {
 
 // Claude CLI keeper -----------------------------------------------------------
 
-const SETTINGS_JSON_PATH = join(CONFIG.dataDir, "settings.json");
 const KEEPER_SETTINGS_POLL_MS = 2 * 60_000;
 
 interface KeeperSettings {
@@ -344,101 +340,38 @@ interface KeeperSettings {
   threadId: number;
   maxRetries: number;
   cooldownMs: number;
-  client: "claude" | "copilot";
+  client: string;
   sessionName: string;
 }
 
-function readKeeperSettingsFromFile(): KeeperSettings[] {
-  const raw = safeRead(SETTINGS_JSON_PATH);
-  const s: Record<string, unknown> = raw
-    ? (() => { try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; } })()
-    : {};
-
-  const results: KeeperSettings[] = [];
-
-  // Global keep-alive (backward-compatible)
-  const globalThreadId = typeof s.keepAliveThreadId === "number" && s.keepAliveThreadId > 0
-    ? s.keepAliveThreadId
-    : CONFIG.alwaysOnThreadId;
-  const globalEnabled = typeof s.keepAliveEnabled === "boolean"
-    ? s.keepAliveEnabled
-    : CONFIG.alwaysOnThreadId > 0;
-  const globalMaxRetries = typeof s.keepAliveMaxRetries === "number" && s.keepAliveMaxRetries > 0
-    ? s.keepAliveMaxRetries : 5;
-  const globalCooldownMs = typeof s.keepAliveCooldownMs === "number" && s.keepAliveCooldownMs >= 1000
-    ? s.keepAliveCooldownMs : 300_000;
-  const globalClient = s.keepAliveClient === "copilot" ? "copilot" as const : "claude" as const;
-
-  if (globalEnabled && globalThreadId > 0) {
-    results.push({
-      enabled: true,
-      threadId: globalThreadId,
-      maxRetries: globalMaxRetries,
-      cooldownMs: globalCooldownMs,
-      client: globalClient,
-      sessionName: CONFIG.alwaysOnSessionName,
-    });
-  }
-
-  // Per-thread overrides
-  const threadMap = s.threadKeepAlive as Record<string, unknown> | undefined;
-  if (threadMap && typeof threadMap === "object") {
-    for (const [idStr, val] of Object.entries(threadMap)) {
-      if (!val || typeof val !== "object") continue;
-      const e = val as Record<string, unknown>;
-      const tid = Number(idStr);
-      if (!tid || tid <= 0) continue;
-      // Skip if same as global (already handled)
-      if (tid === globalThreadId && globalEnabled) continue;
-      if (typeof e.enabled === "boolean" && e.enabled) {
-        results.push({
-          enabled: true,
-          threadId: tid,
-          maxRetries: typeof e.maxRetries === "number" && e.maxRetries > 0 ? e.maxRetries : globalMaxRetries,
-          cooldownMs: typeof e.cooldownMs === "number" && e.cooldownMs >= 1000 ? e.cooldownMs : globalCooldownMs,
-          client: e.client === "copilot" ? "copilot" : e.client === "claude" ? "claude" : globalClient,
-          sessionName: `thread-${tid}`,
-        });
-      }
-    }
-  }
-
-  return results;
-}
-
 /**
- * Read keeper settings from the MCP server's thread_registry via HTTP API.
- * Falls back to settings.json if the server is not ready (e.g. during startup).
+ * Read keeper settings from the thread_registry via the HTTP API.
+ * Returns empty array if the server is not ready (keeper won't start until server is up).
  */
 async function readAllKeeperSettings(): Promise<KeeperSettings[]> {
-  // Try HTTP-based registry first
   const port = CONFIG.mcpHttpPort || 3847;
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/threads/roots`, {
       headers: CONFIG.mcpHttpSecret ? { 'Authorization': `Bearer ${CONFIG.mcpHttpSecret}` } : {},
       signal: AbortSignal.timeout(5_000),
     });
-    if (res.ok) {
-      const body = (await res.json()) as { threads?: Record<string, unknown>[] };
-      const roots = body.threads ?? [];
-      return roots
-        .filter((r) => r.keepAlive)
-        .filter((r) => Number.isInteger(r.threadId) && (r.threadId as number) > 0)
-        .map((r) => ({
-          enabled: true,
-          threadId: r.threadId as number,
-          maxRetries: (typeof r.maxRetries === 'number' ? r.maxRetries : null) ?? 5,
-          cooldownMs: (typeof r.cooldownMs === 'number' ? r.cooldownMs : null) ?? 300_000,
-          client: r.client === 'copilot' ? 'copilot' : 'claude',
-          sessionName: (typeof r.name === 'string' ? r.name : null) ?? `thread-${r.threadId}`,
-        }));
-    }
+    if (!res.ok) return [];
+    const body = (await res.json()) as { threads?: Record<string, unknown>[] };
+    const roots = body.threads ?? [];
+    return roots
+      .filter((r) => r.keepAlive)
+      .filter((r) => Number.isInteger(r.threadId) && (r.threadId as number) > 0)
+      .map((r) => ({
+        enabled: true,
+        threadId: r.threadId as number,
+        maxRetries: (typeof r.maxRetries === 'number' ? r.maxRetries : null) ?? 5,
+        cooldownMs: (typeof r.cooldownMs === 'number' ? r.cooldownMs : null) ?? 300_000,
+        client: typeof r.client === 'string' ? r.client : 'claude',
+        sessionName: (typeof r.name === 'string' ? r.name : null) ?? `thread-${r.threadId}`,
+      }));
   } catch {
-    // Server not ready — fall back to settings.json
+    return [];
   }
-
-  // Fallback: read from settings.json (legacy, for startup before server is ready)
-  return readKeeperSettingsFromFile();
 }
 
 function keeperSettingsChanged(a: KeeperSettings, b: KeeperSettings): boolean {
@@ -482,12 +415,8 @@ async function applyKeeperSettings(): Promise<void> {
           threadId: settings.threadId,
           sessionName: settings.sessionName,
           client: settings.client,
-          claudeCmd: CONFIG.claudeCmd,
-          copilotCmd: CONFIG.copilotCmd,
-          mcpConfigPath: join(CONFIG.dataDir, `mcp-config-${settings.threadId}.json`),
           mcpHttpPort: CONFIG.mcpHttpPort,
           mcpHttpSecret: CONFIG.mcpHttpSecret,
-          dataDir: CONFIG.dataDir,
           maxRetries: settings.maxRetries,
           cooldownMs: settings.cooldownMs,
         });
