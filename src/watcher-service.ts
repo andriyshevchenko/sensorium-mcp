@@ -494,29 +494,12 @@ function createWatcherMcp(): Server {
     const tid = (req.params.arguments?.threadId as number | undefined) ?? 0;
     const lbl = tid ? `threadId=${tid}` : `threadId=<your thread>`;
 
-    // If no update in progress, return immediately
     if (!flagExists()) {
-      return { content: [{ type: "text", text: `Server ready (no update in progress). Call start_session with ${lbl}.` }] };
+      return { content: [{ type: "text", text: `Server ready. Call start_session with ${lbl}.` }] };
     }
 
-    // Poll with frequent keepalives to prevent SSE stream timeouts
-    const deadline = Date.now() + 120_000;
-    let pingCounter = 0;
-    while (flagExists() && Date.now() < deadline) {
-      await sleep(2_000);
-      // Send SSE keepalive every ~5s to keep connection alive
-      if (++pingCounter % 3 === 0) {
-        const elapsed = Math.round((Date.now() - (deadline - 120_000)) / 1000);
-        try { await srv.sendLoggingMessage({ level: "info", data: `Waiting for server update… (${elapsed}s)` }); } catch { /**/ }
-      }
-    }
-
-    if (!flagExists()) {
-      // Wait a bit for the new MCP server to be fully ready
-      await sleep(5_000);
-      return { content: [{ type: "text", text: `Server ready. **Wait 15 seconds** for the MCP client to reconnect (use Desktop Commander: Start-Sleep -Seconds 15), then call start_session with ${lbl}.` }] };
-    }
-    return { content: [{ type: "text", text: `Update still in progress after 120s. Call await_server_ready again with ${lbl} to continue waiting, or try start_session directly.` }] };
+    // Non-blocking: return immediately with retry instruction
+    return { content: [{ type: "text", text: `Update in progress. Use Desktop Commander to run: Start-Sleep -Seconds 30 — then call await_server_ready again with ${lbl}. Repeat until ready.` }] };
   });
   return srv;
 }
