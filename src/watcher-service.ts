@@ -483,7 +483,7 @@ function createWatcherMcp(): Server {
   const srv = new Server({ name: "sensorium-watcher", version: "1.0.0" }, { capabilities: { tools: {}, logging: {} } });
   srv.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [{
     name: "await_server_ready",
-    description: "Blocks until sensorium finishes updating (maintenance.flag removed) or 600s timeout.",
+    description: "Blocks until sensorium finishes updating (maintenance.flag removed) or 120s timeout. Safe to call multiple times — returns immediately if no update in progress.",
     inputSchema: { type: "object" as const, properties: {
       threadId: { type: "number", description: "Telegram thread ID for reconnecting via start_session." },
     } },
@@ -493,17 +493,30 @@ function createWatcherMcp(): Server {
       return { content: [{ type: "text", text: `Unknown tool: ${req.params.name}` }], isError: true };
     const tid = (req.params.arguments?.threadId as number | undefined) ?? 0;
     const lbl = tid ? `threadId=${tid}` : `threadId=<your thread>`;
-    const deadline = Date.now() + 600_000;
+
+    // If no update in progress, return immediately
+    if (!flagExists()) {
+      return { content: [{ type: "text", text: `Server ready (no update in progress). Call start_session with ${lbl}.` }] };
+    }
+
+    // Poll with frequent keepalives to prevent SSE stream timeouts
+    const deadline = Date.now() + 120_000;
     let pingCounter = 0;
     while (flagExists() && Date.now() < deadline) {
       await sleep(2_000);
-      // Send SSE keepalive every ~30s to prevent connection/socket timeouts
-      if (++pingCounter % 15 === 0) {
-        try { await srv.sendLoggingMessage({ level: "info", data: `Waiting for server update… (${Math.round((Date.now() - (deadline - 600_000)) / 1000)}s)` }); } catch { /**/ }
+      // Send SSE keepalive every ~5s to keep connection alive
+      if (++pingCounter % 3 === 0) {
+        const elapsed = Math.round((Date.now() - (deadline - 120_000)) / 1000);
+        try { await srv.sendLoggingMessage({ level: "info", data: `Waiting for server update… (${elapsed}s)` }); } catch { /**/ }
       }
     }
-    if (!flagExists()) return { content: [{ type: "text", text: `Server ready. **Wait 15 seconds** for the MCP client to reconnect (use Desktop Commander: Start-Sleep -Seconds 15), then call start_session with ${lbl}.` }] };
-    return { content: [{ type: "text", text: `Timed out. Try start_session with ${lbl} anyway.` }] };
+
+    if (!flagExists()) {
+      // Wait a bit for the new MCP server to be fully ready
+      await sleep(5_000);
+      return { content: [{ type: "text", text: `Server ready. **Wait 15 seconds** for the MCP client to reconnect (use Desktop Commander: Start-Sleep -Seconds 15), then call start_session with ${lbl}.` }] };
+    }
+    return { content: [{ type: "text", text: `Update still in progress after 120s. Call await_server_ready again with ${lbl} to continue waiting, or try start_session directly.` }] };
   });
   return srv;
 }
