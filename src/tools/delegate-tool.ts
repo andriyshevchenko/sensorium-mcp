@@ -19,7 +19,7 @@ import type { TelegramClient } from "../telegram.js";
 import type { ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
-import { registerThread } from "../data/memory/thread-registry.js";
+import { registerThread, getThreadByName } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { forkMemory } from "../data/memory/synthesis.js";
 import {
@@ -77,6 +77,18 @@ function resolveExistingTopic(
   // 2. Session store (fallback for topics not yet in the registry)
   const sessionId = lookupSession(chatId, name);
   if (sessionId !== undefined) return sessionId;
+
+  // 3. Thread registry (fallback — has threadId from previous sessions)
+  try {
+    const db = initMemoryDb();
+    const registryEntry = getThreadByName(db, name);
+    if (registryEntry) {
+      // Sync back to topic registry and session store
+      registerTopic(chatId, name, registryEntry.threadId);
+      persistSession(chatId, name, registryEntry.threadId);
+      return registryEntry.threadId;
+    }
+  } catch { /* registry lookup is best-effort */ }
 
   return undefined;
 }

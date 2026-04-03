@@ -114,6 +114,13 @@ export function getThread(db: Database, threadId: number): ThreadRegistryEntry |
   return row ? rowToEntry(row) : null;
 }
 
+export function getThreadByName(db: Database, name: string): ThreadRegistryEntry | null {
+  const row = db.prepare(
+    `SELECT * FROM thread_registry WHERE name = ? AND status = 'active' ORDER BY last_active_at DESC LIMIT 1`,
+  ).get(name) as Record<string, unknown> | undefined;
+  return row ? rowToEntry(row) : null;
+}
+
 export function getThreadsByRoot(db: Database, rootThreadId: number): ThreadRegistryEntry[] {
   const rows = db.prepare(
     `SELECT * FROM thread_registry WHERE root_thread_id = ? ORDER BY created_at DESC`,
@@ -193,6 +200,27 @@ export function resetDailySession(db: Database, threadId: number): boolean {
     `UPDATE thread_registry SET session_reset_at = ? WHERE thread_id = ?`,
   ).run(nowISO(), threadId);
   return result.changes > 0;
+}
+
+/**
+ * Backfill thread names from topic_registry for threads with empty/missing names.
+ * Returns the number of threads updated.
+ */
+export function backfillMissingNames(db: Database): number {
+  const result = db.prepare(
+    `UPDATE thread_registry
+     SET name = (
+       SELECT tr.name FROM topic_registry tr
+       WHERE tr.thread_id = thread_registry.thread_id
+       LIMIT 1
+     )
+     WHERE (thread_registry.name IS NULL OR thread_registry.name = '')
+       AND EXISTS (
+         SELECT 1 FROM topic_registry tr
+         WHERE tr.thread_id = thread_registry.thread_id AND tr.name IS NOT NULL AND tr.name != ''
+       )`
+  ).run();
+  return result.changes;
 }
 
 
