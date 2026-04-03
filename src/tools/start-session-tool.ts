@@ -203,13 +203,39 @@ export async function handleStartSession(
       const isThreadGone = /thread not found|topic.*(closed|deleted|not found)/i.test(errMsg);
       if (isThreadGone) {
         log.info(
-          `[start_session] Cached thread ${session.currentThreadId} is gone (${errMsg}). Creating new topic.`,
+          `[start_session] Cached thread ${session.currentThreadId} is gone (${errMsg}). Creating replacement topic.`,
         );
-        // Drop the stale mapping and purge any scheduled tasks.
-        if (session.currentThreadId !== undefined) purgeSchedules(session.currentThreadId);
-        if (customName) removeSession(TELEGRAM_CHAT_ID, customName);
-        resolvedPreexisting = false;
-        session.currentThreadId = undefined;
+        // Create a replacement topic and remap — keeps the logical threadId intact
+        // so memory, schedules, and keep-alive config are preserved.
+        const topicName = customName ??
+          `Copilot \u2014 ${new Date().toLocaleString("en-GB", {
+            day: "2-digit", month: "short", year: "numeric",
+            hour: "2-digit", minute: "2-digit", hour12: false,
+          })}`;
+        try {
+          const newTopic = await telegram.createForumTopic(TELEGRAM_CHAT_ID, topicName);
+          const newTopicId = newTopic.message_thread_id;
+          log.info(
+            `[start_session] Remapped thread ${session.currentThreadId} → Telegram topic ${newTopicId}`,
+          );
+          // Persist the mapping so future Telegram API calls resolve correctly
+          try {
+            updateThread(getMemoryDb(), session.currentThreadId!, { telegramTopicId: newTopicId });
+          } catch (e) {
+            log.warn(`[start_session] Failed to persist topic remap: ${e instanceof Error ? e.message : String(e)}`);
+          }
+          // Update session store so name-based lookups still find this thread
+          if (customName) persistSession(TELEGRAM_CHAT_ID, topicName, session.currentThreadId!);
+          registerTopic(TELEGRAM_CHAT_ID, topicName, session.currentThreadId!);
+          startupNotificationSent = true;
+        } catch (createErr) {
+          log.warn(`[start_session] Remap failed, falling back to new session: ${errorMessage(createErr)}`);
+          // Drop the stale mapping and purge any scheduled tasks.
+          if (session.currentThreadId !== undefined) purgeSchedules(session.currentThreadId);
+          if (customName) removeSession(TELEGRAM_CHAT_ID, customName);
+          resolvedPreexisting = false;
+          session.currentThreadId = undefined;
+        }
       }
       // Other errors (network, etc.) are non-fatal — proceed anyway.
     }

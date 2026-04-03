@@ -23,6 +23,7 @@ export interface ThreadRegistryEntry {
   keepAlive: boolean;
   dailyRotation: boolean;
   autonomousMode: boolean;
+  telegramTopicId: number | null;
   createdAt: string;
   lastActiveAt: string | null;
   sessionResetAt: string | null;
@@ -47,6 +48,7 @@ function rowToEntry(row: Record<string, unknown>): ThreadRegistryEntry {
     keepAlive: !!(row.keep_alive as number),
     dailyRotation: !!(row.daily_rotation as number),
     autonomousMode: !!(row.autonomous_mode as number),
+    telegramTopicId: (row.telegram_topic_id as number | null) ?? null,
     createdAt: row.created_at as string,
     lastActiveAt: (row.last_active_at as string | null) ?? null,
     sessionResetAt: (row.session_reset_at as string | null) ?? null,
@@ -152,7 +154,7 @@ export function getActiveThreads(db: Database): ThreadRegistryEntry[] {
 export function updateThread(
   db: Database,
   threadId: number,
-  updates: Partial<Pick<ThreadRegistryEntry, 'name' | 'status' | 'lastActiveAt' | 'keepAlive' | 'dailyRotation' | 'autonomousMode' | 'client' | 'maxRetries' | 'cooldownMs' | 'badge'>>,
+  updates: Partial<Pick<ThreadRegistryEntry, 'name' | 'status' | 'lastActiveAt' | 'keepAlive' | 'dailyRotation' | 'autonomousMode' | 'client' | 'maxRetries' | 'cooldownMs' | 'badge' | 'telegramTopicId'>>,
 ): boolean {
   const setClauses: string[] = [];
   const params: unknown[] = [];
@@ -167,6 +169,7 @@ export function updateThread(
   if (updates.maxRetries !== undefined) { setClauses.push('max_retries = ?'); params.push(updates.maxRetries); }
   if (updates.cooldownMs !== undefined) { setClauses.push('cooldown_ms = ?'); params.push(updates.cooldownMs); }
   if (updates.badge !== undefined) { setClauses.push('badge = ?'); params.push(updates.badge); }
+  if (updates.telegramTopicId !== undefined) { setClauses.push('telegram_topic_id = ?'); params.push(updates.telegramTopicId); }
 
   if (setClauses.length === 0) return false;
 
@@ -200,6 +203,17 @@ export function resetDailySession(db: Database, threadId: number): boolean {
     `UPDATE thread_registry SET session_reset_at = ? WHERE thread_id = ?`,
   ).run(nowISO(), threadId);
   return result.changes > 0;
+}
+
+/**
+ * Resolve the Telegram topic ID for a logical thread.
+ * Returns telegram_topic_id if set, otherwise falls back to thread_id itself.
+ */
+export function resolveTelegramTopicId(db: Database, threadId: number): number {
+  const row = db.prepare(
+    `SELECT telegram_topic_id FROM thread_registry WHERE thread_id = ?`,
+  ).get(threadId) as { telegram_topic_id: number | null } | undefined;
+  return row?.telegram_topic_id ?? threadId;
 }
 
 /**

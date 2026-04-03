@@ -37,6 +37,7 @@ const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
 const { cleanupStalePidFiles } = await import("./tools/thread-lifecycle.js");
 const { log } = await import("./logger.js");
 const { rotateAllDailySessions } = await import("./daily-session.js");
+const { resolveTelegramTopicId } = await import("./data/memory/thread-registry.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -58,6 +59,9 @@ function getMemoryDb() {
 // Wire up lazy DB access for per-thread reaction routing
 telegram.setMessageDb(getMemoryDb);
 setBrokerDb(getMemoryDb);
+
+// Wire up topic ID resolver for logical-to-physical thread mapping
+telegram.setTopicResolver((threadId) => resolveTelegramTopicId(getMemoryDb(), threadId));
 
 // Wire up lazy DB access for SQLite-backed topic registry
 setTopicRegistryDb(getMemoryDb);

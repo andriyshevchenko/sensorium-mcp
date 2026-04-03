@@ -73,8 +73,16 @@ const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
 async function notifyOperator(text: string, threadId?: number): Promise<void> {
   if (!TG_TOKEN || !TG_CHAT_ID) return;
   try {
+    let resolvedThreadId = threadId;
+    if (threadId) {
+      try {
+        const { resolveTelegramTopicId } = await import("./data/memory/thread-registry.js");
+        const { initMemoryDb } = await import("./memory.js");
+        resolvedThreadId = resolveTelegramTopicId(initMemoryDb(), threadId);
+      } catch { /* use original threadId as fallback */ }
+    }
     const body: Record<string, unknown> = { chat_id: TG_CHAT_ID, text, parse_mode: "HTML" };
-    if (threadId) body.message_thread_id = threadId;
+    if (resolvedThreadId) body.message_thread_id = resolvedThreadId;
     await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -636,13 +644,15 @@ export async function startWatcherService(): Promise<void> {
       try {
         const db = initMemoryDb();
         const token = process.env.TELEGRAM_TOKEN || "";
+        const { resolveTelegramTopicId } = await import("./data/memory/thread-registry.js");
         const telegram = {
           async deleteForumTopic(cId: string, threadId: number): Promise<void> {
             if (!token) return;
+            const topicId = resolveTelegramTopicId(db, threadId);
             await fetch(`https://api.telegram.org/bot${token}/deleteForumTopic`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ chat_id: cId, message_thread_id: threadId }),
+              body: JSON.stringify({ chat_id: cId, message_thread_id: topicId }),
               signal: AbortSignal.timeout(10_000),
             });
           },

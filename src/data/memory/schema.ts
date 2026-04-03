@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -335,6 +335,16 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       log.warn(`[migration-18] Backfill from settings.json failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   },
+  19: (db) => {
+    // Add telegram_topic_id column — allows logical thread_id to survive when
+    // a Telegram forum topic is deleted and recreated.
+    try {
+      db.exec(`ALTER TABLE thread_registry ADD COLUMN telegram_topic_id INTEGER`);
+    } catch {
+      // Column may already exist from schema self-heal
+    }
+    log.info("[migration-19] Added telegram_topic_id column to thread_registry");
+  },
 };
 
 /**
@@ -536,7 +546,8 @@ function ensureSchemaIntegrity(db: Database): void {
         session_reset_at TEXT,
         status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
         daily_rotation  INTEGER NOT NULL DEFAULT 0,
-        autonomous_mode INTEGER NOT NULL DEFAULT 0
+        autonomous_mode INTEGER NOT NULL DEFAULT 0,
+        telegram_topic_id INTEGER
       );
       CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
       CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
@@ -547,7 +558,7 @@ function ensureSchemaIntegrity(db: Database): void {
     stampVersion(15);
     stampVersion(16);
     stampVersion(17);
-    stampVersion(15);
+    stampVersion(19);
   } else {
     const threadRegistryCols = db
       .prepare("PRAGMA table_info(thread_registry)")
@@ -578,7 +589,10 @@ function ensureSchemaIntegrity(db: Database): void {
           created_at      TEXT NOT NULL,
           last_active_at  TEXT,
           session_reset_at TEXT,
-          status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited'))
+          status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
+          daily_rotation  INTEGER NOT NULL DEFAULT 0,
+          autonomous_mode INTEGER NOT NULL DEFAULT 0,
+          telegram_topic_id INTEGER
         );
         INSERT OR IGNORE INTO thread_registry_new SELECT * FROM thread_registry;
         DROP TABLE thread_registry;
@@ -588,6 +602,24 @@ function ensureSchemaIntegrity(db: Database): void {
         CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
       `);
       stampVersion(15);
+    }
+
+    if (!threadRegistryCols.includes("daily_rotation")) {
+      log.info("[memory] Self-heal: adding missing daily_rotation column to thread_registry");
+      db.exec("ALTER TABLE thread_registry ADD COLUMN daily_rotation INTEGER NOT NULL DEFAULT 0");
+      stampVersion(16);
+    }
+
+    if (!threadRegistryCols.includes("autonomous_mode")) {
+      log.info("[memory] Self-heal: adding missing autonomous_mode column to thread_registry");
+      db.exec("ALTER TABLE thread_registry ADD COLUMN autonomous_mode INTEGER NOT NULL DEFAULT 0");
+      stampVersion(17);
+    }
+
+    if (!threadRegistryCols.includes("telegram_topic_id")) {
+      log.info("[memory] Self-heal: adding missing telegram_topic_id column to thread_registry");
+      db.exec("ALTER TABLE thread_registry ADD COLUMN telegram_topic_id INTEGER");
+      stampVersion(19);
     }
   }
 }
@@ -758,7 +790,8 @@ CREATE TABLE IF NOT EXISTS thread_registry (
   session_reset_at TEXT,
   status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
   daily_rotation  INTEGER NOT NULL DEFAULT 0,
-  autonomous_mode INTEGER NOT NULL DEFAULT 0
+  autonomous_mode INTEGER NOT NULL DEFAULT 0,
+  telegram_topic_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
 CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
