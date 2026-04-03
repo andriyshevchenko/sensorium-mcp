@@ -827,6 +827,19 @@ export function initMemoryDb(): Database {
   // Auto-migrate existing threads as roots (backward compatibility)
   migrateExistingRootThreads(db);
 
+  // Backfill missing thread names from topic_registry
+  try {
+    db.prepare(
+      `UPDATE thread_registry
+       SET name = (
+         SELECT tr.name FROM topic_registry tr
+         WHERE tr.thread_id = thread_registry.thread_id AND tr.name IS NOT NULL AND tr.name != ''
+         LIMIT 1
+       )
+       WHERE (thread_registry.name IS NULL OR thread_registry.name = '')`
+    ).run();
+  } catch { /* best-effort — topic_registry may not exist yet */ }
+
   // NOTE: We deliberately do NOT force-stamp schema_version to SCHEMA_VERSION
   // here. If a migration failed, its version is not recorded, so it will be
   // retried on the next startup. This prevents permanently skipping failed

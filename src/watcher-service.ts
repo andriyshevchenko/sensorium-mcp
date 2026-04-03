@@ -9,6 +9,8 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, isInitializeRequest, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { startClaudeKeeper, type KeeperHandle } from "./claude-keeper.js";
+import { cleanupExpiredWorkers } from "./tools/thread-lifecycle.js";
+import { initMemoryDb } from "./data/memory/schema.js";
 
 process.on("uncaughtException", (err) => {
   console.error(`[fatal] Uncaught exception: ${err.stack ?? err}`);
@@ -47,6 +49,7 @@ let updateInProgress = false;
 const keepers = new Map<number, { handle: KeeperHandle; settings: KeeperSettings }>();
 let keeperPollerHandle: ReturnType<typeof setInterval> | null = null;
 let sessionSweeperHandle: ReturnType<typeof setInterval> | null = null;
+let workerCleanupHandle: ReturnType<typeof setInterval> | null = null;
 
 // Helpers ---------------------------------------------------------------------
 function log(level: "INFO" | "WARN" | "ERROR", msg: unknown): void {
@@ -625,9 +628,37 @@ function releaseLock(): void {
 // Signal handling & entry point -----------------------------------------------
 export async function startWatcherService(): Promise<void> {
   if (!acquireLock()) { process.exit(1); return; }
+  // Periodic worker cleanup — every 5 minutes, clean expired workers that outlived their TTL
+  workerCleanupHandle = setInterval(() => {
+    const chatId = process.env.TELEGRAM_CHAT_ID || "";
+    if (!chatId) return;
+    void (async () => {
+      try {
+        const db = initMemoryDb();
+        const token = process.env.TELEGRAM_TOKEN || "";
+        const telegram = {
+          async deleteForumTopic(cId: string, threadId: number): Promise<void> {
+            if (!token) return;
+            await fetch(`https://api.telegram.org/bot${token}/deleteForumTopic`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: cId, message_thread_id: threadId }),
+              signal: AbortSignal.timeout(10_000),
+            });
+          },
+        };
+        const result = await cleanupExpiredWorkers(db, telegram, chatId);
+        if (result.cleaned > 0) log("INFO", `[worker-cleanup] Cleaned ${result.cleaned} expired worker threads`);
+      } catch (err) {
+        log("WARN", `[worker-cleanup] ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })();
+  }, 5 * 60 * 1000);
+
   const shutdown = async () => {
     if (keeperPollerHandle) clearInterval(keeperPollerHandle);
     if (sessionSweeperHandle) clearInterval(sessionSweeperHandle);
+    if (workerCleanupHandle) clearInterval(workerCleanupHandle);
     log("INFO", "Shutting down watcher...");
     for (const [, entry] of keepers) { await entry.handle.stop(); }
     keepers.clear();

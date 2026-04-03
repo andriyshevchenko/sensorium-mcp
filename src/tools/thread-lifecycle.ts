@@ -822,6 +822,23 @@ export async function cleanupExpiredWorkers(
     }
   }
 
+  // Also clean stale workers from thread_registry (survives server restarts)
+  try {
+    const cutoff = new Date(now - ttlMs).toISOString();
+    const staleRows = db.prepare(
+      `SELECT thread_id FROM thread_registry 
+       WHERE type = 'worker' AND status = 'active' AND created_at < ?`
+    ).all(cutoff) as { thread_id: number }[];
+    for (const row of staleRows) {
+      // Skip if still alive in-memory (already handled above)
+      if (spawnedThreads.some(t => t.threadId === row.thread_id)) continue;
+      try {
+        archiveThread(db, row.thread_id);
+        result.cleaned++;
+      } catch { /* best-effort */ }
+    }
+  } catch { /* registry cleanup is best-effort */ }
+
   return result;
 }
 

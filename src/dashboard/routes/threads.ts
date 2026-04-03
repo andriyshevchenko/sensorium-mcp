@@ -208,8 +208,8 @@ export function handleUpdateThread(args: RouteArgs, threadId: number): boolean {
             const nextClient = updates.client ?? existing.client;
             const nextKeepAlive = updates.keepAlive ?? existing.keepAlive;
             if (nextKeepAlive && !isKeeperClient(nextClient)) {
-                json({ error: "keepAlive threads must use client claude or copilot" }, 400);
-                return;
+                // Auto-disable keepAlive when switching to a non-keeper client
+                updates.keepAlive = false;
             }
 
             const updated = updateThread(db, threadId, updates);
