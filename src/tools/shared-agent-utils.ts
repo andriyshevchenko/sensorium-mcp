@@ -2,9 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const COPILOT_HOME_DIR = "copilot-home";
-export const COPILOT_MCP_CONFIG_FILENAME = "mcp-config.json";
-export const COPILOT_INSTRUCTIONS_FILENAME = "copilot-instructions.md";
-export const COPILOT_SYSTEM_PROMPT =
+const COPILOT_MCP_CONFIG_FILENAME = "mcp-config.json";
+const COPILOT_INSTRUCTIONS_FILENAME = "copilot-instructions.md";
+const COPILOT_SYSTEM_PROMPT =
   "You are a remote Copilot agent. " +
   "Start remote session with sensorium. Pass agentType='copilot' to start_session.";
 export const DEFAULT_COPILOT_MODEL = "claude-opus-4.6";

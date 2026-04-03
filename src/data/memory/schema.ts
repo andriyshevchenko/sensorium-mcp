@@ -7,7 +7,7 @@
  */
 
 import BetterSqlite3 from "better-sqlite3";
-import { mkdirSync } from "fs";
+import { mkdirSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { log } from "../../logger.js";
@@ -294,7 +294,6 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     // Backfill thread_registry from settings.json threadAgentTypes + keepAlive config.
     // This ensures threads created before the registry existed are properly represented.
     try {
-      const { readFileSync } = require("fs") as typeof import("fs");
       const settingsPath = join(homedir(), ".remote-copilot-mcp", "settings.json");
       let settings: Record<string, unknown> = {};
       try { settings = JSON.parse(readFileSync(settingsPath, "utf-8")); } catch { /* no settings */ }
