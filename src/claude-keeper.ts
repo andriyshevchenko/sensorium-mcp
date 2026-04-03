@@ -6,6 +6,8 @@
  * all lifecycle concerns (PID tracking, registry updates, MCP config).
  */
 
+import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const BASE_BACKOFF_MS = 5_000;
@@ -68,35 +70,107 @@ async function isThreadRunning(port: number, secret: string | null, threadId: nu
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) return false;
-    const data = await res.json() as { thread?: { status?: string } };
-    const status = data.thread?.status;
+    const data = await res.json() as { status?: string; thread?: { status?: string } };
+    const status = data.status ?? data.thread?.status;
     return status === "running" || status === "active";
   } catch {
     return false;
   }
 }
 
-async function callStartThread(config: KeeperConfig): Promise<boolean> {
-  const { mcpHttpPort: port, mcpHttpSecret: secret, threadId, sessionName, client, workingDirectory } = config;
-  const body = JSON.stringify({
-    jsonrpc: "2.0",
-    method: "tools/call",
-    params: {
-      name: "start_thread",
-      arguments: {
-        name: sessionName,
-        targetThreadId: threadId,
-        agentType: client,
-        workingDirectory: workingDirectory ?? process.cwd(),
-      },
-    },
-    id: `keeper-${threadId}-${Date.now()}`,
-  });
-
+async function openMcpSession(port: number, secret: string | null): Promise<string | null> {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
       method: "POST",
       headers: authHeaders(secret),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: `keeper-init-${Date.now()}`,
+        method: "initialize",
+        params: {
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: {
+            name: "thread-keeper",
+            version: "1.0.0",
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) {
+      keeperLog("WARN", `initialize HTTP ${res.status}: ${res.statusText}`);
+      return null;
+    }
+    const sessionId = res.headers.get("mcp-session-id");
+    if (!sessionId) {
+      keeperLog("WARN", "initialize succeeded but did not return an MCP session ID");
+      return null;
+    }
+
+    await fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(secret),
+        "mcp-session-id": sessionId,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+        params: {},
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    return sessionId;
+  } catch (err) {
+    keeperLog("ERROR", `initialize failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+async function closeMcpSession(port: number, secret: string | null, sessionId: string): Promise<void> {
+  try {
+    await fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: "DELETE",
+      headers: {
+        ...authHeaders(secret),
+        "mcp-session-id": sessionId,
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    // Best-effort cleanup.
+  }
+}
+
+async function callStartThread(config: KeeperConfig): Promise<boolean> {
+  const { mcpHttpPort: port, mcpHttpSecret: secret, threadId, sessionName, client, workingDirectory } = config;
+  const sessionId = await openMcpSession(port, secret);
+  if (!sessionId) return false;
+
+  try {
+    const body = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: {
+        name: "start_thread",
+        arguments: {
+          name: sessionName,
+          targetThreadId: threadId,
+          agentType: client,
+          workingDirectory: workingDirectory ?? process.cwd(),
+        },
+      },
+      id: `keeper-${threadId}-${Date.now()}`,
+    });
+
+    const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(secret),
+        "mcp-session-id": sessionId,
+      },
       body,
       signal: AbortSignal.timeout(30_000),
     });
@@ -111,6 +185,8 @@ async function callStartThread(config: KeeperConfig): Promise<boolean> {
   } catch (err) {
     keeperLog("ERROR", `start_thread call failed: ${err instanceof Error ? err.message : String(err)}`);
     return false;
+  } finally {
+    await closeMcpSession(port, secret, sessionId);
   }
 }
 
