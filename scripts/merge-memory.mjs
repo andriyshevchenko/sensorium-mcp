@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 
-const SOURCE_THREAD = 7255;
+const SOURCE_THREAD = 7526;
 const TARGET_THREAD = 1327;
 
 const dbPath = join(homedir(), ".remote-copilot-mcp", "memory.db");
@@ -46,7 +46,7 @@ db.prepare(
   `merge-${SOURCE_THREAD}-${TARGET_THREAD}`,
   TARGET_THREAD,
   now,
-  `Memory merged from thread ${SOURCE_THREAD} into ${TARGET_THREAD}. Copied ${notesCopied.changes} semantic notes and ${narrativesCopied.changes} temporal narratives. Thread ${SOURCE_THREAD} was a development session that worked on: start_thread mode param redesign, task pre-queue feature, 4 bug fixes (worker cleanup, agent type change, resume spawning, missing names). Thread ${SOURCE_THREAD} was created due to a bug (topic was created instead of resuming ${TARGET_THREAD}).`,
+  `Memory merged from thread ${SOURCE_THREAD} into ${TARGET_THREAD}. Copied ${notesCopied.changes} semantic notes and ${narrativesCopied.changes} temporal narratives. Thread ${SOURCE_THREAD} was a VSCode Copilot session ("Sensorium V2 VSCode") that worked on: Telegram topic ID remapping (preserving logical thread identity when forum topics die), keeper bug fixes (isThreadRunning status check, missing Accept header causing 406), await_server_ready resilience (non-blocking polling), thread_registry registration for new sessions. Thread ${SOURCE_THREAD} was a temporary thread used while 1327 was broken.`,
   now,
 );
 

@@ -138,6 +138,12 @@ export function startHttpServer(
       return;
     }
 
+    // Ensure Accept header includes required MIME types for Streamable HTTP.
+    // Internal callers (e.g. keeper) may omit it, causing a 406 from the SDK.
+    if (req.method === "POST" && !req.headers.accept?.includes("text/event-stream")) {
+      req.headers.accept = "application/json, text/event-stream";
+    }
+
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
     if (req.method === "POST") {
