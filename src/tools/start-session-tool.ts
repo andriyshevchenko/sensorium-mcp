@@ -405,7 +405,10 @@ export async function handleStartSession(
       } else if (!existingThread.keepAlive) {
         // Only update client for non-keepAlive threads; keepAlive threads
         // have their client set by the keeper and shouldn't be overwritten.
-        updateThread(db, threadId, { client: agentType });
+        updateThread(db, threadId, { client: agentType, status: 'active' });
+      } else {
+        // keepAlive thread: just ensure status is active
+        updateThread(db, threadId, { status: 'active' });
       }
     } catch { /* best-effort */ }
   }
