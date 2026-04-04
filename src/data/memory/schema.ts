@@ -479,7 +479,9 @@ function ensureSchemaIntegrity(db: Database): void {
   if (!episodeCols.includes("thread_id")) {
     log.info("[memory] Self-heal: adding missing thread_id column to episodes");
     db.exec("ALTER TABLE episodes ADD COLUMN thread_id INTEGER");
-    stampVersion(2); // migration 2 added thread_id to episodes
+    // Do not stamp a schema version here: no numbered migration owns this
+    // legacy repair, and stamping version 2 would incorrectly suppress the
+    // note_embeddings migration on the next startup.
   }
 
   // Self-heal: ensure temporal_narratives table exists (migration 11)
@@ -558,7 +560,8 @@ function ensureSchemaIntegrity(db: Database): void {
         status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
         daily_rotation  INTEGER NOT NULL DEFAULT 0,
         autonomous_mode INTEGER NOT NULL DEFAULT 0,
-        telegram_topic_id INTEGER
+        telegram_topic_id INTEGER,
+        identity_prompt TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
       CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
@@ -570,6 +573,7 @@ function ensureSchemaIntegrity(db: Database): void {
     stampVersion(16);
     stampVersion(17);
     stampVersion(19);
+    stampVersion(20);
   } else {
     const threadRegistryCols = db
       .prepare("PRAGMA table_info(thread_registry)")
@@ -631,6 +635,12 @@ function ensureSchemaIntegrity(db: Database): void {
       log.info("[memory] Self-heal: adding missing telegram_topic_id column to thread_registry");
       db.exec("ALTER TABLE thread_registry ADD COLUMN telegram_topic_id INTEGER");
       stampVersion(19);
+    }
+
+    if (!threadRegistryCols.includes("identity_prompt")) {
+      log.info("[memory] Self-heal: adding missing identity_prompt column to thread_registry");
+      db.exec("ALTER TABLE thread_registry ADD COLUMN identity_prompt TEXT");
+      stampVersion(20);
     }
   }
 }
@@ -802,7 +812,8 @@ CREATE TABLE IF NOT EXISTS thread_registry (
   status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
   daily_rotation  INTEGER NOT NULL DEFAULT 0,
   autonomous_mode INTEGER NOT NULL DEFAULT 0,
-  telegram_topic_id INTEGER
+  telegram_topic_id INTEGER,
+  identity_prompt TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
 CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);

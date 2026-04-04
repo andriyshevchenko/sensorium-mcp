@@ -111,10 +111,12 @@ export async function handleStartThread(
     ? args.workingDirectory.trim()
     : process.cwd();
 
-  const parseNumArg = (v: unknown): number | undefined =>
-    typeof v === "number" ? v
-    : typeof v === "string" && Number.isFinite(Number(v)) ? Number(v)
-    : undefined;
+  const parseNumArg = (v: unknown): number | undefined => {
+    const parsed = typeof v === "number" ? v
+      : typeof v === "string" ? Number(v)
+      : Number.NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  };
 
   const explicitThreadId = parseNumArg(args.targetThreadId);
   const parentThreadId = parseNumArg(args.parentThreadId);
@@ -259,6 +261,16 @@ export async function handleStartThread(
   }
 
   // ── 2. Set per-thread agent type ──────────────────────────────────────
+  const resolvedThreadName = name || (() => {
+    try {
+      const db = initMemoryDb();
+      const thread = getThread(db, threadId);
+      return thread?.name ?? `Thread ${threadId}`;
+    } catch {
+      return `Thread ${threadId}`;
+    }
+  })();
+
   setThreadAgentType(threadId, agentType);
 
   // ── 3. Clean stale PID files & check if already running ──────────────
@@ -268,7 +280,7 @@ export async function handleStartThread(
     return {
       content: [{
         type: "text",
-        text: JSON.stringify({ threadId, status: "already_running", name, pid: alive.pid }),
+        text: JSON.stringify({ threadId, status: "already_running", name: resolvedThreadName, pid: alive.pid }),
       }],
     };
   }
@@ -287,14 +299,6 @@ export async function handleStartThread(
     }
   }
 
-  const result = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex"
-    ? spawnCopilotProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, agentType, runtimeThreadType)
-    : agentType === "codex" || agentType === "openai_codex"
-    ? spawnCodexProcess(cliPath, name, threadId, workingDirectory, memorySourceThreadId, runtimeThreadType)
-    : spawnAgentProcess(cliPath, mcpConfigPath!, name, threadId, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
-  if ("error" in result) return errorResult(`Error: ${result.error}`);
-
-  // ── 5. Branch mode: fork memory ─────────────────────────────────────
   if (mode === "branch" && rootThreadId) {
     try {
       const db = initMemoryDb();
@@ -304,6 +308,13 @@ export async function handleStartThread(
       log.warn(`[start_thread] Memory fork failed (non-fatal): ${errorMessage(err)}`);
     }
   }
+
+  const result = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex"
+    ? spawnCopilotProcess(cliPath, resolvedThreadName, threadId, workingDirectory, memorySourceThreadId, agentType, runtimeThreadType)
+    : agentType === "codex" || agentType === "openai_codex"
+    ? spawnCodexProcess(cliPath, resolvedThreadName, threadId, workingDirectory, memorySourceThreadId, runtimeThreadType)
+    : spawnAgentProcess(cliPath, mcpConfigPath!, resolvedThreadName, threadId, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
+  if ("error" in result) return errorResult(`Error: ${result.error}`);
 
   // ── 6. Register in memory thread registry ───────────────────────────
   try {
@@ -315,7 +326,7 @@ export async function handleStartThread(
     } else {
       registerThread(db, {
         threadId,
-        name,
+        name: resolvedThreadName,
         type: threadRegistryType,
         rootThreadId: memorySourceThreadId ?? rootThreadId ?? parentThreadId ?? undefined,
         badge: mode || threadRegistryType,
@@ -343,7 +354,7 @@ export async function handleStartThread(
       text: JSON.stringify({
         threadId,
         status,
-        name,
+        name: resolvedThreadName,
         pid: result.pid,
         logFile: result.logFile,
         mode: mode || "default",

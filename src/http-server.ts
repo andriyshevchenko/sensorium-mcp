@@ -63,6 +63,17 @@ export function startHttpServer(
   const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
   const serverStartTime = Date.now();
 
+  async function closeSessionServer(entry: SessionEntry | undefined): Promise<void> {
+    if (!entry?.server) return;
+    const server = entry.server;
+    entry.server = null;
+    try {
+      await server.close();
+    } catch {
+      // Best-effort cleanup during disconnect/shutdown paths.
+    }
+  }
+
   async function parseBody(req: IncomingMessage): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
@@ -209,6 +220,7 @@ export function startHttpServer(
               // Keep entry for dashboard visibility but clear transport
               entry.transport = null;
               entry.status = "disconnected";
+              void closeSessionServer(entry);
               entry.disconnectedAt = Date.now();
             }
             markDashboardSessionDisconnected(sid);
@@ -338,6 +350,7 @@ export function startHttpServer(
       if (entry.transport && now - entry.lastActivity > STALE_SESSION_MS) {
         log.info(`[session-sweep] Closing stale session ${sid.slice(0, 8)}… (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
         try { entry.transport.close(); } catch (_) { /* best-effort */ }
+        void closeSessionServer(entry);
         sessions.delete(sid);
         removeDashboardSession(sid);
         reaped++;
@@ -366,6 +379,7 @@ export function startHttpServer(
         entry.status !== "active" &&
         !entry.transport
       ) {
+        void closeSessionServer(entry);
         sessions.delete(sid);
         removeDashboardSession(sid);
         removed++;

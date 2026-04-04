@@ -77,9 +77,13 @@ export async function handleStartSession(
 
   const typedArgs = args;
   const rawThreadId = typedArgs.threadId;
-  const explicitThreadId = typeof rawThreadId === "number" ? rawThreadId
-    : typeof rawThreadId === "string" ? (Number.isFinite(Number(rawThreadId)) ? Number(rawThreadId) : undefined)
-    : undefined;
+  const parseThreadId = (value: unknown): number | undefined => {
+    const parsed = typeof value === "number" ? value
+      : typeof value === "string" ? Number(value)
+      : Number.NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  };
+  const explicitThreadId = parseThreadId(rawThreadId);
   const customName = typeof typedArgs.name === "string" && typedArgs.name.trim()
     ? typedArgs.name.trim()
     : undefined;
