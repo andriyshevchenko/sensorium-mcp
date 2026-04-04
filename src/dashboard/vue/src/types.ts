@@ -62,6 +62,8 @@ export interface ThreadEntry {
   keepAlive: boolean
   dailyRotation: boolean
   autonomousMode: boolean
+  telegramTopicId: number | null
+  identityPrompt: string | null
   createdAt: string
   lastActiveAt: string | null
   sessionResetAt: string | null
