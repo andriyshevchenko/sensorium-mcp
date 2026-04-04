@@ -14,11 +14,13 @@ import {
   getRootThreads,
   getThread,
   resetDailySession,
+  resolveTelegramTopicId,
 } from "./data/memory/thread-registry.js";
 import { runIntelligentConsolidation } from "./data/memory/consolidation.js";
 import { runNarrativeGeneration } from "./data/memory/narrative.js";
 import { runReflection } from "./data/memory/reflection.js";
 import { initMemoryDb } from "./data/memory/schema.js";
+import { config } from "./config.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,34 @@ interface DailyRotationResult {
   newSessionResetAt: string;
   consolidated: boolean;
   error?: string;
+}
+
+// ─── Telegram notification ───────────────────────────────────────────────────
+
+async function notifyTelegram(text: string, threadId?: number): Promise<void> {
+  const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID } = config;
+  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
+  try {
+    const db = initMemoryDb();
+    let topicId = threadId;
+    if (threadId) {
+      try { topicId = resolveTelegramTopicId(db, threadId); } catch { /* use original */ }
+    }
+    const body: Record<string, unknown> = {
+      chat_id: TELEGRAM_CHAT_ID,
+      text,
+      parse_mode: "HTML",
+    };
+    if (topicId) body.message_thread_id = topicId;
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    log.warn(`Daily rotation Telegram notify failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ─── Single-thread rotation ──────────────────────────────────────────────────
@@ -126,19 +156,36 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
     const roots = getRootThreads(db);
     const results: DailyRotationResult[] = [];
 
-    for (const root of roots) {
-      if (!root.dailyRotation) continue;
-      // Skip if already rotated today
+    // Collect threads that need rotation
+    const pending = roots.filter(root => {
+      if (!root.dailyRotation) return false;
       if (root.sessionResetAt) {
         const resetDate = root.sessionResetAt.slice(0, 10);
         if (resetDate === todayDate) {
           log.info(`Root ${root.threadId} already rotated today, skipping`);
-          continue;
+          return false;
         }
       }
+      return true;
+    });
 
+    if (pending.length > 0) {
+      const names = pending.map(r => `${r.name} (${r.threadId})`).join(", ");
+      await notifyTelegram(`🔄 <b>Daily session rotation starting</b>\nThreads: ${names}`);
+    }
+
+    for (const root of pending) {
       const result = await rotateDailySession(root.threadId);
       results.push(result);
+    }
+
+    // Send summary
+    if (results.length > 0) {
+      const lines = results.map(r => {
+        if (r.error) return `❌ ${r.rootThreadId}: ${r.error}`;
+        return `✅ ${r.rootThreadId}: consolidated=${r.consolidated}`;
+      });
+      await notifyTelegram(`🔄 <b>Daily rotation complete</b>\n${lines.join("\n")}`);
     }
 
     const allSucceeded = results.every(r => !r.error);

@@ -412,6 +412,14 @@ onMounted(load)
                 >
                   + Branch
                 </button>
+
+                <!-- Archive root thread -->
+                <button
+                  @click="archiveThread(t)"
+                  class="px-2 py-1 rounded-lg text-xs bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition"
+                >
+                  Archive
+                </button>
               </div>
             </div>
 
