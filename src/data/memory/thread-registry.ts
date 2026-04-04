@@ -81,13 +81,13 @@ export function registerThread(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
      ON CONFLICT(thread_id) DO UPDATE SET
        name = excluded.name,
-       type = excluded.type,
+       type = CASE WHEN thread_registry.keep_alive = 1 THEN thread_registry.type ELSE excluded.type END,
        root_thread_id = excluded.root_thread_id,
        badge = excluded.badge,
-       client = excluded.client,
+       client = CASE WHEN thread_registry.keep_alive = 1 THEN thread_registry.client ELSE excluded.client END,
        max_retries = excluded.max_retries,
        cooldown_ms = excluded.cooldown_ms,
-       keep_alive = excluded.keep_alive,
+       keep_alive = CASE WHEN thread_registry.keep_alive = 1 THEN 1 ELSE excluded.keep_alive END,
        last_active_at = excluded.last_active_at,
        status = 'active'`,
   ).run(
