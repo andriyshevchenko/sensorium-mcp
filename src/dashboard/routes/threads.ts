@@ -73,10 +73,38 @@ function buildThreadUpdates(
     return updates;
 }
 
+/**
+ * Enrich thread entries with topic names from topic_registry
+ * when the thread name is generic (e.g. "Thread 1234").
+ */
+function enrichThreadNames(db: Database, threads: ThreadRegistryEntry[]): ThreadRegistryEntry[] {
+    const genericPattern = /^Thread \d+$/i;
+    const needsEnrichment = threads.filter(t => genericPattern.test(t.name));
+    if (needsEnrichment.length === 0) return threads;
+
+    try {
+        const topicNames = new Map<number, string>();
+        const rows = db.prepare(
+            `SELECT thread_id, name FROM topic_registry`
+        ).all() as { thread_id: number; name: string }[];
+        for (const r of rows) topicNames.set(r.thread_id, r.name);
+
+        return threads.map(t => {
+            if (!genericPattern.test(t.name)) return t;
+            // Check topic_registry by thread_id or telegramTopicId
+            const topicName = topicNames.get(t.telegramTopicId ?? t.threadId) ?? topicNames.get(t.threadId);
+            if (topicName) return { ...t, name: topicName };
+            return t;
+        });
+    } catch {
+        return threads; // topic_registry might not exist
+    }
+}
+
 // ─── GET /api/threads — list all active threads grouped ─────────────────────
 
 export const handleGetThreads: RouteHandler = ({ json, db }) => {
-    const threads = getActiveThreads(db);
+    const threads = enrichThreadNames(db, getActiveThreads(db));
     json({ threads });
     return true;
 };
@@ -84,7 +112,7 @@ export const handleGetThreads: RouteHandler = ({ json, db }) => {
 // ─── GET /api/threads/roots — list root threads only ────────────────────────
 
 export const handleGetRootThreads: RouteHandler = ({ json, db }) => {
-    json({ threads: getRootThreads(db) });
+    json({ threads: enrichThreadNames(db, getRootThreads(db)) });
     return true;
 };
 
