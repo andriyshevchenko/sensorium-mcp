@@ -803,10 +803,15 @@ export function cleanupStalePidFiles(): void {
  * isThreadRunning() returns true for processes that survived a restart.
  */
 export function restoreSpawnedThreadsFromPids(): number {
+  const pidEntries = readPidFiles();
+  if (pidEntries.length === 0) return 0;
+
+  // Batch-check all PIDs at once to avoid N sequential tasklist calls
+  const alivePids = getAlivePids(pidEntries.map(e => e.pid));
   let restored = 0;
-  for (const { threadId, pid, name } of readPidFiles()) {
-    if (!isProcessAlive(pid)) continue;
-    // Skip if already tracked (shouldn't happen on fresh startup, but defensive)
+
+  for (const { threadId, pid, name } of pidEntries) {
+    if (!alivePids.has(pid)) continue;
     if (spawnedThreads.some(t => t.threadId === threadId)) continue;
     spawnedThreads.push({
       pid,
@@ -820,6 +825,38 @@ export function restoreSpawnedThreadsFromPids(): number {
     log.info(`[restore] Recovered live process PID=${pid} for thread ${threadId} ("${name ?? "unknown"}")`);
   }
   return restored;
+}
+
+/**
+ * Batch-check which PIDs are alive. On Windows, runs a single `tasklist` call
+ * instead of one per PID (each takes ~1.4s).
+ */
+function getAlivePids(pids: number[]): Set<number> {
+  if (pids.length === 0) return new Set();
+  if (process.platform === "win32") {
+    try {
+      // Single tasklist call with all PIDs as filters
+      const filters = pids.map(p => `/FI "PID eq ${p}"`).join(" ");
+      const out = execSync(`tasklist ${filters} /NH`, {
+        encoding: "utf-8",
+        timeout: 15_000,
+        windowsHide: true,
+      });
+      const alive = new Set<number>();
+      for (const pid of pids) {
+        if (out.includes(String(pid))) alive.add(pid);
+      }
+      return alive;
+    } catch {
+      return new Set();
+    }
+  }
+  // Unix: use kill -0 (fast, no batching needed)
+  const alive = new Set<number>();
+  for (const pid of pids) {
+    try { process.kill(pid, 0); alive.add(pid); } catch { /* dead */ }
+  }
+  return alive;
 }
 
 const DEFAULT_WORKER_TTL_MS = 30 * 60 * 1000; // 30 minutes — one-shot threads auto-cleanup
