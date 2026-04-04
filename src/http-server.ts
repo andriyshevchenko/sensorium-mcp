@@ -30,14 +30,14 @@ import {
 } from "./sessions.js";
 import type { CreateMcpServerFn } from "./types.js";
 
-process.on("uncaughtException", (err) => {
-  console.error(`[fatal] Uncaught exception: ${err.stack ?? err}`);
-  process.exit(1);
-});
-process.on("unhandledRejection", (reason) => {
-  console.error(`[fatal] Unhandled rejection: ${reason instanceof Error ? reason.stack : reason}`);
-  process.exit(1);
-});
+class BodyParseError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode: 400 | 413,
+  ) {
+    super(message);
+  }
+}
 
 export function startHttpServer(
   createMcpServerFn: CreateMcpServerFn,
@@ -82,14 +82,16 @@ export function startHttpServer(
         totalSize += c.length;
         if (totalSize > MAX_BODY_SIZE) {
           req.destroy();
-          reject(new Error("Request body too large"));
+          reject(new BodyParseError("Request body too large", 413));
           return;
         }
         chunks.push(c);
       });
       req.on("end", () => {
         try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
-        catch (e) { reject(e); }
+        catch {
+          reject(new BodyParseError("Malformed JSON request body", 400));
+        }
       });
       req.on("error", reject);
     });
@@ -170,9 +172,11 @@ export function startHttpServer(
       let body: unknown;
       try {
         body = await parseBody(req);
-      } catch {
-        res.writeHead(413, { "Content-Type": "text/plain" });
-        res.end("Request body too large or malformed");
+      } catch (err) {
+        const statusCode = err instanceof BodyParseError ? err.statusCode : 400;
+        const message = err instanceof BodyParseError ? err.message : "Malformed request body";
+        res.writeHead(statusCode, { "Content-Type": "text/plain" });
+        res.end(message);
         return;
       }
 
@@ -269,8 +273,17 @@ export function startHttpServer(
     if (req.method === "GET") {
       const getEntry = sessionId ? sessions.get(sessionId) : undefined;
       if (!getEntry?.transport) {
-        res.writeHead(400, { "Content-Type": "text/plain" });
-        res.end("Invalid or missing session ID");
+        if (sessionId) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32001, message: "Session not found" },
+            id: null,
+          }));
+        } else {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Missing session ID");
+        }
         return;
       }
       getEntry.lastActivity = Date.now();
@@ -293,8 +306,17 @@ export function startHttpServer(
     if (req.method === "DELETE") {
       const delEntry = sessionId ? sessions.get(sessionId) : undefined;
       if (!delEntry?.transport) {
-        res.writeHead(400, { "Content-Type": "text/plain" });
-        res.end("Invalid or missing session ID");
+        if (sessionId) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32001, message: "Session not found" },
+            id: null,
+          }));
+        } else {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Missing session ID");
+        }
         return;
       }
       delEntry.lastActivity = Date.now();
