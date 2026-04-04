@@ -34,7 +34,7 @@ const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
 const { setTopicRegistryDb, lookupTopicRegistry } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
-const { cleanupStalePidFiles } = await import("./tools/thread-lifecycle.js");
+const { cleanupStalePidFiles, restoreSpawnedThreadsFromPids } = await import("./tools/thread-lifecycle.js");
 const { log } = await import("./logger.js");
 const { rotateAllDailySessions } = await import("./daily-session.js");
 const { resolveTelegramTopicId } = await import("./data/memory/thread-registry.js");
@@ -81,6 +81,12 @@ initVideoTempCleanup();
 // Without this, orphaned PID files cause get_threads_health to show dead
 // threads as "dormant" when the PID is reused by an unrelated process.
 cleanupStalePidFiles();
+
+// Restore in-memory tracking for processes that survived a server restart.
+// Without this, isThreadRunning() returns false for live processes, causing
+// the keeper to unnecessarily restart them (losing conversation context).
+const restored = restoreSpawnedThreadsFromPids();
+if (restored > 0) log.info(`Restored ${restored} live process(es) from PID files.`);
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)

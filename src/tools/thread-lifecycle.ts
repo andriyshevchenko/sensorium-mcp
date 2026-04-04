@@ -797,6 +797,31 @@ export function cleanupStalePidFiles(): void {
   }
 }
 
+/**
+ * Restore spawnedThreads from PID files for processes still alive.
+ * Call after cleanupStalePidFiles() on server startup so that
+ * isThreadRunning() returns true for processes that survived a restart.
+ */
+export function restoreSpawnedThreadsFromPids(): number {
+  let restored = 0;
+  for (const { threadId, pid, name } of readPidFiles()) {
+    if (!isProcessAlive(pid)) continue;
+    // Skip if already tracked (shouldn't happen on fresh startup, but defensive)
+    if (spawnedThreads.some(t => t.threadId === threadId)) continue;
+    spawnedThreads.push({
+      pid,
+      threadId,
+      name: name ?? `Thread ${threadId}`,
+      startedAt: Date.now(),
+      createdAt: Date.now(),
+      logFile: "",
+    });
+    restored++;
+    log.info(`[restore] Recovered live process PID=${pid} for thread ${threadId} ("${name ?? "unknown"}")`);
+  }
+  return restored;
+}
+
 const DEFAULT_WORKER_TTL_MS = 30 * 60 * 1000; // 30 minutes — one-shot threads auto-cleanup
 
 /**
