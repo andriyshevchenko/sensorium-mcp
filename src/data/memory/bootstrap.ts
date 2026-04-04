@@ -133,7 +133,6 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   // Ghost threads: use the parent's thread ID for memory queries
   const queryThreadId = memorySourceThreadId ?? threadId;
   const knowledgeThreadId = resolveKnowledgeThreadId(queryThreadId);
-  const status = getMemoryStatus(db, queryThreadId);
   const bootstrapMessageCount = getBootstrapMessageCount();
   const threadEntry = getThread(db, queryThreadId);
   const sessionResetAt = threadEntry?.sessionResetAt ?? undefined;
@@ -155,6 +154,16 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   const baseline = getVoiceBaseline(db);
 
   const lines: string[] = [];
+
+  // ── 1. Identity Anchor ─────────────────────────────────────────────
+  // First-person identity preamble — the most critical section for
+  // personality continuity across ephemeral sessions.
+  const identityPrompt = threadEntry?.identityPrompt;
+  if (identityPrompt) {
+    lines.push(identityPrompt);
+    lines.push("");
+  }
+
   lines.push("# Memory Briefing");
   if (memorySourceThreadId !== undefined) {
     lines.push(`> **Ghost thread** — memory sourced from parent thread ${memorySourceThreadId}. Runtime memory ops use thread ${threadId}.`);
@@ -164,19 +173,56 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   }
   lines.push("");
 
-  // Status
-  lines.push("## Status");
-  lines.push(`- Episodes: ${status.totalEpisodes} (${status.unconsolidatedEpisodes} unconsolidated)`);
-  lines.push(`- Semantic notes: ${status.totalSemanticNotes}`);
-  lines.push(`- Procedures: ${status.totalProcedures}`);
-  lines.push(`- Voice signatures: ${status.totalVoiceSignatures}`);
-  if (status.lastConsolidation) {
-    lines.push(`- Last consolidation: ${status.lastConsolidation}`);
+  // ── 2. Recent Conversation (highest priority for continuity) ───────
+  if (recentEpisodes.length > 0) {
+    lines.push("## Recent Conversation");
+    const conversationLines: string[] = [];
+    let totalChars = 0;
+    for (const ep of recentEpisodes) {
+      const raw = typeof ep.content === "object" && ep.content !== null
+        ? (ep.content.text ?? ep.content.caption ?? null)
+        : null;
+      const fullText = typeof raw === "string" ? raw : JSON.stringify(ep.content);
+      const textContent = fullText.length > MAX_MESSAGE_CONTENT_CHARS
+        ? fullText.slice(0, MAX_MESSAGE_CONTENT_CHARS) + "…"
+        : fullText;
+      let line: string;
+      if (ep.type === "operator_message") {
+        line = `**Operator** (${ep.timestamp}): ${textContent}`;
+      } else if (ep.type === "agent_action") {
+        line = `**You** (${ep.timestamp}): ${textContent}`;
+      } else {
+        // system_event, operator_reaction, etc.
+        line = `[${ep.type}] ${textContent} (${ep.timestamp})`;
+      }
+      totalChars += line.length;
+      conversationLines.push(line);
+    }
+    // Truncate from oldest if exceeds max chars
+    while (totalChars > MAX_BOOTSTRAP_CONVERSATION_CHARS && conversationLines.length > 1) {
+      const removed = conversationLines.shift()!;
+      totalChars -= removed.length;
+    }
+    for (const cl of conversationLines) {
+      lines.push(cl);
+    }
+    lines.push("");
   }
-  lines.push(`- DB size: ${(status.dbSizeBytes / 1024).toFixed(1)} KB`);
-  lines.push("");
 
-  // Temporal narrative — multi-resolution "story so far"
+  // ── 3. Active Decisions (guardrails) ───────────────────────────────
+  if (getGuardrailsEnabled()) {
+    const guardrails = getGuardrailNotes(db);
+    if (guardrails.length > 0) {
+      lines.push("## Active Decisions (always enforced)");
+      for (const g of guardrails) {
+        const line = g.content.length > 120 ? g.content.slice(0, 117) + "..." : g.content;
+        lines.push(`- ${line}`);
+      }
+      lines.push("");
+    }
+  }
+
+  // ── 4. Temporal Context ────────────────────────────────────────────
   try {
     const narratives = getNarrativesForBootstrap(db, knowledgeThreadId);
     const hasNarrative = narratives.half_year || narratives.quarter || narratives.month || narratives.week || narratives.day;
@@ -210,56 +256,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
     }
   } catch { /* table might not exist in older schemas */ }
 
-  // Recent conversation (full verbatim content, chronological order)
-  if (recentEpisodes.length > 0) {
-    lines.push("## Recent Conversation");
-    const conversationLines: string[] = [];
-    let totalChars = 0;
-    for (const ep of recentEpisodes) {
-      const raw = typeof ep.content === "object" && ep.content !== null
-        ? (ep.content.text ?? ep.content.caption ?? null)
-        : null;
-      const fullText = typeof raw === "string" ? raw : JSON.stringify(ep.content);
-      const textContent = fullText.length > MAX_MESSAGE_CONTENT_CHARS
-        ? fullText.slice(0, MAX_MESSAGE_CONTENT_CHARS) + "…"
-        : fullText;
-      let line: string;
-      if (ep.type === "operator_message") {
-        line = `**Operator** (${ep.timestamp}): ${textContent}`;
-      } else if (ep.type === "agent_action") {
-        line = `**Agent** (${ep.timestamp}): ${textContent}`;
-      } else {
-        // system_event, operator_reaction, etc.
-        line = `[${ep.type}] ${textContent} (${ep.timestamp})`;
-      }
-      totalChars += line.length;
-      conversationLines.push(line);
-    }
-    // Truncate from oldest if exceeds max chars
-    while (totalChars > MAX_BOOTSTRAP_CONVERSATION_CHARS && conversationLines.length > 1) {
-      const removed = conversationLines.shift()!;
-      totalChars -= removed.length;
-    }
-    for (const cl of conversationLines) {
-      lines.push(cl);
-    }
-    lines.push("");
-  }
-
-  // Active Decisions (guardrails)
-  if (getGuardrailsEnabled()) {
-    const guardrails = getGuardrailNotes(db);
-    if (guardrails.length > 0) {
-      lines.push("## Active Decisions (always enforced)");
-      for (const g of guardrails) {
-        const line = g.content.length > 120 ? g.content.slice(0, 117) + "..." : g.content;
-        lines.push(`- ${line}`);
-      }
-      lines.push("");
-    }
-  }
-
-  // Key knowledge
+  // ── 5. Key Knowledge ──────────────────────────────────────────────
   if (sortedNotes.length > 0) {
     // Pinned notes — always shown, represent long-term invariants
     const pinned = getPinnedNotes(db, knowledgeThreadId);
@@ -283,7 +280,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
     }
   }
 
-  // Active procedures
+  // ── 6. Active Procedures ──────────────────────────────────────────
   if (procedures.length > 0) {
     lines.push("## Active Procedures");
     for (const proc of procedures) {
@@ -297,18 +294,18 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
     lines.push("");
   }
 
-  // Voice baseline
+  // ── 7. Voice Baseline (compact) ───────────────────────────────────
   if (baseline && baseline.sampleCount > 0) {
-    lines.push("## Voice Baseline (30d)");
-    lines.push(`- Samples: ${baseline.sampleCount}`);
-    if (baseline.avgValence !== null) lines.push(`- Avg valence: ${baseline.avgValence.toFixed(2)}`);
-    if (baseline.avgArousal !== null) lines.push(`- Avg arousal: ${baseline.avgArousal.toFixed(2)}`);
-    if (baseline.avgSpeechRate !== null) lines.push(`- Avg speech rate: ${baseline.avgSpeechRate.toFixed(1)}`);
-    if (baseline.avgMeanPitchHz !== null) lines.push(`- Avg pitch: ${baseline.avgMeanPitchHz.toFixed(1)} Hz`);
+    lines.push("## Operator Voice Profile");
+    const parts: string[] = [`${baseline.sampleCount} samples`];
+    if (baseline.avgValence !== null) parts.push(`valence ${baseline.avgValence.toFixed(2)}`);
+    if (baseline.avgArousal !== null) parts.push(`arousal ${baseline.avgArousal.toFixed(2)}`);
+    if (baseline.avgSpeechRate !== null) parts.push(`speech rate ${baseline.avgSpeechRate.toFixed(1)}`);
+    lines.push(parts.join(" · "));
     lines.push("");
   }
 
-  // Recent Reflection Insights — deeper patterns from the reflection pipeline
+  // ── 8. Recent Reflections ─────────────────────────────────────────
   try {
     const reflections = db
       .prepare(
@@ -325,16 +322,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
       }
       lines.push("");
     }
-  } catch { /* non-critical — table or column might not exist in older schemas */ }
-
-  // Topics
-  if (status.topTopics.length > 0) {
-    lines.push("## Top Topics");
-    for (const t of status.topTopics) {
-      lines.push(`- ${t.topic} (semantic: ${t.semanticCount}, procedural: ${t.proceduralCount})`);
-    }
-    lines.push("");
-  }
+  } catch { /* non-critical */ }
 
   return lines.join("\n");
 }

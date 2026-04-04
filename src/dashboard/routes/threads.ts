@@ -37,8 +37,8 @@ const VALID_CLIENTS = ["claude", "copilot", "codex", "openai_codex", "copilot_cl
 /** Extract valid update fields from a request body. Returns an error string on validation failure. */
 function buildThreadUpdates(
     body: Record<string, unknown>,
-): Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge">> | string {
-    const updates: Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge">> = {};
+): Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge" | "identityPrompt">> | string {
+    const updates: Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge" | "identityPrompt">> = {};
     if (typeof body.name === "string" && body.name.trim()) updates.name = body.name.trim();
     if (typeof body.status === "string") {
         if (!(VALID_STATUSES as readonly string[]).includes(body.status)) {
@@ -68,6 +68,8 @@ function buildThreadUpdates(
         updates.cooldownMs = body.cooldownMs;
     }
     if (typeof body.badge === "string") updates.badge = body.badge;
+    if (typeof body.identityPrompt === "string") updates.identityPrompt = body.identityPrompt;
+    if (body.identityPrompt === null) updates.identityPrompt = null;
     return updates;
 }
 

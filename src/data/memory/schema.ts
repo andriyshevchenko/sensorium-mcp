@@ -18,7 +18,7 @@ export type Database = BetterSqlite3.Database;
 
 // ─── Database Initialization ─────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 20;
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
@@ -344,6 +344,17 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       // Column may already exist from schema self-heal
     }
     log.info("[migration-19] Added telegram_topic_id column to thread_registry");
+  },
+
+  20: (db) => {
+    // Add identity_prompt column — per-thread first-person identity anchor
+    // injected at the TOP of the memory briefing to maintain personality continuity.
+    try {
+      db.exec(`ALTER TABLE thread_registry ADD COLUMN identity_prompt TEXT`);
+    } catch {
+      // Column may already exist
+    }
+    log.info("[migration-20] Added identity_prompt column to thread_registry");
   },
 };
 
