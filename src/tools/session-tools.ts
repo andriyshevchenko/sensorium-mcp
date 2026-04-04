@@ -11,6 +11,10 @@ import { log } from "../logger.js";
 import { saveAgentEpisodeSafe, type Database } from "../memory.js";
 import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
+import { getThread } from "../data/memory/thread-registry.js";
+import { appendFileSync, mkdirSync } from "fs";
+import { join } from "path";
+import { PENDING_TASKS_DIR } from "./thread-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -218,6 +222,25 @@ async function handleReportProgress(
     modality: "text",
     text: rawMessage,
   });
+
+  // Auto-forward to parent thread for worker threads.
+  // Codex workers often call report_progress but forget send_message_to_thread.
+  // This ensures the parent orchestrator always receives the worker's output.
+  try {
+    const db = ctx.getMemoryDb();
+    const entry = getThread(db, effectiveThreadId);
+    if (entry && entry.type === "worker" && entry.rootThreadId) {
+      const parentId = entry.rootThreadId;
+      mkdirSync(PENDING_TASKS_DIR, { recursive: true });
+      const taskFile = join(PENDING_TASKS_DIR, `${parentId}.txt`);
+      const replyMsg =
+        `Thread "${entry.name}" (worker ${effectiveThreadId}) reports back:\n---\n${rawMessage}\n---\n`;
+      appendFileSync(taskFile, replyMsg + "\n", "utf-8");
+      log.info(`[report_progress] Auto-forwarded to parent thread ${parentId}`);
+    }
+  } catch (err) {
+    log.debug(`[report_progress] Auto-forward failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   const responseText =
     pendingMessages.length > 0

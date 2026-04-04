@@ -46,6 +46,8 @@ let startTime = Date.now();
 let managedChild: ChildProcess | null = null;
 let httpSrv: HttpServer | null = null;
 let updateInProgress = false;
+let consecutiveHealthFailures = 0;
+const HEALTH_FAIL_THRESHOLD = 3;
 const keepers = new Map<number, { handle: KeeperHandle; settings: KeeperSettings }>();
 let keeperPollerHandle: ReturnType<typeof setInterval> | null = null;
 let sessionSweeperHandle: ReturnType<typeof setInterval> | null = null;
@@ -307,7 +309,19 @@ async function checkAndUpdate(): Promise<void> {
       // gives back the transient shell PID, not the real MCP server process.
       // The shell exits quickly, making alive(pid) return false even when the
       // server is healthy, causing a false-restart loop.
-      if (!(await isMcpServerHealthy())) { log("WARN", "Server not running — restarting..."); await notifyOperator("\u26A0\uFE0F Watcher: server process not running — restarting..."); startMcpServer(); startTime = Date.now(); }
+      if (!(await isMcpServerHealthy())) {
+        consecutiveHealthFailures++;
+        if (consecutiveHealthFailures >= HEALTH_FAIL_THRESHOLD) {
+          log("WARN", `Server not running (${consecutiveHealthFailures} consecutive failures) — restarting...`);
+          await notifyOperator("\u26A0\uFE0F Watcher: server process not running — restarting...");
+          startMcpServer(); startTime = Date.now();
+          consecutiveHealthFailures = 0;
+        } else {
+          log("INFO", `Health check failed (${consecutiveHealthFailures}/${HEALTH_FAIL_THRESHOLD}), waiting...`);
+        }
+      } else {
+        consecutiveHealthFailures = 0;
+      }
     }
     const remote = await getRemoteVersion();
     if (!remote) return;
