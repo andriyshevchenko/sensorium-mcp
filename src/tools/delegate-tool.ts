@@ -311,7 +311,7 @@ export async function handleStartThread(
     const existing = getThread(db, threadId);
     if (existing && (mode === "resume" || (explicitThreadId !== undefined && !mode))) {
       // Resume: only update client + lastActiveAt, preserve type/keepAlive
-      updateThread(db, threadId, { client: agentType, lastActiveAt: new Date().toISOString() });
+      updateThread(db, threadId, { client: agentType, lastActiveAt: new Date().toISOString(), status: 'active' });
     } else {
       registerThread(db, {
         threadId,
