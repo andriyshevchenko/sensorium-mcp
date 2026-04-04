@@ -15,6 +15,7 @@ import {
     ensureDirs,
     OFFSET_FILE,
     readOffset,
+    resolveThreadForTopic,
     writeOffset,
     writeReactionFile,
 } from "./broker.js";
@@ -143,8 +144,9 @@ async function pollOnce(
                 continue;
             }
 
+            const rawTopicId = u.message.message_thread_id;
             const threadId: number | "general" =
-                u.message.message_thread_id ?? "general";
+                rawTopicId != null ? resolveThreadForTopic(rawTopicId) : "general";
 
             const stored: StoredMessage = {
                 update_id: u.update_id,

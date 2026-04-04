@@ -43,6 +43,34 @@ export function setBrokerDb(getter: () => Database): void {
 }
 
 /**
+ * Reverse-map a Telegram topic ID to a logical thread ID.
+ * Threads where telegram_topic_id differs from thread_id (i.e. remapped topics)
+ * need this lookup so the dispatcher routes incoming messages correctly.
+ */
+let topicToThreadCache: Map<number, number> | null = null;
+let topicCacheAge = 0;
+const TOPIC_CACHE_TTL = 60_000; // refresh every 60s
+
+export function resolveThreadForTopic(telegramTopicId: number): number {
+    const now = Date.now();
+    if (!topicToThreadCache || now - topicCacheAge > TOPIC_CACHE_TTL) {
+        topicToThreadCache = new Map();
+        topicCacheAge = now;
+        if (brokerDbGetter) {
+            try {
+                const db = brokerDbGetter();
+                const rows = db.prepare(
+                    `SELECT thread_id, telegram_topic_id FROM thread_registry
+                     WHERE telegram_topic_id IS NOT NULL AND telegram_topic_id != thread_id`
+                ).all() as { thread_id: number; telegram_topic_id: number }[];
+                for (const r of rows) topicToThreadCache.set(r.telegram_topic_id, r.thread_id);
+            } catch { /* non-fatal */ }
+        }
+    }
+    return topicToThreadCache.get(telegramTopicId) ?? telegramTopicId;
+}
+
+/**
  * Look up which thread a message belongs to via sent_messages.
  * Returns undefined if the lookup fails or the message isn't tracked.
  */
