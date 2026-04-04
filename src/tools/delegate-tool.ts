@@ -19,7 +19,7 @@ import type { TelegramClient } from "../telegram.js";
 import type { ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
-import { registerThread, getThreadByName } from "../data/memory/thread-registry.js";
+import { registerThread, getThread, getThreadByName, updateThread } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { forkMemory } from "../data/memory/synthesis.js";
 import {
@@ -308,14 +308,20 @@ export async function handleStartThread(
   // ── 6. Register in memory thread registry ───────────────────────────
   try {
     const db = initMemoryDb();
-    registerThread(db, {
-      threadId,
-      name,
-      type: threadRegistryType,
-      rootThreadId: memorySourceThreadId ?? rootThreadId ?? parentThreadId ?? undefined,
-      badge: mode || threadRegistryType,
-      client: agentType,
-    });
+    const existing = getThread(db, threadId);
+    if (existing && (mode === "resume" || (explicitThreadId !== undefined && !mode))) {
+      // Resume: only update client + lastActiveAt, preserve type/keepAlive
+      updateThread(db, threadId, { client: agentType, lastActiveAt: new Date().toISOString() });
+    } else {
+      registerThread(db, {
+        threadId,
+        name,
+        type: threadRegistryType,
+        rootThreadId: memorySourceThreadId ?? rootThreadId ?? parentThreadId ?? undefined,
+        badge: mode || threadRegistryType,
+        client: agentType,
+      });
+    }
   } catch { /* registration is best-effort */ }
 
   const status = topicExisted ? "restarted" : "created";

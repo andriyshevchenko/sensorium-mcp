@@ -161,6 +161,7 @@ async function callStartThread(config: KeeperConfig): Promise<boolean> {
           name: sessionName,
           targetThreadId: threadId,
           agentType: client,
+          mode: "resume",
           workingDirectory: workingDirectory ?? process.cwd(),
         },
       },
