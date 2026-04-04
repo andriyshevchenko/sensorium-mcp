@@ -394,14 +394,17 @@ export async function handleStartSession(
     // Sync agent type to thread_registry (also ensures thread is registered)
     try {
       const db = getMemoryDb();
-      if (!getThread(db, threadId)) {
+      const existingThread = getThread(db, threadId);
+      if (!existingThread) {
         registerThread(db, {
           threadId,
           name: customName ?? `Thread ${threadId}`,
           type: 'root',
           client: agentType,
         });
-      } else {
+      } else if (!existingThread.keepAlive) {
+        // Only update client for non-keepAlive threads; keepAlive threads
+        // have their client set by the keeper and shouldn't be overwritten.
         updateThread(db, threadId, { client: agentType });
       }
     } catch { /* best-effort */ }
