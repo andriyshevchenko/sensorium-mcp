@@ -836,6 +836,8 @@ export async function cleanupExpiredWorkers(
       // Skip if still alive in-memory (already handled above)
       if (spawnedThreads.some(t => t.threadId === row.thread_id)) continue;
       try {
+        // Delete Telegram topic for stale worker
+        try { await telegram.deleteForumTopic(chatId, row.thread_id); } catch { /* topic might not exist */ }
         archiveThread(db, row.thread_id);
         result.cleaned++;
       } catch { /* best-effort */ }
