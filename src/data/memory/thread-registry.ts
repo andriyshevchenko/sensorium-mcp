@@ -24,6 +24,7 @@ export interface ThreadRegistryEntry {
   dailyRotation: boolean;
   autonomousMode: boolean;
   telegramTopicId: number | null;
+  identityPrompt: string | null;
   createdAt: string;
   lastActiveAt: string | null;
   sessionResetAt: string | null;
@@ -49,6 +50,7 @@ function rowToEntry(row: Record<string, unknown>): ThreadRegistryEntry {
     dailyRotation: !!(row.daily_rotation as number),
     autonomousMode: !!(row.autonomous_mode as number),
     telegramTopicId: (row.telegram_topic_id as number | null) ?? null,
+    identityPrompt: (row.identity_prompt as string | null) ?? null,
     createdAt: row.created_at as string,
     lastActiveAt: (row.last_active_at as string | null) ?? null,
     sessionResetAt: (row.session_reset_at as string | null) ?? null,
@@ -154,7 +156,7 @@ export function getActiveThreads(db: Database): ThreadRegistryEntry[] {
 export function updateThread(
   db: Database,
   threadId: number,
-  updates: Partial<Pick<ThreadRegistryEntry, 'name' | 'status' | 'lastActiveAt' | 'keepAlive' | 'dailyRotation' | 'autonomousMode' | 'client' | 'maxRetries' | 'cooldownMs' | 'badge' | 'telegramTopicId'>>,
+  updates: Partial<Pick<ThreadRegistryEntry, 'name' | 'status' | 'lastActiveAt' | 'keepAlive' | 'dailyRotation' | 'autonomousMode' | 'client' | 'maxRetries' | 'cooldownMs' | 'badge' | 'telegramTopicId' | 'identityPrompt'>>,
 ): boolean {
   const setClauses: string[] = [];
   const params: unknown[] = [];
@@ -170,6 +172,7 @@ export function updateThread(
   if (updates.cooldownMs !== undefined) { setClauses.push('cooldown_ms = ?'); params.push(updates.cooldownMs); }
   if (updates.badge !== undefined) { setClauses.push('badge = ?'); params.push(updates.badge); }
   if (updates.telegramTopicId !== undefined) { setClauses.push('telegram_topic_id = ?'); params.push(updates.telegramTopicId); }
+  if (updates.identityPrompt !== undefined) { setClauses.push('identity_prompt = ?'); params.push(updates.identityPrompt); }
 
   if (setClauses.length === 0) return false;
 
