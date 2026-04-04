@@ -28,6 +28,8 @@ import {
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
 import { isThreadRunning } from "../../tools/thread-lifecycle.js";
+import { resolveTelegramTopicId } from "../../data/memory/thread-registry.js";
+import { config } from "../../config.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -272,10 +274,30 @@ export function handleDeleteThread(args: RouteArgs, threadId: number): boolean {
         json({ ok: true, action: "archived", threadId });
     }
 
+    // Delete Telegram topic (best-effort, async)
+    deleteTelegramTopic(db, threadId);
+
     if (existing.keepAlive || existing.type === "root") {
         syncKeepAliveToSettings(db);
     }
     return true;
+}
+
+/** Best-effort deletion of a Telegram forum topic for a thread. */
+function deleteTelegramTopic(db: Database, threadId: number): void {
+    const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID } = config;
+    if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
+    void (async () => {
+        try {
+            const topicId = resolveTelegramTopicId(db, threadId);
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/deleteForumTopic`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, message_thread_id: topicId }),
+                signal: AbortSignal.timeout(10_000),
+            });
+        } catch { /* topic might not exist or already deleted */ }
+    })();
 }
 
 // ─── Settings.json sync for watcher backward compatibility ──────────────────
