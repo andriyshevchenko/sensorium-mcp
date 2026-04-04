@@ -13,7 +13,7 @@ import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
 import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "../sessions.js";
 import { synthesizeGhostMemory } from "../memory.js";
-import { archiveThread, getAllThreads, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
+import { archiveThread, getAllThreads, getThread, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 import {
@@ -316,10 +316,13 @@ async function handleProcessExit(
   if (idx !== -1) spawnedThreads.splice(idx, 1);
   try { unlinkSync(pidFilePath); } catch { /* already removed */ }
 
-  // Update thread registry DB status to 'exited'
+  // Update thread registry DB status
   try {
     const db = initMemoryDb();
-    updateThread(db, threadId, { status: 'exited', lastActiveAt: new Date().toISOString() });
+    // For keepAlive threads, preserve 'active' status so the keeper can restart them
+    const existing = getThread(db, threadId);
+    const newStatus = existing?.keepAlive ? 'active' : 'exited';
+    updateThread(db, threadId, { status: newStatus, lastActiveAt: new Date().toISOString() });
 
     // Synthesize ghost thread outcomes back to parent
     if (entry.memorySourceThreadId !== undefined) {
