@@ -51,6 +51,29 @@ function authHeaders(secret: string | null): Record<string, string> {
   return h;
 }
 
+/**
+ * Parse a fetch Response that may be JSON or SSE (text/event-stream).
+ * The MCP Streamable HTTP transport returns SSE when the Accept header
+ * includes text/event-stream. Each SSE "data:" line contains a JSON-RPC
+ * message. We extract the last data line as the result.
+ */
+async function parseJsonOrSse(res: Response): Promise<Record<string, unknown>> {
+  const ct = res.headers.get("content-type") ?? "";
+  if (ct.includes("text/event-stream")) {
+    const text = await res.text();
+    // Extract all "data:" lines and parse the last one (the final result)
+    const dataLines = text.split("\n")
+      .filter(line => line.startsWith("data:"))
+      .map(line => line.slice(5).trim());
+    for (let i = dataLines.length - 1; i >= 0; i--) {
+      try { return JSON.parse(dataLines[i]) as Record<string, unknown>; }
+      catch { /* try previous line */ }
+    }
+    return {};
+  }
+  return await res.json() as Record<string, unknown>;
+}
+
 async function waitForMcpReady(port: number, secret: string | null): Promise<boolean> {
   const deadline = Date.now() + MCP_READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -104,6 +127,8 @@ async function openMcpSession(port: number, secret: string | null): Promise<stri
       keeperLog("WARN", `initialize HTTP ${res.status}: ${res.statusText}`);
       return null;
     }
+    // Consume the body (may be SSE or JSON) to avoid connection stalls
+    await res.text();
     const sessionId = res.headers.get("mcp-session-id");
     if (!sessionId) {
       keeperLog("WARN", "initialize succeeded but did not return an MCP session ID");
@@ -181,8 +206,8 @@ async function callStartThread(config: KeeperConfig): Promise<boolean> {
       keeperLog("WARN", `start_thread HTTP ${res.status}: ${res.statusText}`);
       return false;
     }
-    const result = await res.json() as { result?: { content?: Array<{ text?: string }> } };
-    const text = result.result?.content?.[0]?.text ?? "";
+    const result = await parseJsonOrSse(res) as { result?: { content?: Array<{ text?: string }> } };
+    const text = result?.result?.content?.[0]?.text ?? "";
     keeperLog("INFO", `start_thread response: ${text.slice(0, 200)}`);
     return !text.toLowerCase().includes("error");
   } catch (err) {
