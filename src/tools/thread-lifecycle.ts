@@ -57,19 +57,18 @@ function parseTasklistPids(output: string): Set<number> {
 
 /**
  * Check if a process with the given PID is still running.
- * On Windows, uses `tasklist` instead of `process.kill(pid, 0)` to prevent
- * false positives from PID reuse — a common issue on Windows where PIDs
- * are recycled quickly after process exit.
+ * On Windows, uses PowerShell Get-Process instead of tasklist — tasklist
+ * relies on WMI which can hang for 5+ seconds under load, causing false
+ * negatives that delete PID files for running processes.
  */
 function isProcessAlive(pid: number): boolean {
   if (process.platform === "win32") {
     try {
-      const out = execSync(`tasklist /FI "PID eq ${pid}" /NH`, {
-        encoding: "utf-8",
-        timeout: 5000,
-        windowsHide: true,
-      });
-      return parseTasklistPids(out).has(pid);
+      const out = execSync(
+        `powershell -NoProfile -NonInteractive -Command "Get-Process -Id ${pid} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`,
+        { encoding: "utf-8", timeout: 3000, windowsHide: true }
+      );
+      return out.trim() === String(pid);
     } catch {
       return false;
     }
@@ -833,10 +832,15 @@ function readPidFiles(): PidFileEntry[] {
 /**
  * Remove PID files for processes that are no longer running.
  * Called on server startup / before spawning new threads.
+ * Uses a single batch check instead of N sequential calls to avoid
+ * WMI/tasklist hangs multiplying across all tracked PIDs.
  */
 export function cleanupStalePidFiles(): void {
-  for (const { pid, filePath } of readPidFiles()) {
-    if (!isProcessAlive(pid)) {
+  const entries = readPidFiles();
+  if (entries.length === 0) return;
+  const alivePids = getAlivePids(entries.map(e => e.pid));
+  for (const { pid, filePath } of entries) {
+    if (!alivePids.has(pid)) {
       try {
         unlinkSync(filePath);
         log.info(`[cleanup] Removed stale PID file ${filePath} (pid ${pid})`);
@@ -876,21 +880,24 @@ export function restoreSpawnedThreadsFromPids(): number {
 }
 
 /**
- * Batch-check which PIDs are alive. On Windows, runs a single `tasklist` call
- * instead of one per PID (each takes ~1.4s).
+ * Batch-check which PIDs are alive. On Windows, uses a single PowerShell
+ * Get-Process call instead of tasklist (which can hang via WMI under load).
  */
 function getAlivePids(pids: number[]): Set<number> {
   if (pids.length === 0) return new Set();
   if (process.platform === "win32") {
     try {
-      // Single tasklist call with all PIDs as filters
-      const filters = pids.map(p => `/FI "PID eq ${p}"`).join(" ");
-      const out = execSync(`tasklist ${filters} /NH`, {
-        encoding: "utf-8",
-        timeout: 15_000,
-        windowsHide: true,
-      });
-      return parseTasklistPids(out);
+      const idList = pids.join(",");
+      const out = execSync(
+        `powershell -NoProfile -NonInteractive -Command "Get-Process -Id @(${idList}) -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`,
+        { encoding: "utf-8", timeout: 5000, windowsHide: true }
+      );
+      const alive = new Set<number>();
+      for (const line of out.split(/\r?\n/)) {
+        const n = Number(line.trim());
+        if (Number.isFinite(n) && n > 0) alive.add(n);
+      }
+      return alive;
     } catch {
       return new Set();
     }
