@@ -51,23 +51,52 @@ let topicToThreadCache: Map<number, number> | null = null;
 let topicCacheAge = 0;
 const TOPIC_CACHE_TTL = 60_000; // refresh every 60s
 
+function refreshTopicToThreadCache(): void {
+    topicToThreadCache = new Map();
+    topicCacheAge = Date.now();
+    if (!brokerDbGetter) return;
+    try {
+        const db = brokerDbGetter();
+        const rows = db.prepare(
+            `SELECT thread_id, telegram_topic_id FROM thread_registry
+             WHERE telegram_topic_id IS NOT NULL AND telegram_topic_id != thread_id`
+        ).all() as { thread_id: number; telegram_topic_id: number }[];
+        for (const r of rows) topicToThreadCache.set(r.telegram_topic_id, r.thread_id);
+    } catch {
+        // Non-fatal: fall back to the raw Telegram topic ID.
+    }
+}
+
+function lookupThreadForTopicInDb(telegramTopicId: number): number | undefined {
+    if (!brokerDbGetter) return undefined;
+    try {
+        const db = brokerDbGetter();
+        const row = db.prepare(
+            `SELECT thread_id FROM thread_registry WHERE telegram_topic_id = ?`
+        ).get(telegramTopicId) as { thread_id: number } | undefined;
+        return row?.thread_id;
+    } catch {
+        return undefined;
+    }
+}
+
 export function resolveThreadForTopic(telegramTopicId: number): number {
     const now = Date.now();
     if (!topicToThreadCache || now - topicCacheAge > TOPIC_CACHE_TTL) {
-        topicToThreadCache = new Map();
-        topicCacheAge = now;
-        if (brokerDbGetter) {
-            try {
-                const db = brokerDbGetter();
-                const rows = db.prepare(
-                    `SELECT thread_id, telegram_topic_id FROM thread_registry
-                     WHERE telegram_topic_id IS NOT NULL AND telegram_topic_id != thread_id`
-                ).all() as { thread_id: number; telegram_topic_id: number }[];
-                for (const r of rows) topicToThreadCache.set(r.telegram_topic_id, r.thread_id);
-            } catch { /* non-fatal */ }
-        }
+        refreshTopicToThreadCache();
     }
-    return topicToThreadCache.get(telegramTopicId) ?? telegramTopicId;
+    const cache = topicToThreadCache ?? new Map<number, number>();
+    topicToThreadCache = cache;
+    const cached = cache.get(telegramTopicId);
+    if (cached !== undefined) return cached;
+
+    // Handle newly registered remaps immediately instead of waiting for the TTL.
+    const resolved = lookupThreadForTopicInDb(telegramTopicId);
+    if (resolved !== undefined) {
+        cache.set(telegramTopicId, resolved);
+        return resolved;
+    }
+    return telegramTopicId;
 }
 
 /**
@@ -217,7 +246,15 @@ function recoverOrphanedReads(): void {
                     const original = join(THREADS_DIR, match[1]);
                     try {
                         const content = readFileSync(orphan, "utf8");
-                        writeFileSync(original, content, { flag: "a", encoding: "utf8" });
+                        let existing = "";
+                        try {
+                            existing = readFileSync(original, "utf8");
+                        } catch {
+                            // No active thread file yet — the orphaned content becomes the full file.
+                        }
+                        const recovered = original + `.recover.${process.pid}`;
+                        writeFileSync(recovered, content + existing, "utf8");
+                        renameSync(recovered, original);
                         unlinkSync(orphan);
                         log.info(`[dispatcher] Recovered orphaned file: ${f}`);
                     } catch (err) { log.debug(`[dispatcher] Failed to recover orphaned file ${f}: ${err instanceof Error ? err.message : String(err)}`); }

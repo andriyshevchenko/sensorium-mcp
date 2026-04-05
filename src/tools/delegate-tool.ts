@@ -181,6 +181,7 @@ export async function handleStartThread(
       if (rootThreadId) {
         memorySourceThreadId = rootThreadId;
         memoryTargetThreadId = rootThreadId;
+        threadRegistryType = "branch";
         runtimeThreadType = "branch";
       }
       break;

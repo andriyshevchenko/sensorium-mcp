@@ -188,7 +188,7 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
       await notifyTelegram(`🔄 <b>Daily rotation complete</b>\n${lines.join("\n")}`);
     }
 
-    const allSucceeded = results.every(r => !r.error);
+    const allSucceeded = results.length > 0 && results.every(r => !r.error);
     if (allSucceeded) _lastRotationDate = todayDate;
     return results;
   } finally {

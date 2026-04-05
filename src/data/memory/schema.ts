@@ -244,30 +244,11 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
   15: (db) => {
     // Widen thread_registry status CHECK to include 'exited'.
     // SQLite doesn't support ALTER CONSTRAINT, so recreate the table.
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS thread_registry_new (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        thread_id       INTEGER NOT NULL UNIQUE,
-        name            TEXT NOT NULL,
-        type            TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
-        root_thread_id  INTEGER,
-        badge           TEXT NOT NULL DEFAULT 'root',
-        client          TEXT DEFAULT 'claude',
-        max_retries     INTEGER DEFAULT 5,
-        cooldown_ms     INTEGER DEFAULT 300000,
-        keep_alive      INTEGER DEFAULT 0,
-        created_at      TEXT NOT NULL,
-        last_active_at  TEXT,
-        session_reset_at TEXT,
-        status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited'))
-      );
-      INSERT OR IGNORE INTO thread_registry_new SELECT * FROM thread_registry;
-      DROP TABLE thread_registry;
-      ALTER TABLE thread_registry_new RENAME TO thread_registry;
-      CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
-      CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
-      CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
-    `);
+    const existingColumns = db
+      .prepare("PRAGMA table_info(thread_registry)")
+      .all()
+      .map((r: any) => r.name as string);
+    rebuildThreadRegistryWithExitedStatus(db, existingColumns);
     log.info("[migration-15] Widened thread_registry status CHECK to include 'exited'");
   },
   16: (db) => {
@@ -372,6 +353,65 @@ function getCurrentSchemaVersion(db: Database): number {
     // Table may not exist yet on first run
     return 0;
   }
+}
+
+function rebuildThreadRegistryWithExitedStatus(
+  db: Database,
+  existingColumns: string[],
+): void {
+  const selectSessionResetAt = existingColumns.includes("session_reset_at")
+    ? "session_reset_at"
+    : "NULL";
+  const selectDailyRotation = existingColumns.includes("daily_rotation")
+    ? "daily_rotation"
+    : "0";
+  const selectAutonomousMode = existingColumns.includes("autonomous_mode")
+    ? "autonomous_mode"
+    : "0";
+  const selectTelegramTopicId = existingColumns.includes("telegram_topic_id")
+    ? "telegram_topic_id"
+    : "NULL";
+  const selectIdentityPrompt = existingColumns.includes("identity_prompt")
+    ? "identity_prompt"
+    : "NULL";
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS thread_registry_new (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id         INTEGER NOT NULL UNIQUE,
+      name              TEXT NOT NULL,
+      type              TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
+      root_thread_id    INTEGER,
+      badge             TEXT NOT NULL DEFAULT 'root',
+      client            TEXT DEFAULT 'claude',
+      max_retries       INTEGER DEFAULT 5,
+      cooldown_ms       INTEGER DEFAULT 300000,
+      keep_alive        INTEGER DEFAULT 0,
+      created_at        TEXT NOT NULL,
+      last_active_at    TEXT,
+      session_reset_at  TEXT,
+      status            TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
+      daily_rotation    INTEGER NOT NULL DEFAULT 0,
+      autonomous_mode   INTEGER NOT NULL DEFAULT 0,
+      telegram_topic_id INTEGER,
+      identity_prompt   TEXT
+    );
+    INSERT OR IGNORE INTO thread_registry_new (
+      id, thread_id, name, type, root_thread_id, badge, client, max_retries,
+      cooldown_ms, keep_alive, created_at, last_active_at, session_reset_at,
+      status, daily_rotation, autonomous_mode, telegram_topic_id, identity_prompt
+    )
+    SELECT
+      id, thread_id, name, type, root_thread_id, badge, client, max_retries,
+      cooldown_ms, keep_alive, created_at, last_active_at, ${selectSessionResetAt},
+      status, ${selectDailyRotation}, ${selectAutonomousMode}, ${selectTelegramTopicId}, ${selectIdentityPrompt}
+    FROM thread_registry;
+    DROP TABLE thread_registry;
+    ALTER TABLE thread_registry_new RENAME TO thread_registry;
+    CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
+    CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
+    CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
+  `);
 }
 
 /**
@@ -589,33 +629,7 @@ function ensureSchemaIntegrity(db: Database): void {
     const threadRegistrySql = getTableSql("thread_registry");
     if (!threadRegistrySql.includes("'exited'")) {
       log.info("[memory] Self-heal: widening thread_registry status CHECK");
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS thread_registry_new (
-          id              INTEGER PRIMARY KEY AUTOINCREMENT,
-          thread_id       INTEGER NOT NULL UNIQUE,
-          name            TEXT NOT NULL,
-          type            TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
-          root_thread_id  INTEGER,
-          badge           TEXT NOT NULL DEFAULT 'root',
-          client          TEXT DEFAULT 'claude',
-          max_retries     INTEGER DEFAULT 5,
-          cooldown_ms     INTEGER DEFAULT 300000,
-          keep_alive      INTEGER DEFAULT 0,
-          created_at      TEXT NOT NULL,
-          last_active_at  TEXT,
-          session_reset_at TEXT,
-          status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
-          daily_rotation  INTEGER NOT NULL DEFAULT 0,
-          autonomous_mode INTEGER NOT NULL DEFAULT 0,
-          telegram_topic_id INTEGER
-        );
-        INSERT OR IGNORE INTO thread_registry_new SELECT * FROM thread_registry;
-        DROP TABLE thread_registry;
-        ALTER TABLE thread_registry_new RENAME TO thread_registry;
-        CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
-        CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
-        CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
-      `);
+      rebuildThreadRegistryWithExitedStatus(db, threadRegistryCols);
       stampVersion(15);
     }
 

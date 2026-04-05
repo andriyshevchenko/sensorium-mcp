@@ -44,6 +44,17 @@ interface SpawnedThread {
 
 const spawnedThreads: SpawnedThread[] = [];
 
+function parseTasklistPids(output: string): Set<number> {
+  const alive = new Set<number>();
+  for (const line of output.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || /^INFO:/i.test(trimmed)) continue;
+    const match = trimmed.match(/\s+(\d+)\s+/);
+    if (match) alive.add(Number(match[1]));
+  }
+  return alive;
+}
+
 /**
  * Check if a process with the given PID is still running.
  * On Windows, uses `tasklist` instead of `process.kill(pid, 0)` to prevent
@@ -58,7 +69,7 @@ function isProcessAlive(pid: number): boolean {
         timeout: 5000,
         windowsHide: true,
       });
-      return out.includes(String(pid));
+      return parseTasklistPids(out).has(pid);
     } catch {
       return false;
     }
@@ -80,7 +91,18 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
     const t = spawnedThreads[i];
     if (t.threadId === threadId && isProcessAlive(t.pid)) return t;
   }
-  return undefined;
+  const pidEntry = readPidFiles().find((entry) => entry.threadId === threadId && isProcessAlive(entry.pid));
+  if (!pidEntry) return undefined;
+  const restored: SpawnedThread = {
+    pid: pidEntry.pid,
+    threadId,
+    name: pidEntry.name ?? `Thread ${threadId}`,
+    startedAt: Date.now(),
+    createdAt: Date.now(),
+    logFile: "",
+  };
+  spawnedThreads.push(restored);
+  return restored;
 }
 
 /**
@@ -356,6 +378,12 @@ export function spawnAgentProcess(
   memoryTargetThreadId?: number,
   threadType?: 'worker' | 'branch',
 ): { pid: number; logFile: string } | { error: string } {
+  if (workingDirectory && !existsSync(workingDirectory)) {
+    const fallback = tmpdir();
+    log.warn(`workingDirectory "${workingDirectory}" does not exist, falling back to "${fallback}"`);
+    workingDirectory = fallback;
+  }
+
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
   const logFileName = `${safeName}_${threadId}_${dateStr}.json`;
@@ -842,11 +870,7 @@ function getAlivePids(pids: number[]): Set<number> {
         timeout: 15_000,
         windowsHide: true,
       });
-      const alive = new Set<number>();
-      for (const pid of pids) {
-        if (out.includes(String(pid))) alive.add(pid);
-      }
-      return alive;
+      return parseTasklistPids(out);
     } catch {
       return new Set();
     }
