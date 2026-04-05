@@ -21,12 +21,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { timingSafeEqual } from "node:crypto";
 
-// Re-export types for downstream consumers (http-server.ts → dashboard.ts → here)
-export type { DashboardContext } from "./routes/types.js";
-export type { RouteHandler, RouteArgs, JsonFn } from "./routes/types.js";
+import type { DashboardContext, RouteHandler } from "./routes/types.js";
 
-import type { DashboardContext } from "./routes/types.js";
-import type { RouteHandler } from "./routes/types.js";
+// Re-export types for downstream consumers (http-server.ts → dashboard.ts → here)
+export type { DashboardContext, RouteHandler, RouteArgs, JsonFn } from "./routes/types.js";
 
 // Domain handlers — settings
 import {
