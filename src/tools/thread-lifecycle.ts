@@ -13,7 +13,7 @@ import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
 import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "../sessions.js";
 import { synthesizeGhostMemory } from "../memory.js";
-import { archiveThread, getAllThreads, getThread, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
+import { archiveThread, getAllThreads, getThread, resolveTelegramTopicId, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 import {
@@ -356,6 +356,26 @@ async function handleProcessExit(
       } catch (err) {
         log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`);
       }
+    }
+
+    // Delete Telegram topic for completed worker threads (immediate cleanup)
+    if (entry.threadType === 'worker') {
+      try {
+        const token = process.env.TELEGRAM_TOKEN || "";
+        const chatId = process.env.TELEGRAM_CHAT_ID || "";
+        if (token && chatId) {
+          const topicId = resolveTelegramTopicId(db, threadId);
+          await fetch(`https://api.telegram.org/bot${token}/deleteForumTopic`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: chatId, message_thread_id: topicId }),
+            signal: AbortSignal.timeout(10_000),
+          });
+          log.info(`[cleanup] Deleted Telegram topic for worker ${threadId}`);
+        }
+      } catch { /* topic deletion is best-effort */ }
+      // Archive the worker in the registry
+      try { archiveThread(db, threadId); } catch { /* best-effort */ }
     }
   } catch (err) {
     log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
@@ -916,7 +936,7 @@ export async function cleanupExpiredWorkers(
     const cutoff = new Date(now - ttlMs).toISOString();
     const staleRows = db.prepare(
       `SELECT thread_id FROM thread_registry 
-       WHERE type = 'worker' AND status = 'active' AND created_at < ?`
+       WHERE type = 'worker' AND status IN ('active', 'exited') AND created_at < ?`
     ).all(cutoff) as { thread_id: number }[];
     for (const row of staleRows) {
       // Skip if still alive in-memory (already handled above)
