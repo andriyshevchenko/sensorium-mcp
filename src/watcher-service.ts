@@ -369,14 +369,14 @@ interface KeeperSettings {
  * Read keeper settings from the thread_registry via the HTTP API.
  * Returns empty array if the server is not ready (keeper won't start until server is up).
  */
-async function readAllKeeperSettings(): Promise<KeeperSettings[]> {
+async function readAllKeeperSettings(): Promise<KeeperSettings[] | null> {
   const port = CONFIG.mcpHttpPort || 3847;
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/threads/roots`, {
       headers: CONFIG.mcpHttpSecret ? { 'Authorization': `Bearer ${CONFIG.mcpHttpSecret}` } : {},
       signal: AbortSignal.timeout(5_000),
     });
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const body = (await res.json()) as { threads?: Record<string, unknown>[] };
     const roots = body.threads ?? [];
     return roots
@@ -391,12 +391,15 @@ async function readAllKeeperSettings(): Promise<KeeperSettings[]> {
         sessionName: (typeof r.name === 'string' ? r.name : null) ?? `thread-${r.threadId}`,
       }));
   } catch {
-    return [];
+    return null;
   }
 }
 
 function keeperSettingsChanged(a: KeeperSettings, b: KeeperSettings): boolean {
-  return a.maxRetries !== b.maxRetries || a.cooldownMs !== b.cooldownMs || a.client !== b.client;
+  return a.maxRetries !== b.maxRetries
+    || a.cooldownMs !== b.cooldownMs
+    || a.client !== b.client
+    || a.sessionName !== b.sessionName;
 }
 
 let applyingSettings = false;
@@ -407,6 +410,10 @@ async function applyKeeperSettings(): Promise<void> {
   try {
   if (CONFIG.mcpHttpPort <= 0) return;
   const allSettings = await readAllKeeperSettings();
+  if (allSettings === null) {
+    log("WARN", "Keeper settings unavailable — preserving existing keepers.");
+    return;
+  }
   const desiredThreadIds = new Set(allSettings.map(s => s.threadId));
 
   // Stop keepers for threads that are no longer configured
@@ -470,7 +477,14 @@ async function runLoop(): Promise<void> {
     }
   }
   const pid = readPid();
-  if (!pid || !alive(pid)) startMcpServer();
+  if (!pid || !alive(pid)) {
+    if (await isMcpServerHealthy()) {
+      log("INFO", "MCP server already responding — skipping duplicate startup.");
+      rmPid();
+    } else {
+      startMcpServer();
+    }
+  }
   void applyKeeperSettings().catch((err) => log("ERROR", `Keeper failed to start: ${err}`));
   startKeeperPoller();
   if (CONFIG.mode === "production") {

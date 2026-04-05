@@ -219,7 +219,9 @@ async function pollOnce(
         log.error(
             `[dispatcher] Poll error: ${errorMessage(err)}`,
         );
+        throw err;
     } finally {
+        pollAbortController = undefined;
         clearInterval(lockRefresher);
     }
 }
@@ -311,13 +313,13 @@ export async function startDispatcher(
             log.info(
                 "[dispatcher] No offset file. Skipping old updates...\n",
             );
+            let drainTimeout: ReturnType<typeof setTimeout> | undefined;
             try {
                 // Use a short timeout to prevent blocking startup if another
                 // poller is active (409 retry loop could stall for 60+ seconds).
                 const drainAbort = new AbortController();
-                const drainTimeout = setTimeout(() => drainAbort.abort(), DRAIN_TIMEOUT_MS);
+                drainTimeout = setTimeout(() => drainAbort.abort(), DRAIN_TIMEOUT_MS);
                 const latest = await telegram.getUpdates(-1, 0, drainAbort.signal);
-                clearTimeout(drainTimeout);
                 if (latest.length > 0) {
                     const skipTo = latest[latest.length - 1].update_id + 1;
                     writeOffset(skipTo);
@@ -334,6 +336,8 @@ export async function startDispatcher(
                 log.warn(
                     `[dispatcher] Warning: drain failed: ${errorMessage(err)}. Poll loop will start from offset 0.`,
                 );
+            } finally {
+                if (drainTimeout) clearTimeout(drainTimeout);
             }
         }
 

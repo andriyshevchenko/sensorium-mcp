@@ -206,8 +206,19 @@ async function callStartThread(config: KeeperConfig): Promise<boolean> {
       keeperLog("WARN", `start_thread HTTP ${res.status}: ${res.statusText}`);
       return false;
     }
-    const result = await parseJsonOrSse(res) as { result?: { content?: Array<{ text?: string }> } };
+    const result = await parseJsonOrSse(res) as {
+      error?: { code?: number; message?: string };
+      result?: { content?: Array<{ text?: string }> };
+    };
+    if (result.error) {
+      keeperLog("WARN", `start_thread RPC error ${result.error.code ?? "unknown"}: ${result.error.message ?? "unknown error"}`);
+      return false;
+    }
     const text = result?.result?.content?.[0]?.text ?? "";
+    if (!text.trim()) {
+      keeperLog("WARN", "start_thread returned an empty response");
+      return false;
+    }
     keeperLog("INFO", `start_thread response: ${text.slice(0, 200)}`);
     return !text.toLowerCase().includes("error");
   } catch (err) {
