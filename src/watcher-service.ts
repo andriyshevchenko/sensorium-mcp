@@ -1,5 +1,5 @@
 /** Watcher Service — Node.js replacement for update-watcher.ps1. Run: npx sensorium-mcp --watcher */
-import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import { homedir } from "node:os";
@@ -39,11 +39,10 @@ const CONFIG = {
 };
 const P = {
   flag: join(CONFIG.dataDir, "maintenance.flag"), ver: join(CONFIG.dataDir, "current-version.txt"),
-  activity: join(CONFIG.dataDir, "last-activity.txt"), pid: join(CONFIG.dataDir, "server.pid"),
+  pid: join(CONFIG.dataDir, "server.pid"),
   lock: join(CONFIG.dataDir, "watcher.lock"),
 };
 let startTime = Date.now();
-let managedChild: ChildProcess | null = null;
 let httpSrv: HttpServer | null = null;
 let updateInProgress = false;
 let consecutiveHealthFailures = 0;
@@ -149,14 +148,6 @@ function removeMaintenanceFlag(): void {
 }
 function flagExists(): boolean { return existsSync(P.flag); }
 
-// Activity heartbeat ----------------------------------------------------------
-function activityAgeSec(): number | null {
-  const raw = safeRead(P.activity);
-  if (!raw) return null;
-  const e = parseInt(raw, 10);
-  return Number.isNaN(e) ? null : (Date.now() - e) / 1000;
-}
-
 // Process management (PID file) -----------------------------------------------
 function readPid(): number | null {
   const raw = safeRead(P.pid);
@@ -177,7 +168,6 @@ function startMcpServer(): void {
     child.on("error", (err) => log("ERROR", `MCP server spawn error: ${err.message}`));
     if (child.pid) {
       writePid(child.pid);
-      managedChild = child;
       child.unref();
       log("INFO", `MCP server started (PID ${child.pid})`);
     }
@@ -193,7 +183,7 @@ async function stopMcpServer(): Promise<void> {
   // timeout that serves no purpose.
   log("INFO", `Stopping MCP server (PID ${pid})...`);
   await killPid(pid);
-  rmPid(); managedChild = null;
+  rmPid();
   log("INFO", `PID ${pid} stopped.`);
 }
 
