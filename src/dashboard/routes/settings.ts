@@ -28,7 +28,6 @@ import {
     setThreadKeepAlive,
     removeThreadKeepAlive,
     getAllThreadKeepAlive,
-    type AgentType,
     type KeeperClient,
     type ThreadKeepAliveSettings,
 } from "../../config.js";
