@@ -266,6 +266,10 @@ export function handleDeleteThread(args: RouteArgs, threadId: number): boolean {
         return true;
     }
 
+    // Resolve and delete Telegram topic before hard-deleting the registry row.
+    // resolveTelegramTopicId reads thread_registry, so it must run while the row still exists.
+    deleteTelegramTopic(db, threadId);
+
     if (hard) {
         deleteThread(db, threadId);
         json({ ok: true, action: "deleted", threadId });
@@ -273,9 +277,6 @@ export function handleDeleteThread(args: RouteArgs, threadId: number): boolean {
         archiveThread(db, threadId);
         json({ ok: true, action: "archived", threadId });
     }
-
-    // Delete Telegram topic (best-effort, async)
-    deleteTelegramTopic(db, threadId);
 
     if (existing.keepAlive || existing.type === "root") {
         syncKeepAliveToSettings(db);
