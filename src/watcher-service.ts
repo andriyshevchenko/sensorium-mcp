@@ -1,6 +1,6 @@
 /** Watcher Service — Node.js replacement for update-watcher.ps1. Run: npx sensorium-mcp --watcher */
-import { execSync, spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, unlinkSync } from "node:fs";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, writeSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -39,10 +39,11 @@ const CONFIG = {
 };
 const P = {
   flag: join(CONFIG.dataDir, "maintenance.flag"), ver: join(CONFIG.dataDir, "current-version.txt"),
-  pid: join(CONFIG.dataDir, "server.pid"),
+  activity: join(CONFIG.dataDir, "last-activity.txt"), pid: join(CONFIG.dataDir, "server.pid"),
   lock: join(CONFIG.dataDir, "watcher.lock"),
 };
 let startTime = Date.now();
+let managedChild: ChildProcess | null = null;
 let httpSrv: HttpServer | null = null;
 let updateInProgress = false;
 let consecutiveHealthFailures = 0;
@@ -53,9 +54,24 @@ let sessionSweeperHandle: ReturnType<typeof setInterval> | null = null;
 let workerCleanupHandle: ReturnType<typeof setInterval> | null = null;
 
 // Helpers ---------------------------------------------------------------------
+let _logFd: number | null = null;
+function getLogFd(): number | null {
+  if (_logFd !== null) return _logFd;
+  try {
+    ensureDir();
+    const logPath = join(CONFIG.dataDir, "watcher.log");
+    _logFd = openSync(logPath, "a");
+    return _logFd;
+  } catch { return null; }
+}
 function log(level: "INFO" | "WARN" | "ERROR", msg: unknown): void {
   const text = msg instanceof Error ? `${msg.message}\n${msg.stack}` : String(msg);
-  console.log(`[${new Date().toISOString().replace("T", " ").slice(0, 19)}] [${level}] ${text}`);
+  const line = `[${new Date().toISOString().replace("T", " ").slice(0, 19)}] [${level}] ${text}`;
+  console.log(line);
+  try {
+    const fd = getLogFd();
+    if (fd !== null) writeSync(fd, line + "\n");
+  } catch { /* best-effort file logging */ }
 }
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
 function ensureDir(): void { if (!existsSync(CONFIG.dataDir)) mkdirSync(CONFIG.dataDir, { recursive: true }); }
@@ -148,6 +164,14 @@ function removeMaintenanceFlag(): void {
 }
 function flagExists(): boolean { return existsSync(P.flag); }
 
+// Activity heartbeat ----------------------------------------------------------
+function activityAgeSec(): number | null {
+  const raw = safeRead(P.activity);
+  if (!raw) return null;
+  const e = parseInt(raw, 10);
+  return Number.isNaN(e) ? null : (Date.now() - e) / 1000;
+}
+
 // Process management (PID file) -----------------------------------------------
 function readPid(): number | null {
   const raw = safeRead(P.pid);
@@ -168,6 +192,7 @@ function startMcpServer(): void {
     child.on("error", (err) => log("ERROR", `MCP server spawn error: ${err.message}`));
     if (child.pid) {
       writePid(child.pid);
+      managedChild = child;
       child.unref();
       log("INFO", `MCP server started (PID ${child.pid})`);
     }
@@ -183,7 +208,7 @@ async function stopMcpServer(): Promise<void> {
   // timeout that serves no purpose.
   log("INFO", `Stopping MCP server (PID ${pid})...`);
   await killPid(pid);
-  rmPid();
+  rmPid(); managedChild = null;
   log("INFO", `PID ${pid} stopped.`);
 }
 
