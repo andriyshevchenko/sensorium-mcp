@@ -63,7 +63,7 @@ function parseTasklistPids(output: string): Set<number> {
  * getAlivePids() function still uses tasklist for startup restore where
  * accuracy matters more than latency.
  */
-function isProcessAlive(pid: number): boolean {
+export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -79,10 +79,17 @@ function isProcessAlive(pid: number): boolean {
 export function findAliveThread(threadId: number): SpawnedThread | undefined {
   for (let i = spawnedThreads.length - 1; i >= 0; i--) {
     const t = spawnedThreads[i];
-    if (t.threadId === threadId && isProcessAlive(t.pid)) return t;
+    if (t.threadId === threadId) {
+      if (isProcessAlive(t.pid)) return t;
+      log.warn(`[findAliveThread] Thread ${threadId} PID ${t.pid} in spawnedThreads but NOT alive — removing stale entry`);
+      spawnedThreads.splice(i, 1);
+    }
   }
   const pidEntry = readPidFiles().find((entry) => entry.threadId === threadId && isProcessAlive(entry.pid));
-  if (!pidEntry) return undefined;
+  if (!pidEntry) {
+    log.debug(`[findAliveThread] Thread ${threadId}: not in spawnedThreads (${spawnedThreads.length} entries), not in PID files`);
+    return undefined;
+  }
   const restored: SpawnedThread = {
     pid: pidEntry.pid,
     threadId,
@@ -788,7 +795,7 @@ interface PidFileEntry {
  * Read all PID files from the pids directory.
  * Supports both legacy (plain PID number) and new (JSON metadata) formats.
  */
-function readPidFiles(): PidFileEntry[] {
+export function readPidFiles(): PidFileEntry[] {
   const entries: PidFileEntry[] = [];
   try {
     const files = readdirSync(PIDS_DIR);
@@ -872,29 +879,10 @@ export function restoreSpawnedThreadsFromPids(): number {
 }
 
 /**
- * Batch-check which PIDs are alive. On Windows, uses a single PowerShell
- * Get-Process call instead of tasklist (which can hang via WMI under load).
+ * Batch-check which PIDs are alive using process.kill(pid, 0).
+ * This is non-blocking and works cross-platform — no PowerShell or tasklist.
  */
 function getAlivePids(pids: number[]): Set<number> {
-  if (pids.length === 0) return new Set();
-  if (process.platform === "win32") {
-    try {
-      const idList = pids.join(",");
-      const out = execSync(
-        `powershell -NoProfile -NonInteractive -Command "Get-Process -Id @(${idList}) -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`,
-        { encoding: "utf-8", timeout: 5000, windowsHide: true }
-      );
-      const alive = new Set<number>();
-      for (const line of out.split(/\r?\n/)) {
-        const n = Number(line.trim());
-        if (Number.isFinite(n) && n > 0) alive.add(n);
-      }
-      return alive;
-    } catch {
-      return new Set();
-    }
-  }
-  // Unix: use kill -0 (fast, no batching needed)
   const alive = new Set<number>();
   for (const pid of pids) {
     try { process.kill(pid, 0); alive.add(pid); } catch { /* dead */ }

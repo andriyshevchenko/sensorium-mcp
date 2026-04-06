@@ -25,6 +25,8 @@ import { forkMemory } from "../data/memory/synthesis.js";
 import {
   findAliveThread,
   isThreadRunning,
+  isProcessAlive,
+  readPidFiles,
   ensureDirs,
   PENDING_TASKS_DIR,
   resolveMcpConfigPath,
@@ -285,6 +287,19 @@ export async function handleStartThread(
       }],
     };
   }
+
+  // Defensive: kill any leftover process from the PID file that findAliveThread
+  // missed (e.g. spawnedThreads entry was lost after a server restart).
+  // This prevents zombie duplicate processes.
+  try {
+    const pidEntries = readPidFiles().filter(e => e.threadId === threadId);
+    for (const pe of pidEntries) {
+      if (isProcessAlive(pe.pid)) {
+        log.warn(`[start_thread] Killing orphan PID ${pe.pid} for thread ${threadId} before spawning new process`);
+        try { process.kill(pe.pid, "SIGTERM"); } catch { /* already dead */ }
+      }
+    }
+  } catch { /* best-effort orphan cleanup */ }
 
   // ── 4. Pre-queue task & spawn ───────────────────────────────────────
   ensureDirs();
