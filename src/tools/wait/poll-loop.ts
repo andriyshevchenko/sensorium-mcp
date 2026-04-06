@@ -163,13 +163,13 @@ export async function handleWaitForInstructions(
   }
   const callNumber = ++state.waitCallCount;
   const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
-  // Codex and Copilot CLI clients enforce a hard ~120s tool-call timeout and
-  // may not handle SSE keepalive progress notifications. Cap the loop to 90s
-  // so we always return a valid response before the client gives up.
-  // Note: copilot_claude (VS Code Copilot Chat) supports SSE keepalives and
-  // long timeouts — only the spawned Copilot CLI process ("copilot") needs capping.
+  // Codex CLI enforces a hard ~120s tool-call timeout and does not handle
+  // SSE keepalive progress notifications. Cap the loop to 90s so we always
+  // return a valid response before the Codex client gives up.
+  // All other clients (Claude, Copilot CLI, VS Code Copilot Chat) support
+  // SSE keepalives and use the full configured timeout.
   const agentType = getEffectiveAgentType(effectiveThreadId);
-  const isShortTimeoutClient = agentType === "codex" || agentType === "copilot" || agentType === "copilot_codex";
+  const isShortTimeoutClient = agentType === "codex" || agentType === "openai_codex";
   const effectiveTimeoutMs = isShortTimeoutClient ? 90_000 : timeoutMs;
   const deadline = Date.now() + effectiveTimeoutMs;
 
