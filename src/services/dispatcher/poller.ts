@@ -19,6 +19,40 @@ import {
     writeOffset,
     writeReactionFile,
 } from "./broker.js";
+
+// ── Slash command expansion ────────────────────────────────────────────
+const SLASH_COMMANDS: Array<{ pattern: RegExp; expand: (m: RegExpMatchArray) => string }> = [
+  {
+    // /skill "Plan mode" or /skill Plan mode
+    pattern: /^\/skill\s+["']?(.+?)["']?\s*$/i,
+    expand: (m) => `Load the "${m[1]}" skill via get_skill and follow it.`,
+  },
+  {
+    // /recall Wednesday 2:15-2:43pm → time-range memory search
+    pattern: /^\/recall\s+(.+)$/i,
+    expand: (m) => `Search memory for what we discussed during: ${m[1]}. Use memory_search with appropriate startTime and endTime parameters to find episodes from that period. Summarize what was discussed.`,
+  },
+  {
+    // /health → check thread health
+    pattern: /^\/health\s*$/i,
+    expand: () => `Check the health of all threads using get_threads_health and report any issues.`,
+  },
+  {
+    // /status → brief status of current work
+    pattern: /^\/status\s*$/i,
+    expand: () => `Give a brief status of what you're currently working on and any pending tasks.`,
+  },
+];
+
+/** Expand /slash commands in message text. Returns original if no match. */
+function expandSlashCommands(text: string | undefined): string | undefined {
+  if (!text || !text.startsWith("/")) return text;
+  for (const cmd of SLASH_COMMANDS) {
+    const m = text.match(cmd.pattern);
+    if (m) return cmd.expand(m);
+  }
+  return text;
+}
 import type { StoredMessage, StoredReaction } from "./broker.js";
 import {
     readLock,
@@ -193,6 +227,8 @@ async function pollOnce(
             };
 
             try {
+                // Expand /slash commands before storing
+                stored.message.text = expandSlashCommands(stored.message.text);
                 appendToThread(threadId, stored);
                 committedOffset = u.update_id + 1;
             } catch (writeErr) {
