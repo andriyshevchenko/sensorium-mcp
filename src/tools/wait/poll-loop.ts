@@ -163,11 +163,12 @@ export async function handleWaitForInstructions(
   }
   const callNumber = ++state.waitCallCount;
   const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
-  // Codex MCP client enforces a hard 120s tool-call timeout and ignores SSE
-  // keepalive progress notifications. Cap the loop to 90s so we always return
-  // a valid response before Codex gives up and exits.
+  // Codex and Copilot MCP clients enforce a hard ~120s tool-call timeout and
+  // may not handle SSE keepalive progress notifications. Cap the loop to 90s
+  // so we always return a valid response before the client gives up.
   const agentType = getEffectiveAgentType(effectiveThreadId);
-  const effectiveTimeoutMs = agentType === "codex" ? 90_000 : timeoutMs;
+  const isShortTimeoutClient = agentType === "codex" || agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex";
+  const effectiveTimeoutMs = isShortTimeoutClient ? 90_000 : timeoutMs;
   const deadline = Date.now() + effectiveTimeoutMs;
 
   // ── Pending task injection (pre-loop check) ────────────────────────────
