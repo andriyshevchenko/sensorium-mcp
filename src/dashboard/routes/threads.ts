@@ -28,6 +28,7 @@ import {
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
 import { isThreadRunning } from "../../tools/thread-lifecycle.js";
+import { readThreadHeartbeat } from "../../data/file-storage.js";
 import { resolveTelegramTopicId } from "../../data/memory/thread-registry.js";
 import { config } from "../../config.js";
 
@@ -202,6 +203,13 @@ export function handleGetThread(args: RouteArgs, threadId: number): boolean {
 export function handleGetThreadRunning(args: RouteArgs, threadId: number): boolean {
     const running = isThreadRunning(threadId);
     args.json({ threadId, running });
+    return true;
+}
+
+/** GET /api/threads/:threadId/heartbeat — last MCP activity timestamp for stuck-process detection */
+export function handleGetThreadHeartbeat(args: RouteArgs, threadId: number): boolean {
+    const lastActivity = readThreadHeartbeat(threadId);
+    args.json({ threadId, lastActivity });
     return true;
 }
 

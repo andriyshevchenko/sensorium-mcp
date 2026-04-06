@@ -380,6 +380,21 @@ async function checkAndUpdate(): Promise<void> {
     // via scheduleRestart() and the applyKeeperSettings() poller.
     await notifyOperator(`\u2705 Watcher: update to v${remote} complete. Server ready.`);
     log("INFO", `Update to v${remote} complete.`);
+
+    // Self-restart: exit with code 42 so the outer restart loop picks up new watcher code
+    if (process.env.WATCHER_SELF_RESTART !== "false") {
+      log("INFO", "Self-restart: exiting with code 42 to pick up new watcher code.");
+      await notifyOperator(`\u{1F504} Watcher: self-restarting to apply v${remote} watcher changes...`);
+      // Stop keepers and HTTP but keep the MCP server alive for the new watcher to adopt
+      if (keeperPollerHandle) clearInterval(keeperPollerHandle);
+      if (sessionSweeperHandle) clearInterval(sessionSweeperHandle);
+      if (workerCleanupHandle) clearInterval(workerCleanupHandle);
+      for (const [, entry] of keepers) { await entry.handle.stop(); }
+      keepers.clear();
+      httpSrv?.close();
+      releaseLock();
+      process.exit(42);
+    }
   } finally {
     updateInProgress = false;
   }
@@ -728,7 +743,7 @@ export async function startWatcherService(): Promise<void> {
     await stopMcpServer();
     httpSrv?.close();
     releaseLock();
-    process.exit(0);
+    process.exit(process.exitCode ?? 0);
   };
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
