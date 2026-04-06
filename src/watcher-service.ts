@@ -216,17 +216,28 @@ function startMcpServer(): void {
 
 async function stopMcpServer(): Promise<void> {
   const pid = readPid();
-  if (!pid || !alive(pid)) { rmPid(); return; }
-  // The grace period in checkAndUpdate already waits for in-flight requests
-  // to finish. Skip the idle-poll here — the poll loop's activity heartbeat
-  // keeps last-activity.txt permanently fresh, causing a guaranteed 5-min
-  // timeout that serves no purpose.
-  log("INFO", `Stopping MCP server (PID ${pid})...`);
-  // Kill the entire process tree — agent processes will be respawned
-  // by the new server's spawnKeepAliveThreads() on startup.
-  await killPidTree(pid);
+  if (pid && alive(pid)) {
+    log("INFO", `Stopping MCP server (PID ${pid})...`);
+    await killPidTree(pid);
+  }
   rmPid(); managedChild = null;
-  log("INFO", `PID ${pid} stopped.`);
+  // Fallback: kill whatever is listening on the MCP port.
+  // The PID file tracks the securevault wrapper, but the inner node.js process
+  // may survive if the wrapper exits first (detached process on Windows).
+  if (process.platform === "win32") {
+    try {
+      const port = CONFIG.mcpHttpPort || 3847;
+      const netstat = execSync(`netstat -aon | findstr ":${port}.*LISTENING"`, { timeout: 5000, encoding: "utf8" });
+      const m = netstat.match(/\s(\d+)\s*$/m);
+      if (m) {
+        const orphanPid = parseInt(m[1], 10);
+        log("INFO", `Killing orphan process PID=${orphanPid} still on port ${port}`);
+        try { execSync(`taskkill /F /T /PID ${orphanPid}`, { timeout: 10000 }); } catch { /**/ }
+        await sleep(2000);
+      }
+    } catch { /* no process on port — good */ }
+  }
+  log("INFO", `MCP server stopped.`);
 }
 
 // Server readiness check ------------------------------------------------------
@@ -510,12 +521,10 @@ async function runLoop(): Promise<void> {
   }
   const pid = readPid();
   if (!pid || !alive(pid)) {
-    if (await isMcpServerHealthy()) {
-      log("INFO", "MCP server already responding — skipping duplicate startup.");
-      rmPid();
-    } else {
-      startMcpServer();
-    }
+    // Always ensure a fresh server on watcher startup — the old server
+    // may have stale code from a previous watcher's update cycle.
+    await stopMcpServer(); // port-based fallback kills orphan processes
+    startMcpServer();
   }
   void applyKeeperSettings().catch((err) => log("ERROR", `Keeper failed to start: ${err}`));
   startKeeperPoller();
