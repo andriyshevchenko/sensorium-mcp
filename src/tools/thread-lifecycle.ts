@@ -868,7 +868,7 @@ export function cleanupStalePidFiles(): void {
 function getAlivePids(pids: number[]): Set<number> {
   const alive = new Set<number>();
   for (const pid of pids) {
-    try { process.kill(pid, 0); alive.add(pid); } catch { /* dead */ }
+    if (isProcessAlive(pid)) alive.add(pid);
   }
   return alive;
 }
