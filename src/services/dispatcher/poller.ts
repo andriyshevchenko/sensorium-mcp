@@ -44,14 +44,21 @@ const SLASH_COMMANDS: Array<{ pattern: RegExp; expand: (m: RegExpMatchArray) => 
   },
 ];
 
-/** Expand /slash commands in message text. Returns original if no match. */
+/** Expand /slash commands in message text. Expands matching lines, preserves the rest. */
 function expandSlashCommands(text: string | undefined): string | undefined {
-  if (!text || !text.startsWith("/")) return text;
-  for (const cmd of SLASH_COMMANDS) {
-    const m = text.match(cmd.pattern);
-    if (m) return cmd.expand(m);
-  }
-  return text;
+  if (!text) return text;
+  const lines = text.split("\n");
+  let expanded = false;
+  const result = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("/")) return line;
+    for (const cmd of SLASH_COMMANDS) {
+      const m = trimmed.match(cmd.pattern);
+      if (m) { expanded = true; return cmd.expand(m); }
+    }
+    return line;
+  });
+  return expanded ? result.join("\n") : text;
 }
 import type { StoredMessage, StoredReaction } from "./broker.js";
 import {
