@@ -13,7 +13,7 @@ import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
 import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "../sessions.js";
 import { synthesizeGhostMemory } from "../memory.js";
-import { archiveThread, getAllThreads, getThread, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
+import { archiveThread, getAllThreads, getThread, resolveTelegramTopicId, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 import {
@@ -347,6 +347,26 @@ async function handleProcessExit(
       } catch (err) {
         log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`);
       }
+    }
+
+    // Delete Telegram topic for completed worker threads (immediate cleanup)
+    if (entry.threadType === 'worker') {
+      try {
+        const token = process.env.TELEGRAM_TOKEN || "";
+        const chatId = process.env.TELEGRAM_CHAT_ID || "";
+        if (token && chatId) {
+          const topicId = resolveTelegramTopicId(db, threadId);
+          await fetch(`https://api.telegram.org/bot${token}/deleteForumTopic`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: chatId, message_thread_id: topicId }),
+            signal: AbortSignal.timeout(10_000),
+          });
+          log.info(`[cleanup] Deleted Telegram topic for worker ${threadId}`);
+        }
+      } catch { /* topic deletion is best-effort */ }
+      // Archive the worker in the registry
+      try { archiveThread(db, threadId); } catch { /* best-effort */ }
     }
   } catch (err) {
     log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
@@ -804,10 +824,15 @@ function readPidFiles(): PidFileEntry[] {
 /**
  * Remove PID files for processes that are no longer running.
  * Called on server startup / before spawning new threads.
+ * Uses a single batch check instead of N sequential calls to avoid
+ * WMI/tasklist hangs multiplying across all tracked PIDs.
  */
 export function cleanupStalePidFiles(): void {
-  for (const { pid, filePath } of readPidFiles()) {
-    if (!isProcessAlive(pid)) {
+  const entries = readPidFiles();
+  if (entries.length === 0) return;
+  const alivePids = getAlivePids(entries.map(e => e.pid));
+  for (const { pid, filePath } of entries) {
+    if (!alivePids.has(pid)) {
       try {
         unlinkSync(filePath);
         log.info(`[cleanup] Removed stale PID file ${filePath} (pid ${pid})`);
@@ -847,21 +872,24 @@ export function restoreSpawnedThreadsFromPids(): number {
 }
 
 /**
- * Batch-check which PIDs are alive. On Windows, runs a single `tasklist` call
- * instead of one per PID (each takes ~1.4s).
+ * Batch-check which PIDs are alive. On Windows, uses a single PowerShell
+ * Get-Process call instead of tasklist (which can hang via WMI under load).
  */
 function getAlivePids(pids: number[]): Set<number> {
   if (pids.length === 0) return new Set();
   if (process.platform === "win32") {
     try {
-      // Single tasklist call with all PIDs as filters
-      const filters = pids.map(p => `/FI "PID eq ${p}"`).join(" ");
-      const out = execSync(`tasklist ${filters} /NH`, {
-        encoding: "utf-8",
-        timeout: 15_000,
-        windowsHide: true,
-      });
-      return parseTasklistPids(out);
+      const idList = pids.join(",");
+      const out = execSync(
+        `powershell -NoProfile -NonInteractive -Command "Get-Process -Id @(${idList}) -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`,
+        { encoding: "utf-8", timeout: 5000, windowsHide: true }
+      );
+      const alive = new Set<number>();
+      for (const line of out.split(/\r?\n/)) {
+        const n = Number(line.trim());
+        if (Number.isFinite(n) && n > 0) alive.add(n);
+      }
+      return alive;
     } catch {
       return new Set();
     }
@@ -907,7 +935,7 @@ export async function cleanupExpiredWorkers(
     const cutoff = new Date(now - ttlMs).toISOString();
     const staleRows = db.prepare(
       `SELECT thread_id FROM thread_registry 
-       WHERE type = 'worker' AND status = 'active' AND created_at < ?`
+       WHERE type = 'worker' AND status IN ('active', 'exited') AND created_at < ?`
     ).all(cutoff) as { thread_id: number }[];
     for (const row of staleRows) {
       // Skip if still alive in-memory (already handled above)
