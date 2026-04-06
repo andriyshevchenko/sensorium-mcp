@@ -34,7 +34,7 @@ const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
 const { setTopicRegistryDb, lookupTopicRegistry } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
-const { cleanupStalePidFiles, restoreSpawnedThreadsFromPids } = await import("./tools/thread-lifecycle.js");
+const { cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
 const { log } = await import("./logger.js");
 const { rotateAllDailySessions } = await import("./daily-session.js");
 const { resolveTelegramTopicId } = await import("./data/memory/thread-registry.js");
@@ -76,17 +76,13 @@ if (secureVaultThreadId === undefined) {
 // Initialize video temp-file cleanup handlers (registers process exit hooks).
 initVideoTempCleanup();
 
-// Clean up stale PID files from ghost threads that were killed during a
-// previous server update (taskkill /T kills the entire process tree).
-// Without this, orphaned PID files cause get_threads_health to show dead
-// threads as "dormant" when the PID is reused by an unrelated process.
+// Kill orphan agent processes from the previous server instance and spawn
+// fresh processes for all keepAlive threads. This replaces the old PID-file
+// restoration approach — no more PID orphans or ghost duplicates.
 cleanupStalePidFiles();
-
-// Restore in-memory tracking for processes that survived a server restart.
-// Without this, isThreadRunning() returns false for live processes, causing
-// the keeper to unnecessarily restart them (losing conversation context).
-const restored = restoreSpawnedThreadsFromPids();
-if (restored > 0) log.info(`Restored ${restored} live process(es) from PID files.`);
+const keepAlive = spawnKeepAliveThreads();
+if (keepAlive.spawned > 0) log.info(`[startup] Spawned ${keepAlive.spawned} keepAlive thread(s).`);
+if (keepAlive.errors.length > 0) log.warn(`[startup] keepAlive errors: ${keepAlive.errors.join("; ")}`);
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)

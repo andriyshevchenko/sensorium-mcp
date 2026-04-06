@@ -222,10 +222,9 @@ async function stopMcpServer(): Promise<void> {
   // keeps last-activity.txt permanently fresh, causing a guaranteed 5-min
   // timeout that serves no purpose.
   log("INFO", `Stopping MCP server (PID ${pid})...`);
-  // Kill only the server process — NOT the process tree.
-  // Spawned agent processes (Claude, Codex, Copilot) are detached
-  // and should survive server restarts/updates.
-  await killPidOnly(pid);
+  // Kill the entire process tree — agent processes will be respawned
+  // by the new server's spawnKeepAliveThreads() on startup.
+  await killPidTree(pid);
   rmPid(); managedChild = null;
   log("INFO", `PID ${pid} stopped.`);
 }
