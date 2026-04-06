@@ -129,10 +129,25 @@ function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-async function killPid(pid: number): Promise<void> {
+/** Kill a single process without affecting its children. */
+async function killPidOnly(pid: number): Promise<void> {
   if (process.platform === "win32") {
-    // /F /T = force-kill entire process tree (parent + children).
-    // Without /F, Windows refuses to kill a parent whose children are still running.
+    // /F without /T = force-kill only the given PID, children survive.
+    try { execSync(`taskkill /F /PID ${pid}`, { timeout: 10000 }); } catch { /**/ }
+    await sleep(2000);
+    if (alive(pid)) {
+      try { execSync(`taskkill /F /PID ${pid}`, { timeout: 10000 }); } catch { /**/ }
+    }
+  } else {
+    try { process.kill(pid, "SIGTERM"); } catch { /**/ }
+    await sleep(2000);
+    if (alive(pid)) { try { process.kill(pid, "SIGKILL"); } catch { /**/ } }
+  }
+}
+
+/** Kill a process and its entire process tree. */
+async function killPidTree(pid: number): Promise<void> {
+  if (process.platform === "win32") {
     try { execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10000 }); } catch { /**/ }
     await sleep(3000);
     if (alive(pid)) {
@@ -207,7 +222,10 @@ async function stopMcpServer(): Promise<void> {
   // keeps last-activity.txt permanently fresh, causing a guaranteed 5-min
   // timeout that serves no purpose.
   log("INFO", `Stopping MCP server (PID ${pid})...`);
-  await killPid(pid);
+  // Kill only the server process — NOT the process tree.
+  // Spawned agent processes (Claude, Codex, Copilot) are detached
+  // and should survive server restarts/updates.
+  await killPidOnly(pid);
   rmPid(); managedChild = null;
   log("INFO", `PID ${pid} stopped.`);
 }
@@ -260,7 +278,7 @@ async function killStale(): Promise<void> {
     if (!existsSync(P.ver) || !existsSync(P.pid)) return;
     if (statSync(P.pid).mtimeMs < statSync(P.ver).mtimeMs - 60_000) {
       log("WARN", `Killing stale PID ${pid}`);
-      await killPid(pid);
+      await killPidTree(pid);
       rmPid();
     }
   } catch { /**/ }
