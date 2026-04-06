@@ -63,6 +63,8 @@ function parseTasklistPids(output: string): Set<number> {
  * getAlivePids() function still uses tasklist for startup restore where
  * accuracy matters more than latency.
  */
+const epermLogged = new Set<number>();
+
 export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -71,10 +73,14 @@ export function isProcessAlive(pid: number): boolean {
     const code = (err as NodeJS.ErrnoException).code;
     // EPERM = process exists but we lack permission → still alive
     if (code === "EPERM") {
-      log.debug(`[isProcessAlive] PID ${pid} exists but EPERM (detached?) — treating as alive`);
+      if (!epermLogged.has(pid)) {
+        log.debug(`[isProcessAlive] PID ${pid} exists but EPERM (detached?) — treating as alive`);
+        epermLogged.add(pid);
+      }
       return true;
     }
     // ESRCH = no such process → dead
+    epermLogged.delete(pid);
     return false;
   }
 }
@@ -885,12 +891,20 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
     return result;
   }
 
-  // Kill ALL orphan processes from PID files (fresh start)
+  // Kill ALL orphan processes from PID files (fresh start).
+  // Use taskkill /F on Windows because process.kill(pid, "SIGTERM")
+  // throws EPERM for detached processes, silently failing to kill them.
   const pidEntries = readPidFiles();
   for (const { pid, filePath } of pidEntries) {
     if (isProcessAlive(pid)) {
       log.info(`[startup] Killing orphan process PID=${pid} from PID file`);
-      try { process.kill(pid, "SIGTERM"); } catch { /* already dead */ }
+      try {
+        if (process.platform === "win32") {
+          execSync(`taskkill /F /PID ${pid}`, { timeout: 10_000, stdio: "ignore" });
+        } else {
+          process.kill(pid, "SIGTERM");
+        }
+      } catch { /* already dead */ }
     }
     try { unlinkSync(filePath); } catch { /* already removed */ }
   }
