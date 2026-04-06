@@ -47,7 +47,8 @@ export function writeMcpConfig(dest: string, port: number, secret: string | null
   if (secret) serverConfig.headers = { Authorization: `Bearer ${secret}` };
   // Merge sensorium-mcp with shared MCP servers from Claude's config
   const sharedServers = readClaudeMcpServers();
-  const config = { mcpServers: { "sensorium-mcp": serverConfig, ...sharedServers } };
+  // Copilot CLI uses "servers" (not "mcpServers" like Claude)
+  const config = { servers: { "sensorium-mcp": serverConfig, ...sharedServers } };
   writeFileSync(dest, JSON.stringify(config, null, 2), "utf-8");
 }
 
