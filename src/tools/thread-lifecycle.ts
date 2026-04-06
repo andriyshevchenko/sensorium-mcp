@@ -874,7 +874,7 @@ function getAlivePids(pids: number[]): Set<number> {
   return alive;
 }
 
-const DEFAULT_WORKER_TTL_MS = 30 * 60 * 1000; // 30 minutes — one-shot threads auto-cleanup
+const DEFAULT_WORKER_TTL_MS = 60 * 60 * 1000; // 60 minutes — one-shot threads auto-cleanup
 
 /**
  * Clean up expired worker threads.
