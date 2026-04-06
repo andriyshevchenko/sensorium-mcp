@@ -849,36 +849,6 @@ export function cleanupStalePidFiles(): void {
 }
 
 /**
- * Restore spawnedThreads from PID files for processes still alive.
- * Call after cleanupStalePidFiles() on server startup so that
- * isThreadRunning() returns true for processes that survived a restart.
- */
-export function restoreSpawnedThreadsFromPids(): number {
-  const pidEntries = readPidFiles();
-  if (pidEntries.length === 0) return 0;
-
-  // Batch-check all PIDs at once to avoid N sequential tasklist calls
-  const alivePids = getAlivePids(pidEntries.map(e => e.pid));
-  let restored = 0;
-
-  for (const { threadId, pid, name } of pidEntries) {
-    if (!alivePids.has(pid)) continue;
-    if (spawnedThreads.some(t => t.threadId === threadId)) continue;
-    spawnedThreads.push({
-      pid,
-      threadId,
-      name: name ?? `Thread ${threadId}`,
-      startedAt: Date.now(),
-      createdAt: Date.now(),
-      logFile: "",
-    });
-    restored++;
-    log.info(`[restore] Recovered live process PID=${pid} for thread ${threadId} ("${name ?? "unknown"}")`);
-  }
-  return restored;
-}
-
-/**
  * Batch-check which PIDs are alive using process.kill(pid, 0).
  * This is non-blocking and works cross-platform — no PowerShell or tasklist.
  */
@@ -888,6 +858,84 @@ function getAlivePids(pids: number[]): Set<number> {
     try { process.kill(pid, 0); alive.add(pid); } catch { /* dead */ }
   }
   return alive;
+}
+
+// ---------------------------------------------------------------------------
+// Startup: spawn keepAlive threads
+// ---------------------------------------------------------------------------
+
+/**
+ * Kill any orphan agent processes from PID files and spawn fresh processes
+ * for all keepAlive threads in the registry. Called once on server startup.
+ */
+export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
+  const result = { spawned: 0, errors: [] as string[] };
+  let db: ReturnType<typeof initMemoryDb>;
+  try {
+    db = initMemoryDb();
+  } catch (err) {
+    result.errors.push(`Failed to open DB: ${errorMessage(err)}`);
+    return result;
+  }
+
+  // Kill ALL orphan processes from PID files (fresh start)
+  const pidEntries = readPidFiles();
+  for (const { pid, filePath } of pidEntries) {
+    if (isProcessAlive(pid)) {
+      log.info(`[startup] Killing orphan process PID=${pid} from PID file`);
+      try { process.kill(pid, "SIGTERM"); } catch { /* already dead */ }
+    }
+    try { unlinkSync(filePath); } catch { /* already removed */ }
+  }
+
+  // Find all keepAlive threads
+  const threads = db.prepare(
+    `SELECT * FROM thread_registry WHERE keep_alive = 1 AND status = 'active'`
+  ).all() as Record<string, unknown>[];
+  if (threads.length === 0) return result;
+
+  ensureDirs();
+
+  for (const row of threads) {
+    const threadId = row.thread_id as number;
+    const name = row.name as string;
+    const client = row.client as string;
+
+    // Determine agent type and resolve path
+    const isCopilot = client === "copilot" || client === "copilot_claude" || client === "copilot_codex";
+    const isCodex = client === "codex" || client === "openai_codex";
+
+    let spawnResult: { pid: number; logFile: string } | { error: string };
+
+    if (isCopilot) {
+      const cliPath = resolveCopilotPath();
+      if (!cliPath) { result.errors.push(`Thread ${threadId} (${name}): copilot CLI not found`); continue; }
+      spawnResult = spawnCopilotProcess(cliPath, name, threadId, undefined, undefined, client);
+    } else if (isCodex) {
+      const cliPath = resolveCodexPath();
+      if (!cliPath) { result.errors.push(`Thread ${threadId} (${name}): codex CLI not found`); continue; }
+      spawnResult = spawnCodexProcess(cliPath, name, threadId);
+    } else {
+      const cliPath = resolveClaudePath();
+      if (!cliPath) { result.errors.push(`Thread ${threadId} (${name}): claude CLI not found`); continue; }
+      const mcpConfig = resolveMcpConfigPath();
+      if (!mcpConfig) { result.errors.push(`Thread ${threadId} (${name}): MCP config not found`); continue; }
+      spawnResult = spawnAgentProcess(cliPath, mcpConfig, name, threadId);
+    }
+
+    if ("error" in spawnResult) {
+      result.errors.push(`Thread ${threadId} (${name}): ${spawnResult.error}`);
+      continue;
+    }
+
+    // Update lastActiveAt to mark the thread as recently started
+    try { updateThread(db, threadId, { lastActiveAt: new Date().toISOString(), status: 'active' }); } catch { /* best-effort */ }
+
+    log.info(`[startup] Spawned ${client} process PID=${spawnResult.pid} for keepAlive thread ${threadId} ("${name}")`);
+    result.spawned++;
+  }
+
+  return result;
 }
 
 const DEFAULT_WORKER_TTL_MS = 60 * 60 * 1000; // 60 minutes — one-shot threads auto-cleanup
