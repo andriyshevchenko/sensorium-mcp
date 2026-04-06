@@ -233,7 +233,7 @@ async function handleMemorySave(
 function handleMemoryUpdate(
   db: MemoryDb,
   args: Record<string, unknown>,
-  _threadId: number | undefined,
+  threadId: number | undefined,
   reminder: string,
   errorResult: ToolContext["errorResult"],
 ): ToolResult {
@@ -290,7 +290,7 @@ function handleMemoryUpdate(
 
 async function handleMemoryConsolidate(
   db: MemoryDb,
-  _threadId: number,
+  threadId: number,
   reminder: string,
   errorResult: ToolContext["errorResult"],
   onConsolidation?: () => void,
@@ -360,7 +360,7 @@ function handleMemoryStatus(
 function handleMemoryForget(
   db: MemoryDb,
   args: Record<string, unknown>,
-  _threadId: number | undefined,
+  threadId: number | undefined,
   reminder: string,
   errorResult: ToolContext["errorResult"],
 ): ToolResult {

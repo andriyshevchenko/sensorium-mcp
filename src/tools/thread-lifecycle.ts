@@ -341,9 +341,10 @@ async function handleProcessExit(
   // Update thread registry DB status
   try {
     const db = initMemoryDb();
-    // For keepAlive threads, preserve 'active' status so the keeper can restart them
+    // Root and keepAlive threads stay 'active' so they remain visible on the dashboard
+    // and the keeper can restart them. Only workers/branches auto-exit.
     const existing = getThread(db, threadId);
-    const newStatus = existing?.keepAlive ? 'active' : 'exited';
+    const newStatus = (existing?.keepAlive || existing?.type === 'root') ? 'active' : 'exited';
     updateThread(db, threadId, { status: newStatus, lastActiveAt: new Date().toISOString() });
 
     // Synthesize ghost thread outcomes back to parent

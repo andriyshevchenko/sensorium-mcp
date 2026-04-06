@@ -154,24 +154,17 @@ async function createBranch(rootThreadId: number) {
 
 // ── Toggle keep-alive ────────────────────────────────────────────────────────
 
-async function patchThread(threadId: number, patch: Record<string, unknown>): Promise<void> {
-  const r = await fetch(`/api/threads/${threadId}`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Bearer ${getToken()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(patch),
-  })
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({ error: `HTTP ${r.status}` })) as { error?: string }
-    throw new Error(err.error ?? `HTTP ${r.status}`)
-  }
-}
-
 async function toggleKeepAlive(thread: ThreadEntry) {
   try {
-    await patchThread(thread.threadId, { keepAlive: !thread.keepAlive })
+    const r = await fetch(`/api/threads/${thread.threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ keepAlive: !thread.keepAlive }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
     await load()
   } catch (e: unknown) {
     error.value = 'Failed to toggle keep-alive: ' + (e as Error).message
@@ -180,7 +173,15 @@ async function toggleKeepAlive(thread: ThreadEntry) {
 
 async function changeClient(thread: ThreadEntry, newClient: string) {
   try {
-    await patchThread(thread.threadId, { client: newClient })
+    const r = await fetch(`/api/threads/${thread.threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ client: newClient }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
     await load()
   } catch (e: unknown) {
     error.value = 'Failed to change agent type: ' + (e as Error).message
@@ -189,7 +190,15 @@ async function changeClient(thread: ThreadEntry, newClient: string) {
 
 async function toggleDailyRotation(thread: ThreadEntry) {
   try {
-    await patchThread(thread.threadId, { dailyRotation: !thread.dailyRotation })
+    const r = await fetch(`/api/threads/${thread.threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ dailyRotation: !thread.dailyRotation }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
     await load()
   } catch (e: unknown) {
     error.value = 'Failed to toggle daily rotation: ' + (e as Error).message
@@ -198,7 +207,15 @@ async function toggleDailyRotation(thread: ThreadEntry) {
 
 async function toggleAutonomousMode(thread: ThreadEntry) {
   try {
-    await patchThread(thread.threadId, { autonomousMode: !thread.autonomousMode })
+    const r = await fetch(`/api/threads/${thread.threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ autonomousMode: !thread.autonomousMode }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
     await load()
   } catch (e: unknown) {
     error.value = 'Failed to toggle autonomous mode: ' + (e as Error).message
