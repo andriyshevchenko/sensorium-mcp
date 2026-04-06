@@ -239,6 +239,7 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
 
   let stopped = false;
   let retryCount = 0;
+  let consecutiveNotRunning = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   keeperLog("INFO", "Waiting for MCP server to be ready...");
@@ -251,7 +252,15 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
 
     const running = await isThreadRunning(config.mcpHttpPort, config.mcpHttpSecret, config.threadId);
     if (running) {
+      consecutiveNotRunning = 0;
       scheduleCheck();
+      return;
+    }
+
+    consecutiveNotRunning++;
+    if (consecutiveNotRunning < 2) {
+      // Single failure may be a timeout; recheck quickly before restarting
+      timer = setTimeout(() => void checkAndStart(), 10_000);
       return;
     }
 
@@ -268,6 +277,7 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
     const ok = await callStartThread(config);
     if (ok) {
       retryCount = 0;
+      consecutiveNotRunning = 0;
       scheduleCheck();
     } else {
       const delay = Math.min(BASE_BACKOFF_MS * 2 ** retryCount, MAX_BACKOFF_MS);

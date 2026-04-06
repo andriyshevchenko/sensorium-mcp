@@ -57,25 +57,15 @@ function parseTasklistPids(output: string): Set<number> {
 
 /**
  * Check if a process with the given PID is still running.
- * On Windows, uses `tasklist` instead of `process.kill(pid, 0)` to prevent
- * false positives from PID reuse — a common issue on Windows where PIDs
- * are recycled quickly after process exit.
+ * Uses process.kill(pid, 0) which is non-blocking (microseconds).
+ * On Windows, PID reuse is a theoretical risk but far less harmful than
+ * the 1-5 second event-loop blocking that tasklist causes. The batch
+ * getAlivePids() function still uses tasklist for startup restore where
+ * accuracy matters more than latency.
  */
 function isProcessAlive(pid: number): boolean {
-  if (process.platform === "win32") {
-    try {
-      const out = execSync(`tasklist /FI "PID eq ${pid}" /NH`, {
-        encoding: "utf-8",
-        timeout: 5000,
-        windowsHide: true,
-      });
-      return parseTasklistPids(out).has(pid);
-    } catch {
-      return false;
-    }
-  }
   try {
-    process.kill(pid, 0); // signal 0 = check existence
+    process.kill(pid, 0);
     return true;
   } catch {
     return false;
