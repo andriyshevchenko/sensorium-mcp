@@ -7,6 +7,9 @@
  */
 
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -101,6 +104,37 @@ async function isThreadRunning(port: number, secret: string | null, threadId: nu
   } catch {
     return false;
   }
+}
+
+const STUCK_THRESHOLD_MS = 10 * 60_000; // 10 minutes without MCP activity = stuck
+
+async function isThreadStuck(port: number, secret: string | null, threadId: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/threads/${threadId}/heartbeat`, {
+      headers: authHeaders(secret),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return false;
+    const data = await res.json() as { lastActivity?: number | null };
+    if (data.lastActivity == null) return false; // no heartbeat yet, just started
+    return Date.now() - data.lastActivity > STUCK_THRESHOLD_MS;
+  } catch {
+    return false;
+  }
+}
+
+async function killThread(port: number, secret: string | null, threadId: number): Promise<void> {
+  // Read PID file and kill the process directly
+  try {
+    const pidFile = join(homedir(), ".remote-copilot-mcp", "pids", `${threadId}.pid`);
+    const raw = readFileSync(pidFile, "utf-8").trim();
+    let pid: number;
+    try { pid = (JSON.parse(raw) as { pid: number }).pid; } catch { pid = Number(raw); }
+    if (Number.isFinite(pid)) {
+      try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
+      keeperLog("INFO", `Killed stuck process PID=${pid} for thread ${threadId}`);
+    }
+  } catch { /* PID file missing or unreadable */ }
 }
 
 async function openMcpSession(port: number, secret: string | null): Promise<string | null> {
@@ -253,6 +287,15 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
     const running = await isThreadRunning(config.mcpHttpPort, config.mcpHttpSecret, config.threadId);
     if (running) {
       consecutiveNotRunning = 0;
+      // Check for stuck process (alive but no MCP activity for 10+ min)
+      const stuck = await isThreadStuck(config.mcpHttpPort, config.mcpHttpSecret, config.threadId);
+      if (stuck) {
+        keeperLog("WARN", `Thread ${config.threadId} is stuck (no MCP activity for ${STUCK_THRESHOLD_MS / 60_000}+ min) — killing process`);
+        await killThread(config.mcpHttpPort, config.mcpHttpSecret, config.threadId);
+        // Fall through to restart logic on next check
+        timer = setTimeout(() => void checkAndStart(), 5_000);
+        return;
+      }
       scheduleCheck();
       return;
     }

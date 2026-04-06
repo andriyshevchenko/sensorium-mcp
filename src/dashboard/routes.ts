@@ -83,6 +83,7 @@ import {
     handleGetThread,
     handleGetThreadChildren,
     handleGetThreadRunning,
+    handleGetThreadHeartbeat,
     handleUpdateThread,
     handleDeleteThread,
 } from "./routes/threads.js";
@@ -237,6 +238,10 @@ async function dispatchApiRoute(
         const threadRunningMatch = /^\/api\/threads\/(\d+)\/running$/.exec(path);
         if (threadRunningMatch) {
             return handleGetThreadRunning(args, Number.parseInt(threadRunningMatch[1], 10));
+        }
+        const threadHeartbeatMatch = /^\/api\/threads\/(\d+)\/heartbeat$/.exec(path);
+        if (threadHeartbeatMatch) {
+            return handleGetThreadHeartbeat(args, Number.parseInt(threadHeartbeatMatch[1], 10));
         }
         const threadMatch = /^\/api\/threads\/(\d+)$/.exec(path);
         if (threadMatch) {

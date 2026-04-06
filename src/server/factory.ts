@@ -12,7 +12,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { writeActivityHeartbeat } from "../data/file-storage.js";
+import { writeActivityHeartbeat, writeThreadHeartbeat } from "../data/file-storage.js";
 import { config } from "../config.js";
 import { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
 import { formatDrivePrompt } from "../drive.js";
@@ -352,6 +352,11 @@ function createMcpServer(
 
     lastToolCallAt = Date.now();
     writeActivityHeartbeat();
+
+    // Per-thread heartbeat for stuck-process detection
+    const callThreadId = (args as Record<string, unknown> | undefined)?.threadId;
+    if (typeof callThreadId === 'number') writeThreadHeartbeat(callThreadId);
+    else if (currentThreadId !== undefined) writeThreadHeartbeat(currentThreadId);
 
     // Track tool calls for activity monitoring
     toolCallsSinceLastDelivery++;
