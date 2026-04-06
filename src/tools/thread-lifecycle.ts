@@ -67,7 +67,14 @@ export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // EPERM = process exists but we lack permission → still alive
+    if (code === "EPERM") {
+      log.debug(`[isProcessAlive] PID ${pid} exists but EPERM (detached?) — treating as alive`);
+      return true;
+    }
+    // ESRCH = no such process → dead
     return false;
   }
 }
