@@ -26,11 +26,11 @@ function readClaudeMcpServers(): Record<string, unknown> {
       if (skipKeys.has(name)) continue;
       const cfg = config as Record<string, unknown>;
       if (cfg.disabled) continue;
-      // Convert stdio servers to a format Copilot can use
+      // Copilot CLI uses "local" for stdio, and requires "tools": ["*"]
       if (cfg.type === "stdio") {
-        result[name] = { type: "stdio", command: cfg.command, args: cfg.args, env: cfg.env };
+        result[name] = { type: "local", command: cfg.command, args: cfg.args, env: cfg.env, tools: ["*"] };
       } else if (cfg.type === "http") {
-        result[name] = { type: "http", url: cfg.url, ...(cfg.headers ? { headers: cfg.headers } : {}) };
+        result[name] = { type: "http", url: cfg.url, ...(cfg.headers ? { headers: cfg.headers } : {}), tools: ["*"] };
       }
     }
     return result;
@@ -43,12 +43,13 @@ export function writeMcpConfig(dest: string, port: number, secret: string | null
   const serverConfig: Record<string, unknown> = {
     type: "http",
     url: `http://127.0.0.1:${port}/mcp`,
+    tools: ["*"],
   };
   if (secret) serverConfig.headers = { Authorization: `Bearer ${secret}` };
   // Merge sensorium-mcp with shared MCP servers from Claude's config
   const sharedServers = readClaudeMcpServers();
-  // Copilot CLI uses "servers" (not "mcpServers" like Claude)
-  const config = { servers: { "sensorium-mcp": serverConfig, ...sharedServers } };
+  // Copilot CLI uses "mcpServers" (same key as Claude, NOT "servers" like VS Code)
+  const config = { mcpServers: { "sensorium-mcp": serverConfig, ...sharedServers } };
   writeFileSync(dest, JSON.stringify(config, null, 2), "utf-8");
 }
 
@@ -56,4 +57,13 @@ export function writeCopilotHomeFiles(copilotHome: string, port: number, secret:
   mkdirSync(copilotHome, { recursive: true });
   writeMcpConfig(join(copilotHome, COPILOT_MCP_CONFIG_FILENAME), port, secret);
   writeFileSync(join(copilotHome, COPILOT_INSTRUCTIONS_FILENAME), COPILOT_SYSTEM_PROMPT, "utf-8");
+}
+
+/** Create a workspace directory with .copilotignore to prevent file scanning */
+export function ensureCopilotWorkspace(baseDir: string): string {
+  const wsDir = join(baseDir, "copilot-workspace");
+  mkdirSync(wsDir, { recursive: true });
+  const ignoreFile = join(wsDir, ".copilotignore");
+  if (!existsSync(ignoreFile)) writeFileSync(ignoreFile, "*\n", "utf-8");
+  return wsDir;
 }
