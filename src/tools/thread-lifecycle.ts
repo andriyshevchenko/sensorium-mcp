@@ -898,7 +898,8 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
   }
 
   // Kill ALL orphan processes from PID files (fresh start).
-  // Use taskkill /F /T on Windows to kill entire process tree.
+  // NOTE: The watcher handles the primary kill via killAgentOrphans() before
+  // the server starts. This is a best-effort fallback for manual restarts.
   const pidEntries = readPidFiles();
   for (const { pid, filePath } of pidEntries) {
     if (isProcessAlive(pid)) {
@@ -912,14 +913,6 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
           log.info(`[startup] taskkill result for PID=${pid}: ${killResult.trim().slice(0, 200)}`);
         } else {
           process.kill(pid, "SIGTERM");
-        }
-        // Wait briefly for process tree to fully terminate
-        const deadline = Date.now() + 5_000;
-        while (isProcessAlive(pid) && Date.now() < deadline) {
-          execSync("timeout /t 1 >nul 2>&1", { timeout: 3000, stdio: "ignore" });
-        }
-        if (isProcessAlive(pid)) {
-          log.warn(`[startup] PID ${pid} still alive after taskkill /F /T`);
         }
       } catch (err) {
         log.warn(`[startup] Failed to kill orphan PID=${pid}: ${errorMessage(err)}`);
