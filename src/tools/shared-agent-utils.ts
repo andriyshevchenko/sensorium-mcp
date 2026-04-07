@@ -26,11 +26,13 @@ function readClaudeMcpServers(): Record<string, unknown> {
       if (skipKeys.has(name)) continue;
       const cfg = config as Record<string, unknown>;
       if (cfg.disabled) continue;
+      // Copilot CLI server names: only letters, numbers, _, -
+      const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
       // Copilot CLI uses "local" for stdio, and requires "tools": ["*"]
       if (cfg.type === "stdio") {
-        result[name] = { type: "local", command: cfg.command, args: cfg.args, env: cfg.env, tools: ["*"] };
+        result[safeName] = { type: "local", command: cfg.command, args: cfg.args, env: cfg.env, tools: ["*"] };
       } else if (cfg.type === "http") {
-        result[name] = { type: "http", url: cfg.url, ...(cfg.headers ? { headers: cfg.headers } : {}), tools: ["*"] };
+        result[safeName] = { type: "http", url: cfg.url, ...(cfg.headers ? { headers: cfg.headers } : {}), tools: ["*"] };
       }
     }
     return result;
