@@ -107,6 +107,7 @@ async function isThreadRunning(port: number, secret: string | null, threadId: nu
 }
 
 const STUCK_THRESHOLD_MS = 10 * 60_000; // 10 minutes without MCP activity = stuck
+let consecutiveStuck = 0;
 
 async function isThreadStuck(port: number, secret: string | null, threadId: number): Promise<boolean> {
   try {
@@ -131,7 +132,14 @@ async function killThread(port: number, secret: string | null, threadId: number)
     let pid: number;
     try { pid = (JSON.parse(raw) as { pid: number }).pid; } catch { pid = Number(raw); }
     if (Number.isFinite(pid)) {
-      try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
+      if (process.platform === "win32") {
+        // On Windows, process.kill throws EPERM for child processes.
+        // Use taskkill which works reliably.
+        const { execSync } = await import("child_process");
+        try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", timeout: 10_000 }); } catch { /* already dead */ }
+      } else {
+        try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
+      }
       keeperLog("INFO", `Killed stuck process PID=${pid} for thread ${threadId}`);
     }
   } catch { /* PID file missing or unreadable */ }
@@ -290,12 +298,21 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
       // Check for stuck process (alive but no MCP activity for 10+ min)
       const stuck = await isThreadStuck(config.mcpHttpPort, config.mcpHttpSecret, config.threadId);
       if (stuck) {
-        keeperLog("WARN", `Thread ${config.threadId} is stuck (no MCP activity for ${STUCK_THRESHOLD_MS / 60_000}+ min) — killing process`);
+        consecutiveStuck++;
+        if (consecutiveStuck < 3) {
+          // Require 3 consecutive stuck checks (~6 min) before killing
+          keeperLog("INFO", `Thread ${config.threadId} appears stuck (${consecutiveStuck}/3) — rechecking in 2 min`);
+          scheduleCheck();
+          return;
+        }
+        keeperLog("WARN", `Thread ${config.threadId} confirmed stuck (no MCP activity for ${STUCK_THRESHOLD_MS / 60_000}+ min, ${consecutiveStuck} checks) — killing process`);
         await killThread(config.mcpHttpPort, config.mcpHttpSecret, config.threadId);
-        // Fall through to restart logic on next check
-        timer = setTimeout(() => void checkAndStart(), 5_000);
+        consecutiveStuck = 0;
+        // Wait for process to actually die, then restart on next normal check
+        scheduleCheck();
         return;
       }
+      consecutiveStuck = 0;
       scheduleCheck();
       return;
     }
