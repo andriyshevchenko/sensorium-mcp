@@ -165,17 +165,17 @@ function repairAndParseJSON(raw: string): unknown {
 
 // ─── Prompt ──────────────────────────────────────────────────────────────────
 
-const REFLECTION_SYSTEM_PROMPT = `You are a reflective reasoning system analyzing an agent's recent experiences. Your job is to extract DEEP insights — not surface-level summaries.
+const REFLECTION_SYSTEM_PROMPT = `You are a reflective reasoning system analyzing your own recent experiences. Your job is to extract DEEP insights — not surface-level summaries. Write in first person ("I").
 
 ## Analysis tasks:
 
 1. CAUSAL CHAINS: What caused what? Find cause-effect relationships. "When [X happened], it led to [Y] because [Z]." Be specific — cite episode IDs.
 
-2. RECURRING PATTERNS: What behaviors, problems, or situations keep repeating? "The operator tends to [X] when [Y]." or "The agent fails at [X] in [Y] conditions."
+2. RECURRING PATTERNS: What behaviors, problems, or situations keep repeating? "The operator tends to [X] when [Y]." or "I tend to fail at [X] in [Y] conditions."
 
-3. COUNTERFACTUALS: For any negative outcomes or frustrations, what could have been done differently? "Instead of [X], the agent could have [Y], which would have [Z]."
+3. COUNTERFACTUALS: For any negative outcomes or frustrations, what could have been done differently? "Instead of [X], I could have [Y], which would have [Z]."
 
-4. SELF-ASSESSMENT: What does the agent do well? What are its weaknesses? "The agent is strong at [X] but struggles with [Y]."
+4. SELF-ASSESSMENT: What do I do well? What are my weaknesses? "I'm strong at [X] but struggle with [Y]."
 
 Respond in JSON format:
 {

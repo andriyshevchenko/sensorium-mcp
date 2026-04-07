@@ -906,7 +906,7 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
       log.info(`[startup] Killing orphan process PID=${pid} from PID file`);
       try {
         if (process.platform === "win32") {
-          execSync(`taskkill /F /PID ${pid}`, { timeout: 10_000, stdio: "ignore" });
+          execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10_000, stdio: "ignore" });
         } else {
           process.kill(pid, "SIGTERM");
         }
