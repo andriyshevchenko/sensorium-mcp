@@ -123,7 +123,8 @@ function alive(pid: number): boolean {
   if (process.platform === "win32") {
     try {
       const out = execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: "utf-8", timeout: 5000 });
-      return out.includes(String(pid));
+      // Strict: check that PID appears as a standalone number token, not as substring of a name
+      return new RegExp(`\\b${pid}\\b`).test(out);
     } catch { return false; }
   }
   try { process.kill(pid, 0); return true; } catch { return false; }
@@ -434,13 +435,16 @@ async function checkAndUpdate(): Promise<void> {
     // Keepers detect crash-recovery needs via their regular poll cycle.
     await notifyOperator(`\u2705 Watcher: update to v${remote} complete. Server ready.`);
     log("INFO", `Update to v${remote} complete.`);
-
-    // Self-restart: the watcher's own code is stale after an update.
-    // Spawn a new watcher with fresh code and exit this process.
-    selfRestart();
+  } catch (err) {
+    log("ERROR", `Update failed: ${err}`);
+    removeMaintenanceFlag();
+    return; // Don't self-restart on failure
   } finally {
     updateInProgress = false;
   }
+  // Self-restart OUTSIDE try/finally so updateInProgress is always reset.
+  // selfRestart() calls process.exit() and never returns.
+  selfRestart();
 }
 
 // Claude CLI keeper -----------------------------------------------------------
@@ -590,14 +594,11 @@ function startKeeperPoller(): void {
 async function runLoop(): Promise<void> {
   log("INFO", `Watcher starting in ${CONFIG.mode} mode.`);
   ensureDir();
-  // Clear stale maintenance flag left by a previous crash
+  // Clear stale maintenance flag left by a previous crash/update cycle.
+  // If the flag exists on watcher startup, the old update is done (or crashed).
   if (flagExists()) {
-    const stalePid = readPid();
-    const local = getLocalVersion();
-    if (local && stalePid && alive(stalePid)) {
-      log("WARN", "Stale maintenance.flag found — server already running at current version. Removing.");
-      removeMaintenanceFlag();
-    }
+    log("WARN", "Stale maintenance.flag found on startup \u2014 removing.");
+    removeMaintenanceFlag();
   }
   const pid = readPid();
   if (!pid || !alive(pid)) {
@@ -812,9 +813,13 @@ export async function startWatcherService(): Promise<void> {
     if (sessionSweeperHandle) clearInterval(sessionSweeperHandle);
     if (workerCleanupHandle) clearInterval(workerCleanupHandle);
     log("INFO", "Shutting down watcher...");
-    for (const [, entry] of keepers) { await entry.handle.stop(); }
+    // Timeout guard: don't hang on stuck keepers or server
+    await Promise.race([
+      Promise.allSettled([...keepers].map(([, e]) => e.handle.stop())),
+      sleep(10_000),
+    ]);
     keepers.clear();
-    await stopMcpServer();
+    await Promise.race([stopMcpServer(), sleep(10_000)]);
     httpSrv?.close();
     releaseLock();
     process.exit(process.exitCode ?? 0);
