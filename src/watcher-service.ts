@@ -609,6 +609,12 @@ async function runLoop(): Promise<void> {
     startMcpServer();
   }
   void applyKeeperSettings().catch((err) => log("ERROR", `Keeper failed to start: ${err}`));
+  // The first applyKeeperSettings call almost always fails because the MCP server
+  // hasn't finished booting yet (takes 10-60s). Retry after 30s to cover the gap
+  // before the 2-minute poller kicks in.
+  setTimeout(() => {
+    void applyKeeperSettings().catch((err) => log("ERROR", `Keeper retry failed: ${err}`));
+  }, 30_000);
   startKeeperPoller();
   if (CONFIG.mode === "production") {
     while (true) {
