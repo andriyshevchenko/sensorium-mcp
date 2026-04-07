@@ -325,7 +325,8 @@ export function assembleOperatorResponse(
     ? getMediumReminder(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode)
     : getReminders(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode);
 
-  const directive = "Follow the operator's instructions below.";
+  const directive = "Follow the operator's instructions below."
+    + "\nIMPORTANT: The operator cannot see your stdout. To reply, use `report_progress`, `send_voice`, or `send_message_to_thread` — never print a response directly.";
 
   return {
     content: [
