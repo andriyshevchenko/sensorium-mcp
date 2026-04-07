@@ -44,6 +44,8 @@ interface SpawnedThread {
 // ---------------------------------------------------------------------------
 
 const spawnedThreads: SpawnedThread[] = [];
+/** True while spawnKeepAliveThreads is killing stale PIDs — blocks concurrent spawns. */
+let startupCleanupInProgress = false;
 
 function parseTasklistPids(output: string): Set<number> {
   const alive = new Set<number>();
@@ -64,24 +66,12 @@ function parseTasklistPids(output: string): Set<number> {
  * getAlivePids() function still uses tasklist for startup restore where
  * accuracy matters more than latency.
  */
-const epermLogged = new Set<number>();
 
 export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code;
-    // EPERM = process exists but we lack permission → still alive
-    if (code === "EPERM") {
-      if (!epermLogged.has(pid)) {
-        log.debug(`[isProcessAlive] PID ${pid} exists but EPERM (detached?) — treating as alive`);
-        epermLogged.add(pid);
-      }
-      return true;
-    }
-    // ESRCH = no such process → dead
-    epermLogged.delete(pid);
+  } catch {
     return false;
   }
 }
@@ -99,21 +89,10 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
       spawnedThreads.splice(i, 1);
     }
   }
-  const pidEntry = readPidFiles().find((entry) => entry.threadId === threadId && isProcessAlive(entry.pid));
-  if (!pidEntry) {
-    log.debug(`[findAliveThread] Thread ${threadId}: not in spawnedThreads (${spawnedThreads.length} entries), not in PID files`);
-    return undefined;
-  }
-  const restored: SpawnedThread = {
-    pid: pidEntry.pid,
-    threadId,
-    name: pidEntry.name ?? `Thread ${threadId}`,
-    startedAt: Date.now(),
-    createdAt: Date.now(),
-    logFile: "",
-  };
-  spawnedThreads.push(restored);
-  return restored;
+  // Non-detached agents die with the server, so PID files are always stale after restart.
+  // Don't attempt to restore from PID files.
+  log.debug(`[findAliveThread] Thread ${threadId}: not in spawnedThreads (${spawnedThreads.length} entries)`);
+  return undefined;
 }
 
 /**
@@ -410,6 +389,9 @@ export function spawnAgentProcess(
   memoryTargetThreadId?: number,
   threadType?: 'worker' | 'branch',
 ): { pid: number; logFile: string } | { error: string } {
+  if (startupCleanupInProgress) {
+    return { error: "Server startup cleanup in progress — try again in a few seconds" };
+  }
   if (workingDirectory && !existsSync(workingDirectory)) {
     const fallback = tmpdir();
     log.warn(`workingDirectory "${workingDirectory}" does not exist, falling back to "${fallback}"`);
@@ -511,7 +493,7 @@ export function spawnAgentProcess(
   spawnedThreads.push(entry);
 
   // Monitor process exit — clean up stale entries, PID file, update DB, and log health info
-  child.on("exit", (code) => handleProcessExit(code, threadId, pid, pidFilePath, entry, "Claude"));
+  child.on("exit", (code) => { handleProcessExit(code, threadId, pid, pidFilePath, entry, "Claude").catch(err => log.warn(`[exit] cleanup failed: ${err}`)); });
 
   // Unref so the parent process can exit without waiting for this child.
   child.unref();
@@ -624,7 +606,7 @@ export function spawnCopilotProcess(
   };
   spawnedThreads.push(entry);
 
-  child.on("exit", (code) => handleProcessExit(code, threadId, pid, pidFilePath, entry, "Copilot"));
+  child.on("exit", (code) => { handleProcessExit(code, threadId, pid, pidFilePath, entry, "Copilot").catch(err => log.warn(`[exit] cleanup failed: ${err}`)); });
 
   child.unref();
 
@@ -784,7 +766,7 @@ export function spawnCodexProcess(
   };
   spawnedThreads.push(entry);
 
-  child.on("exit", (code) => handleProcessExit(code, threadId, pid, pidFilePath, entry, "Codex"));
+  child.on("exit", (code) => { handleProcessExit(code, threadId, pid, pidFilePath, entry, "Codex").catch(err => log.warn(`[exit] cleanup failed: ${err}`)); });
 
   child.unref();
 
@@ -884,6 +866,7 @@ function getAlivePids(pids: number[]): Set<number> {
  */
 export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
   const result = { spawned: 0, errors: [] as string[] };
+  startupCleanupInProgress = true;
   let db: ReturnType<typeof initMemoryDb>;
   try {
     db = initMemoryDb();
@@ -916,7 +899,10 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
   const threads = db.prepare(
     `SELECT * FROM thread_registry WHERE keep_alive = 1 AND status = 'active'`
   ).all() as Record<string, unknown>[];
-  if (threads.length === 0) return result;
+  if (threads.length === 0) { startupCleanupInProgress = false; return result; }
+
+  // Cleanup complete — allow spawns from here on
+  startupCleanupInProgress = false;
 
   ensureDirs();
 
