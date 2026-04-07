@@ -222,7 +222,7 @@ function buildPrompt(
 ${instructions[resolution]}
 
 FORMAT RULES:
-- Write in past tense, third person ("The operator...", "The agent...")
+- Write in first person for yourself ("I did...", "I noticed...") and third person for the operator ("The operator...")
 - Use concrete timestamps when referencing specific events
 - Preserve causal chains: "X happened, which led to Y, resulting in Z"
 - Do NOT list facts — weave them into a narrative
