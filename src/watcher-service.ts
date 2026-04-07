@@ -446,12 +446,48 @@ async function checkAndUpdate(): Promise<void> {
     // Keepers detect crash-recovery needs via their regular poll cycle.
     await notifyOperator(`\u2705 Watcher: update to v${remote} complete. Server ready.`);
     log("INFO", `Update to v${remote} complete.`);
+
+    // Self-restart: the watcher's own code is stale after an update.
+    // Spawn a new watcher with fresh code and exit this process.
+    selfRestart();
   } finally {
     updateInProgress = false;
   }
 }
 
 // Claude CLI keeper -----------------------------------------------------------
+
+/** Spawn a new watcher process with fresh code and exit. */
+function selfRestart(): never {
+  log("INFO", "Self-restarting watcher to load new code...");
+  // Clean up keepers, timers, HTTP server
+  if (keeperPollerHandle) clearInterval(keeperPollerHandle);
+  if (sessionSweeperHandle) clearInterval(sessionSweeperHandle);
+  if (workerCleanupHandle) clearInterval(workerCleanupHandle);
+  for (const [, entry] of keepers) { void entry.handle.stop(); }
+  keepers.clear();
+  httpSrv?.close();
+  releaseLock();
+
+  // Re-run the securevault+npx command that started this watcher.
+  // Use WATCHER_START_COMMAND env var if set, otherwise default.
+  // Redirect stdout/stderr to the watcher log file.
+  const logPath = join(CONFIG.dataDir, "watcher.log");
+  const logFd = openSync(logPath, "a");
+  const startCmd = process.env.WATCHER_START_COMMAND
+    || "securevault run npx -y sensorium-mcp@latest --watcher --prefer-online --profile SENSORIUM";
+  log("INFO", `Restart command: ${startCmd}`);
+  const child = spawn(startCmd, [], {
+    detached: true,
+    stdio: ["ignore", logFd, logFd],
+    shell: true,
+    windowsHide: true,
+  });
+  child.unref();
+  log("INFO", `New watcher spawned (PID ${child.pid}). Exiting old watcher.`);
+  process.exit(0);
+}
+
 
 const KEEPER_SETTINGS_POLL_MS = 2 * 60_000;
 
