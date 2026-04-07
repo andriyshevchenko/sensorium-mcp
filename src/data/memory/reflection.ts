@@ -40,6 +40,19 @@ interface ReflectionResult {
 const REFLECTION_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
 const MIN_EPISODES_FOR_REFLECTION = 20;
 
+// ─── Buffer cap & quality gate ───────────────────────────────────────────────
+const MAX_ACTIVE_REFLECTIONS = 150;
+const STALE_REFLECTION_DAYS = 30;
+const MIN_INSIGHT_LENGTH = 40;
+const VAGUE_PATTERNS = [
+  /\bthe agent tends to\b/i,
+  /\bthe agent demonstrates\b/i,
+  /\bthe agent frequently\b/i,
+  /\bthis (is|was) (a |an )?(good|important|useful)\b/i,
+  /\bin general\b/i,
+  /\boverall\b.*\b(good|well|effective)\b/i,
+];
+
 /** Per-thread timestamp of the last successful reflection run. */
 const lastReflectionAt = new Map<number, number>();
 
@@ -194,11 +207,15 @@ Rules:
 - Each insight must reference specific episodes by their ID
 - Avoid generic statements — be specific to the actual events
 - Confidence should reflect how well-supported the insight is by evidence
-- Causal and pattern insights are most valuable`;
+- Causal and pattern insights are most valuable
+- Every insight MUST be actionable: it should tell future-me what to DO differently, not just observe a pattern
+- BAD: "The agent tends to struggle with complex tasks" (vague, no action)
+- GOOD: "When I receive multi-step requests, I should decompose them into sub-tasks before starting, because attempting all at once led to errors in ep_xxx"
+- Reject any insight shorter than 40 characters — depth matters`;
 
 // ─── De-duplication ──────────────────────────────────────────────────────────
 
-const DEDUP_SIMILARITY_THRESHOLD = 0.85;
+const DEDUP_SIMILARITY_THRESHOLD = 0.90;
 
 async function checkDuplicate(
   db: Database,
@@ -222,6 +239,83 @@ async function checkDuplicate(
     // Embedding lookup failed — allow the insight through to avoid data loss
     return { isDuplicate: false, embedding: null };
   }
+}
+
+// ─── Quality gate ────────────────────────────────────────────────────────────
+
+/** Check if an insight passes the quality gate (actionable, specific, non-vague). */
+function passesQualityGate(content: string, confidence: number): { pass: boolean; reason?: string } {
+  if (content.length < MIN_INSIGHT_LENGTH) {
+    return { pass: false, reason: "too short" };
+  }
+  if (confidence < 0.3) {
+    return { pass: false, reason: "confidence too low" };
+  }
+  for (const pattern of VAGUE_PATTERNS) {
+    if (pattern.test(content)) {
+      return { pass: false, reason: `matches vague pattern: ${pattern.source}` };
+    }
+  }
+  return { pass: true };
+}
+
+/** Expire stale reflections (>30 days old, never accessed) and enforce buffer cap. */
+function enforceReflectionCap(db: Database, threadId: number): { expired: number } {
+  const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+  let expired = 0;
+
+  // Phase 1: Expire stale never-accessed reflections
+  const staleResult = db
+    .prepare(
+      `UPDATE semantic_notes
+       SET valid_to = ?
+       WHERE valid_to IS NULL AND superseded_by IS NULL
+         AND content LIKE '[REFLECTION]%'
+         AND access_count = 0
+         AND created_at < datetime('now', '-' || ? || ' days')
+         AND (thread_id = ? OR thread_id IS NULL)`,
+    )
+    .run(nowISO(), STALE_REFLECTION_DAYS, knowledgeThreadId);
+  expired += staleResult.changes;
+
+  // Phase 2: Enforce hard cap — if still over limit, expire lowest-value
+  const countRow = db
+    .prepare(
+      `SELECT COUNT(*) as c FROM semantic_notes
+       WHERE valid_to IS NULL AND superseded_by IS NULL
+         AND content LIKE '[REFLECTION]%'
+         AND (thread_id = ? OR thread_id IS NULL)`,
+    )
+    .get(knowledgeThreadId) as { c: number };
+
+  if (countRow.c > MAX_ACTIVE_REFLECTIONS) {
+    const excess = countRow.c - MAX_ACTIVE_REFLECTIONS;
+    const toExpire = db
+      .prepare(
+        `SELECT note_id FROM semantic_notes
+         WHERE valid_to IS NULL AND superseded_by IS NULL
+           AND content LIKE '[REFLECTION]%'
+           AND pinned = 0 AND is_guardrail = 0
+           AND (thread_id = ? OR thread_id IS NULL)
+         ORDER BY access_count ASC, created_at ASC
+         LIMIT ?`,
+      )
+      .all(knowledgeThreadId, excess) as { note_id: string }[];
+
+    if (toExpire.length > 0) {
+      const now = nowISO();
+      const stmt = db.prepare(`UPDATE semantic_notes SET valid_to = ? WHERE note_id = ?`);
+      db.transaction(() => {
+        for (const row of toExpire) stmt.run(now, row.note_id);
+      })();
+      expired += toExpire.length;
+    }
+  }
+
+  if (expired > 0) {
+    log.info(`[reflection] Buffer maintenance: expired ${expired} stale/excess reflections`);
+  }
+  return { expired };
 }
 
 // ─── Core Pipeline ───────────────────────────────────────────────────────────
@@ -273,6 +367,9 @@ export async function runReflection(
     log.info(`[reflection] Skipped — only ${countRow.c} consolidated episodes (need ${MIN_EPISODES_FOR_REFLECTION})`);
     return { insights: [], processedEpisodeCount: 0, duration: Date.now() - startMs };
   }
+
+  // ── Step 0: Buffer maintenance — expire stale, enforce cap ─────────────
+  enforceReflectionCap(db, threadId);
 
   // ── Step 1: Gather episodes ───────────────────────────────────────────────
   const episodes = gatherEpisodes(db, threadId, maxRecent, oldSampleSize);
@@ -326,6 +423,13 @@ export async function runReflection(
     const insightType = validTypes.has(ins.type) ? ins.type : "pattern";
     const confidence = Math.max(0, Math.min(1, ins.confidence ?? 0.5));
     const refs = (ins.episode_refs ?? []).filter((id) => typeof id === "string" && episodeIdSet.has(id));
+
+    // Quality gate — reject vague/generic insights before expensive dedup
+    const quality = passesQualityGate(ins.content, confidence);
+    if (!quality.pass) {
+      log.info(`[reflection] Quality gate rejected: ${quality.reason} — "${ins.content.slice(0, 60)}…"`);
+      continue;
+    }
 
     // De-duplicate against existing reflections (embedding is cached for reuse)
     const prefixedContent = `[REFLECTION] [${insightType.toUpperCase()}] ${ins.content}`;
