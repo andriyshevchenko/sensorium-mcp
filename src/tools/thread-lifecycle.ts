@@ -928,6 +928,12 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
     const name = row.name as string;
     const client = row.client as string;
 
+    // Skip if already running (e.g. a concurrent startup or keeper already spawned it)
+    if (findAliveThread(threadId)) {
+      log.info(`[startup] Thread ${threadId} ("${name}") already running — skipping`);
+      continue;
+    }
+
     // Determine agent type and resolve path
     const isCopilot = client === "copilot" || client === "copilot_claude" || client === "copilot_codex";
     const isCodex = client === "codex" || client === "openai_codex";
