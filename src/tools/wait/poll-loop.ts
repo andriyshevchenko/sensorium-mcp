@@ -166,11 +166,14 @@ export async function handleWaitForInstructions(
   // Codex CLI enforces a hard ~120s tool-call timeout and does not handle
   // SSE keepalive progress notifications. Cap the loop to 90s so we always
   // return a valid response before the Codex client gives up.
-  // All other clients (Claude, Copilot CLI, VS Code Copilot Chat) support
-  // SSE keepalives and use the full configured timeout.
+  // Copilot CLI has a hard ~12-minute MCP tool call timeout — cap to 10 min
+  // to return cleanly before the SSE stream is forcibly terminated.
   const agentType = getEffectiveAgentType(effectiveThreadId);
   const isShortTimeoutClient = agentType === "codex" || agentType === "openai_codex";
-  const effectiveTimeoutMs = isShortTimeoutClient ? 90_000 : timeoutMs;
+  const isCopilotClient = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex";
+  const effectiveTimeoutMs = isShortTimeoutClient ? 90_000
+    : isCopilotClient ? Math.min(timeoutMs, 10 * 60_000)
+    : timeoutMs;
   const deadline = Date.now() + effectiveTimeoutMs;
 
   // ── Pending task injection (pre-loop check) ────────────────────────────
