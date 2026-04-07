@@ -351,21 +351,37 @@ async function killAgentOrphans(): Promise<void> {
       const { pid } = parsed;
       if (alive(pid)) {
         log("INFO", `Killing agent orphan PID=${pid} (${file})`);
-        // Direct spawnSync with output capture for diagnosis
+
+        // Method 1: taskkill /F /T to kill entire process tree
         const r = spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
           timeout: 15_000,
           encoding: "utf-8",
           windowsHide: true,
         });
-        const output = ((r.stdout || "") + (r.stderr || "")).trim();
-        log("INFO", `taskkill PID=${pid} exit=${r.status} output=${output.slice(0, 300)}`);
+        const tkOut = ((r.stdout || "") + (r.stderr || "")).trim();
+        log("INFO", `taskkill PID=${pid}: exit=${r.status} err=${r.error || 'none'} out=${tkOut.slice(0, 300)}`);
+
+        // Method 2: direct process.kill (Win32 TerminateProcess) as fallback
         if (alive(pid)) {
-          await sleep(3000);
-          if (alive(pid)) {
-            log("WARN", `Agent orphan PID=${pid} still alive after taskkill /F /T`);
-            // Last resort: try process.kill
-            try { process.kill(pid, "SIGKILL"); } catch { /**/ }
-          }
+          log("WARN", `PID ${pid} survived taskkill, trying process.kill(SIGKILL)`);
+          try { process.kill(pid, "SIGKILL"); } catch (e) { log("WARN", `process.kill(${pid}) failed: ${e}`); }
+          await sleep(1000);
+        }
+
+        // Method 3: powershell Stop-Process as last resort
+        if (alive(pid)) {
+          log("WARN", `PID ${pid} survived process.kill, trying Stop-Process`);
+          spawnSync("powershell", ["-NoProfile", "-Command", `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`], {
+            timeout: 10_000,
+            windowsHide: true,
+          });
+          await sleep(1000);
+        }
+
+        if (alive(pid)) {
+          log("ERROR", `Agent orphan PID=${pid} could not be killed by any method`);
+        } else {
+          log("INFO", `Agent orphan PID=${pid} killed successfully`);
         }
       }
       try { unlinkSync(fullPath); } catch { /**/ }
