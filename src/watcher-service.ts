@@ -334,6 +334,29 @@ function readGhostThreads(): void {
   } catch { /* pids dir may not exist */ }
 }
 
+/**
+ * Kill all agent processes tracked in PID files and remove the files.
+ * Called from the watcher (which runs outside securevault) because
+ * the server's own execSync("taskkill") may fail within the securevault sandbox.
+ */
+async function killAgentOrphans(): Promise<void> {
+  const pidsDir = join(CONFIG.dataDir, "pids");
+  try {
+    for (const file of readdirSync(pidsDir)) {
+      if (!file.endsWith(".pid")) continue;
+      const fullPath = join(pidsDir, file);
+      const parsed = parsePidFile(fullPath);
+      if (!parsed) { try { unlinkSync(fullPath); } catch { /**/ } continue; }
+      const { pid } = parsed;
+      if (alive(pid)) {
+        log("INFO", `Killing agent orphan PID=${pid} (${file})`);
+        await killPidTree(pid);
+      }
+      try { unlinkSync(fullPath); } catch { /**/ }
+    }
+  } catch { /* pids dir may not exist */ }
+}
+
 async function getRemoteVersion(): Promise<string | null> {
   try {
     const r = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(15_000) });
@@ -380,6 +403,7 @@ async function checkAndUpdate(): Promise<void> {
     // Clean up stale PID files before killing the server
     readGhostThreads();
     await stopMcpServer();
+    await killAgentOrphans();
     clearNpxCache();
     setLocalVersion(remote);
     startMcpServer(); startTime = Date.now();
@@ -524,6 +548,7 @@ async function runLoop(): Promise<void> {
     // Always ensure a fresh server on watcher startup — the old server
     // may have stale code from a previous watcher's update cycle.
     await stopMcpServer(); // port-based fallback kills orphan processes
+    await killAgentOrphans(); // kill any surviving agent processes
     startMcpServer();
   }
   void applyKeeperSettings().catch((err) => log("ERROR", `Keeper failed to start: ${err}`));
