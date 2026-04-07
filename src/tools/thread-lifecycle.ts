@@ -471,6 +471,7 @@ export function spawnAgentProcess(
     child = spawn(claudePath, cliArgs, {
       stdio: ["ignore", logFd, logFd],
       shell: needsShell,
+      detached: true,
       windowsHide: true,
       env: spawnEnv,
       cwd: workingDirectory || undefined,
@@ -589,6 +590,7 @@ export function spawnCopilotProcess(
     child = spawn(copilotPath, cliArgs, {
       stdio: ["ignore", logFd, logFd],
       shell: needsShell,
+      detached: true,
       windowsHide: true,
       env: spawnEnv,
       cwd: workingDirectory || undefined,
@@ -724,6 +726,7 @@ export function spawnCodexProcess(
       child = spawn(nativeExe, cliArgs, {
         stdio: ["pipe", logFd, logFd],
         shell: false,
+        detached: true,
         windowsHide: true,
         env: spawnEnv,
         cwd: workingDirectory || undefined,
@@ -734,6 +737,7 @@ export function spawnCodexProcess(
       child = spawn(nodeExe, nodeArgs, {
         stdio: ["pipe", logFd, logFd],
         shell: false,
+        detached: true,
         windowsHide: true,
         env: spawnEnv,
         cwd: workingDirectory || undefined,
@@ -742,6 +746,7 @@ export function spawnCodexProcess(
       child = spawn(codexPath, cliArgs, {
         stdio: ["pipe", logFd, logFd],
         shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath),
+        detached: true,
         windowsHide: true,
         env: spawnEnv,
         cwd: workingDirectory || undefined,
@@ -892,24 +897,25 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
     return result;
   }
 
-  // Clean up stale PID files from previous server instances.
-  // Agents are non-detached children of the server, so they die when the
-  // server is killed. Any surviving PIDs are from a crashed server and
-  // can be cleaned up here.
+  // Re-adopt surviving agents from previous server instance.
+  // With detached: true, agents survive server restarts. Re-register them
+  // in spawnedThreads so findAliveThread works, and skip re-spawning them.
   const pidEntries = readPidFiles();
-  for (const { pid, filePath } of pidEntries) {
+  for (const { pid, filePath, threadId: pidThreadId, name: pidName } of pidEntries) {
     if (isProcessAlive(pid)) {
-      log.info(`[startup] Killing stale agent PID=${pid} from PID file`);
-      if (process.platform === "win32") {
-        spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
-          timeout: 10_000,
-          windowsHide: true,
-        });
-      } else {
-        try { process.kill(pid, "SIGTERM"); } catch { /* already dead */ }
-      }
+      log.info(`[startup] Re-adopting surviving agent PID=${pid} for thread ${pidThreadId}`);
+      spawnedThreads.push({
+        pid,
+        threadId: pidThreadId,
+        name: pidName ?? `thread-${pidThreadId}`,
+        startedAt: Date.now(),
+        createdAt: Date.now(),
+        logFile: "",
+      });
+    } else {
+      // Process is dead — clean up the stale PID file
+      try { unlinkSync(filePath); } catch { /* already removed */ }
     }
-    try { unlinkSync(filePath); } catch { /* already removed */ }
   }
 
   // Find all keepAlive threads

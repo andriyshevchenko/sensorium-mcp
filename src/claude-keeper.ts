@@ -107,7 +107,6 @@ async function isThreadRunning(port: number, secret: string | null, threadId: nu
 }
 
 const STUCK_THRESHOLD_MS = 10 * 60_000; // 10 minutes without MCP activity = stuck
-let consecutiveStuck = 0;
 
 async function isThreadStuck(port: number, secret: string | null, threadId: number): Promise<boolean> {
   try {
@@ -282,6 +281,7 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
   let stopped = false;
   let retryCount = 0;
   let consecutiveNotRunning = 0;
+  let consecutiveStuck = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   keeperLog("INFO", "Waiting for MCP server to be ready...");
