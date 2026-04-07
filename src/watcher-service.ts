@@ -351,7 +351,22 @@ async function killAgentOrphans(): Promise<void> {
       const { pid } = parsed;
       if (alive(pid)) {
         log("INFO", `Killing agent orphan PID=${pid} (${file})`);
-        await killPidTree(pid);
+        // Direct spawnSync with output capture for diagnosis
+        const r = spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
+          timeout: 15_000,
+          encoding: "utf-8",
+          windowsHide: true,
+        });
+        const output = ((r.stdout || "") + (r.stderr || "")).trim();
+        log("INFO", `taskkill PID=${pid} exit=${r.status} output=${output.slice(0, 300)}`);
+        if (alive(pid)) {
+          await sleep(3000);
+          if (alive(pid)) {
+            log("WARN", `Agent orphan PID=${pid} still alive after taskkill /F /T`);
+            // Last resort: try process.kill
+            try { process.kill(pid, "SIGKILL"); } catch { /**/ }
+          }
+        }
       }
       try { unlinkSync(fullPath); } catch { /**/ }
     }
