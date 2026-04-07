@@ -1,5 +1,5 @@
 /** Watcher Service — Node.js replacement for update-watcher.ps1. Run: npx sensorium-mcp --watcher */
-import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { execSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, writeSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import { homedir } from "node:os";
@@ -132,11 +132,10 @@ function alive(pid: number): boolean {
 /** Kill a single process without affecting its children. */
 async function killPidOnly(pid: number): Promise<void> {
   if (process.platform === "win32") {
-    // /F without /T = force-kill only the given PID, children survive.
-    try { execSync(`taskkill /F /PID ${pid}`, { timeout: 10000 }); } catch { /**/ }
+    spawnSync("taskkill", ["/F", "/PID", String(pid)], { timeout: 10000, windowsHide: true });
     await sleep(2000);
     if (alive(pid)) {
-      try { execSync(`taskkill /F /PID ${pid}`, { timeout: 10000 }); } catch { /**/ }
+      spawnSync("taskkill", ["/F", "/PID", String(pid)], { timeout: 10000, windowsHide: true });
     }
   } else {
     try { process.kill(pid, "SIGTERM"); } catch { /**/ }
@@ -148,10 +147,12 @@ async function killPidOnly(pid: number): Promise<void> {
 /** Kill a process and its entire process tree. */
 async function killPidTree(pid: number): Promise<void> {
   if (process.platform === "win32") {
-    try { execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10000 }); } catch { /**/ }
+    // spawnSync instead of execSync: taskkill returns non-zero if ANY child
+    // can't be killed, causing execSync to throw even on partial success.
+    spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 10000, windowsHide: true });
     await sleep(3000);
     if (alive(pid)) {
-      try { execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10000 }); } catch { /**/ }
+      spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 10000, windowsHide: true });
     }
   } else {
     try { process.kill(pid, "SIGTERM"); } catch { /**/ }
