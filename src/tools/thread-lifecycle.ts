@@ -898,19 +898,32 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
   }
 
   // Kill ALL orphan processes from PID files (fresh start).
-  // Use taskkill /F on Windows because process.kill(pid, "SIGTERM")
-  // throws EPERM for detached processes, silently failing to kill them.
+  // Use taskkill /F /T on Windows to kill entire process tree.
   const pidEntries = readPidFiles();
   for (const { pid, filePath } of pidEntries) {
     if (isProcessAlive(pid)) {
       log.info(`[startup] Killing orphan process PID=${pid} from PID file`);
       try {
         if (process.platform === "win32") {
-          execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10_000, stdio: "ignore" });
+          const killResult = execSync(`taskkill /F /T /PID ${pid} 2>&1`, {
+            timeout: 10_000,
+            encoding: "utf-8",
+          });
+          log.info(`[startup] taskkill result for PID=${pid}: ${killResult.trim().slice(0, 200)}`);
         } else {
           process.kill(pid, "SIGTERM");
         }
-      } catch { /* already dead */ }
+        // Wait briefly for process tree to fully terminate
+        const deadline = Date.now() + 5_000;
+        while (isProcessAlive(pid) && Date.now() < deadline) {
+          execSync("timeout /t 1 >nul 2>&1", { timeout: 3000, stdio: "ignore" });
+        }
+        if (isProcessAlive(pid)) {
+          log.warn(`[startup] PID ${pid} still alive after taskkill /F /T`);
+        }
+      } catch (err) {
+        log.warn(`[startup] Failed to kill orphan PID=${pid}: ${errorMessage(err)}`);
+      }
     }
     try { unlinkSync(filePath); } catch { /* already removed */ }
   }
