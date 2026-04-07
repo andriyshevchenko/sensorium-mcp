@@ -470,7 +470,6 @@ export function spawnAgentProcess(
   let child;
   try {
     child = spawn(claudePath, cliArgs, {
-      detached: true,
       stdio: ["ignore", logFd, logFd],
       shell: needsShell,
       windowsHide: true,
@@ -589,7 +588,6 @@ export function spawnCopilotProcess(
   let child;
   try {
     child = spawn(copilotPath, cliArgs, {
-      detached: true,
       stdio: ["ignore", logFd, logFd],
       shell: needsShell,
       windowsHide: true,
@@ -725,7 +723,6 @@ export function spawnCodexProcess(
 
     if (nativeExe) {
       child = spawn(nativeExe, cliArgs, {
-        detached: true,
         stdio: ["pipe", logFd, logFd],
         shell: false,
         windowsHide: true,
@@ -736,7 +733,6 @@ export function spawnCodexProcess(
       const { nodeExe, codexJs } = nodeExeResult;
       const nodeArgs = [codexJs, ...cliArgs];
       child = spawn(nodeExe, nodeArgs, {
-        detached: true,
         stdio: ["pipe", logFd, logFd],
         shell: false,
         windowsHide: true,
@@ -745,7 +741,6 @@ export function spawnCodexProcess(
       });
     } else {
       child = spawn(codexPath, cliArgs, {
-        detached: true,
         stdio: ["pipe", logFd, logFd],
         shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath),
         windowsHide: true,
@@ -897,27 +892,19 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
     return result;
   }
 
-  // Kill ALL orphan processes from PID files (fresh start).
-  // NOTE: The watcher handles the primary kill via killAgentOrphans() before
-  // the server starts. This is a best-effort fallback for manual restarts.
+  // Clean up stale PID files from previous server instances.
+  // Agents are non-detached children of the server, so they die when the
+  // server is killed. Any surviving PIDs are from a crashed server and
+  // can be cleaned up here.
   const pidEntries = readPidFiles();
   for (const { pid, filePath } of pidEntries) {
     if (isProcessAlive(pid)) {
-      log.info(`[startup] Killing orphan process PID=${pid} from PID file`);
+      log.info(`[startup] Killing stale agent PID=${pid} from PID file`);
       if (process.platform === "win32") {
-        // Use spawnSync instead of execSync: taskkill returns non-zero if ANY
-        // child in the tree can't be killed, making execSync throw even when
-        // the root process was successfully killed.
-        const r = spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
+        spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
           timeout: 10_000,
-          encoding: "utf-8",
           windowsHide: true,
         });
-        const output = ((r.stdout || "") + (r.stderr || "")).trim();
-        if (output) log.info(`[startup] taskkill PID=${pid}: ${output.slice(0, 300)}`);
-        if (r.status !== 0 && isProcessAlive(pid)) {
-          log.warn(`[startup] PID ${pid} still alive after taskkill (exit=${r.status})`);
-        }
       } else {
         try { process.kill(pid, "SIGTERM"); } catch { /* already dead */ }
       }

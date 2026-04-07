@@ -13,7 +13,7 @@ param(
 # ============================================================================
 
 $POLL_AT_HOUR = 4
-$MCP_START_COMMAND = "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM"
+$MCP_START_COMMAND = "npx -y sensorium-mcp@latest"
 $POLL_INTERVAL_SECONDS = 60
 $GRACE_PERIOD_SECONDS = 300
 $MIN_UPTIME_SECONDS = 600
