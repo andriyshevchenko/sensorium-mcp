@@ -20,6 +20,7 @@ import {
   COPILOT_HOME_DIR,
   DEFAULT_COPILOT_MODEL,
   writeCopilotHomeFiles,
+  ensureCopilotWorkspace,
 } from "./shared-agent-utils.js";
 
 // ---------------------------------------------------------------------------
@@ -550,6 +551,11 @@ export function spawnCopilotProcess(
 
   const copilotHomeDir = join(BASE_DIR, COPILOT_HOME_DIR);
   writeCopilotHomeFiles(copilotHomeDir, httpPort, httpSecret);
+
+  // Use a dedicated workspace with .copilotignore to prevent file scanning
+  if (!workingDirectory) {
+    workingDirectory = ensureCopilotWorkspace(BASE_DIR);
+  }
 
   const dateStr = new Date().toISOString().slice(0, 10);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
