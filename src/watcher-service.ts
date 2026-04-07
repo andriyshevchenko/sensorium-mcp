@@ -30,7 +30,7 @@ const CONFIG = {
   idleThresholdSeconds: 300, maxIdleWaitSeconds: 300,
   minUptimeSeconds: 600,
   httpPort: parseInt(process.env.WATCHER_PORT || "3848", 10),
-  mcpStartCommand: process.env.MCP_START_COMMAND || "securevault run npx -y sensorium-mcp@latest --profile SENSORIUM",
+  mcpStartCommand: process.env.MCP_START_COMMAND || "npx -y sensorium-mcp@latest",
   dataDir: join(homedir(), ".remote-copilot-mcp"),
   // Always-on CLI keeper
 
@@ -204,7 +204,7 @@ function startMcpServer(): void {
   const args = parts.slice(1);
   log("INFO", `Starting MCP server: ${CONFIG.mcpStartCommand}`);
   try {
-    const child = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true, shell: true });
+    const child = spawn(cmd, args, { stdio: "ignore", windowsHide: true, shell: true });
     child.on("error", (err) => log("ERROR", `MCP server spawn error: ${err.message}`));
     if (child.pid) {
       writePid(child.pid);
@@ -249,7 +249,26 @@ async function waitForServerReady(): Promise<void> {
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/mcp`, { method: "OPTIONS", signal: AbortSignal.timeout(2000) });
-      if (res.status < 500) { log("INFO", "MCP server ready (HTTP responding)."); return; }
+      if (res.status < 500) {
+        log("INFO", "MCP server ready (HTTP responding).");
+        // On Windows with shell:true, the stored PID may be a transient cmd.exe.
+        // Update the PID file with the actual node process listening on the port.
+        if (process.platform === "win32") {
+          try {
+            const netstat = execSync(`netstat -aon | findstr ":${port}.*LISTENING"`, { timeout: 5000, encoding: "utf8" });
+            const m = netstat.match(/\s(\d+)\s*$/m);
+            if (m) {
+              const realPid = parseInt(m[1], 10);
+              const storedPid = readPid();
+              if (realPid !== storedPid) {
+                writePid(realPid);
+                log("INFO", `Updated server PID: ${storedPid} → ${realPid}`);
+              }
+            }
+          } catch { /**/ }
+        }
+        return;
+      }
     } catch { /* server not up yet */ }
     await sleep(2000);
   }
@@ -340,7 +359,10 @@ function readGhostThreads(): void {
  * Called from the watcher (which runs outside securevault) because
  * the server's own execSync("taskkill") may fail within the securevault sandbox.
  */
-async function killAgentOrphans(): Promise<void> {
+/** Clean up stale agent PID files. Agents are non-detached children of the
+ *  server, so stopMcpServer() kills them via taskkill /F /T on the server PID.
+ *  This just removes leftover PID files. */
+async function cleanAgentPidFiles(): Promise<void> {
   const pidsDir = join(CONFIG.dataDir, "pids");
   try {
     for (const file of readdirSync(pidsDir)) {
@@ -348,46 +370,9 @@ async function killAgentOrphans(): Promise<void> {
       const fullPath = join(pidsDir, file);
       const parsed = parsePidFile(fullPath);
       if (!parsed) { try { unlinkSync(fullPath); } catch { /**/ } continue; }
-      const { pid } = parsed;
-      if (alive(pid)) {
-        log("INFO", `Killing agent orphan PID=${pid} (${file})`);
-
-        // Method 1: taskkill /F /T to kill entire process tree
-        const r = spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
-          timeout: 15_000,
-          encoding: "utf-8",
-          windowsHide: true,
-        });
-        const tkOut = ((r.stdout || "") + (r.stderr || "")).trim();
-        log("INFO", `taskkill PID=${pid}: exit=${r.status} err=${r.error || 'none'} out=${tkOut.slice(0, 300)}`);
-
-        // Method 2: direct process.kill (Win32 TerminateProcess) as fallback
-        if (alive(pid)) {
-          log("WARN", `PID ${pid} survived taskkill, trying process.kill(SIGKILL)`);
-          try { process.kill(pid, "SIGKILL"); } catch (e) { log("WARN", `process.kill(${pid}) failed: ${e}`); }
-          await sleep(1000);
-        }
-
-        // Method 3: powershell Stop-Process as last resort
-        if (alive(pid)) {
-          log("WARN", `PID ${pid} survived process.kill, trying Stop-Process`);
-          spawnSync("powershell", ["-NoProfile", "-Command", `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`], {
-            timeout: 10_000,
-            windowsHide: true,
-          });
-          await sleep(1000);
-        }
-
-        if (alive(pid)) {
-          log("ERROR", `Agent orphan PID=${pid} could not be killed by any method — leaving PID file for server`);
-          // Don't delete the PID file — the server runs in the same securevault
-          // context as the agents and may succeed where the watcher fails.
-          continue;
-        } else {
-          log("INFO", `Agent orphan PID=${pid} killed successfully`);
-        }
+      if (!alive(parsed.pid)) {
+        try { unlinkSync(fullPath); } catch { /**/ }
       }
-      try { unlinkSync(fullPath); } catch { /**/ }
     }
   } catch { /* pids dir may not exist */ }
 }
@@ -438,7 +423,7 @@ async function checkAndUpdate(): Promise<void> {
     // Clean up stale PID files before killing the server
     readGhostThreads();
     await stopMcpServer();
-    await killAgentOrphans();
+    await cleanAgentPidFiles();
     clearNpxCache();
     setLocalVersion(remote);
     startMcpServer(); startTime = Date.now();
@@ -472,7 +457,7 @@ function selfRestart(): never {
   httpSrv?.close();
   releaseLock();
 
-  // Re-run the securevault+npx command that started this watcher.
+  // Re-run the same command that started this watcher.
   // Use WATCHER_START_COMMAND env var if set, otherwise default.
   // Redirect stdout/stderr to the watcher log file.
   const logPath = join(CONFIG.dataDir, "watcher.log");
@@ -619,7 +604,7 @@ async function runLoop(): Promise<void> {
     // Always ensure a fresh server on watcher startup — the old server
     // may have stale code from a previous watcher's update cycle.
     await stopMcpServer(); // port-based fallback kills orphan processes
-    await killAgentOrphans(); // kill any surviving agent processes
+    await cleanAgentPidFiles(); // remove stale PID files
     startMcpServer();
   }
   void applyKeeperSettings().catch((err) => log("ERROR", `Keeper failed to start: ${err}`));
