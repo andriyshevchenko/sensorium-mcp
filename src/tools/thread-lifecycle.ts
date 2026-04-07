@@ -904,18 +904,22 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
   for (const { pid, filePath } of pidEntries) {
     if (isProcessAlive(pid)) {
       log.info(`[startup] Killing orphan process PID=${pid} from PID file`);
-      try {
-        if (process.platform === "win32") {
-          const killResult = execSync(`taskkill /F /T /PID ${pid} 2>&1`, {
-            timeout: 10_000,
-            encoding: "utf-8",
-          });
-          log.info(`[startup] taskkill result for PID=${pid}: ${killResult.trim().slice(0, 200)}`);
-        } else {
-          process.kill(pid, "SIGTERM");
+      if (process.platform === "win32") {
+        // Use spawnSync instead of execSync: taskkill returns non-zero if ANY
+        // child in the tree can't be killed, making execSync throw even when
+        // the root process was successfully killed.
+        const r = spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
+          timeout: 10_000,
+          encoding: "utf-8",
+          windowsHide: true,
+        });
+        const output = ((r.stdout || "") + (r.stderr || "")).trim();
+        if (output) log.info(`[startup] taskkill PID=${pid}: ${output.slice(0, 300)}`);
+        if (r.status !== 0 && isProcessAlive(pid)) {
+          log.warn(`[startup] PID ${pid} still alive after taskkill (exit=${r.status})`);
         }
-      } catch (err) {
-        log.warn(`[startup] Failed to kill orphan PID=${pid}: ${errorMessage(err)}`);
+      } else {
+        try { process.kill(pid, "SIGTERM"); } catch { /* already dead */ }
       }
     }
     try { unlinkSync(filePath); } catch { /* already removed */ }
