@@ -89,10 +89,25 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
       spawnedThreads.splice(i, 1);
     }
   }
-  // Non-detached agents die with the server, so PID files are always stale after restart.
-  // Don't attempt to restore from PID files.
-  log.debug(`[findAliveThread] Thread ${threadId}: not in spawnedThreads (${spawnedThreads.length} entries)`);
-  return undefined;
+  // Check PID files for agents that survived a server restart.
+  // Even with non-detached spawning, keeper-spawned agents may outlive
+  // the server process and need to be re-discovered.
+  const pidEntry = readPidFiles().find((entry) => entry.threadId === threadId && isProcessAlive(entry.pid));
+  if (!pidEntry) {
+    log.debug(`[findAliveThread] Thread ${threadId}: not in spawnedThreads (${spawnedThreads.length} entries), not in PID files`);
+    return undefined;
+  }
+  const restored: SpawnedThread = {
+    pid: pidEntry.pid,
+    threadId,
+    name: pidEntry.name ?? `Thread ${threadId}`,
+    startedAt: Date.now(),
+    createdAt: Date.now(),
+    logFile: "",
+  };
+  spawnedThreads.push(restored);
+  log.info(`[findAliveThread] Restored thread ${threadId} PID=${pidEntry.pid} from PID file`);
+  return restored;
 }
 
 /**
