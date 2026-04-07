@@ -379,7 +379,10 @@ async function killAgentOrphans(): Promise<void> {
         }
 
         if (alive(pid)) {
-          log("ERROR", `Agent orphan PID=${pid} could not be killed by any method`);
+          log("ERROR", `Agent orphan PID=${pid} could not be killed by any method — leaving PID file for server`);
+          // Don't delete the PID file — the server runs in the same securevault
+          // context as the agents and may succeed where the watcher fails.
+          continue;
         } else {
           log("INFO", `Agent orphan PID=${pid} killed successfully`);
         }
