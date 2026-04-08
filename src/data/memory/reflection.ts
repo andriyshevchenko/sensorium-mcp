@@ -41,7 +41,8 @@ const REFLECTION_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
 const MIN_EPISODES_FOR_REFLECTION = 20;
 
 // ─── Buffer cap & quality gate ───────────────────────────────────────────────
-const MAX_ACTIVE_REFLECTIONS = 150;
+const MAX_ACTIVE_REFLECTIONS = 50;
+const MAX_GLOBAL_REFLECTIONS = 200;
 const STALE_REFLECTION_DAYS = 30;
 const MIN_INSIGHT_LENGTH = 40;
 const VAGUE_PATTERNS = [
@@ -309,6 +310,38 @@ function enforceReflectionCap(db: Database, threadId: number): { expired: number
         for (const row of toExpire) stmt.run(now, row.note_id);
       })();
       expired += toExpire.length;
+    }
+  }
+
+  // Phase 3: Global cap — prevent reflections from piling up across many threads
+  const globalRow = db
+    .prepare(
+      `SELECT COUNT(*) as c FROM semantic_notes
+       WHERE valid_to IS NULL AND superseded_by IS NULL
+         AND content LIKE '[REFLECTION]%'`,
+    )
+    .get() as { c: number };
+
+  if (globalRow.c > MAX_GLOBAL_REFLECTIONS) {
+    const globalExcess = globalRow.c - MAX_GLOBAL_REFLECTIONS;
+    const globalExpire = db
+      .prepare(
+        `SELECT note_id FROM semantic_notes
+         WHERE valid_to IS NULL AND superseded_by IS NULL
+           AND content LIKE '[REFLECTION]%'
+           AND pinned = 0 AND is_guardrail = 0
+         ORDER BY access_count ASC, created_at ASC
+         LIMIT ?`,
+      )
+      .all(globalExcess) as { note_id: string }[];
+
+    if (globalExpire.length > 0) {
+      const now2 = nowISO();
+      const stmt2 = db.prepare(`UPDATE semantic_notes SET valid_to = ? WHERE note_id = ?`);
+      db.transaction(() => {
+        for (const row of globalExpire) stmt2.run(now2, row.note_id);
+      })();
+      expired += globalExpire.length;
     }
   }
 
