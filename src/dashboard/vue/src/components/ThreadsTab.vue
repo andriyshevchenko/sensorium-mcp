@@ -19,6 +19,10 @@ const createForm = ref({ name: '', threadId: 0, client: 'claude' })
 const createStatus = ref('')
 const creating = ref(false)
 
+// Inline name editing
+const editingNameId = ref<number | null>(null)
+const editingNameValue = ref('')
+
 // Branch creation
 const branchingRoot = ref<number | null>(null)
 const branchForm = ref({ name: '', threadId: 0, client: 'claude' })
@@ -153,6 +157,31 @@ async function createBranch(rootThreadId: number) {
 }
 
 // ── Toggle keep-alive ────────────────────────────────────────────────────────
+
+function startRename(thread: ThreadEntry) {
+  editingNameId.value = thread.threadId
+  editingNameValue.value = thread.name
+}
+
+async function submitRename(threadId: number) {
+  const newName = editingNameValue.value.trim()
+  editingNameId.value = null
+  if (!newName) return
+  try {
+    const r = await fetch(`/api/threads/${threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: newName }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    await load()
+  } catch (e: unknown) {
+    error.value = 'Failed to rename thread: ' + (e as Error).message
+  }
+}
 
 async function toggleKeepAlive(thread: ThreadEntry) {
   try {
@@ -344,8 +373,17 @@ onMounted(load)
               <span :class="['inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border', badgeConfig[t.type]?.classes]">
                 {{ badgeConfig[t.type]?.emoji }} {{ t.type.toUpperCase() }}
               </span>
-              <!-- Name -->
-              <span class="font-semibold">{{ t.name }}</span>
+              <!-- Name (double-click to edit) -->
+              <input
+                v-if="editingNameId === t.threadId"
+                v-model="editingNameValue"
+                @blur="submitRename(t.threadId)"
+                @keyup.enter="($event.target as HTMLInputElement).blur()"
+                @keyup.escape="editingNameId = null"
+                class="font-semibold bg-card border border-accent rounded px-1 py-0 text-textPrimary focus:outline-none w-40"
+                ref="nameInput"
+              />
+              <span v-else class="font-semibold cursor-pointer hover:text-accent transition" @dblclick="startRename(t)" title="Double-click to rename">{{ t.name }}</span>
               <!-- Status -->
               <span :class="['text-xs font-medium', statusClass(t.status)]">{{ t.status }}</span>
               <span class="text-xs text-muted font-mono">ID: {{ t.threadId }}</span>

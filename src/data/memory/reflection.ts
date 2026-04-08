@@ -487,17 +487,7 @@ export async function runReflection(
     `[reflection] Completed: ${episodes.length} episodes → ${savedInsights.length} insights (${Date.now() - startMs}ms)`,
   );
 
-  // ── Step 6: Generate procedures from high-quality reflections ──────────
-  if (savedInsights.length > 0) {
-    try {
-      const procResult = await generateProceduresFromReflections(db, threadId);
-      if (procResult.created > 0) {
-        log.info(`[reflection] Procedural generation: ${procResult.created} new procedures`);
-      }
-    } catch (err) {
-      log.error(`[reflection] Procedural generation failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
+  // TODO: Step 6 — procedural generation from reflections (not yet implemented)
 
   return {
     insights: savedInsights,
