@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { checkMaintenanceFlag, writeActivityHeartbeat } from "../../data/file-storage.js";
+import { checkMaintenanceFlag, writeActivityHeartbeat, writeThreadHeartbeat } from "../../data/file-storage.js";
 import { getEffectiveAgentType } from "../../config.js";
 import { peekThreadMessages } from "../../dispatcher.js";
 import type { initMemoryDb } from "../../memory.js";
@@ -300,6 +300,7 @@ export async function handleWaitForInstructions(
     }
     await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     writeActivityHeartbeat();
+    if (effectiveThreadId !== undefined) writeThreadHeartbeat(effectiveThreadId);
     } catch (loopErr) {
       log.error(`Poll loop error: ${loopErr instanceof Error ? loopErr.message : String(loopErr)}`);
       continue;
