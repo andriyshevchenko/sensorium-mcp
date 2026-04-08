@@ -5,11 +5,13 @@
  */
 
 import type { Database } from "./schema.js";
-import { nowISO, parseJsonArray } from "./utils.js";
+import { generateId, nowISO, parseJsonArray } from "./utils.js";
+import { updateTopicIndexForKeywords } from "./semantic.js";
+import { log } from "../../logger.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
-interface Procedure {
+export interface Procedure {
   procedureId: string;
   name: string;
   type: "workflow" | "habit" | "tool_pattern" | "template";
@@ -133,4 +135,88 @@ export function updateProcedure(
 
   params.push(procedureId);
   db.prepare(`UPDATE procedures SET ${setClauses.join(", ")} WHERE procedure_id = ?`).run(...params);
+}
+
+// ─── Create ─────────────────────────────────────────────────────────────────
+
+const MAX_PROCEDURES = 30;
+
+export function saveProcedure(
+  db: Database,
+  proc: {
+    name: string;
+    type: Procedure["type"];
+    description: string;
+    steps: string[];
+    triggerConditions: string[];
+    learnedFrom: string[];
+    confidence: number;
+  },
+): string {
+  const id = generateId("pr");
+  const now = nowISO();
+
+  db.prepare(
+    `INSERT INTO procedures
+       (procedure_id, name, type, description, steps, trigger_conditions,
+        success_rate, times_executed, last_executed_at,
+        learned_from, corrections, related_procedures,
+        confidence, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0.5, 0, NULL, ?, '[]', '[]', ?, ?, ?)`,
+  ).run(
+    id,
+    proc.name,
+    proc.type,
+    proc.description,
+    JSON.stringify(proc.steps),
+    JSON.stringify(proc.triggerConditions),
+    JSON.stringify(proc.learnedFrom),
+    Math.max(0, Math.min(1, proc.confidence)),
+    now,
+    now,
+  );
+
+  const keywords = proc.name
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+  updateTopicIndexForKeywords(db, keywords, "procedural");
+
+  return id;
+}
+
+// ─── Cap enforcement ────────────────────────────────────────────────────────
+
+export function enforceProcedureCap(db: Database): { expired: number } {
+  const countRow = db
+    .prepare(`SELECT COUNT(*) as c FROM procedures`)
+    .get() as { c: number };
+
+  if (countRow.c <= MAX_PROCEDURES) return { expired: 0 };
+
+  const excess = countRow.c - MAX_PROCEDURES;
+  const toRemove = db
+    .prepare(
+      `SELECT procedure_id, name FROM procedures
+       ORDER BY times_executed ASC, confidence ASC, created_at ASC
+       LIMIT ?`,
+    )
+    .all(excess) as { procedure_id: string; name: string }[];
+
+  if (toRemove.length === 0) return { expired: 0 };
+
+  const stmt = db.prepare(`DELETE FROM procedures WHERE procedure_id = ?`);
+  db.transaction(() => {
+    for (const row of toRemove) stmt.run(row.procedure_id);
+  })();
+
+  log.info(`[procedures] Cap enforcement: removed ${toRemove.length} lowest-value procedures`);
+  return { expired: toRemove.length };
+}
+
+export function getProcedureByName(db: Database, name: string): Procedure | null {
+  const row = db
+    .prepare(`SELECT * FROM procedures WHERE LOWER(name) = LOWER(?)`)
+    .get(name) as Record<string, unknown> | undefined;
+  return row ? rowToProcedure(row) : null;
 }
