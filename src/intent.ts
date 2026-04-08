@@ -135,27 +135,19 @@ export function loadSkills(): Skill[] {
 /** Invalidate the skill cache so the next loadSkills() re-reads from disk. */
 export function invalidateSkillCache(): void { skillCacheTime = 0; }
 
-// ── Intent classification ─────────────────────────────────────────────────────────
+// ── Intent classification ─────────────────────────────────────────────────
 
-// Pure acknowledgments — always conversational, never imply action
-const PURE_ACK = new Set([
-  "ok", "okay", "k", "no", "nope",
-  "thanks", "thank you", "thx", "ty", "got it",
-  "gotcha", "nice", "cool", "great", "perfect",
+const ACK_EXACT = new Set([
+  "ok", "okay", "k", "yes", "no", "yep", "nope", "yup",
+  "sure", "thanks", "thank you", "thx", "ty", "got it",
+  "gotcha", "nice", "cool", "great", "perfect", "agreed",
   "understood", "roger", "noted", "right", "correct",
-  "indeed", "exactly", "interesting",
+  "indeed", "exactly", "absolutely", "definitely",
   "hi", "hey", "hello", "morning", "good morning",
-  "lol", "haha", "heh", "wow",
-  "makes sense", "sounds good",
-  "leave it", "let’s leave it", "never mind", "nah", "forget it",
+  "lol", "haha", "heh", "wow", "interesting",
+  "makes sense", "sounds good", "go ahead", "do it",
+  "go on", "continue", "proceed", "leave it", "let's leave it",
   "👍", "👌", "✅", "🙏",
-]);
-
-// Action CTAs — operator wants the agent to proceed → always task
-const ACTION_CTA = new Set([
-  "yes", "yep", "yup", "sure", "absolutely", "definitely", "agreed",
-  "go ahead", "do it", "go on", "continue", "proceed",
-  "let’s do it", "let's do it", "let’s go", "let's go",
 ]);
 
 // Matches a task verb at the START of a message (imperative form).
@@ -165,29 +157,6 @@ const TASK_VERB_RE = /^(fix|implement|add|create|update|remove|delete|change|bui
 // "please fix", "just run", "quickly check" etc. where the verb isn't first.
 const TASK_VERB_ANYWHERE_RE = /\b(fix|implement|add|create|update|remove|delete|change|build|deploy|refactor|debug|test|write|configure|setup|migrate|install|check|run|send|stop|start|restart|enable|disable|ship|push|publish|search|find|review|analyze|research|investigate)\b/;
 
-// ── Structural task signals ──────────────────────────────────────────────────
-
-// Code content: inline code or fenced blocks
-const HAS_CODE_RE = /`[^`]+`|```/;
-
-// URLs
-const HAS_URL_RE = /https?:\/\//i;
-
-// Issue/PR references or commit-like hex strings (≥7 chars)
-const HAS_REFERENCE_RE = /#\d{2,}|PR\s*#?\d+|\b[0-9a-f]{12,40}\b/i;
-
-// Common code file extensions
-const HAS_CODE_EXT_RE = /(?:[\w.-]+[\/\\])[\w.\/-]*\.(?:ts|js|tsx|jsx|py|go|rs|java|json|yaml|yml|toml|md|sh|css|html|vue|svelte|sql|xml|env|conf|cfg|ini|log|mjs|cjs)\b|\b[\w-]+\.[\w-]+\.(?:ts|js|tsx|jsx|py|go|rs|java|json|yaml|yml|toml|md|sh|css|html|vue|svelte|sql|xml|env|conf|cfg|ini|log|mjs|cjs)\b/;
-
-// Polite imperative: "can you check...", "could you deploy..."
-const QUESTION_TASK_RE = /^(can|could|would|will|shall)\s+(you|we)\b/i;
-
-// "let’s" + word — "let’s deploy", "let’s fix this"
-const LETS_VERB_RE = /^let[’']?s\s+\w/i;
-
-// Multi-sentence: period followed by space+capital, or newline with content
-const MULTI_SENTENCE_RE = /\.\s+[A-Z]|\n\s*\S/;
-
 export type MessageIntent = "conversational" | "task";
 
 export function classifyIntent(message: string): MessageIntent {
@@ -195,30 +164,13 @@ export function classifyIntent(message: string): MessageIntent {
   const lower = trimmed.toLowerCase();
   const wordCount = lower.split(/\s+/).length;
 
-  // Tier 0: Structural signals — always task regardless of length
-  if (HAS_CODE_RE.test(trimmed)) return "task";
-  if (HAS_URL_RE.test(trimmed)) return "task";
-  if (HAS_REFERENCE_RE.test(trimmed)) return "task";
-  if (HAS_CODE_EXT_RE.test(trimmed)) return "task";
+  // Tier 1: Exact-match acknowledgments
+  if (ACK_EXACT.has(lower)) return "conversational";
 
-  // Tier 1: Pure acknowledgments — always conversational
-  if (PURE_ACK.has(lower)) return "conversational";
-
-  // Tier 2: Action CTAs — operator wants to proceed → task
-  if (ACTION_CTA.has(lower)) return "task";
-
-  // Tier 3: Question-form imperatives — "can you check...", "could you fix..."
-  if (QUESTION_TASK_RE.test(lower)) return "task";
-
-  // Tier 4: "let’s" + verb — "let’s deploy", "let’s fix this"
-  if (LETS_VERB_RE.test(lower)) return "task";
-
-  // Tier 5: Multi-sentence messages — almost always tasks
-  if (MULTI_SENTENCE_RE.test(trimmed)) return "task";
-
-  // Tier 6: Short messages (≤ 3 words) without any task verbs → conversational
+  // Tier 2: Very short messages (≤ 3 words) without any task verbs.
+  // Check anywhere in the message — catches "let's test", "please fix", etc.
   if (wordCount <= 3 && !TASK_VERB_RE.test(lower) && !TASK_VERB_ANYWHERE_RE.test(lower)) return "conversational";
 
-  // Tier 7: Default to task (safe — includes full reminders)
+  // Tier 3: Default to task (safe — includes full reminders)
   return "task";
 }
