@@ -316,8 +316,8 @@ function deleteTelegramTopic(db: Database, threadId: number): void {
  */
 function syncKeepAliveToSettings(db: Database): void {
     try {
-        const roots = getRootThreads(db);
-        const activeKeepAlive = roots.find(r => r.keepAlive);
+        const allThreads = getActiveThreads(db);
+        const activeKeepAlive = allThreads.find(r => r.keepAlive);
 
         if (activeKeepAlive) {
             setKeepAliveEnabled(true);
@@ -330,16 +330,16 @@ function syncKeepAliveToSettings(db: Database): void {
         }
 
         // Sync per-thread overrides
-        for (const root of roots) {
-            if (root.keepAlive) {
-                setThreadKeepAlive(root.threadId, {
+        for (const t of allThreads) {
+            if (t.keepAlive) {
+                setThreadKeepAlive(t.threadId, {
                     enabled: true,
-                    client: root.client,
-                    maxRetries: root.maxRetries,
-                    cooldownMs: root.cooldownMs,
+                    client: t.client,
+                    maxRetries: t.maxRetries,
+                    cooldownMs: t.cooldownMs,
                 });
             } else {
-                removeThreadKeepAlive(root.threadId);
+                removeThreadKeepAlive(t.threadId);
             }
         }
     } catch {

@@ -499,14 +499,14 @@ interface KeeperSettings {
 async function readAllKeeperSettings(): Promise<KeeperSettings[] | null> {
   const port = CONFIG.mcpHttpPort || 3847;
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/threads/roots`, {
+    const res = await fetch(`http://127.0.0.1:${port}/api/threads`, {
       headers: CONFIG.mcpHttpSecret ? { 'Authorization': `Bearer ${CONFIG.mcpHttpSecret}` } : {},
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) return null;
     const body = (await res.json()) as { threads?: Record<string, unknown>[] };
-    const roots = body.threads ?? [];
-    return roots
+    const all = body.threads ?? [];
+    return all
       .filter((r) => r.keepAlive)
       .filter((r) => Number.isInteger(r.threadId) && (r.threadId as number) > 0)
       .map((r) => ({
