@@ -155,7 +155,7 @@ export async function handleWaitForInstructions(
   try {
     const { getThread } = await import("../../data/memory/thread-registry.js");
     const threadEntry = getThread(getMemoryDb(), effectiveThreadId);
-    if (threadEntry) autonomousMode = threadEntry.autonomousMode || AUTONOMOUS_MODE;
+    if (threadEntry) autonomousMode = threadEntry.autonomousMode ?? AUTONOMOUS_MODE;
   } catch { /* fallback to global */ }
   // Override config for downstream consumers so they see per-thread value
   if (autonomousMode !== AUTONOMOUS_MODE) {
