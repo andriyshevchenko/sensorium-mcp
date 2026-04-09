@@ -541,7 +541,8 @@ export async function runMemoryPruning(
   }
 
   const startMs = Date.now();
-  const maxNotes = options?.maxNotes ?? 30;
+  const envSampleSize = parseInt(process.env.PRUNING_SAMPLE_SIZE ?? "", 10);
+  const maxNotes = options?.maxNotes ?? (Number.isFinite(envSampleSize) && envSampleSize > 0 ? envSampleSize : 30);
   const dryRun = options?.dryRun ?? false;
   const details: string[] = [];
 
