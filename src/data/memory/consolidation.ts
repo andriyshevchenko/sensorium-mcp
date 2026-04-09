@@ -5,7 +5,6 @@ import {
   saveSemanticNote,
   searchSemanticNotesRanked,
   supersedeNote,
-  type SemanticNote,
 } from "./semantic.js";
 import { log } from "../../logger.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
