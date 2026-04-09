@@ -44,15 +44,22 @@ const MIN_EPISODES_FOR_REFLECTION = 20;
 // ─── Buffer cap & quality gate ───────────────────────────────────────────────
 const MAX_ACTIVE_REFLECTIONS = 150;
 const STALE_REFLECTION_DAYS = 30;
-const MIN_INSIGHT_LENGTH = 40;
+const MIN_INSIGHT_LENGTH = 50;
 const VAGUE_PATTERNS = [
   /\bthe agent tends to\b/i,
   /\bthe agent demonstrates\b/i,
   /\bthe agent frequently\b/i,
+  /\bshould consider\b/i,
   /\bthis (is|was) (a |an )?(good|important|useful)\b/i,
   /\bin general\b/i,
   /\boverall\b.*\b(good|well|effective)\b/i,
 ];
+
+const TASK_DOMAINS = [
+  "deployment", "code-review", "debugging", "communication", "architecture",
+  "memory-system", "infrastructure", "workflow", "configuration", "testing",
+] as const;
+type TaskDomain = (typeof TASK_DOMAINS)[number];
 
 /** Per-thread timestamp of the last successful reflection run. */
 const lastReflectionAt = new Map<number, number>();
@@ -179,40 +186,61 @@ function repairAndParseJSON(raw: string): unknown {
 
 // ─── Prompt ──────────────────────────────────────────────────────────────────
 
-const REFLECTION_SYSTEM_PROMPT = `You are a reflective reasoning system analyzing your own recent experiences. Your job is to extract DEEP insights — not surface-level summaries. Write in first person ("I").
+const REFLECTION_SYSTEM_PROMPT = `You are a reflective reasoning system analyzing your own recent experiences. Your job is to extract DEEP cause-and-effect insights — not surface-level summaries. Write in first person ("I").
 
-## Analysis tasks:
+For each insight, you MUST fill in ALL 5 template fields. If you cannot fill every field with specific, concrete information for a given episode, SKIP that episode entirely. Do not produce vague filler.
 
-1. CAUSAL CHAINS: What caused what? Find cause-effect relationships. "When [X happened], it led to [Y] because [Z]." Be specific — cite episode IDs.
+## Template fields (ALL required):
 
-2. RECURRING PATTERNS: What behaviors, problems, or situations keep repeating? "The operator tends to [X] when [Y]." or "I tend to fail at [X] in [Y] conditions."
+1. **decision** — What specific action or choice was made? Name the exact thing that happened.
+2. **context** — What was the situation that triggered this? What were the conditions?
+3. **outcome** — What was the concrete result? Was it positive or negative? Be specific.
+4. **root_cause** — WHY did this outcome happen? This must NOT restate the outcome. Dig deeper. What was the actual mechanism?
+5. **lesson** — A concrete, executable instruction for next time. Start with a verb: "Always...", "Never...", "Before doing X, first..."
 
-3. COUNTERFACTUALS: For any negative outcomes or frustrations, what could have been done differently? "Instead of [X], I could have [Y], which would have [Z]."
+## Task domain (required):
 
-4. SELF-ASSESSMENT: What do I do well? What are my weaknesses? "I'm strong at [X] but struggle with [Y]."
+Classify each insight into exactly one domain: deployment, code-review, debugging, communication, architecture, memory-system, infrastructure, workflow, configuration, testing.
+
+## Insight types:
+
+- "causal": cause-effect chains — "When [X], it led to [Y] because [Z]"
+- "pattern": recurring behaviors or situations
+- "counterfactual": what could have been done differently
+- "self_assessment": strengths and weaknesses
 
 Respond in JSON format:
 {
   "insights": [
     {
       "type": "causal" | "pattern" | "self_assessment" | "counterfactual",
-      "content": "Specific, actionable insight with references to specific events",
+      "decision": "The specific action taken",
+      "context": "What triggered it",
+      "outcome": "What happened as a result",
+      "root_cause": "The underlying WHY",
+      "lesson": "Concrete instruction for next time",
+      "domain": "one of the 10 domains above",
       "confidence": 0.0-1.0,
       "episode_refs": ["ep_xxx", "ep_yyy"]
     }
   ]
 }
 
+## Anti-patterns (your output WILL BE REJECTED if it contains these):
+
+- "The agent tends to..." — vague observation, not actionable
+- "Should consider..." — wishy-washy, not a concrete instruction
+- "In general..." / "Overall..." — too abstract
+- Restating the outcome as the root cause
+- Lesson that doesn\\\\t start with a verb
+- Any field shorter than 10 characters
+
 Rules:
 - Minimum 3, maximum 10 insights
 - Each insight must reference specific episodes by their ID
-- Avoid generic statements — be specific to the actual events
 - Confidence should reflect how well-supported the insight is by evidence
-- Causal and pattern insights are most valuable
-- Every insight MUST be actionable: it should tell future-me what to DO differently, not just observe a pattern
-- BAD: "The agent tends to struggle with complex tasks" (vague, no action)
-- GOOD: "When I receive multi-step requests, I should decompose them into sub-tasks before starting, because attempting all at once led to errors in ep_xxx"
-- Reject any insight shorter than 40 characters — depth matters`;
+- Causal insights are most valuable — prioritize cause-and-effect
+- Quality over quantity: 3 deep insights beat 10 shallow ones`;
 
 // ─── De-duplication ──────────────────────────────────────────────────────────
 
@@ -419,35 +447,54 @@ export async function runReflection(
   const episodeIdSet = new Set(episodes.map((e) => e.episodeId));
 
   for (const ins of rawInsights) {
-    if (!ins.content || typeof ins.content !== "string") continue;
+    // Validate all 5 template fields are present and non-trivial
+    const fields = [ins.decision, ins.context, ins.outcome, ins.root_cause, ins.lesson];
+    if (fields.some((f) => !f || typeof f !== "string" || f.length < 10)) {
+      log.info(`[reflection] Skipped — incomplete template fields`);
+      continue;
+    }
+
+    // Compile structured fields into a single rich content string
+    const content = [
+      `Decision: ${ins.decision.trim()}`,
+      `Context: ${ins.context.trim()}`,
+      `Outcome: ${ins.outcome.trim()}`,
+      `Root cause: ${ins.root_cause.trim()}`,
+      `Lesson: ${ins.lesson.trim()}`,
+    ].join(". ");
 
     const insightType = validTypes.has(ins.type) ? ins.type : "pattern";
     const confidence = Math.max(0, Math.min(1, ins.confidence ?? 0.5));
     const refs = (ins.episode_refs ?? []).filter((id) => typeof id === "string" && episodeIdSet.has(id));
 
+    // Validate and normalize domain
+    const domain = TASK_DOMAINS.includes(ins.domain as TaskDomain)
+      ? (ins.domain as TaskDomain)
+      : "workflow"; // fallback
+
     // Quality gate — reject vague/generic insights before expensive dedup
-    const quality = passesQualityGate(ins.content, confidence);
+    const quality = passesQualityGate(content, confidence);
     if (!quality.pass) {
-      log.info(`[reflection] Quality gate rejected: ${quality.reason} — "${ins.content.slice(0, 60)}…"`);
+      log.info(`[reflection] Quality gate rejected: ${quality.reason} — "${content.slice(0, 60)}…"`);
       continue;
     }
 
     // De-duplicate against existing reflections (embedding is cached for reuse)
-    const prefixedContent = `[REFLECTION] [${insightType.toUpperCase()}] ${ins.content}`;
+    const prefixedContent = `[REFLECTION] [${insightType.toUpperCase()}] [${domain}] ${content}`;
     const { isDuplicate: duplicate, embedding: cachedEmbedding } = await checkDuplicate(db, prefixedContent, apiKey, threadId);
     if (duplicate) {
-      log.info(`[reflection] Skipped duplicate insight: ${ins.content.slice(0, 60)}…`);
+      log.info(`[reflection] Skipped duplicate insight: ${content.slice(0, 60)}…`);
       continue;
     }
 
-    // Generate keywords from content
-    const keywords = extractKeywords(ins.content);
+    // Generate keywords from content + add domain as keyword
+    const keywords = extractKeywords(content);
 
     // Save as a semantic note of type "pattern" (reflection insights are patterns)
     const noteId = saveSemanticNote(db, {
       type: "pattern",
       content: prefixedContent,
-      keywords: ["reflection", insightType, ...keywords],
+      keywords: ["reflection", insightType, domain, ...keywords],
       confidence,
       priority: confidence >= 0.8 ? 1 : 0,
       threadId: resolveKnowledgeThreadId(threadId),
@@ -468,7 +515,7 @@ export async function runReflection(
 
     savedInsights.push({
       type: insightType as ReflectionInsight["type"],
-      content: ins.content,
+      content,
       confidence,
       relatedEpisodeIds: refs,
     });
@@ -541,7 +588,12 @@ function logReflection(
 
 interface RawInsight {
   type: string;
-  content: string;
+  decision: string;
+  context: string;
+  outcome: string;
+  root_cause: string;
+  lesson: string;
+  domain: string;
   confidence: number;
   episode_refs: string[];
 }
