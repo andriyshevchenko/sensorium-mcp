@@ -172,7 +172,30 @@ export async function handleStartSession(
     }
   }
 
+  // Lightweight reconnect: if the thread is pre-existing AND was recently
+  // active (within 5 minutes), this is likely a context reset within the same
+  // process — skip the heavy bootstrap (no stale message drain, no Telegram
+  // notification, no 38K+ memory briefing).  A genuinely dead thread that
+  // hasn't been active in > 5 minutes gets the full briefing.
+  const RECONNECT_WINDOW_MS = 5 * 60 * 1000;
+  let isReconnect = false;
+  if (resolvedPreexisting && session.currentThreadId !== undefined) {
+    try {
+      const threadEntry = getThread(getMemoryDb(), session.currentThreadId);
+      if (threadEntry?.lastActiveAt) {
+        const lastActive = new Date(threadEntry.lastActiveAt).getTime();
+        isReconnect = (Date.now() - lastActive) < RECONNECT_WINDOW_MS;
+      }
+    } catch { /* fall through to full bootstrap */ }
+  }
+  if (isReconnect) {
+    log.info(
+      `[start_session] Lightweight reconnect for thread ${session.currentThreadId} — skipping briefing.`,
+    );
+  }
+
   if (resolvedPreexisting) {
+    if (!isReconnect) {
     // Drain any stale messages from the thread file so they aren't
     // re-delivered in the next wait_for_instructions call.
     const stale = readThreadMessages(session.currentThreadId);
@@ -243,6 +266,7 @@ export async function handleStartSession(
       }
       // Other errors (network, etc.) are non-fatal — proceed anyway.
     }
+    } // end if (!isReconnect)
   }
 
   if (!resolvedPreexisting) {
@@ -311,19 +335,24 @@ export async function handleStartSession(
   // Ghost threads: use the parent's thread ID for the initial memory briefing
   const memorySourceThreadId = getMemorySourceThreadId();
   let memoryBriefing = "";
-  try {
-    const db = getMemoryDb();
-    if (session.currentThreadId !== undefined) {
-      memoryBriefing = "\n\n" + assembleBootstrap(db, session.currentThreadId, memorySourceThreadId);
+  if (!isReconnect) {
+    try {
+      const db = getMemoryDb();
+      if (session.currentThreadId !== undefined) {
+        memoryBriefing = "\n\n" + assembleBootstrap(db, session.currentThreadId, memorySourceThreadId);
+      }
+    } catch (e) {
+      log.warn(`[start_session] Memory bootstrap failed: ${e instanceof Error ? e.message : String(e)}`);
+      memoryBriefing = "\n\n_Memory system unavailable._";
     }
-  } catch (e) {
-    log.warn(`[start_session] Memory bootstrap failed: ${e instanceof Error ? e.message : String(e)}`);
-    memoryBriefing = "\n\n_Memory system unavailable._";
   }
 
   // ── Startup consolidation: catch up if episodes piled up between sessions ──
   // Consolidates ALL threads (not just the active one) so stale episodes from
   // other threads don't accumulate indefinitely.
+  // Skipped on lightweight reconnect — consolidation already ran in the
+  // original start_session for this process.
+  if (!isReconnect) {
   try {
     if (session.currentThreadId !== undefined) {
       const db = getMemoryDb();
@@ -351,6 +380,7 @@ export async function handleStartSession(
   } catch (err) {
     log.debug(`[memory] Startup consolidation check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   }
+  } // end if (!isReconnect) for consolidation
 
   // Purge stale MCP sessions for this thread (from before a server restart)
   // and register the current session.
@@ -428,12 +458,16 @@ export async function handleStartSession(
     content: [
       {
         type: "text",
-        text:
-          `Session ${resolvedPreexisting ? "resumed" : "started"}.${threadNote}` +
-          ` Call the remote_copilot_wait_for_instructions tool next.${resumeNote}` +
-          memoryBriefing +
-          reminders +
-          endDirective,
+        text: isReconnect
+          ? `Session reconnected on thread ${threadId}. Memory briefing skipped (already loaded).` +
+            ` Call the remote_copilot_wait_for_instructions tool next.` +
+            reminders +
+            endDirective
+          : `Session ${resolvedPreexisting ? "resumed" : "started"}.${threadNote}` +
+            ` Call the remote_copilot_wait_for_instructions tool next.${resumeNote}` +
+            memoryBriefing +
+            reminders +
+            endDirective,
       },
     ],
   };

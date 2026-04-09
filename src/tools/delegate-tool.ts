@@ -231,6 +231,12 @@ export async function handleStartThread(
   }
 
   // ── 1. Resolve or create Telegram forum topic ───────────────────────
+
+  // Worker topics get a [Worker] prefix in Telegram for visual distinction
+  const topicName = (threadRegistryType === "worker" && name && !name.startsWith("[Worker]"))
+    ? `[Worker] ${name}`
+    : name;
+
   let threadId: number;
   let topicExisted = false;
 
@@ -242,17 +248,18 @@ export async function handleStartThread(
     }
     log.info(`[start_thread] Using explicit threadId ${threadId}` + (name ? ` ("${name}")` : ""));
   } else {
-    const resolvedId = resolveExistingTopic(telegramChatId, name);
+    const resolvedId = resolveExistingTopic(telegramChatId, topicName)
+                    ?? resolveExistingTopic(telegramChatId, name);
     if (resolvedId !== undefined) {
       threadId = resolvedId;
       topicExisted = true;
       log.info(`[start_thread] Resolved existing forum topic "${name}" → thread ${threadId}`);
     } else {
       try {
-        const topic = await telegram.createForumTopic(telegramChatId, name);
+        const topic = await telegram.createForumTopic(telegramChatId, topicName);
         threadId = topic.message_thread_id;
-        persistSession(telegramChatId, name, threadId);
-        registerTopic(telegramChatId, name, threadId);
+        persistSession(telegramChatId, topicName, threadId);
+        registerTopic(telegramChatId, topicName, threadId);
         log.info(`[start_thread] Created forum topic "${name}" → thread ${threadId}`);
       } catch (err) {
         return errorResult(
