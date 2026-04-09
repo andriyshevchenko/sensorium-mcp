@@ -5,6 +5,7 @@ import {
   saveSemanticNote,
   searchSemanticNotesRanked,
   supersedeNote,
+  type SemanticNote,
 } from "./semantic.js";
 import { log } from "../../logger.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
@@ -24,6 +25,14 @@ interface ConsolidationLog {
   episodesProcessed: number;
   notesCreated: number;
   durationMs: number;
+}
+
+interface PruningReport {
+  notesScanned: number;
+  notesExpired: number;
+  notesMerged: number;
+  durationMs: number;
+  details: string[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -177,6 +186,17 @@ export async function runConsolidationAllThreads(
     totalProcessed += report.episodesProcessed;
     totalNotes += report.notesCreated;
     allDetails.push(`Thread ${thread_id}: ${report.episodesProcessed} eps → ${report.notesCreated} notes`);
+  }
+
+  // Phase 2: Memory pruning — scan for outdated, duplicate, or low-quality notes
+  try {
+    const pruneReport = await runMemoryPruning(db);
+    if (pruneReport.notesExpired + pruneReport.notesMerged > 0) {
+      allDetails.push(`Pruning: scanned ${pruneReport.notesScanned}, expired ${pruneReport.notesExpired}, merged ${pruneReport.notesMerged}`);
+      allDetails.push(...pruneReport.details);
+    }
+  } catch (err) {
+    log.warn(`[memory] Pruning phase failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return {
@@ -466,5 +486,222 @@ Rules:
 
   } finally {
     if (!skipLock) consolidationInProgress = false;
+  }
+}
+
+// ─── Memory Pruning ──────────────────────────────────────────────────────────
+
+// PRIVACY NOTE: Like consolidation, this sends note excerpts to OpenAI for
+// quality evaluation. Disable via PRUNING_ENABLED=false (or "0").
+
+/** Raw DB row shape for the pruning query. */
+interface RawNoteRow {
+  note_id: string;
+  type: string;
+  content: string;
+  keywords: string;
+  confidence: number;
+  priority: number;
+  access_count: number;
+  created_at: string;
+  updated_at: string;
+  valid_to: string | null;
+  superseded_by: string | null;
+  is_guardrail: number;
+  pinned: number;
+  thread_id: number | null;
+}
+
+/**
+ * Scan a batch of existing semantic notes for quality issues:
+ * - Outdated facts that no longer reflect reality
+ * - Duplicate notes conveying the same information
+ * - Low-quality notes that are vague or non-actionable
+ *
+ * Designed to run as a post-consolidation phase, gradually cleaning
+ * the memory DB over successive runs.
+ */
+export async function runMemoryPruning(
+  db: Database,
+  options?: { maxNotes?: number; dryRun?: boolean }
+): Promise<PruningReport> {
+  const pruningEnabled = process.env.PRUNING_ENABLED;
+  if (pruningEnabled === "false" || pruningEnabled === "0") {
+    return {
+      notesScanned: 0, notesExpired: 0, notesMerged: 0, durationMs: 0,
+      details: ["Pruning disabled via PRUNING_ENABLED env var."],
+    };
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return {
+      notesScanned: 0, notesExpired: 0, notesMerged: 0, durationMs: 0,
+      details: ["Pruning skipped — OPENAI_API_KEY not set."],
+    };
+  }
+
+  const startMs = Date.now();
+  const maxNotes = options?.maxNotes ?? 30;
+  const dryRun = options?.dryRun ?? false;
+  const details: string[] = [];
+
+  // Sample candidate notes: lowest access count first, then oldest.
+  // Guardrails and pinned notes are excluded — they're intentionally permanent.
+  const candidates = db.prepare(`
+    SELECT * FROM semantic_notes
+    WHERE valid_to IS NULL
+      AND superseded_by IS NULL
+      AND is_guardrail = 0
+      AND pinned = 0
+    ORDER BY access_count ASC, created_at ASC
+    LIMIT ?
+  `).all(maxNotes) as RawNoteRow[];
+
+  if (candidates.length < 5) {
+    return {
+      notesScanned: 0, notesExpired: 0, notesMerged: 0,
+      durationMs: Date.now() - startMs,
+      details: ["Too few candidate notes for pruning (< 5)."],
+    };
+  }
+
+  const now = new Date();
+  const notesText = candidates.map((row) => {
+    const ageMs = now.getTime() - new Date(row.created_at).getTime();
+    const ageDays = Math.round(ageMs / (1000 * 60 * 60 * 24));
+    return `[${row.note_id}] (${row.type}, conf: ${row.confidence}, accesses: ${row.access_count}, age: ${ageDays}d) ${row.content}`;
+  }).join("\n");
+
+  const systemPrompt = `You are a memory quality manager. Review these semantic notes and identify problems.
+
+Notes to review:
+${notesText}
+
+Output a JSON object:
+{
+  "expire": [
+    { "noteId": "sn_xxx", "reason": "Brief explanation" }
+  ],
+  "merge": [
+    { "keepId": "sn_xxx", "expireId": "sn_yyy", "mergedContent": "Best combined version", "reason": "Brief explanation" }
+  ]
+}
+
+Decision criteria:
+- EXPIRE if: the note is vague/non-actionable ("the system has issues"), trivially obvious, or clearly outdated (references old versions, completed tasks still marked pending)
+- MERGE if: two or more notes convey the same information — keep the more specific/accurate one. Provide mergedContent combining the best of both when useful.
+- KEEP (omit from output) if: the note contains unique, specific, actionable information
+
+Be conservative — when in doubt, keep the note. Only expire notes you are confident are low-value.
+Do NOT expire preferences or guardrails unless they clearly contradict each other.
+Return {"expire": [], "merge": []} if nothing needs pruning.`;
+
+  try {
+    const messages: ChatMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: "Review the notes above and identify any that should be expired or merged." },
+    ];
+
+    const raw = await chatCompletion(messages, apiKey, {
+      model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o-mini",
+      maxTokens: 4096,
+      responseFormat: { type: "json_object" },
+      timeoutMs: 60_000,
+    });
+
+    const parsed = repairAndParseJSON(raw) as {
+      expire?: Array<{ noteId: string; reason: string }>;
+      merge?: Array<{
+        keepId: string;
+        expireId: string;
+        mergedContent?: string;
+        reason: string;
+      }>;
+    };
+
+    const expireActions = parsed.expire ?? [];
+    const mergeActions = parsed.merge ?? [];
+    let expired = 0;
+    let merged = 0;
+    const nowStr = nowISO();
+
+    if (!dryRun) {
+      for (const action of expireActions) {
+        if (!action.noteId) continue;
+        const exists = db.prepare(
+          `SELECT note_id FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`
+        ).get(action.noteId) as { note_id: string } | undefined;
+        if (!exists) {
+          details.push(`[skip-expire] ${action.noteId} not found or already expired`);
+          continue;
+        }
+        db.prepare(
+          `UPDATE semantic_notes SET valid_to = ?, updated_at = ? WHERE note_id = ?`
+        ).run(nowStr, nowStr, action.noteId);
+        expired++;
+        details.push(`[pruned] ${action.noteId}: ${action.reason}`);
+      }
+
+      for (const action of mergeActions) {
+        if (!action.keepId || !action.expireId) continue;
+        const keepNote = db.prepare(
+          `SELECT note_id, content FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`
+        ).get(action.keepId) as { note_id: string; content: string } | undefined;
+        const expireNote = db.prepare(
+          `SELECT note_id FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`
+        ).get(action.expireId) as { note_id: string } | undefined;
+
+        if (!keepNote || !expireNote) {
+          details.push(`[skip-merge] ${action.keepId}/${action.expireId} not found`);
+          continue;
+        }
+
+        // Update kept note with merged content when provided
+        if (action.mergedContent && action.mergedContent !== keepNote.content) {
+          db.prepare(
+            `UPDATE semantic_notes SET content = ?, updated_at = ? WHERE note_id = ?`
+          ).run(action.mergedContent, nowStr, keepNote.note_id);
+        }
+
+        // Expire the duplicate, linking to the kept note
+        db.prepare(
+          `UPDATE semantic_notes SET valid_to = ?, superseded_by = ?, updated_at = ? WHERE note_id = ?`
+        ).run(nowStr, keepNote.note_id, nowStr, action.expireId);
+        merged++;
+        details.push(`[merged] ${action.expireId} → ${action.keepId}: ${action.reason}`);
+      }
+    } else {
+      for (const action of expireActions) {
+        details.push(`[dry-run] [prune] ${action.noteId}: ${action.reason}`);
+        expired++;
+      }
+      for (const action of mergeActions) {
+        details.push(`[dry-run] [merge] ${action.expireId} → ${action.keepId}: ${action.reason}`);
+        merged++;
+      }
+    }
+
+    if (expired + merged > 0) {
+      log.info(`[memory] Pruning: expired ${expired}, merged ${merged} note(s)`);
+    }
+
+    return {
+      notesScanned: candidates.length,
+      notesExpired: expired,
+      notesMerged: merged,
+      durationMs: Date.now() - startMs,
+      details,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error(`[memory] Pruning failed: ${msg}`);
+    return {
+      notesScanned: candidates.length,
+      notesExpired: 0,
+      notesMerged: 0,
+      durationMs: Date.now() - startMs,
+      details: [`Pruning failed: ${msg}`],
+    };
   }
 }
