@@ -44,6 +44,10 @@ const SLASH_COMMANDS: Array<{ pattern: RegExp; expand: (m: RegExpMatchArray) => 
   },
 ];
 
+// ── /mode command: handled specially (side-effect + expansion) ──────────
+import { setThreadConversationMode, type ConversationMode } from "../../config.js";
+const MODE_PATTERN = /^\/mode\s+(concise|voice|standard)\s*$/i;
+
 /** Expand /slash commands in message text. Expands matching lines, preserves the rest. */
 function expandSlashCommands(text: string | undefined): string | undefined {
   if (!text) return text;
@@ -234,6 +238,15 @@ async function pollOnce(
             };
 
             try {
+                // Handle /mode command (side-effect: persists mode to settings)
+                if (stored.message.text) {
+                  const modeMatch = stored.message.text.trim().match(MODE_PATTERN);
+                  if (modeMatch && typeof threadId === "number") {
+                    const mode = modeMatch[1].toLowerCase() as ConversationMode;
+                    setThreadConversationMode(threadId, mode);
+                    stored.message.text = `Conversation mode switched to "${mode}".`;
+                  }
+                }
                 // Expand /slash commands before storing
                 stored.message.text = expandSlashCommands(stored.message.text);
                 appendToThread(threadId, stored);
