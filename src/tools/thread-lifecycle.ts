@@ -1010,7 +1010,7 @@ export async function cleanupExpiredWorkers(
     const cutoff = new Date(now - ttlMs).toISOString();
     const staleRows = db.prepare(
       `SELECT thread_id FROM thread_registry 
-       WHERE type = 'worker' AND status IN ('active', 'exited') AND created_at < ?`
+       WHERE type = 'worker' AND status IN ('active', 'exited') AND COALESCE(last_active_at, created_at) < ?`
     ).all(cutoff) as { thread_id: number }[];
     for (const row of staleRows) {
       // Skip if still alive in-memory (already handled above)

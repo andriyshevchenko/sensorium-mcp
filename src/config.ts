@@ -22,8 +22,9 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
 const VOICE_ANALYSIS_URL = process.env.VOICE_ANALYSIS_URL ?? "";
 const AUTONOMOUS_MODE = process.env.AUTONOMOUS_MODE === "true";
 
-const rawWaitTimeoutMinutes = parseInt(process.env.WAIT_TIMEOUT_MINUTES ?? "", 10);
-const WAIT_TIMEOUT_MINUTES = Math.max(1, Number.isFinite(rawWaitTimeoutMinutes) ? rawWaitTimeoutMinutes : 120);
+const DEFAULT_WAIT_TIMEOUT_MINUTES = 1440;
+const envWaitTimeoutMinutes = parseInt(process.env.WAIT_TIMEOUT_MINUTES ?? "", 10);
+const ENV_WAIT_TIMEOUT = Number.isFinite(envWaitTimeoutMinutes) ? envWaitTimeoutMinutes : undefined;
 
 const rawDmnActivationHours = parseFloat(process.env.DMN_ACTIVATION_HOURS ?? "");
 const DMN_ACTIVATION_HOURS = Math.max(0.5, Number.isFinite(rawDmnActivationHours) ? rawDmnActivationHours : 4);
@@ -169,6 +170,20 @@ export function setBootstrapMessageCount(count: number): void {
   const clamped = Math.max(0, Math.round(count));
   if (!Number.isFinite(clamped)) return;
   updateSettings(s => { s.bootstrapMessageCount = clamped; });
+}
+
+// ——— Wait timeout setting ———————————————————————————————————————————
+
+export function getWaitTimeoutMinutes(): number {
+  const v = readSettings().waitTimeoutMinutes;
+  if (typeof v === "number" && Number.isFinite(v) && v >= 1) return v;
+  return ENV_WAIT_TIMEOUT ?? DEFAULT_WAIT_TIMEOUT_MINUTES;
+}
+
+export function setWaitTimeoutMinutes(minutes: number): void {
+  const clamped = Math.max(1, Math.round(minutes));
+  if (!Number.isFinite(clamped)) return;
+  updateSettings(s => { s.waitTimeoutMinutes = clamped; });
 }
 
 // ─── Guardrails setting ─────────────────────────────────────────────────────
@@ -336,7 +351,7 @@ export const config: AppConfig = {
   TELEGRAM_CHAT_ID,
   OPENAI_API_KEY,
   VOICE_ANALYSIS_URL,
-  WAIT_TIMEOUT_MINUTES,
+  get WAIT_TIMEOUT_MINUTES() { return getWaitTimeoutMinutes(); },
   DMN_ACTIVATION_HOURS,
   FILES_DIR,
   PKG_VERSION,

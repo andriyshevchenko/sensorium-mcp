@@ -8,15 +8,25 @@ const saveStatus = ref('')
 
 const bootstrapMessageCount = ref(50)
 const savedCount = ref(50)
+const waitTimeoutMinutes = ref(1440)
+const savedTimeout = ref(1440)
 
-const isDirty = computed(() => bootstrapMessageCount.value !== savedCount.value)
+const isDirty = computed(() =>
+  bootstrapMessageCount.value !== savedCount.value ||
+  waitTimeoutMinutes.value !== savedTimeout.value
+)
 
 async function load() {
   loading.value = true
   try {
-    const data = await api<{ count: number }>('/api/settings/bootstrap-message-count')
-    bootstrapMessageCount.value = data.count
-    savedCount.value = data.count
+    const [msgData, timeoutData] = await Promise.all([
+      api<{ count: number }>('/api/settings/bootstrap-message-count'),
+      api<{ minutes: number }>('/api/settings/wait-timeout'),
+    ])
+    bootstrapMessageCount.value = msgData.count
+    savedCount.value = msgData.count
+    waitTimeoutMinutes.value = timeoutData.minutes
+    savedTimeout.value = timeoutData.minutes
   } finally {
     loading.value = false
   }
@@ -26,21 +36,23 @@ async function save() {
   saving.value = true
   saveStatus.value = ''
   try {
-    const r = await fetch('/api/settings/bootstrap-message-count', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${getToken()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ count: bootstrapMessageCount.value }),
-    })
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({ error: r.statusText })) as { error?: string }
-      throw new Error(err.error ?? r.statusText)
+    const headers = { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' }
+    const [r1, r2] = await Promise.all([
+      fetch('/api/settings/bootstrap-message-count', { method: 'POST', headers, body: JSON.stringify({ count: bootstrapMessageCount.value }) }),
+      fetch('/api/settings/wait-timeout', { method: 'POST', headers, body: JSON.stringify({ minutes: waitTimeoutMinutes.value }) }),
+    ])
+    for (const r of [r1, r2]) {
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: r.statusText })) as { error?: string }
+        throw new Error(err.error ?? r.statusText)
+      }
     }
-    const data = await r.json() as { count: number }
-    savedCount.value = data.count
-    bootstrapMessageCount.value = data.count
+    const d1 = await r1.json() as { count: number }
+    const d2 = await r2.json() as { minutes: number }
+    savedCount.value = d1.count
+    bootstrapMessageCount.value = d1.count
+    savedTimeout.value = d2.minutes
+    waitTimeoutMinutes.value = d2.minutes
     saveStatus.value = 'Saved ✓'
     setTimeout(() => { saveStatus.value = '' }, 3000)
   } catch (e: unknown) {
@@ -111,14 +123,51 @@ onMounted(load)
           </div>
         </div>
 
+        <!-- Wait Timeout -->
+        <div class="glass rounded-xl p-4 border border-gray-700/50">
+          <label class="block text-sm font-medium mb-1">Poll Timeout (wait_for_instructions)</label>
+          <p class="text-xs text-textSecondary mb-3">
+            Maximum time (in minutes) a single <span class="font-mono text-accentLight">wait_for_instructions</span> call
+            will poll before timing out. Claude Code agents use the full value; Copilot agents are capped at 10 min.
+          </p>
+          <div class="flex items-center gap-4">
+            <input
+              v-model.number="waitTimeoutMinutes"
+              type="range"
+              min="1"
+              max="1440"
+              step="10"
+              class="flex-1 accent-accent"
+            />
+            <input
+              v-model.number="waitTimeoutMinutes"
+              type="number"
+              min="1"
+              max="10080"
+              class="w-24 px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono text-center focus:outline-none focus:border-accent transition"
+            />
+          </div>
+          <div class="flex justify-between text-xs text-muted mt-2">
+            <span>1 min</span>
+            <span class="font-mono">{{ waitTimeoutMinutes >= 60 ? Math.floor(waitTimeoutMinutes / 60) + 'h ' + (waitTimeoutMinutes % 60) + 'm' : waitTimeoutMinutes + ' min' }}</span>
+            <span>24h</span>
+          </div>
+        </div>
+
         <!-- Current State -->
         <div class="glass rounded-xl p-4 border border-gray-700/30 bg-surface/30">
           <div class="text-xs font-medium text-textSecondary uppercase tracking-wider mb-3">Current State</div>
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-3 gap-4">
             <div>
               <div class="text-xs text-muted mb-1">Message Buffer</div>
               <span :class="['text-sm font-medium', savedCount > 0 ? 'text-success' : 'text-textSecondary']">
                 {{ savedCount > 0 ? `${savedCount} messages` : 'Disabled' }}
+              </span>
+            </div>
+            <div>
+              <div class="text-xs text-muted mb-1">Poll Timeout</div>
+              <span class="text-sm font-medium text-textSecondary">
+                {{ savedTimeout >= 60 ? Math.floor(savedTimeout / 60) + 'h ' + (savedTimeout % 60) + 'm' : savedTimeout + ' min' }}
               </span>
             </div>
             <div>
