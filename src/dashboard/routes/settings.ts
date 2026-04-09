@@ -15,6 +15,8 @@ import {
     setGuardrailsEnabled,
     getBootstrapMessageCount,
     setBootstrapMessageCount,
+    getWaitTimeoutMinutes,
+    setWaitTimeoutMinutes,
     getKeepAliveEnabled,
     setKeepAliveEnabled,
     getKeepAliveThreadId,
@@ -166,6 +168,32 @@ export const handlePostBootstrapMessageCount: RouteHandler = ({ req, json }) => 
             }
             setBootstrapMessageCount(count);
             json({ ok: true, count: getBootstrapMessageCount() });
+        } catch (err) {
+            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+        }
+    })();
+    return true;
+};
+
+// ─── Wait timeout setting ────────────────────────────────────────────────────
+
+export const handleGetWaitTimeout: RouteHandler = ({ json }) => {
+    json({ minutes: getWaitTimeoutMinutes() });
+    return true;
+};
+
+export const handlePostWaitTimeout: RouteHandler = ({ req, json }) => {
+    void (async () => {
+        try {
+            const raw = await readBody(req);
+            const body = safeParseJSON(raw) as Record<string, unknown> | null;
+            const minutes = body && typeof body === "object" ? body.minutes : undefined;
+            if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes < 1) {
+                json({ error: "minutes must be a positive number" }, 400);
+                return;
+            }
+            setWaitTimeoutMinutes(minutes);
+            json({ ok: true, minutes: getWaitTimeoutMinutes() });
         } catch (err) {
             json({ error: err instanceof Error ? err.message : String(err) }, 500);
         }

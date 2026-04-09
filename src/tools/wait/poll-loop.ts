@@ -193,6 +193,15 @@ export async function handleWaitForInstructions(
 
   while (Date.now() < deadline) {
     try {
+    // Bail out immediately if the MCP transport signalled abort (client disconnected).
+    if (extra.signal.aborted) {
+      log.info(`[wait] Signal aborted — client disconnected, exiting poll loop.`);
+      state.lastToolCallAt = Date.now();
+      return {
+        content: [{ type: "text", text: "Client disconnected. Call wait_for_instructions again to resume." }],
+      };
+    }
+
     // Check for pending update — tell agent to use the watcher MCP server
     // CRITICAL: Do NOT tell agents to call any MCP tool on sensorium-mcp
     // here — the server is about to die. Agents must call await_server_ready on
@@ -298,7 +307,12 @@ export async function handleWaitForInstructions(
         };
       }
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, POLL_INTERVAL_MS);
+      if (!extra.signal.aborted) {
+        extra.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+      } else { clearTimeout(timer); resolve(); }
+    });
     writeActivityHeartbeat();
     if (effectiveThreadId !== undefined) writeThreadHeartbeat(effectiveThreadId);
     } catch (loopErr) {
