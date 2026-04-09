@@ -610,67 +610,92 @@ Return {"expire": [], "merge": []} if nothing needs pruning.`;
       timeoutMs: 60_000,
     });
 
-    const parsed = repairAndParseJSON(raw) as {
-      expire?: Array<{ noteId: string; reason: string }>;
-      merge?: Array<{
-        keepId: string;
-        expireId: string;
-        mergedContent?: string;
-        reason: string;
-      }>;
+    const parsed = repairAndParseJSON(raw);
+    if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error(`LLM returned non-object response: ${typeof parsed}`);
+    }
+    const result = parsed as {
+      expire?: unknown;
+      merge?: unknown;
     };
+    const expireActions = (Array.isArray(result.expire) ? result.expire : []) as Array<{
+      noteId: string;
+      reason: string;
+    }>;
+    const mergeActions = (Array.isArray(result.merge) ? result.merge : []) as Array<{
+      keepId: string;
+      expireId: string;
+      mergedContent?: string;
+      reason: string;
+    }>;
 
-    const expireActions = parsed.expire ?? [];
-    const mergeActions = parsed.merge ?? [];
+    // Only allow actions targeting notes in the candidate set — prevents
+    // LLM hallucinations from expiring pinned/guardrail notes outside the batch.
+    const candidateIds = new Set(candidates.map((c) => c.note_id));
     let expired = 0;
     let merged = 0;
     const nowStr = nowISO();
 
     if (!dryRun) {
-      for (const action of expireActions) {
-        if (!action.noteId) continue;
-        const exists = db.prepare(
-          `SELECT note_id FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`
-        ).get(action.noteId) as { note_id: string } | undefined;
-        if (!exists) {
-          details.push(`[skip-expire] ${action.noteId} not found or already expired`);
-          continue;
-        }
-        db.prepare(
-          `UPDATE semantic_notes SET valid_to = ?, updated_at = ? WHERE note_id = ?`
-        ).run(nowStr, nowStr, action.noteId);
-        expired++;
-        details.push(`[pruned] ${action.noteId}: ${action.reason}`);
-      }
-
-      for (const action of mergeActions) {
-        if (!action.keepId || !action.expireId) continue;
-        const keepNote = db.prepare(
-          `SELECT note_id, content FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`
-        ).get(action.keepId) as { note_id: string; content: string } | undefined;
-        const expireNote = db.prepare(
-          `SELECT note_id FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`
-        ).get(action.expireId) as { note_id: string } | undefined;
-
-        if (!keepNote || !expireNote) {
-          details.push(`[skip-merge] ${action.keepId}/${action.expireId} not found`);
-          continue;
-        }
-
-        // Update kept note with merged content when provided
-        if (action.mergedContent && action.mergedContent !== keepNote.content) {
+      // Wrap all mutations in a transaction so partial failures roll back.
+      db.transaction(() => {
+        for (const action of expireActions) {
+          if (!action.noteId) continue;
+          if (!candidateIds.has(action.noteId)) {
+            details.push(`[skip-expire] ${action.noteId} not in candidate set`);
+            continue;
+          }
+          const exists = db.prepare(
+            `SELECT note_id FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`
+          ).get(action.noteId) as { note_id: string } | undefined;
+          if (!exists) {
+            details.push(`[skip-expire] ${action.noteId} not found or already expired`);
+            continue;
+          }
           db.prepare(
-            `UPDATE semantic_notes SET content = ?, updated_at = ? WHERE note_id = ?`
-          ).run(action.mergedContent, nowStr, keepNote.note_id);
+            `UPDATE semantic_notes SET valid_to = ?, updated_at = ? WHERE note_id = ?`
+          ).run(nowStr, nowStr, action.noteId);
+          expired++;
+          details.push(`[pruned] ${action.noteId}: ${action.reason}`);
         }
 
-        // Expire the duplicate, linking to the kept note
-        db.prepare(
-          `UPDATE semantic_notes SET valid_to = ?, superseded_by = ?, updated_at = ? WHERE note_id = ?`
-        ).run(nowStr, keepNote.note_id, nowStr, action.expireId);
-        merged++;
-        details.push(`[merged] ${action.expireId} → ${action.keepId}: ${action.reason}`);
-      }
+        for (const action of mergeActions) {
+          if (!action.keepId || !action.expireId) continue;
+          if (action.keepId === action.expireId) {
+            details.push(`[skip-merge] ${action.keepId}: keepId === expireId`);
+            continue;
+          }
+          if (!candidateIds.has(action.keepId) || !candidateIds.has(action.expireId)) {
+            details.push(`[skip-merge] ${action.keepId}/${action.expireId} not in candidate set`);
+            continue;
+          }
+          const keepNote = db.prepare(
+            `SELECT note_id, content FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`
+          ).get(action.keepId) as { note_id: string; content: string } | undefined;
+          const expireNote = db.prepare(
+            `SELECT note_id FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`
+          ).get(action.expireId) as { note_id: string } | undefined;
+
+          if (!keepNote || !expireNote) {
+            details.push(`[skip-merge] ${action.keepId}/${action.expireId} not found`);
+            continue;
+          }
+
+          // Update kept note with merged content when provided
+          if (action.mergedContent && action.mergedContent !== keepNote.content) {
+            db.prepare(
+              `UPDATE semantic_notes SET content = ?, updated_at = ? WHERE note_id = ?`
+            ).run(action.mergedContent, nowStr, keepNote.note_id);
+          }
+
+          // Expire the duplicate, linking to the kept note
+          db.prepare(
+            `UPDATE semantic_notes SET valid_to = ?, superseded_by = ?, updated_at = ? WHERE note_id = ?`
+          ).run(nowStr, keepNote.note_id, nowStr, action.expireId);
+          merged++;
+          details.push(`[merged] ${action.expireId} → ${action.keepId}: ${action.reason}`);
+        }
+      })();
     } else {
       for (const action of expireActions) {
         details.push(`[dry-run] [prune] ${action.noteId}: ${action.reason}`);
