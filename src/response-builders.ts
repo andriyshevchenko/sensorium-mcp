@@ -6,7 +6,7 @@
  * time, uptime, operating-mode reminders, etc.).
  */
 
-import { config, getEffectiveAgentType } from "./config.js";
+import { config, getEffectiveAgentType, getThreadConversationMode } from "./config.js";
 import { describeADV, formatTimestamp } from "./utils.js";
 import { loadTemplate, renderTemplate } from "./data/templates.js";
 import type { VoiceAnalysisResult } from "./openai.js";
@@ -93,6 +93,7 @@ export function getReminders(
     UPTIME: `${uptimeMin}m`,
     VERSION: config.PKG_VERSION,
     MODE: autonomousMode ? "autonomous" : "standard",
+    CONVERSATION_MODE: threadId !== undefined ? getThreadConversationMode(threadId) : "concise",
   };
 
   // Two-layer reminder system:
@@ -139,9 +140,10 @@ export function getMediumReminder(
   const timeStr = formatTimestamp(now);
 
   const mode = autonomousMode ? "autonomous" : "standard";
+  const convMode = threadId !== undefined ? getThreadConversationMode(threadId) : "concise";
 
   return (
-    `\nthreadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m | mode: ${mode}`
+    `\nthreadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m | mode: ${mode} | conversation: ${convMode}`
   );
 }
 

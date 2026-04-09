@@ -32,6 +32,8 @@ export interface KeeperConfig {
   workingDirectory?: string;
   maxRetries?: number;
   cooldownMs?: number;
+  /** Called when the keeper detects the thread process has died. */
+  onDeath?: (threadId: number, sessionName: string) => void;
 }
 
 export interface KeeperHandle {
@@ -318,6 +320,10 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
     }
 
     consecutiveNotRunning++;
+    if (consecutiveNotRunning === 1) {
+      // First detection — notify operator immediately
+      config.onDeath?.(config.threadId, config.sessionName);
+    }
     if (consecutiveNotRunning < 2) {
       // Single failure may be a timeout; recheck quickly before restarting
       timer = setTimeout(() => void checkAndStart(), 10_000);

@@ -115,6 +115,29 @@ export function setThreadAgentType(threadId: number, agentType: AgentType): void
   });
 }
 
+// ─── Per-thread conversation mode ───────────────────────────────────────────
+
+export type ConversationMode = "concise" | "voice" | "standard";
+
+/** Returns the conversation mode for a thread, defaulting to "concise". */
+export function getThreadConversationMode(threadId: number): ConversationMode {
+  const map = readSettings().threadConversationModes as Record<string, unknown> | undefined;
+  if (map) {
+    const m = map[String(threadId)];
+    if (m === "concise" || m === "voice" || m === "standard") return m;
+  }
+  return "concise"; // concise is the default
+}
+
+/** Persists a per-thread conversation mode. */
+export function setThreadConversationMode(threadId: number, mode: ConversationMode): void {
+  updateSettings(s => {
+    const map = (s.threadConversationModes ?? {}) as Record<string, unknown>;
+    map[String(threadId)] = mode;
+    s.threadConversationModes = map;
+  });
+}
+
 /** Returns all per-thread agent-type overrides. */
 export function getAllThreadAgentTypes(): Record<string, AgentType> {
   const map = readSettings().threadAgentTypes as Record<string, string> | undefined;

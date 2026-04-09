@@ -574,6 +574,9 @@ async function applyKeeperSettings(): Promise<void> {
           mcpHttpSecret: CONFIG.mcpHttpSecret,
           maxRetries: settings.maxRetries,
           cooldownMs: settings.cooldownMs,
+          onDeath: (tid, name) => {
+            void notifyOperator(`💀 <b>${name}</b> session died — restarting…`, tid);
+          },
         });
         keepers.set(settings.threadId, { handle, settings });
       } catch (err) {

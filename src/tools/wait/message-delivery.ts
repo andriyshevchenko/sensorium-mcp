@@ -26,7 +26,7 @@ import {
 import { extractSearchKeywords, getReminders, getMediumReminder } from "../../response-builders.js";
 import type { TelegramClient } from "../../telegram.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../../utils.js";
-import { resolveKnowledgeThreadId } from "../../config.js";
+import { resolveKnowledgeThreadId, getThreadConversationMode } from "../../config.js";
 
 import type { ContentBlock, ToolResult } from "../../types.js";
 
@@ -325,8 +325,18 @@ export function assembleOperatorResponse(
     ? getMediumReminder(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode)
     : getReminders(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode);
 
-  const directive = "Follow the operator's instructions below."
-    + "\nIMPORTANT: The operator cannot see your stdout. To reply, use `report_progress`, `send_voice`, or `send_message_to_thread` — never print a response directly.";
+  let directive = "Follow the operator's instructions below."
+    + "\nIMPORTANT: The operator cannot see your stdout. To reply, use `report_progress`, `send_voice`, or `send_message_to_thread` \u2014 never print a response directly.";
+
+  // Conversation-mode directives
+  const convMode = ctx.effectiveThreadId !== undefined
+    ? getThreadConversationMode(ctx.effectiveThreadId)
+    : "concise";
+  if (convMode === "concise") {
+    directive += "\nConversation mode: CONCISE. Keep replies short (1\u20133 sentences). No preambles, no walls of text. If the operator wants detail, they\u2019ll ask.";
+  } else if (convMode === "voice") {
+    directive += "\nConversation mode: VOICE. Always respond with `send_voice` for conversational replies. Use spoken, natural language. Reserve text for code or structured data only.";
+  }
 
   return {
     content: [
