@@ -190,6 +190,7 @@ export async function handleWaitForInstructions(
   let lastScheduleCheck = 0;
   let lastKeepalive = Date.now();
   let lastDriveCheck = 0;
+  let lastRegistryUpdate = 0;
 
   while (Date.now() < deadline) {
     try {
@@ -314,7 +315,18 @@ export async function handleWaitForInstructions(
       } else { clearTimeout(timer); resolve(); }
     });
     writeActivityHeartbeat();
-    if (effectiveThreadId !== undefined) writeThreadHeartbeat(effectiveThreadId);
+    if (effectiveThreadId !== undefined) {
+      writeThreadHeartbeat(effectiveThreadId);
+      // Update thread_registry.lastActiveAt periodically (not on every poll
+      // iteration — every 60s is enough for reconnect detection).
+      if (Date.now() - lastRegistryUpdate > 60_000) {
+        lastRegistryUpdate = Date.now();
+        try {
+          const { updateThread } = await import("../../data/memory/thread-registry.js");
+          updateThread(getMemoryDb(), effectiveThreadId, { lastActiveAt: new Date().toISOString() });
+        } catch { /* non-critical */ }
+      }
+    }
     } catch (loopErr) {
       log.error(`Poll loop error: ${loopErr instanceof Error ? loopErr.message : String(loopErr)}`);
       continue;
