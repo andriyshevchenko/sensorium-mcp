@@ -13,6 +13,7 @@ import { getReminders } from "../../response-builders.js";
 import { backfillEmbeddings } from "../memory-tools.js";
 import { cleanupExpiredWorkers } from "../thread-lifecycle.js";
 import type { ToolResult } from "../../types.js";
+import { errorMessage } from "../../utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,13 +89,13 @@ function fireConsolidation(
         try {
           await runNarrativeGeneration(db, threadId);
         } catch (err) {
-          log.warn(`Narrative generation failed: ${err instanceof Error ? err.message : String(err)}`);
+          log.warn(`Narrative generation failed: ${errorMessage(err)}`);
         }
       }
     })
     .catch((err) => {
       log.error(
-        `[memory] ${label} consolidation error: ${err instanceof Error ? err.message : String(err)}`,
+        `[memory] ${label} consolidation error: ${errorMessage(err)}`,
       );
     });
 }
@@ -118,7 +119,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
       state.lastConsolidationAt = Date.now();
       fireConsolidation(getMemoryDb(), effectiveThreadId, "Idle-based", apiKey);
     }
-  } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`); }
+  } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${errorMessage(err)}`); }
 
   // Strategy 2: Episode-count consolidation — don't wait for idle.
   // If many episodes accumulated during active use, consolidate now.
@@ -132,7 +133,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
         fireConsolidation(db, effectiveThreadId, "Episode-count", apiKey);
       }
     }
-  } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`); }
+  } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${errorMessage(err)}`); }
 
   // Strategy 3: Time-based consolidation — every 4 hours regardless.
   // Ensures stale knowledge gets cleaned up even during low-activity periods.
@@ -144,7 +145,7 @@ export function runAutoConsolidation(ctx: DriveContext): void {
       log.info(`[memory] Time-based consolidation triggered (4h since last)`);
       fireConsolidation(db, effectiveThreadId, "Time-based", apiKey);
     }
-  } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`); }
+  } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${errorMessage(err)}`); }
 
   // Strategy 4: Worker thread auto-cleanup (every 5 minutes)
   if (Date.now() - lastWorkerCleanupAt > WORKER_CLEANUP_INTERVAL_MS) {

@@ -10,6 +10,7 @@ import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { errorMessage } from "./utils.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -197,7 +198,7 @@ async function openMcpSession(port: number, secret: string | null): Promise<stri
 
     return sessionId;
   } catch (err) {
-    keeperLog("ERROR", `initialize failed: ${err instanceof Error ? err.message : String(err)}`);
+    keeperLog("ERROR", `initialize failed: ${errorMessage(err)}`);
     return null;
   }
 }
@@ -268,7 +269,7 @@ async function callStartThread(config: KeeperConfig): Promise<boolean> {
     keeperLog("INFO", `start_thread response: ${text.slice(0, 200)}`);
     return !text.toLowerCase().includes("error");
   } catch (err) {
-    keeperLog("ERROR", `start_thread call failed: ${err instanceof Error ? err.message : String(err)}`);
+    keeperLog("ERROR", `start_thread call failed: ${errorMessage(err)}`);
     return false;
   } finally {
     await closeMcpSession(port, secret, sessionId);

@@ -89,6 +89,7 @@ import {
     handleUpdateThread,
     handleDeleteThread,
 } from "./routes/threads.js";
+import { errorMessage } from "../utils.js";
 
 // ─── Route table ────────────────────────────────────────────────────────────
 
@@ -165,7 +166,7 @@ export async function handleDashboardRequest(
     if (path.startsWith("/api/")) {
         if (authToken) {
             const auth = req.headers.authorization;
-            const providedToken = auth?.startsWith("Bearer ") ? auth.slice(7) : url.searchParams.get("token");
+            const providedToken = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
             if (!providedToken) {
                 res.writeHead(401, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -258,7 +259,7 @@ async function dispatchApiRoute(
         json({ error: "Not found" }, 404);
         return true;
     } catch (err) {
-        json({ error: err instanceof Error ? err.message : String(err) }, 500);
+        json({ error: errorMessage(err) }, 500);
         return true;
     }
 }

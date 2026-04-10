@@ -4,8 +4,9 @@
  * Handles: send_file, send_voice, schedule_wake_up, get_version
  */
 
-import { readFile } from "fs/promises";
-import { basename } from "node:path";
+import { readFile, stat } from "fs/promises";
+import { basename, resolve as resolvePath } from "node:path";
+import { homedir } from "node:os";
 import { checkMaintenanceFlag } from "../data/file-storage.js";
 import { saveAgentEpisodeSafe, type Database } from "../memory.js";
 import { textToSpeech, TTS_VOICES, type TTSVoice } from "../openai.js";
@@ -81,11 +82,22 @@ async function handleSendFile(
     let filename: string;
 
     if (filePath) {
-      // Read directly from disk — fast, no LLM context overhead.
-      buffer = await readFile(filePath);
+      // Validate path — prevent exfiltration of arbitrary files.
+      const resolved = resolvePath(filePath);
+      const home = homedir();
+      const cwd = process.cwd();
+      if (!resolved.startsWith(cwd) && !resolved.startsWith(home)) {
+        return errorResult("Error: filePath must be within the working directory or home directory.");
+      }
+      const info = await stat(resolved);
+      const MAX_SEND_FILE_BYTES = 100 * 1024 * 1024; // 100 MB
+      if (info.size > MAX_SEND_FILE_BYTES) {
+        return errorResult(`Error: file too large (${info.size} bytes, max ${MAX_SEND_FILE_BYTES}).`);
+      }
+      buffer = await readFile(resolved);
       filename = typeof args.filename === "string" && args.filename.trim()
         ? args.filename.trim()
-        : basename(filePath);
+        : basename(resolved);
     } else {
       buffer = Buffer.from(base64Data, "base64");
       filename = typeof args.filename === "string" && args.filename.trim()

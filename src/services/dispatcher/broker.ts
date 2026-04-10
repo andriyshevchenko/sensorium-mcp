@@ -13,12 +13,13 @@ import {
     renameSync,
     unlinkSync,
     writeFileSync,
-} from "fs";
-import { homedir } from "os";
-import { join } from "path";
+} from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { log } from "../../logger.js";
 import { isPidAlive } from "./lock.js";
 import type { Database } from "better-sqlite3";
+import { errorMessage } from "../../utils.js";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -144,7 +145,7 @@ export function writeReactionFile(reaction: StoredReaction): void {
         if (threadId !== undefined) {
             log.info(`[dispatcher] Reaction routed to thread ${threadId}`);
         }
-    } catch (err) { log.debug(`[dispatcher] writeReactionFile failed: ${err instanceof Error ? err.message : String(err)}`); }
+    } catch (err) { log.debug(`[dispatcher] writeReactionFile failed: ${errorMessage(err)}`); }
 }
 
 /**
@@ -173,15 +174,19 @@ export function readPendingReaction(threadId?: number): StoredReaction | null {
  * Reactions that belong to a *different* thread are left untouched.
  */
 function readGlobalReactionGuarded(requestingThreadId?: number): StoredReaction | null {
+    // Atomically consume the file by renaming first to prevent duplicate reads.
+    const tmp = REACTION_FILE + `.consume.${process.pid}`;
+    try { renameSync(REACTION_FILE, tmp); }
+    catch { return null; } // File doesn't exist or another process won the race.
+
     let raw: string;
-    try { raw = readFileSync(REACTION_FILE, "utf8"); }
-    catch { return null; }
+    try { raw = readFileSync(tmp, "utf8"); }
+    catch { try { unlinkSync(tmp); } catch { /* */ } return null; }
 
     let reaction: StoredReaction;
     try { reaction = JSON.parse(raw) as StoredReaction; }
     catch {
-        // Corrupt JSON — discard the file.
-        try { unlinkSync(REACTION_FILE); } catch { /* already gone */ }
+        try { unlinkSync(tmp); } catch { /* */ }
         return null;
     }
 
@@ -189,13 +194,14 @@ function readGlobalReactionGuarded(requestingThreadId?: number): StoredReaction 
     if (requestingThreadId !== undefined) {
         const ownerThread = lookupThreadForMessage(reaction.messageId);
         if (ownerThread !== undefined && ownerThread !== requestingThreadId) {
-            // Reaction belongs to a different thread — don't consume.
+            // Reaction belongs to a different thread — put it back.
+            try { renameSync(tmp, REACTION_FILE); } catch { /* */ }
             return null;
         }
     }
 
-    // Ownership confirmed (or no mapping) — consume the file.
-    try { unlinkSync(REACTION_FILE); } catch { /* already gone */ }
+    // Ownership confirmed — consume.
+    try { unlinkSync(tmp); } catch { /* */ }
     return reaction;
 }
 
@@ -257,11 +263,11 @@ function recoverOrphanedReads(): void {
                         renameSync(recovered, original);
                         unlinkSync(orphan);
                         log.info(`[dispatcher] Recovered orphaned file: ${f}`);
-                    } catch (err) { log.debug(`[dispatcher] Failed to recover orphaned file ${f}: ${err instanceof Error ? err.message : String(err)}`); }
+                    } catch (err) { log.debug(`[dispatcher] Failed to recover orphaned file ${f}: ${errorMessage(err)}`); }
                 }
             }
         }
-    } catch (err) { log.debug(`[dispatcher] recoverOrphanedReads scan failed: ${err instanceof Error ? err.message : String(err)}`); }
+    } catch (err) { log.debug(`[dispatcher] recoverOrphanedReads scan failed: ${errorMessage(err)}`); }
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +290,7 @@ export function writeOffset(offset: number): void {
         writeFileSync(tmp, String(offset), "utf8");
         renameSync(tmp, OFFSET_FILE); // atomic replace
     } catch (err) {
-        log.debug(`[dispatcher] writeOffset failed: ${err instanceof Error ? err.message : String(err)}`);
+        log.debug(`[dispatcher] writeOffset failed: ${errorMessage(err)}`);
     }
 }
 

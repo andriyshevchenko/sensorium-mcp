@@ -7,11 +7,12 @@
  */
 
 import BetterSqlite3 from "better-sqlite3";
-import { mkdirSync, readFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { log } from "../../logger.js";
 import { nowISO } from "./utils.js";
+import { errorMessage } from "../../utils.js";
 
 // Re-export the Database type so consumers don't need better-sqlite3 directly
 export type Database = BetterSqlite3.Database;
@@ -313,7 +314,7 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
 
       log.info(`[migration-18] Backfilled ${backfilled} threads from settings.json threadAgentTypes`);
     } catch (err) {
-      log.warn(`[migration-18] Backfill from settings.json failed: ${err instanceof Error ? err.message : String(err)}`);
+      log.warn(`[migration-18] Backfill from settings.json failed: ${errorMessage(err)}`);
     }
   },
   19: (db) => {
@@ -448,7 +449,7 @@ function runMigrations(db: Database): void {
         ).run(v, nowISO());
         log.info(`[memory] Migrated schema to version ${v}`);
       } catch (err) {
-        log.error(`[memory] Migration ${v} failed: ${err instanceof Error ? err.message : String(err)}. Will attempt self-heal.`);
+        log.error(`[memory] Migration ${v} failed: ${errorMessage(err)}. Will attempt self-heal.`);
         // Don't throw — allow ensureSchemaIntegrity to fix what it can
       }
     }
@@ -953,6 +954,6 @@ export function cleanupOldSentMessages(db: Database): void {
       log.info(`[memory] Cleaned up ${result.changes} old sent_messages entries.`);
     }
   } catch (err) {
-    log.warn(`[memory] sent_messages cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.warn(`[memory] sent_messages cleanup failed: ${errorMessage(err)}`);
   }
 }

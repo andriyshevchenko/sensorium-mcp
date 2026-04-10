@@ -17,6 +17,7 @@ export interface ChatMessage {
  * Lightweight chat completion using GPT-4o-mini.
  * Used for context preprocessing, not for agent dialogue.
  * Returns the assistant's text response.
+ * Retries on 429/5xx with exponential backoff (up to 3 attempts).
  */
 export async function chatCompletion(
     messages: ChatMessage[],
@@ -29,37 +30,50 @@ export async function chatCompletion(
         responseFormat?: { type: string };
     },
 ): Promise<string> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? 15_000);
-    try {
-        const body: Record<string, unknown> = {
-            model: options?.model ?? "gpt-4o-mini",
-            messages,
-            max_completion_tokens: options?.maxTokens ?? 300,
-            temperature: options?.temperature ?? 0,
-        };
-        if (options?.responseFormat) {
-            body.response_format = options.responseFormat;
-        }
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify(body),
-            signal: controller.signal,
-        });
-        if (!response.ok) {
-            throw new Error(`OpenAI chat API error: ${response.status} ${response.statusText}`);
-        }
-        const json = await response.json() as {
-            choices?: { message?: { content?: string } }[];
-        };
-        return json.choices?.[0]?.message?.content ?? "";
-    } finally {
-        clearTimeout(timer);
+    const body: Record<string, unknown> = {
+        model: options?.model ?? "gpt-4o-mini",
+        messages,
+        max_completion_tokens: options?.maxTokens ?? 300,
+        temperature: options?.temperature ?? 0,
+    };
+    if (options?.responseFormat) {
+        body.response_format = options.responseFormat;
     }
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? 15_000);
+        try {
+            const response = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+            if (response.status === 429 || response.status >= 500) {
+                if (attempt < MAX_RETRIES - 1) {
+                    const retryAfter = parseInt(response.headers.get("retry-after") ?? "", 10);
+                    const delayMs = (Number.isFinite(retryAfter) ? retryAfter * 1000 : 1000 * 2 ** attempt)
+                        + Math.random() * 500;
+                    await new Promise(r => setTimeout(r, delayMs));
+                    continue;
+                }
+            }
+            if (!response.ok) {
+                throw new Error(`OpenAI chat API error: ${response.status} ${response.statusText}`);
+            }
+            const json = await response.json() as {
+                choices?: { message?: { content?: string } }[];
+            };
+            return json.choices?.[0]?.message?.content ?? "";
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+    throw new Error("OpenAI chat API: max retries exhausted");
 }
 
 // ─── Embeddings ───────────────────────────────────────────────────────────

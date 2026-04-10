@@ -12,7 +12,7 @@ import type { Database } from "./schema.js";
 import { type Episode, rowToEpisode } from "./episodes.js";
 import { saveSemanticNote, searchByEmbedding, saveNoteEmbedding } from "./semantic.js";
 import { saveProcedure, enforceProcedureCap, getProcedureByName } from "./procedures.js";
-import { nowISO } from "./utils.js";
+import { nowISO, repairAndParseJSON } from "./utils.js";
 import { log } from "../../logger.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
 import {
@@ -20,6 +20,7 @@ import {
   generateEmbedding,
   type ChatMessage,
 } from "../../integrations/openai/chat.js";
+import { errorMessage } from "../../utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,8 @@ const VAGUE_PATTERNS = [
 
 /** Per-thread timestamp of the last successful reflection run. */
 const lastReflectionAt = new Map<number, number>();
+/** Per-thread guard against concurrent reflection runs. */
+const reflectionInProgress = new Set<number>();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -116,69 +119,6 @@ function gatherEpisodes(
   return allRows.map(rowToEpisode);
 }
 
-// ─── JSON repair (minimal — shared pattern with consolidation.ts) ────────────
-
-/** Return true if the character at `pos` is preceded by an odd number of backslashes (i.e. it is escaped). */
-function isEscaped(text: string, pos: number): boolean {
-  let count = 0;
-  let i = pos - 1;
-  while (i >= 0 && text[i] === "\\") { count++; i--; }
-  return count % 2 !== 0;
-}
-
-function repairAndParseJSON(raw: string): unknown {
-  try { return JSON.parse(raw); } catch { /* continue */ }
-
-  let text = raw.trim();
-
-  // Strip markdown fences
-  if (text.startsWith("```")) {
-    text = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
-    try { return JSON.parse(text); } catch { /* continue */ }
-  }
-
-  // Fix unescaped control characters inside strings
-  const chars: string[] = [];
-  let inStr = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '"' && !isEscaped(text, i)) { inStr = !inStr; chars.push(ch); continue; }
-    if (inStr) {
-      if (ch === "\n") { chars.push("\\n"); continue; }
-      if (ch === "\r") { chars.push("\\r"); continue; }
-      if (ch === "\t") { chars.push("\\t"); continue; }
-    }
-    chars.push(ch);
-  }
-  text = chars.join("");
-  try { return JSON.parse(text); } catch { /* continue */ }
-
-  // Close truncated structures
-  let quoteCount = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '"' && !isEscaped(text, i)) quoteCount++;
-  }
-  if (quoteCount % 2 !== 0) text += '"';
-
-  text = text.replace(/,\s*"[^"]*"\s*:\s*$/, "");
-  text = text.replace(/,\s*$/, "");
-
-  const opens: string[] = [];
-  let scanning = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"' && !isEscaped(text, i)) { scanning = !scanning; continue; }
-    if (scanning) continue;
-    if (c === "{" || c === "[") opens.push(c);
-    else if (c === "}" || c === "]") opens.pop();
-  }
-  for (let i = opens.length - 1; i >= 0; i--) {
-    text += opens[i] === "{" ? "}" : "]";
-  }
-
-  try { return JSON.parse(text); } catch { /* continue */ }
-  throw new SyntaxError(`Unable to repair reflection JSON (length=${raw.length}): ${raw.slice(0, 200)}…`);
-}
 
 // ─── Prompt ──────────────────────────────────────────────────────────────────
 
@@ -371,6 +311,22 @@ export async function runReflection(
     log.info("[reflection] Skipped — cooldown not elapsed");
     return { insights: [], processedEpisodeCount: 0, duration: Date.now() - startMs };
   }
+  if (reflectionInProgress.has(threadId)) {
+    log.info("[reflection] Skipped — already running for this thread");
+    return { insights: [], processedEpisodeCount: 0, duration: Date.now() - startMs };
+  }
+  reflectionInProgress.add(threadId);
+  try { return await runReflectionInner(db, threadId, startMs, maxRecent, oldSampleSize); }
+  finally { reflectionInProgress.delete(threadId); }
+}
+
+async function runReflectionInner(
+  db: Database,
+  threadId: number,
+  startMs: number,
+  maxRecent: number,
+  oldSampleSize: number,
+): Promise<ReflectionResult> {
 
   // ── Gate: environment ─────────────────────────────────────────────────────
   const apiKey = process.env.OPENAI_API_KEY;
@@ -421,7 +377,7 @@ export async function runReflection(
       timeoutMs: 90_000,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     log.error(`[reflection] LLM call failed: ${msg}`);
     return { insights: [], processedEpisodeCount: episodes.length, duration: Date.now() - startMs };
   }
@@ -431,7 +387,7 @@ export async function runReflection(
   try {
     parsed = repairAndParseJSON(raw) as { insights?: RawInsight[] };
   } catch (err) {
-    log.error(`[reflection] JSON parse failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`[reflection] JSON parse failed: ${errorMessage(err)}`);
     return { insights: [], processedEpisodeCount: episodes.length, duration: Date.now() - startMs };
   }
 

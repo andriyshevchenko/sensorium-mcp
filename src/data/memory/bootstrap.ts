@@ -6,9 +6,9 @@
  * compact refresh helpers.
  */
 
-import { statSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Database } from "./schema.js";
 import { getRecentEpisodes } from "./episodes.js";
 import {
@@ -146,9 +146,9 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
 
   const activeProcedures = db
     .prepare(
-      `SELECT * FROM procedures ORDER BY times_executed DESC, confidence DESC LIMIT 5`
+      `SELECT * FROM procedures WHERE thread_id = ? ORDER BY times_executed DESC, confidence DESC LIMIT 5`
     )
-    .all() as Record<string, unknown>[];
+    .all(knowledgeThreadId) as Record<string, unknown>[];
   const procedures = activeProcedures.map(rowToProcedure);
 
   const baseline = getVoiceBaseline(db);

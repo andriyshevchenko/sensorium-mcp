@@ -12,6 +12,7 @@ import type { TelegramClient } from "../../telegram.js";
 import { log } from "../../logger.js";
 import { getMediumReminder } from "../../response-builders.js";
 import type { TextBlock, ImageBlock, ToolResult } from "../../types.js";
+import { errorMessage } from "../../utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,7 +84,7 @@ function consumeReaction(ctx: ReactionContext): ConsumedReaction | null {
       });
     }
   } catch (err) {
-    log.warn(`[reaction-handler] Failed to save reaction episode: ${err instanceof Error ? err.message : String(err)}`);
+    log.warn(`[reaction-handler] Failed to save reaction episode: ${errorMessage(err)}`);
   }
 
   return { emoji, messageId, date, snippet: snippet ?? undefined, reactionNote };

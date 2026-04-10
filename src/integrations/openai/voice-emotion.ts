@@ -4,6 +4,7 @@
  */
 
 import { log } from "../../logger.js";
+import { errorMessage } from "../../utils.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -84,7 +85,7 @@ export async function analyzeVoiceEmotion(
         return result;
     } catch (err) {
         const elapsed = Date.now() - start;
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         log.error(`[voice-analysis] Failed after ${elapsed}ms: ${msg}`);
         return null;
     } finally {

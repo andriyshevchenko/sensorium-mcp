@@ -22,7 +22,7 @@ import {
   updateLastWaitCall,
 } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
-import { ALL_TOOL_DEFINITIONS } from "../tool-definitions.js";
+import { ALL_TOOL_DEFINITIONS } from "../tools/definitions.js";
 import { errorMessage, errorResult } from "../utils.js";
 import { getReminders, getShortReminder } from "../response-builders.js";
 import { log } from "../logger.js";

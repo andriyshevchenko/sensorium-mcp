@@ -30,6 +30,7 @@ import {
 import { classifyIntent } from "../../intent.js";
 import type { ToolResult, TextBlock, ImageBlock } from "../../types.js";
 import type { WaitToolContext, WaitToolExtra } from "./poll-loop.js";
+import { errorMessage } from "../../utils.js";
 
 // ---------------------------------------------------------------------------
 // processIncomingMessages
@@ -240,7 +241,7 @@ export function handlePollTimeout(
   // ── Auto-consolidation during idle (fire-and-forget) ────────────────────
   try {
     runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, apiKey: OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
-  } catch (err: unknown) { log.warn(`auto-consolidation failed: ${err instanceof Error ? err.message : String(err)}`); }
+  } catch (err: unknown) { log.warn(`auto-consolidation failed: ${errorMessage(err)}`); }
 
   // Periodic memory refresh — re-ground the agent every 10 polls (~5h)
   // (reduced from 5 since auto-inject now handles per-message context)

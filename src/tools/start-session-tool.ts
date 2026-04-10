@@ -372,13 +372,13 @@ export async function handleStartSession(
           })
           .catch((err) => {
             log.error(
-              `[memory] Startup consolidation error: ${err instanceof Error ? err.message : String(err)}`,
+              `[memory] Startup consolidation error: ${errorMessage(err)}`,
             );
           });
       }
     }
   } catch (err) {
-    log.debug(`[memory] Startup consolidation check failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+    log.debug(`[memory] Startup consolidation check failed (non-fatal): ${errorMessage(err)}`);
   }
   } // end if (!isReconnect) for consolidation
 

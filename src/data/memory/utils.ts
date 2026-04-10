@@ -6,7 +6,7 @@
  * voice-sig.ts, procedures.ts and bootstrap.ts.
  */
 
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 /** Generate a prefixed unique identifier (e.g. "sn_a1b2c3d4e5f6"). */
 export function generateId(prefix: string): string {
@@ -104,4 +104,72 @@ export function parseJsonObject(val: string | null | undefined): Record<string, 
   } catch {
     return {};
   }
+}
+
+// ── LLM JSON repair ──────────────────────────────────────────────────────────
+
+/** Return true if the character at `pos` is preceded by an odd number of backslashes (i.e. escaped). */
+function isEscaped(text: string, pos: number): boolean {
+  let count = 0;
+  let i = pos - 1;
+  while (i >= 0 && text[i] === "\\") { count++; i--; }
+  return count % 2 !== 0;
+}
+
+/**
+ * Best-effort repair of malformed JSON returned by LLMs.
+ * Handles: markdown fences, unescaped control chars, truncated structures.
+ */
+export function repairAndParseJSON(raw: string): unknown {
+  try { return JSON.parse(raw); } catch { /* continue */ }
+
+  let text = raw.trim();
+
+  // Strip markdown code fences
+  if (text.startsWith("```")) {
+    text = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+    try { return JSON.parse(text); } catch { /* continue */ }
+  }
+
+  // Fix unescaped control characters inside JSON string values
+  const chars: string[] = [];
+  let inStr = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"' && !isEscaped(text, i)) { inStr = !inStr; chars.push(ch); continue; }
+    if (inStr) {
+      if (ch === "\n") { chars.push("\\n"); continue; }
+      if (ch === "\r") { chars.push("\\r"); continue; }
+      if (ch === "\t") { chars.push("\\t"); continue; }
+    }
+    chars.push(ch);
+  }
+  text = chars.join("");
+  try { return JSON.parse(text); } catch { /* continue */ }
+
+  // Close truncated structures
+  let quoteCount = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '"' && !isEscaped(text, i)) quoteCount++;
+  }
+  if (quoteCount % 2 !== 0) text += '"';
+
+  text = text.replace(/,\s*"[^"]*"\s*:\s*$/, "");
+  text = text.replace(/,\s*$/, "");
+
+  const opens: string[] = [];
+  let scanning = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' && !isEscaped(text, i)) { scanning = !scanning; continue; }
+    if (scanning) continue;
+    if (c === "{" || c === "[") opens.push(c);
+    else if (c === "}" || c === "]") opens.pop();
+  }
+  for (let i = opens.length - 1; i >= 0; i--) {
+    text += opens[i] === "{" ? "}" : "]";
+  }
+
+  try { return JSON.parse(text); } catch { /* continue */ }
+  throw new SyntaxError(`Unable to repair JSON from LLM (length=${raw.length}): ${raw.slice(0, 200)}\u2026`);
 }

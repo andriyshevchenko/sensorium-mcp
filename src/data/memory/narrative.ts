@@ -18,6 +18,7 @@ import { type Episode } from "./episodes.js";
 import { type SemanticNote } from "./semantic.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
 import { parseJsonArray, parseJsonObject } from "./utils.js";
+import { errorMessage } from "../../utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -378,7 +379,7 @@ export async function runNarrativeGeneration(
         result.cached.push(res);
       }
     } catch (err) {
-      result.errors.push(`${res}: ${err instanceof Error ? err.message : String(err)}`);
+      result.errors.push(`${res}: ${errorMessage(err)}`);
     }
   }
 

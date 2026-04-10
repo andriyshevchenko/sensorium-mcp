@@ -36,10 +36,21 @@ export type RouteHandler = (args: RouteArgs) => boolean;
 
 // ─── Shared utilities ───────────────────────────────────────────────────────
 
-export function readBody(req: IncomingMessage): Promise<string> {
+const DEFAULT_MAX_BODY_BYTES = 1_048_576; // 1 MB
+
+export function readBody(req: IncomingMessage, maxBytes = DEFAULT_MAX_BODY_BYTES): Promise<string> {
     return new Promise((resolve, reject) => {
         const chunks: Buffer[] = [];
-        req.on("data", (chunk: Buffer) => chunks.push(chunk));
+        let total = 0;
+        req.on("data", (chunk: Buffer) => {
+            total += chunk.length;
+            if (total > maxBytes) {
+                req.destroy();
+                reject(new Error(`Request body exceeds ${maxBytes} bytes`));
+                return;
+            }
+            chunks.push(chunk);
+        });
         req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
         req.on("error", reject);
     });

@@ -8,8 +8,9 @@ import {
 } from "./semantic.js";
 import { log } from "../../logger.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
-import { nowISO } from "./utils.js";
+import { nowISO, repairAndParseJSON } from "./utils.js";
 import { chatCompletion, type ChatMessage } from "../../integrations/openai/chat.js";
+import { errorMessage } from "../../utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -49,80 +50,6 @@ function logConsolidation(db: Database, entry: ConsolidationLog): void {
   );
 }
 
-// ─── JSON repair ─────────────────────────────────────────────────────────────
-
-/**
- * Attempt to parse JSON with automatic repair for common LLM output issues:
- * - Markdown code fences wrapping the JSON
- * - Unescaped newlines/tabs inside string values
- * - Truncated output (unclosed strings, arrays, objects)
- */
-function repairAndParseJSON(raw: string): unknown {
-  // 1. Direct parse
-  try { return JSON.parse(raw); } catch { /* continue */ }
-
-  let text = raw.trim();
-
-  // 2. Strip markdown code fences
-  if (text.startsWith("```")) {
-    text = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
-    try { return JSON.parse(text); } catch { /* continue */ }
-  }
-
-  // 3. Fix unescaped control characters inside JSON string values
-  //    Walk character-by-character; when inside a quoted string, escape
-  //    raw \n, \r, \t that are not already escaped.
-  const chars: string[] = [];
-  let inStr = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const prev = i > 0 ? text[i - 1] : "";
-    if (ch === '"' && prev !== "\\") { inStr = !inStr; chars.push(ch); continue; }
-    if (inStr) {
-      if (ch === "\n") { chars.push("\\n"); continue; }
-      if (ch === "\r") { chars.push("\\r"); continue; }
-      if (ch === "\t") { chars.push("\\t"); continue; }
-    }
-    chars.push(ch);
-  }
-  text = chars.join("");
-  try { return JSON.parse(text); } catch { /* continue */ }
-
-  // 4. Handle truncation: close any open strings, arrays, objects
-  //    If there is an odd number of unescaped quotes, the last string is
-  //    unterminated — close it then remove any trailing partial key/value.
-  let quoteCount = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '"' && (i === 0 || text[i - 1] !== "\\")) quoteCount++;
-  }
-  if (quoteCount % 2 !== 0) {
-    // Unterminated string — close it
-    text += '"';
-  }
-
-  // Remove a trailing partial key-value (e.g. `"key": "val"` is fine,
-  // but `"key":` or `"key": ` with nothing after is not).
-  text = text.replace(/,\s*"[^"]*"\s*:\s*$/, "");
-  text = text.replace(/,\s*$/, "");
-
-  // Close open brackets / braces
-  const opens: string[] = [];
-  let scanning = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"' && (i === 0 || text[i - 1] !== "\\")) { scanning = !scanning; continue; }
-    if (scanning) continue;
-    if (c === "{" || c === "[") opens.push(c);
-    else if (c === "}" || c === "]") opens.pop();
-  }
-  for (let i = opens.length - 1; i >= 0; i--) {
-    text += opens[i] === "{" ? "}" : "]";
-  }
-
-  try { return JSON.parse(text); } catch { /* continue */ }
-
-  throw new SyntaxError(`Unable to repair JSON from LLM (length=${raw.length}): ${raw.slice(0, 200)}…`);
-}
 
 // ─── Intelligent Consolidation ───────────────────────────────────────────────
 
@@ -195,7 +122,7 @@ export async function runConsolidationAllThreads(
       allDetails.push(...pruneReport.details);
     }
   } catch (err) {
-    log.warn(`[memory] Pruning phase failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.warn(`[memory] Pruning phase failed: ${errorMessage(err)}`);
   }
 
   return {
@@ -298,7 +225,7 @@ export async function runIntelligentConsolidation(
         existingNotesSection = `\n\nExisting memory notes (potentially related):
 ${related.map(n => `[${n.noteId}] (${n.type}, conf: ${n.confidence}) ${n.content}`).join("\n")}`;
       }
-    } catch (err) { log.warn(`[consolidation] searchSemanticNotesRanked failed during contradiction scan: ${err instanceof Error ? err.message : String(err)}`); }
+    } catch (err) { log.warn(`[consolidation] searchSemanticNotesRanked failed during contradiction scan: ${errorMessage(err)}`); }
   }
 
   const systemPrompt = `You are a memory consolidation agent. Analyze these conversation episodes and extract knowledge that should be remembered across sessions.
@@ -438,7 +365,7 @@ Rules:
           supersededCount++;
           details.push(`[supersede] ${action.oldNoteId} → ${newId}: ${action.reason}`);
         } catch (err) {
-          details.push(`[supersede-error] ${action.oldNoteId}: ${err instanceof Error ? err.message : String(err)}`);
+          details.push(`[supersede-error] ${action.oldNoteId}: ${errorMessage(err)}`);
         }
       }
       if (supersededCount > 0) {
@@ -468,7 +395,7 @@ Rules:
     // retried on the next consolidation run.  Previously this was a silent
     // data-loss bug: a transient OpenAI outage would permanently lose the
     // episodes' knowledge without extracting anything.
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     log.error(`[memory] Intelligent consolidation failed (episodes NOT marked): ${msg}`);
     details.push(`Consolidation failed (will retry): ${msg}`);
   }
@@ -719,7 +646,7 @@ Return {"expire": [], "merge": []} if nothing needs pruning.`;
       details,
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     log.error(`[memory] Pruning failed: ${msg}`);
     return {
       notesScanned: candidates.length,
