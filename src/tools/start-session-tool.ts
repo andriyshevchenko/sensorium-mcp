@@ -195,6 +195,54 @@ export async function handleStartSession(
   }
 
   if (resolvedPreexisting) {
+    // Topic health check: verify the Telegram topic still exists.
+    // Runs on EVERY session start (including reconnects) so deleted topics
+    // are detected and remapped promptly.
+    if (!startupNotificationSent) {
+      try {
+        await telegram.sendMessage(TELEGRAM_CHAT_ID, "\u{1F504} Session resumed. Continuing in this thread.", undefined, session.currentThreadId);
+        startupNotificationSent = true;
+      } catch (err) {
+        const errMsg = errorMessage(err);
+        log.warn(
+          `[start_session] Probe failed for thread ${session.currentThreadId} in chat ${TELEGRAM_CHAT_ID}: ${errMsg}`,
+        );
+        const isThreadGone = /thread not found|topic.*(closed|deleted|not found)/i.test(errMsg);
+        if (isThreadGone) {
+          log.info(
+            `[start_session] Cached thread ${session.currentThreadId} is gone (${errMsg}). Creating replacement topic.`,
+          );
+          const topicName = customName ??
+            `Copilot \u2014 ${new Date().toLocaleString("en-GB", {
+              day: "2-digit", month: "short", year: "numeric",
+              hour: "2-digit", minute: "2-digit", hour12: false,
+            })}`;
+          try {
+            const newTopic = await telegram.createForumTopic(TELEGRAM_CHAT_ID, topicName);
+            const newTopicId = newTopic.message_thread_id;
+            log.info(
+              `[start_session] Remapped thread ${session.currentThreadId} \u2192 Telegram topic ${newTopicId}`,
+            );
+            try {
+              updateThread(getMemoryDb(), session.currentThreadId!, { telegramTopicId: newTopicId });
+            } catch (e) {
+              log.warn(`[start_session] Failed to persist topic remap: ${e instanceof Error ? e.message : String(e)}`);
+            }
+            if (customName) persistSession(TELEGRAM_CHAT_ID, topicName, session.currentThreadId!);
+            registerTopic(TELEGRAM_CHAT_ID, topicName, session.currentThreadId!);
+            startupNotificationSent = true;
+          } catch (createErr) {
+            log.warn(`[start_session] Remap failed, falling back to new session: ${errorMessage(createErr)}`);
+            if (session.currentThreadId !== undefined) purgeSchedules(session.currentThreadId);
+            if (customName) removeSession(TELEGRAM_CHAT_ID, customName);
+            resolvedPreexisting = false;
+            session.currentThreadId = undefined;
+          }
+        }
+        // Other errors (network, etc.) are non-fatal — proceed anyway.
+      }
+    }
+
     if (!isReconnect) {
     // Drain any stale messages from the thread file so they aren't
     // re-delivered in the next wait_for_instructions call.
@@ -211,60 +259,6 @@ export async function handleStartSession(
         );
         await telegram.sendMessage(TELEGRAM_CHAT_ID, notice, "MarkdownV2", session.currentThreadId);
       } catch { /* non-fatal */ }
-    }
-
-    // Resume mode: verify the thread is still alive by sending a message.
-    // If the topic was deleted, drop the cached mapping and fall through to
-    // create a new topic.
-    try {
-      // Use plain text for probe — avoids MarkdownV2 parsing failures being mistaken for dead threads
-      await telegram.sendMessage(TELEGRAM_CHAT_ID, "\u{1F504} Session resumed. Continuing in this thread.", undefined, session.currentThreadId);
-      startupNotificationSent = true;
-    } catch (err) {
-      const errMsg = errorMessage(err);
-      log.warn(
-        `[start_session] Probe failed for thread ${session.currentThreadId} in chat ${TELEGRAM_CHAT_ID}: ${errMsg}`,
-      );
-      // Telegram returns "Bad Request: message thread not found" or
-      // "Bad Request: the topic was closed" for deleted/closed topics.
-      const isThreadGone = /thread not found|topic.*(closed|deleted|not found)/i.test(errMsg);
-      if (isThreadGone) {
-        log.info(
-          `[start_session] Cached thread ${session.currentThreadId} is gone (${errMsg}). Creating replacement topic.`,
-        );
-        // Create a replacement topic and remap — keeps the logical threadId intact
-        // so memory, schedules, and keep-alive config are preserved.
-        const topicName = customName ??
-          `Copilot \u2014 ${new Date().toLocaleString("en-GB", {
-            day: "2-digit", month: "short", year: "numeric",
-            hour: "2-digit", minute: "2-digit", hour12: false,
-          })}`;
-        try {
-          const newTopic = await telegram.createForumTopic(TELEGRAM_CHAT_ID, topicName);
-          const newTopicId = newTopic.message_thread_id;
-          log.info(
-            `[start_session] Remapped thread ${session.currentThreadId} → Telegram topic ${newTopicId}`,
-          );
-          // Persist the mapping so future Telegram API calls resolve correctly
-          try {
-            updateThread(getMemoryDb(), session.currentThreadId!, { telegramTopicId: newTopicId });
-          } catch (e) {
-            log.warn(`[start_session] Failed to persist topic remap: ${e instanceof Error ? e.message : String(e)}`);
-          }
-          // Update session store so name-based lookups still find this thread
-          if (customName) persistSession(TELEGRAM_CHAT_ID, topicName, session.currentThreadId!);
-          registerTopic(TELEGRAM_CHAT_ID, topicName, session.currentThreadId!);
-          startupNotificationSent = true;
-        } catch (createErr) {
-          log.warn(`[start_session] Remap failed, falling back to new session: ${errorMessage(createErr)}`);
-          // Drop the stale mapping and purge any scheduled tasks.
-          if (session.currentThreadId !== undefined) purgeSchedules(session.currentThreadId);
-          if (customName) removeSession(TELEGRAM_CHAT_ID, customName);
-          resolvedPreexisting = false;
-          session.currentThreadId = undefined;
-        }
-      }
-      // Other errors (network, etc.) are non-fatal — proceed anyway.
     }
     } // end if (!isReconnect)
   }
