@@ -180,6 +180,14 @@ async function pollOnce(
                 } catch (e) { log.debug(`[dispatcher] registerTopic failed: ${errorMessage(e)}`); }
             }
 
+            // Handle renamed topics — update topic_registry so messages route correctly
+            if (m.forum_topic_edited && m.message_thread_id && m.forum_topic_edited.name) {
+                try {
+                    registerTopic(chatId, m.forum_topic_edited.name, m.message_thread_id);
+                    log.info(`[dispatcher] Topic renamed → "${m.forum_topic_edited.name}" (thread ${m.message_thread_id})`);
+                } catch (e) { log.debug(`[dispatcher] topic rename failed: ${errorMessage(e)}`); }
+            }
+
             // Skip Telegram service messages (pinned_message, new_chat_members,
             // etc.) — they have no user content and would be delivered as
             // "unsupported message type" to the agent.

@@ -41,6 +41,7 @@ export interface TelegramMessage {
   sticker?: TelegramSticker;
   animation?: TelegramAnimation;
   forum_topic_created?: { name: string };
+  forum_topic_edited?: { name?: string };
 }
 
 export interface PhotoSize {
