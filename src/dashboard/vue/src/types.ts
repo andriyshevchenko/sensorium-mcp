@@ -64,6 +64,7 @@ export interface ThreadEntry {
   autonomousMode: boolean
   telegramTopicId: number | null
   identityPrompt: string | null
+  workingDirectory: string | null
   createdAt: string
   lastActiveAt: string | null
   sessionResetAt: string | null

@@ -490,6 +490,7 @@ interface KeeperSettings {
   cooldownMs: number;
   client: string;
   sessionName: string;
+  workingDirectory?: string;
 }
 
 /**
@@ -516,6 +517,7 @@ async function readAllKeeperSettings(): Promise<KeeperSettings[] | null> {
         cooldownMs: (typeof r.cooldownMs === 'number' ? r.cooldownMs : null) ?? 300_000,
         client: typeof r.client === 'string' ? r.client : 'claude',
         sessionName: (typeof r.name === 'string' ? r.name : null) ?? `thread-${r.threadId}`,
+        workingDirectory: typeof r.workingDirectory === 'string' ? r.workingDirectory : undefined,
       }));
   } catch {
     return null;
@@ -526,7 +528,8 @@ function keeperSettingsChanged(a: KeeperSettings, b: KeeperSettings): boolean {
   return a.maxRetries !== b.maxRetries
     || a.cooldownMs !== b.cooldownMs
     || a.client !== b.client
-    || a.sessionName !== b.sessionName;
+    || a.sessionName !== b.sessionName
+    || a.workingDirectory !== b.workingDirectory;
 }
 
 let applyingSettings = false;
@@ -572,6 +575,7 @@ async function applyKeeperSettings(): Promise<void> {
           client: settings.client,
           mcpHttpPort: CONFIG.mcpHttpPort,
           mcpHttpSecret: CONFIG.mcpHttpSecret,
+          workingDirectory: settings.workingDirectory,
           maxRetries: settings.maxRetries,
           cooldownMs: settings.cooldownMs,
           onDeath: (tid, name) => {

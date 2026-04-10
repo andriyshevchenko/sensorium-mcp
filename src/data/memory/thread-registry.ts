@@ -25,6 +25,7 @@ export interface ThreadRegistryEntry {
   autonomousMode: boolean;
   telegramTopicId: number | null;
   identityPrompt: string | null;
+  workingDirectory: string | null;
   createdAt: string;
   lastActiveAt: string | null;
   sessionResetAt: string | null;
@@ -51,6 +52,7 @@ function rowToEntry(row: Record<string, unknown>): ThreadRegistryEntry {
     autonomousMode: !!(row.autonomous_mode as number),
     telegramTopicId: (row.telegram_topic_id as number | null) ?? null,
     identityPrompt: (row.identity_prompt as string | null) ?? null,
+    workingDirectory: (row.working_directory as string | null) ?? null,
     createdAt: row.created_at as string,
     lastActiveAt: (row.last_active_at as string | null) ?? null,
     sessionResetAt: (row.session_reset_at as string | null) ?? null,
@@ -72,13 +74,14 @@ export function registerThread(
     maxRetries?: number;
     cooldownMs?: number;
     keepAlive?: boolean;
+    workingDirectory?: string;
   },
 ): ThreadRegistryEntry {
   const now = nowISO();
   db.prepare(
     `INSERT INTO thread_registry
-       (thread_id, name, type, root_thread_id, badge, client, max_retries, cooldown_ms, keep_alive, created_at, last_active_at, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+       (thread_id, name, type, root_thread_id, badge, client, max_retries, cooldown_ms, keep_alive, working_directory, created_at, last_active_at, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
      ON CONFLICT(thread_id) DO UPDATE SET
        name = excluded.name,
        type = CASE WHEN thread_registry.keep_alive = 1 THEN thread_registry.type ELSE excluded.type END,
@@ -88,6 +91,7 @@ export function registerThread(
        max_retries = excluded.max_retries,
        cooldown_ms = excluded.cooldown_ms,
        keep_alive = CASE WHEN thread_registry.keep_alive = 1 THEN 1 ELSE excluded.keep_alive END,
+       working_directory = COALESCE(excluded.working_directory, thread_registry.working_directory),
        last_active_at = excluded.last_active_at,
        status = 'active'`,
   ).run(
@@ -100,6 +104,7 @@ export function registerThread(
     entry.maxRetries ?? 5,
     entry.cooldownMs ?? 300000,
     entry.keepAlive ? 1 : 0,
+    entry.workingDirectory ?? null,
     now,
     now,
   );
@@ -156,7 +161,7 @@ export function getActiveThreads(db: Database): ThreadRegistryEntry[] {
 export function updateThread(
   db: Database,
   threadId: number,
-  updates: Partial<Pick<ThreadRegistryEntry, 'name' | 'status' | 'lastActiveAt' | 'keepAlive' | 'dailyRotation' | 'autonomousMode' | 'client' | 'maxRetries' | 'cooldownMs' | 'badge' | 'telegramTopicId' | 'identityPrompt'>>,
+  updates: Partial<Pick<ThreadRegistryEntry, 'name' | 'status' | 'lastActiveAt' | 'keepAlive' | 'dailyRotation' | 'autonomousMode' | 'client' | 'maxRetries' | 'cooldownMs' | 'badge' | 'telegramTopicId' | 'identityPrompt' | 'workingDirectory'>>,
 ): boolean {
   const setClauses: string[] = [];
   const params: unknown[] = [];
@@ -173,6 +178,7 @@ export function updateThread(
   if (updates.badge !== undefined) { setClauses.push('badge = ?'); params.push(updates.badge); }
   if (updates.telegramTopicId !== undefined) { setClauses.push('telegram_topic_id = ?'); params.push(updates.telegramTopicId); }
   if (updates.identityPrompt !== undefined) { setClauses.push('identity_prompt = ?'); params.push(updates.identityPrompt); }
+  if (updates.workingDirectory !== undefined) { setClauses.push('working_directory = ?'); params.push(updates.workingDirectory); }
 
   if (setClauses.length === 0) return false;
 

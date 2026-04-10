@@ -109,9 +109,9 @@ export async function handleStartThread(
   const mode = typeof args.mode === "string" ? args.mode : "";
   const name = typeof args.name === "string" ? args.name.trim() : "";
   const task = typeof args.task === "string" ? args.task.trim() : "";
-  const workingDirectory = typeof args.workingDirectory === "string"
+  let workingDirectory = typeof args.workingDirectory === "string"
     ? args.workingDirectory.trim()
-    : process.cwd();
+    : "";
 
   const parseNumArg = (v: unknown): number | undefined => {
     const parsed = typeof v === "number" ? v
@@ -192,6 +192,19 @@ export async function handleStartThread(
   // ── Verify CLI availability ─────────────────────────────────────────
   let cliPath: string;
   let mcpConfigPath: string | undefined;
+
+  // Resolve workingDirectory: prefer explicit arg → stored in DB → process.cwd()
+  if (!workingDirectory && explicitThreadId) {
+    try {
+      const db = initMemoryDb();
+      const stored = getThread(db, explicitThreadId);
+      if (stored?.workingDirectory) {
+        workingDirectory = stored.workingDirectory;
+        log.info(`[start_thread] Using stored workingDirectory for thread ${explicitThreadId}: ${workingDirectory}`);
+      }
+    } catch { /* best-effort DB lookup */ }
+  }
+  if (!workingDirectory) workingDirectory = process.cwd();
 
   if (agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex") {
     const copilotPath = resolveCopilotPath();
@@ -349,8 +362,8 @@ export async function handleStartThread(
     const db = initMemoryDb();
     const existing = getThread(db, threadId);
     if (existing && (mode === "resume" || (explicitThreadId !== undefined && !mode))) {
-      // Resume: only update client + lastActiveAt, preserve type/keepAlive
-      updateThread(db, threadId, { client: agentType, lastActiveAt: new Date().toISOString(), status: 'active' });
+      // Resume: update client + lastActiveAt + workingDirectory, preserve type/keepAlive
+      updateThread(db, threadId, { client: agentType, lastActiveAt: new Date().toISOString(), status: 'active', workingDirectory });
     } else {
       registerThread(db, {
         threadId,
@@ -359,6 +372,7 @@ export async function handleStartThread(
         rootThreadId: memorySourceThreadId ?? rootThreadId ?? parentThreadId ?? undefined,
         badge: mode || threadRegistryType,
         client: agentType,
+        workingDirectory,
       });
     }
   } catch { /* registration is best-effort */ }

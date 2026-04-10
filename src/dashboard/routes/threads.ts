@@ -40,8 +40,8 @@ const VALID_CLIENTS = ["claude", "copilot", "codex", "openai_codex", "copilot_cl
 /** Extract valid update fields from a request body. Returns an error string on validation failure. */
 function buildThreadUpdates(
     body: Record<string, unknown>,
-): Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge" | "identityPrompt">> | string {
-    const updates: Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge" | "identityPrompt">> = {};
+): Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge" | "identityPrompt" | "workingDirectory">> | string {
+    const updates: Partial<Pick<ThreadRegistryEntry, "name" | "status" | "keepAlive" | "dailyRotation" | "autonomousMode" | "client" | "maxRetries" | "cooldownMs" | "badge" | "identityPrompt" | "workingDirectory">> = {};
     if (typeof body.name === "string" && body.name.trim()) updates.name = body.name.trim();
     if (typeof body.status === "string") {
         if (!(VALID_STATUSES as readonly string[]).includes(body.status)) {
@@ -73,6 +73,8 @@ function buildThreadUpdates(
     if (typeof body.badge === "string") updates.badge = body.badge;
     if (typeof body.identityPrompt === "string") updates.identityPrompt = body.identityPrompt;
     if (body.identityPrompt === null) updates.identityPrompt = null;
+    if (typeof body.workingDirectory === "string" && body.workingDirectory.trim()) updates.workingDirectory = body.workingDirectory.trim();
+    if (body.workingDirectory === null) updates.workingDirectory = null;
     return updates;
 }
 
@@ -155,6 +157,9 @@ export const handleCreateThread: RouteHandler = ({ req, json, db }) => {
                     ? body.client
                     : undefined;
             const keepAlive = typeof body.keepAlive === "boolean" ? body.keepAlive : undefined;
+            const workingDirectory = typeof body.workingDirectory === "string" && body.workingDirectory.trim()
+                ? body.workingDirectory.trim()
+                : undefined;
 
             // Check for duplicate
             const existing = getThread(db, threadId);
@@ -171,6 +176,7 @@ export const handleCreateThread: RouteHandler = ({ req, json, db }) => {
                 badge: typeof body.badge === "string" ? body.badge : undefined,
                 client,
                 keepAlive,
+                workingDirectory,
             });
 
             json(entry, 201);
