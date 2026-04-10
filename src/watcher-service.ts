@@ -11,6 +11,7 @@ import { CallToolRequestSchema, isInitializeRequest, ListToolsRequestSchema } fr
 import { startClaudeKeeper, type KeeperHandle } from "./claude-keeper.js";
 import { cleanupExpiredWorkers } from "./tools/thread-lifecycle.js";
 import { initMemoryDb } from "./data/memory/schema.js";
+import { errorMessage } from "./utils.js";
 
 process.on("uncaughtException", (err) => {
   console.error(`[fatal] Uncaught exception: ${err.stack ?? err}`);
@@ -107,7 +108,7 @@ async function notifyOperator(text: string, threadId?: number): Promise<void> {
       signal: AbortSignal.timeout(10_000),
     });
   } catch (err) {
-    log("WARN", `Telegram notify failed: ${err instanceof Error ? err.message : String(err)}`);
+    log("WARN", `Telegram notify failed: ${errorMessage(err)}`);
   }
 }
 function msUntilHour(h: number): number {
@@ -122,9 +123,8 @@ function safeRead(p: string): string | null {
 function alive(pid: number): boolean {
   if (process.platform === "win32") {
     try {
-      const out = execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: "utf-8", timeout: 5000 });
-      // Strict: check that PID appears as a standalone number token, not as substring of a name
-      return new RegExp(`\\b${pid}\\b`).test(out);
+      const result = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf-8", timeout: 5000, windowsHide: true });
+      return result.status === 0 && new RegExp(`\\b${pid}\\b`).test(result.stdout);
     } catch { return false; }
   }
   try { process.kill(pid, 0); return true; } catch { return false; }
@@ -229,13 +229,15 @@ async function stopMcpServer(): Promise<void> {
   if (process.platform === "win32") {
     try {
       const port = CONFIG.mcpHttpPort || 3847;
-      const netstat = execSync(`netstat -aon | findstr ":${port}.*LISTENING"`, { timeout: 5000, encoding: "utf8" });
-      const m = netstat.match(/\s(\d+)\s*$/m);
+      const netstat = spawnSync("cmd", ["/c", `netstat -aon | findstr ":${port}.*LISTENING"`], { timeout: 5000, encoding: "utf8", windowsHide: true });
+      const m = (netstat.stdout || "").match(/\s(\d+)\s*$/m);
       if (m) {
         const orphanPid = parseInt(m[1], 10);
-        log("INFO", `Killing orphan process PID=${orphanPid} still on port ${port}`);
-        try { execSync(`taskkill /F /T /PID ${orphanPid}`, { timeout: 10000 }); } catch { /**/ }
-        await sleep(2000);
+        if (Number.isFinite(orphanPid) && orphanPid > 0) {
+          log("INFO", `Killing orphan process PID=${orphanPid} still on port ${port}`);
+          spawnSync("taskkill", ["/F", "/T", "/PID", String(orphanPid)], { timeout: 10000, windowsHide: true });
+          await sleep(2000);
+        }
       }
     } catch { /* no process on port — good */ }
   }
@@ -584,7 +586,7 @@ async function applyKeeperSettings(): Promise<void> {
         });
         keepers.set(settings.threadId, { handle, settings });
       } catch (err) {
-        log("ERROR", `Failed to start keeper for thread ${settings.threadId}: ${err instanceof Error ? err.message : String(err)}`);
+        log("ERROR", `Failed to start keeper for thread ${settings.threadId}: ${errorMessage(err)}`);
       }
     }
   }
@@ -816,7 +818,7 @@ export async function startWatcherService(): Promise<void> {
         const result = await cleanupExpiredWorkers(db, telegram, chatId);
         if (result.cleaned > 0) log("INFO", `[worker-cleanup] Cleaned ${result.cleaned} expired worker threads`);
       } catch (err) {
-        log("WARN", `[worker-cleanup] ${err instanceof Error ? err.message : String(err)}`);
+        log("WARN", `[worker-cleanup] ${errorMessage(err)}`);
       }
     })();
   }, 5 * 60 * 1000);

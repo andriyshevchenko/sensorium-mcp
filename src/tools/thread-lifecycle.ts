@@ -5,7 +5,7 @@
  * from MCP tool-handler logic.
  */
 
-import { execSync, spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +16,23 @@ import { synthesizeGhostMemory } from "../memory.js";
 import { archiveThread, getAllThreads, getThread, resolveTelegramTopicId, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
+
+/** Env vars that must NOT leak to spawned agent processes. */
+const ENV_DENYLIST = new Set([
+  "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "MCP_HTTP_SECRET",
+  "DASHBOARD_TOKEN", "MCP_START_COMMAND", "WATCHER_START_COMMAND",
+]);
+
+/** Build a sanitized copy of process.env with secrets removed. */
+function sanitizeSpawnEnv(extra?: Record<string, string | undefined>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!ENV_DENYLIST.has(k)) env[k] = v;
+  }
+  if (extra) Object.assign(env, extra);
+  return env;
+}
+
 import {
   COPILOT_HOME_DIR,
   DEFAULT_COPILOT_MODEL,
@@ -46,17 +63,7 @@ interface SpawnedThread {
 const spawnedThreads: SpawnedThread[] = [];
 /** True while spawnKeepAliveThreads is killing stale PIDs — blocks concurrent spawns. */
 let startupCleanupInProgress = false;
-
-function parseTasklistPids(output: string): Set<number> {
-  const alive = new Set<number>();
-  for (const line of output.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || /^INFO:/i.test(trimmed)) continue;
-    const match = trimmed.match(/\s+(\d+)\s+/);
-    if (match) alive.add(Number(match[1]));
-  }
-  return alive;
-}
+const MAX_CONCURRENT_THREADS = 20;
 
 /**
  * Check if a process with the given PID is still running.
@@ -117,13 +124,6 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
  */
 export function isThreadRunning(threadId: number): boolean {
   return findAliveThread(threadId) !== undefined;
-}
-
-/**
- * Return a shallow copy of all in-memory spawned thread entries.
- */
-function getAllSpawnedThreads(): SpawnedThread[] {
-  return [...spawnedThreads];
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +393,61 @@ async function handleProcessExit(
 }
 
 // ---------------------------------------------------------------------------
+// Shared post-spawn registration
+// ---------------------------------------------------------------------------
+
+interface RegisterSpawnOpts {
+  child: ChildProcess;
+  threadId: number;
+  name: string;
+  logFilePath: string;
+  configPath: string;
+  agentLabel: string;
+  memorySourceThreadId?: number;
+  memoryTargetThreadId?: number;
+  threadType?: 'worker' | 'branch';
+}
+
+/**
+ * Common post-spawn bookkeeping shared by all agent spawn functions:
+ * PID validation, PID file write, in-memory registry, exit handler, unref.
+ */
+function registerSpawnedProcess(opts: RegisterSpawnOpts): { pid: number; logFile: string } | { error: string } {
+  const { child, threadId, name, logFilePath, configPath, agentLabel } = opts;
+  const pid = child.pid;
+  if (pid === undefined) {
+    return { error: `${agentLabel} process spawned but PID is undefined — spawn may have failed.` };
+  }
+
+  const pidFilePath = join(PIDS_DIR, `${threadId}.pid`);
+  try {
+    writeFileSync(pidFilePath, JSON.stringify({ pid, name, configPath, startedAt: Date.now() }), "utf-8");
+  } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
+
+  const entry: SpawnedThread = {
+    pid,
+    threadId,
+    name,
+    startedAt: Date.now(),
+    createdAt: Date.now(),
+    logFile: logFilePath,
+    ...(opts.memorySourceThreadId !== undefined ? { memorySourceThreadId: opts.memorySourceThreadId } : {}),
+    ...(opts.memoryTargetThreadId !== undefined ? { memoryTargetThreadId: opts.memoryTargetThreadId } : {}),
+    ...(opts.threadType ? { threadType: opts.threadType } : {}),
+  };
+  spawnedThreads.push(entry);
+
+  child.on("exit", (code) => {
+    handleProcessExit(code, threadId, pid, pidFilePath, entry, agentLabel)
+      .catch(err => log.warn(`[exit] cleanup failed: ${err}`));
+  });
+  child.unref();
+
+  log.info(`[start_thread] Spawned ${agentLabel} process PID=${pid} for thread ${threadId} ("${name}")`);
+  return { pid, logFile: logFilePath };
+}
+
+// ---------------------------------------------------------------------------
 // Spawn agent process
 // ---------------------------------------------------------------------------
 
@@ -408,6 +463,9 @@ export function spawnAgentProcess(
 ): { pid: number; logFile: string } | { error: string } {
   if (startupCleanupInProgress) {
     return { error: "Server startup cleanup in progress — try again in a few seconds" };
+  }
+  if (spawnedThreads.length >= MAX_CONCURRENT_THREADS) {
+    return { error: `Concurrent thread limit reached (${MAX_CONCURRENT_THREADS}). Wait for existing threads to finish.` };
   }
   if (workingDirectory && !existsSync(workingDirectory)) {
     const fallback = tmpdir();
@@ -444,13 +502,10 @@ export function spawnAgentProcess(
   const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath);
 
   // On Windows, ensure CLAUDE_CODE_GIT_BASH_PATH is set for the child process.
-  const spawnEnv = { ...process.env };
-  if (memorySourceThreadId !== undefined) {
-    spawnEnv.MEMORY_SOURCE_THREAD_ID = String(memorySourceThreadId);
-  }
-  if (memoryTargetThreadId !== undefined) {
-    spawnEnv.MEMORY_TARGET_THREAD_ID = String(memoryTargetThreadId);
-  }
+  const spawnEnv = sanitizeSpawnEnv({
+    ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}),
+    ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}),
+  });
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) {
     const gitBashCandidates = [
       join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"),
@@ -484,41 +539,12 @@ export function spawnAgentProcess(
   // Release the parent's copy of the log file descriptor
   closeSync(logFd);
 
-  const pid = child.pid;
-  if (pid === undefined) {
-    return { error: "Claude process spawned but PID is undefined — spawn may have failed." };
-  }
-
-  // Write PID file with metadata for tracking and re-spawn after updates
-  const pidFilePath = join(PIDS_DIR, `${threadId}.pid`);
-  try {
-    const pidMeta = { pid, name, configPath: effectiveConfigPath, startedAt: Date.now() };
-    writeFileSync(pidFilePath, JSON.stringify(pidMeta), "utf-8");
-  } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
-
-  // Track spawned process
-  const entry: SpawnedThread = {
-    pid,
-    threadId,
-    name,
-    startedAt: Date.now(),
-    createdAt: Date.now(),
-    logFile: logFilePath,
-    ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
-    ...(memoryTargetThreadId !== undefined ? { memoryTargetThreadId } : {}),
-    ...(threadType ? { threadType } : {}),
-  };
-  spawnedThreads.push(entry);
-
-  // Monitor process exit — clean up stale entries, PID file, update DB, and log health info
-  child.on("exit", (code) => { handleProcessExit(code, threadId, pid, pidFilePath, entry, "Claude").catch(err => log.warn(`[exit] cleanup failed: ${err}`)); });
-
-  // Unref so the parent process can exit without waiting for this child.
-  child.unref();
-
-  log.info(`[start_thread] Spawned Claude process PID=${pid} for thread ${threadId} ("${name}")`);
-
-  return { pid, logFile: logFilePath };
+  return registerSpawnedProcess({
+    child, threadId, name, logFilePath,
+    configPath: effectiveConfigPath,
+    agentLabel: "Claude",
+    memorySourceThreadId, memoryTargetThreadId, threadType,
+  });
 }
 
 /**
@@ -575,10 +601,10 @@ export function spawnCopilotProcess(
     "--autopilot",
   ];
 
-  const spawnEnv: NodeJS.ProcessEnv = { ...process.env, COPILOT_HOME: copilotHomeDir };
-  if (memorySourceThreadId !== undefined) {
-    spawnEnv.MEMORY_SOURCE_THREAD_ID = String(memorySourceThreadId);
-  }
+  const spawnEnv = sanitizeSpawnEnv({
+    COPILOT_HOME: copilotHomeDir,
+    ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}),
+  });
 
   // Use shell only when the resolved path is a Windows batch script (.cmd/.bat).
   // copilot.exe is a direct executable and does not need shell wrapping — shell
@@ -602,36 +628,12 @@ export function spawnCopilotProcess(
 
   closeSync(logFd);
 
-  const pid = child.pid;
-  if (pid === undefined) {
-    return { error: "Copilot process spawned but PID is undefined — spawn may have failed." };
-  }
-
-  const pidFilePath = join(PIDS_DIR, `${threadId}.pid`);
-  try {
-    const pidMeta = { pid, name, configPath: copilotHomeDir, startedAt: Date.now() };
-    writeFileSync(pidFilePath, JSON.stringify(pidMeta), "utf-8");
-  } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
-
-  const entry: SpawnedThread = {
-    pid,
-    threadId,
-    name,
-    startedAt: Date.now(),
-    createdAt: Date.now(),
-    logFile: logFilePath,
-    ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
-    ...(threadType ? { threadType } : {}),
-  };
-  spawnedThreads.push(entry);
-
-  child.on("exit", (code) => { handleProcessExit(code, threadId, pid, pidFilePath, entry, "Copilot").catch(err => log.warn(`[exit] cleanup failed: ${err}`)); });
-
-  child.unref();
-
-  log.info(`[start_thread] Spawned Copilot process PID=${pid} for thread ${threadId} ("${name}")`);
-
-  return { pid, logFile: logFilePath };
+  return registerSpawnedProcess({
+    child, threadId, name, logFilePath,
+    configPath: copilotHomeDir,
+    agentLabel: "Copilot",
+    memorySourceThreadId, threadType,
+  });
 }
 
 /**
@@ -702,14 +704,11 @@ export function spawnCodexProcess(
     cliArgs.splice(1, 0, "-C", workingDirectory);
   }
 
-  const spawnEnv: NodeJS.ProcessEnv = { ...process.env };
-  if (memorySourceThreadId !== undefined) {
-    spawnEnv.MEMORY_SOURCE_THREAD_ID = String(memorySourceThreadId);
-  }
-  // Forward MCP secret so codex's bearer_token_env_var can reference it
-  if (httpSecret) {
-    spawnEnv.SENSORIUM_MCP_SECRET = httpSecret;
-  }
+  const spawnEnv = sanitizeSpawnEnv({
+    ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}),
+    // Forward MCP secret so codex's bearer_token_env_var can reference it
+    ...(httpSecret ? { SENSORIUM_MCP_SECRET: httpSecret } : {}),
+  });
 
   const logFd = openSync(logFilePath, "a");
   let child;
@@ -765,36 +764,12 @@ export function spawnCodexProcess(
     child.stdin?.end();
   } catch { /* process may have already exited */ }
 
-  const pid = child.pid;
-  if (pid === undefined) {
-    return { error: "Codex process spawned but PID is undefined — spawn may have failed." };
-  }
-
-  const pidFilePath = join(PIDS_DIR, `${threadId}.pid`);
-  try {
-    const pidMeta = { pid, name, configPath: CODEX_HOME_DIR, startedAt: Date.now() };
-    writeFileSync(pidFilePath, JSON.stringify(pidMeta), "utf-8");
-  } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
-
-  const entry: SpawnedThread = {
-    pid,
-    threadId,
-    name,
-    startedAt: Date.now(),
-    createdAt: Date.now(),
-    logFile: logFilePath,
-    ...(memorySourceThreadId !== undefined ? { memorySourceThreadId } : {}),
-    ...(threadType ? { threadType } : {}),
-  };
-  spawnedThreads.push(entry);
-
-  child.on("exit", (code) => { handleProcessExit(code, threadId, pid, pidFilePath, entry, "Codex").catch(err => log.warn(`[exit] cleanup failed: ${err}`)); });
-
-  child.unref();
-
-  log.info(`[start_thread] Spawned Codex process PID=${pid} for thread ${threadId} ("${name}")`);
-
-  return { pid, logFile: logFilePath };
+  return registerSpawnedProcess({
+    child, threadId, name, logFilePath,
+    configPath: CODEX_HOME_DIR,
+    agentLabel: "Codex",
+    memorySourceThreadId, threadType,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1001,7 +976,7 @@ export async function cleanupExpiredWorkers(
       await cleanupSingleWorker(thread, db, telegram, chatId);
       result.cleaned++;
     } catch (err) {
-      result.errors.push(`Thread ${thread.threadId}: ${err instanceof Error ? err.message : String(err)}`);
+      result.errors.push(`Thread ${thread.threadId}: ${errorMessage(err)}`);
     }
   }
 
@@ -1114,7 +1089,7 @@ interface CollectedThread {
 function collectThreadData(): CollectedThread[] {
   const topicsByChat = getAllRegisteredTopics();
   const sessions = getDashboardSessions();
-  const spawned = getAllSpawnedThreads();
+  const spawned = [...spawnedThreads];
   const pidFiles = readPidFiles();
   const now = Date.now();
 

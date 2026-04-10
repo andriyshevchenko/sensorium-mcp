@@ -214,7 +214,7 @@ export function autoIngestEpisodes(
         }
       }
     }
-  } catch (err) { log.warn(`Episode save failed during delivery: ${err instanceof Error ? err.message : String(err)}`); }
+  } catch (err) { log.warn(`Episode save failed during delivery: ${errorMessage(err)}`); }
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +245,7 @@ export async function buildSmartContext(
         candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence, similarity: n.similarity }));
       } catch (err) {
         // Fallback to keyword search
-        log.warn(`Embedding generation failed, falling back to keyword search: ${err instanceof Error ? err.message : String(err)}`);
+        log.warn(`Embedding generation failed, falling back to keyword search: ${errorMessage(err)}`);
         const searchQuery = extractSearchKeywords(operatorText);
         if (searchQuery.trim().length > 0) {
           const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: SMART_CONTEXT_MAX_RESULTS, skipAccessTracking: true, threadId: resolveKnowledgeThreadId(ctx.effectiveThreadId) });
@@ -280,7 +280,7 @@ export async function buildSmartContext(
       }
     }
   } catch (err) {
-    const msg = `Smart context injection failed: ${err instanceof Error ? err.message : String(err)}`;
+    const msg = `Smart context injection failed: ${errorMessage(err)}`;
     if (process.env.OPENAI_API_KEY) log.warn(msg); else log.debug(msg);
   }
 

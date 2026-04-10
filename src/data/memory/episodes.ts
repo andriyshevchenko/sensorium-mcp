@@ -7,6 +7,7 @@
 import type { Database } from "./schema.js";
 import { generateId, nowISO, jsonOrNull, parseJsonArray, parseJsonObject } from "./utils.js";
 import { log } from "../../logger.js";
+import { errorMessage } from "../../utils.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -145,7 +146,7 @@ export function saveAgentEpisodeSafe(
       importance: AGENT_EPISODE_IMPORTANCE,
     });
   } catch (err) {
-    log.warn(`[episode] Failed to save agent episode: ${err instanceof Error ? err.message : String(err)}`);
+    log.warn(`[episode] Failed to save agent episode: ${errorMessage(err)}`);
   }
 }
 

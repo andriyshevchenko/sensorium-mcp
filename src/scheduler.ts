@@ -9,10 +9,10 @@
  * The wait_for_instructions polling loop checks for due tasks on each timeout.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { homedir } from "os";
-import { join } from "path";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { log } from "./logger.js";
 
 const SCHEDULES_DIR = join(homedir(), ".remote-copilot-mcp", "schedules");

@@ -12,6 +12,7 @@ import type { Database } from "./schema.js";
 import { getRecentEpisodes, saveEpisode } from "./episodes.js";
 import { getTopSemanticNotes, saveSemanticNote } from "./semantic.js";
 import { chatCompletion } from "../../integrations/openai/chat.js";
+import { errorMessage } from "../../utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -210,7 +211,7 @@ export async function synthesizeGhostMemory(
       result.synthesizedNotes++;
     }
   } catch (err) {
-    result.error = err instanceof Error ? err.message : String(err);
+    result.error = errorMessage(err);
   }
 
   return result;

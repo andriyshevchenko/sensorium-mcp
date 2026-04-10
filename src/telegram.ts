@@ -14,6 +14,7 @@ import type {
   CreateForumTopicResult,
   GetFileResult,
 } from "./integrations/telegram/types.js";
+import { errorMessage } from "./utils.js";
 
 // Re-export all types so existing consumers of ./telegram.js are unaffected
 export * from "./integrations/telegram/types.js";
@@ -89,7 +90,7 @@ export class TelegramClient {
         db.prepare(
           `INSERT OR REPLACE INTO sent_messages (message_id, thread_id) VALUES (?, ?)`
         ).run(messageId, threadId);
-      } catch (err) { log.debug(`[telegram] recordSentMessage DB write failed: ${err instanceof Error ? err.message : String(err)}`); }
+      } catch (err) { log.debug(`[telegram] recordSentMessage DB write failed: ${errorMessage(err)}`); }
     }
   }
 
@@ -486,7 +487,7 @@ export class TelegramClient {
         this.warnReactionOnce(`setMessageReaction failed: ${response.status} ${data?.description ?? response.statusText}`);
         return;
       } catch (err) {
-        this.warnReactionOnce(`setMessageReaction error: ${err instanceof Error ? err.message : String(err)}`);
+        this.warnReactionOnce(`setMessageReaction error: ${errorMessage(err)}`);
         return;
       }
     }

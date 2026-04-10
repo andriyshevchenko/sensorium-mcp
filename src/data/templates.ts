@@ -7,7 +7,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import { TEMPLATES_DIR } from "../config.js";
 
 // ── Template loading & caching ────────────────────────────────────────────
@@ -34,6 +34,10 @@ export function loadTemplate(name: string): string | null {
   }
 
   const filePath = join(TEMPLATES_DIR, `${name}.md`);
+  // Guard against path traversal (e.g. name = "../../etc/passwd")
+  if (!resolvePath(filePath).startsWith(resolvePath(TEMPLATES_DIR))) {
+    return null;
+  }
   let content: string | null = null;
   try {
     content = readFileSync(filePath, "utf-8");

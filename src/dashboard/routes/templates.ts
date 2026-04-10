@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { getEffectiveAgentType, VALID_AGENT_TYPES, type AgentType } from "../../config.js";
 import { DEFAULT_DRIVE_PROMPT, loadDrivePresets, getDefaultRemindersTemplate } from "../presets.js";
 import { readBody, type RouteHandler, type RouteArgs } from "./types.js";
+import { errorMessage } from "../../utils.js";
 
 const AGENT_TYPES = VALID_AGENT_TYPES as readonly AgentType[];
 
@@ -44,7 +45,7 @@ export const handleGetTemplates: RouteHandler = ({ json }) => {
 
             json({ templates: [{ name: "reminders", content, isDefault }], agentReminders });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -65,7 +66,7 @@ export const handleGetDriveTemplate: RouteHandler = ({ json }) => {
             }
             json({ custom, default: DEFAULT_DRIVE_PROMPT });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -79,7 +80,7 @@ export const handleGetDrivePresets: RouteHandler = ({ json }) => {
             const presets = await loadDrivePresets();
             json({ presets });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -97,10 +98,15 @@ export function handleTemplateCrud(args: RouteArgs, name: string): boolean {
     if (req.method === "POST") {
         void (async () => {
             try {
-                const body = await readBody(req);
+                const MAX_TEMPLATE_BYTES = 256 * 1024; // 256 KB
+                const body = await readBody(req, MAX_TEMPLATE_BYTES);
                 const parsed = JSON.parse(body) as { content?: string };
                 if (typeof parsed.content !== "string") {
                     json({ error: "Missing content field" }, 400);
+                    return;
+                }
+                if (Buffer.byteLength(parsed.content) > MAX_TEMPLATE_BYTES) {
+                    json({ error: `Template too large (max ${MAX_TEMPLATE_BYTES} bytes)` }, 413);
                     return;
                 }
                 const templatesDir = join(homedir(), ".remote-copilot-mcp", "templates");
@@ -108,7 +114,7 @@ export function handleTemplateCrud(args: RouteArgs, name: string): boolean {
                 await writeFile(join(templatesDir, `${name}.md`), parsed.content, "utf-8");
                 json({ ok: true });
             } catch (err) {
-                json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                json({ error: errorMessage(err) }, 500);
             }
         })();
         return true;
@@ -121,7 +127,7 @@ export function handleTemplateCrud(args: RouteArgs, name: string): boolean {
                 try { await unlink(join(templatesDir, `${name}.md`)); } catch { /* ok if missing */ }
                 json({ ok: true });
             } catch (err) {
-                json({ error: err instanceof Error ? err.message : String(err) }, 500);
+                json({ error: errorMessage(err) }, 500);
             }
         })();
         return true;

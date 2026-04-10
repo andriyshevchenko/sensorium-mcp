@@ -11,9 +11,9 @@ import {
     readFileSync,
     unlinkSync,
     writeFileSync,
-} from "fs";
-import { homedir } from "os";
-import { join } from "path";
+} from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Paths & constants
@@ -75,12 +75,19 @@ export function refreshLock(): boolean {
     if (current && current.pid !== process.pid) {
         return false; // Someone else owns the lock now.
     }
-    writeFileSync(
-        LOCK_FILE,
-        JSON.stringify({ pid: process.pid, ts: Date.now() }),
-        "utf8",
-    );
-    return true;
+    // Use exclusive create (wx) to prevent overwriting another process's lock.
+    // Delete our own lock first, then atomically re-create it.
+    try { unlinkSync(LOCK_FILE); } catch { /* already gone */ }
+    try {
+        writeFileSync(
+            LOCK_FILE,
+            JSON.stringify({ pid: process.pid, ts: Date.now() }),
+            { encoding: "utf8", flag: "wx" },
+        );
+        return true;
+    } catch {
+        return false; // Another process won the race.
+    }
 }
 
 export function removeLock(): void {

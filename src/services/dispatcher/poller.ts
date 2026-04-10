@@ -6,7 +6,7 @@
  * through the broker. All other instances are consumers only.
  */
 
-import { existsSync } from "fs";
+import { existsSync } from "node:fs";
 import { log } from "../../logger.js";
 import type { TelegramClient } from "../../telegram.js";
 import { errorMessage } from "../../utils.js";

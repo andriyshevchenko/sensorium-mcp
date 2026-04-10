@@ -12,8 +12,8 @@ import { saveAgentEpisodeSafe, type Database } from "../memory.js";
 import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
 import { getThread } from "../data/memory/thread-registry.js";
-import { appendFileSync, mkdirSync } from "fs";
-import { join } from "path";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { PENDING_TASKS_DIR } from "./thread-lifecycle.js";
 
 // ---------------------------------------------------------------------------
@@ -239,7 +239,7 @@ async function handleReportProgress(
       log.info(`[report_progress] Auto-forwarded to parent thread ${parentId}`);
     }
   } catch (err) {
-    log.debug(`[report_progress] Auto-forward failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.debug(`[report_progress] Auto-forward failed: ${errorMessage(err)}`);
   }
 
   const responseText =

@@ -14,6 +14,7 @@ import {
 import { getAllRegisteredTopics, registerTopic, unregisterTopic } from "../../sessions.js";
 
 import { readBody, safeParseJSON, type RouteHandler } from "./types.js";
+import { errorMessage } from "../../utils.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -148,7 +149,7 @@ export const handlePostTopicRegistry: RouteHandler = ({ req, json }) => {
             registerTopic(parsed.chatId, parsed.name.trim(), parsed.threadId);
             json({ ok: true, chatId: parsed.chatId, name: parsed.name.trim().toLowerCase(), threadId: parsed.threadId });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -170,7 +171,7 @@ export const handleDeleteTopicRegistry: RouteHandler = ({ req, json }) => {
             unregisterTopic(parsed.chatId, parsed.name.trim());
             json({ ok: true });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;

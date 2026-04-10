@@ -27,6 +27,7 @@ import {
 } from "../../config.js";
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
+import { errorMessage } from "../../utils.js";
 import { isThreadRunning } from "../../tools/thread-lifecycle.js";
 import { readThreadHeartbeat } from "../../data/file-storage.js";
 import { resolveTelegramTopicId } from "../../data/memory/thread-registry.js";
@@ -188,7 +189,7 @@ export const handleCreateThread: RouteHandler = ({ req, json, db }) => {
                 syncKeepAliveToSettings(db);
             }
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -265,7 +266,7 @@ export function handleUpdateThread(args: RouteArgs, threadId: number): boolean {
                 syncKeepAliveToSettings(db);
             }
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;

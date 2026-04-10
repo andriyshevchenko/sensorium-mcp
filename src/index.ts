@@ -36,6 +36,7 @@ const { setTopicRegistryDb, lookupTopicRegistry } = await import("./sessions.js"
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
 const { cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
 const { log } = await import("./logger.js");
+const { errorMessage } = await import("./utils.js");
 const { rotateAllDailySessions } = await import("./daily-session.js");
 const { resolveTelegramTopicId } = await import("./data/memory/thread-registry.js");
 
@@ -123,7 +124,7 @@ function startDailyRotationTimer(): void {
         }
       }
     } catch (err) {
-      log.error(`Daily rotation error: ${err instanceof Error ? err.message : String(err)}`);
+      log.error(`Daily rotation error: ${errorMessage(err)}`);
     }
   }, 5 * 60_000);
 }

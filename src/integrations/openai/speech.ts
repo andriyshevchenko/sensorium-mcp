@@ -24,31 +24,27 @@ export async function textToSpeech(
     voice: TTSVoice = "nova",
 ): Promise<Buffer> {
     const signal = AbortSignal.timeout(60_000);
-    try {
-        const response = await fetch("https://api.openai.com/v1/audio/speech", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model: "tts-1",
-                input: text,
-                voice,
-                response_format: "opus",
-            }),
-            signal,
-        });
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            model: "tts-1",
+            input: text,
+            voice,
+            response_format: "opus",
+        }),
+        signal,
+    });
 
-        if (!response.ok) {
-            const errText = await response.text().catch(() => response.statusText);
-            throw new Error(`OpenAI TTS failed: ${response.status} ${errText}`);
-        }
-
-        return Buffer.from(await response.arrayBuffer());
-    } finally {
-        /* no-op */
+    if (!response.ok) {
+        const errText = await response.text().catch(() => response.statusText);
+        throw new Error(`OpenAI TTS failed: ${response.status} ${errText}`);
     }
+
+    return Buffer.from(await response.arrayBuffer());
 }
 
 /**
@@ -66,35 +62,31 @@ export async function transcribeAudio(
     // not .oga, so we hardcode the extension.
     // 10 min — long voice messages (8+ min) need proportionally longer.
     const signal = AbortSignal.timeout(600_000);
-    try {
-        const formData = new FormData();
-        formData.append(
-            "file",
-            new Blob([new Uint8Array(audioBuffer)]),
-            filename,
+    const formData = new FormData();
+    formData.append(
+        "file",
+        new Blob([new Uint8Array(audioBuffer)]),
+        filename,
+    );
+    formData.append("model", "whisper-1");
+
+    const response = await fetch(
+        "https://api.openai.com/v1/audio/transcriptions",
+        {
+            method: "POST",
+            headers: { Authorization: `Bearer ${apiKey}` },
+            body: formData,
+            signal,
+        },
+    );
+
+    if (!response.ok) {
+        const errText = await response.text().catch(() => response.statusText);
+        throw new Error(
+            `OpenAI Whisper transcription failed: ${response.status} ${errText}`,
         );
-        formData.append("model", "whisper-1");
-
-        const response = await fetch(
-            "https://api.openai.com/v1/audio/transcriptions",
-            {
-                method: "POST",
-                headers: { Authorization: `Bearer ${apiKey}` },
-                body: formData,
-                signal,
-            },
-        );
-
-        if (!response.ok) {
-            const errText = await response.text().catch(() => response.statusText);
-            throw new Error(
-                `OpenAI Whisper transcription failed: ${response.status} ${errText}`,
-            );
-        }
-
-        const result = (await response.json()) as { text?: string };
-        return result.text ?? "";
-    } finally {
-        /* no-op */
     }
+
+    const result = (await response.json()) as { text?: string };
+    return result.text ?? "";
 }

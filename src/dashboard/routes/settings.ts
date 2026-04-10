@@ -36,6 +36,7 @@ import {
 } from "../../config.js";
 
 import { readBody, safeParseJSON, type RouteHandler } from "./types.js";
+import { errorMessage } from "../../utils.js";
 
 // ─── DMN activation hours ───────────────────────────────────────────────────
 
@@ -64,7 +65,7 @@ export const handlePostClaudeMcpConfig: RouteHandler = ({ req, json }) => {
             setClaudeMcpConfigPath(parsed.path.trim());
             json({ ok: true, path: parsed.path.trim() });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -89,7 +90,7 @@ export const handlePostAgentType: RouteHandler = ({ req, json }) => {
             setAgentType(parsed.agentType);
             json({ ok: true, agentType: parsed.agentType });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -118,7 +119,7 @@ export const handlePostThreadAgentType: RouteHandler = ({ req, json }) => {
             setThreadAgentType(parsed.threadId, parsed.agentType);
             json({ ok: true, threadId: parsed.threadId, agentType: parsed.agentType });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -143,7 +144,7 @@ export const handlePostGuardrailsEnabled: RouteHandler = ({ req, json }) => {
             setGuardrailsEnabled(parsed.enabled);
             json({ ok: true, enabled: parsed.enabled });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -169,7 +170,7 @@ export const handlePostBootstrapMessageCount: RouteHandler = ({ req, json }) => 
             setBootstrapMessageCount(count);
             json({ ok: true, count: getBootstrapMessageCount() });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -195,7 +196,7 @@ export const handlePostWaitTimeout: RouteHandler = ({ req, json }) => {
             setWaitTimeoutMinutes(minutes);
             json({ ok: true, minutes: getWaitTimeoutMinutes() });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -271,7 +272,7 @@ export const handlePostKeepAlive: RouteHandler = ({ req, json }) => {
                 keepAliveClient: getKeepAliveClient(),
             });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;
@@ -319,7 +320,7 @@ export const handlePostThreadKeepAlive: RouteHandler = ({ req, json }) => {
             setThreadKeepAlive(threadId, settings);
             json({ ok: true, threadKeepAlive: getAllThreadKeepAlive() });
         } catch (err) {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     })();
     return true;

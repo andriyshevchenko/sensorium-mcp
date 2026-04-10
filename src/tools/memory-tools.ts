@@ -62,7 +62,7 @@ export async function backfillEmbeddings(db: ReturnType<typeof initMemoryDb>, ap
       saveNoteEmbedding(db, noteId, emb);
       log.verbose("memory", `Embedded ${noteId}`);
     } catch (err) {
-      log.error(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}`);
+      log.error(`[memory] Embedding failed for ${noteId}: ${errorMessage(err)}`);
     }
   }
 }
@@ -208,7 +208,7 @@ async function handleMemorySave(
         void generateEmbedding(content, apiKey).then(emb => {
             saveNoteEmbedding(getMemoryDb(), noteId, emb);
         }).catch(err => {
-            log.error(`[memory] Embedding failed for ${noteId}: ${err instanceof Error ? err.message : String(err)}`);
+            log.error(`[memory] Embedding failed for ${noteId}: ${errorMessage(err)}`);
         });
     }
     // Check for potential conflicts with existing notes

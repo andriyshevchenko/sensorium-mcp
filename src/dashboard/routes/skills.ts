@@ -9,6 +9,7 @@ import { join } from "node:path";
 
 import { loadSkills, invalidateSkillCache } from "../../intent.js";
 import { readBody, type RouteHandler, type RouteArgs } from "./types.js";
+import { errorMessage } from "../../utils.js";
 
 const MAX_SKILL_BODY_BYTES = 64 * 1024; // 64 KB
 
@@ -59,7 +60,7 @@ export async function handleSkillPut(args: RouteArgs, name: string): Promise<boo
         invalidateSkillCache();
         json({ ok: true });
     } catch (err) {
-        json({ error: err instanceof Error ? err.message : String(err) }, 500);
+        json({ error: errorMessage(err) }, 500);
     }
     return true;
 }
@@ -80,7 +81,7 @@ export async function handleSkillDelete(args: RouteArgs, name: string): Promise<
         if (code === "ENOENT") {
             json({ error: `Skill "${name}" not found` }, 404);
         } else {
-            json({ error: err instanceof Error ? err.message : String(err) }, 500);
+            json({ error: errorMessage(err) }, 500);
         }
     }
     return true;

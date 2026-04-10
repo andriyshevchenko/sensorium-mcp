@@ -21,6 +21,7 @@ import { runNarrativeGeneration } from "./data/memory/narrative.js";
 import { runReflection } from "./data/memory/reflection.js";
 import { initMemoryDb } from "./data/memory/schema.js";
 import { config } from "./config.js";
+import { errorMessage } from "./utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ async function notifyTelegram(text: string, threadId?: number): Promise<void> {
       signal: AbortSignal.timeout(10_000),
     });
   } catch (err) {
-    log.warn(`Daily rotation Telegram notify failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.warn(`Daily rotation Telegram notify failed: ${errorMessage(err)}`);
   }
 }
 
@@ -96,19 +97,19 @@ export async function rotateDailySession(
       result.consolidated = true;
       log.info(`Consolidation completed for root ${rootThreadId}`);
     } catch (err) {
-      log.error(`Consolidation failed during daily rotation: ${err instanceof Error ? err.message : String(err)}`);
+      log.error(`Consolidation failed during daily rotation: ${errorMessage(err)}`);
     }
 
     // 2. Run reflection and narrative generation (best-effort, non-blocking)
     try {
       await runReflection(db, rootThreadId);
     } catch (err) {
-      log.warn(`Reflection failed during daily rotation for root ${rootThreadId}: ${err instanceof Error ? err.message : String(err)}`);
+      log.warn(`Reflection failed during daily rotation for root ${rootThreadId}: ${errorMessage(err)}`);
     }
     try {
       await runNarrativeGeneration(db, rootThreadId);
     } catch (err) {
-      log.warn(`Narrative generation failed during daily rotation for root ${rootThreadId}: ${err instanceof Error ? err.message : String(err)}`);
+      log.warn(`Narrative generation failed during daily rotation for root ${rootThreadId}: ${errorMessage(err)}`);
     }
 
     // 3. Reset the daily session timestamp (only if consolidation succeeded)
@@ -119,7 +120,7 @@ export async function rotateDailySession(
     }
 
   } catch (err) {
-    result.error = err instanceof Error ? err.message : String(err);
+    result.error = errorMessage(err);
     log.error(`Daily rotation failed for root ${rootThreadId}: ${result.error}`);
   }
 
