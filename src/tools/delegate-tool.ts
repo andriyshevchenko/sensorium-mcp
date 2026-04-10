@@ -260,6 +260,11 @@ export async function handleStartThread(
         threadId = topic.message_thread_id;
         persistSession(telegramChatId, topicName, threadId);
         registerTopic(telegramChatId, topicName, threadId);
+        // Also persist under the original unprefixed name so spawned agents
+        // can resolve the session when they call start_session(name)
+        if (topicName !== name && name) {
+          persistSession(telegramChatId, name, threadId);
+        }
         log.info(`[start_thread] Created forum topic "${name}" → thread ${threadId}`);
       } catch (err) {
         return errorResult(
