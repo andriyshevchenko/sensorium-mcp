@@ -22,8 +22,8 @@ const DEFAULT_COOLDOWN_MS = 300_000;
 const MCP_READY_POLL_INTERVAL_MS = 3_000;
 const MCP_READY_TIMEOUT_MS = 120_000;
 const FAST_EXIT_THRESHOLD_MS = 60_000;      // process died within 60s = fast exit
-const FAST_EXIT_MAX_COUNT = 3;               // 3 fast exits = long cooldown
-const FAST_EXIT_COOLDOWN_MS = 60 * 60_000;   // 1 hour cooldown after repeated fast exits
+const FAST_EXIT_MAX_COUNT = 3;               // 3 fast exits = escalating cooldown
+const FAST_EXIT_BASE_COOLDOWN_MS = 10 * 60_000; // 10 min initial, doubles each time
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -291,6 +291,7 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastStartTime = 0;           // epoch ms when the last process was started
   let fastExitCount = 0;           // consecutive fast exits (< 60s lifetime)
+  let fastExitEscalation = 0;      // escalation level for exponential backoff
 
   keeperLog("INFO", "Waiting for MCP server to be ready...");
   const ready = await waitForMcpReady(config.mcpHttpPort, config.mcpHttpSecret);
@@ -345,23 +346,26 @@ export async function startClaudeKeeper(config: KeeperConfig): Promise<KeeperHan
 
     retryCount++;
     keeperLog("INFO", `Thread ${config.threadId} not running — calling start_thread (attempt ${retryCount}/${maxRetries})`);
-    // Fast-exit detection: if the process was started recently and died quickly,
-    // it's a non-transient error (e.g. out of credits). Back off long.
+    // Fast-exit detection: if the process died quickly, use exponential backoff.
     if (lastStartTime > 0 && (Date.now() - lastStartTime) < FAST_EXIT_THRESHOLD_MS) {
       fastExitCount++;
       if (fastExitCount >= FAST_EXIT_MAX_COUNT) {
-        keeperLog("WARN", `Thread ${config.threadId}: ${fastExitCount} consecutive fast exits (<${FAST_EXIT_THRESHOLD_MS / 1000}s lifetime) \u2014 backing off for ${FAST_EXIT_COOLDOWN_MS / 60_000} min`);
-        config.onDeath?.(config.threadId, config.sessionName + " (repeated fast exits \u2014 check credits/API key)");
+        const cooldown = Math.min(FAST_EXIT_BASE_COOLDOWN_MS * 2 ** fastExitEscalation, 4 * 60 * 60_000); // cap 4h
+        fastExitEscalation++;
+        keeperLog("WARN", `Thread ${config.threadId}: ${fastExitCount} consecutive fast exits — backing off ${Math.round(cooldown / 60_000)} min`);
+        config.onDeath?.(config.threadId, `${config.sessionName} (repeated fast exits — check credits/API key)`);
         fastExitCount = 0;
         retryCount = 0;
-        timer = setTimeout(() => void checkAndStart(), FAST_EXIT_COOLDOWN_MS);
+        timer = setTimeout(() => void checkAndStart(), cooldown);
         return;
       }
     } else {
-      fastExitCount = 0; // reset if the process ran for a reasonable time
+      fastExitCount = 0;
+      fastExitEscalation = 0; // reset if the process ran long enough
     }
 
-    lastStartTime = Date.now();    const ok = await callStartThread(config);
+    lastStartTime = Date.now();
+    const ok = await callStartThread(config);
     if (ok) {
       retryCount = 0;
       consecutiveNotRunning = 0;
