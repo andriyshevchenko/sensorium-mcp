@@ -230,7 +230,7 @@ async function callStartThread(config: KeeperConfig): Promise<boolean> {
           targetThreadId: threadId,
           agentType: client,
           mode: "resume",
-          workingDirectory: workingDirectory ?? process.cwd(),
+          ...(workingDirectory !== undefined ? { workingDirectory } : {}),
         },
       },
       id: `keeper-${threadId}-${Date.now()}`,

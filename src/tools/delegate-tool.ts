@@ -112,6 +112,7 @@ export async function handleStartThread(
   let workingDirectory = typeof args.workingDirectory === "string"
     ? args.workingDirectory.trim()
     : "";
+  const workingDirectoryExplicit = workingDirectory !== "";
 
   const parseNumArg = (v: unknown): number | undefined => {
     const parsed = typeof v === "number" ? v
@@ -362,8 +363,15 @@ export async function handleStartThread(
     const db = initMemoryDb();
     const existing = getThread(db, threadId);
     if (existing && (mode === "resume" || (explicitThreadId !== undefined && !mode))) {
-      // Resume: update client + lastActiveAt + workingDirectory, preserve type/keepAlive
-      updateThread(db, threadId, { client: agentType, lastActiveAt: new Date().toISOString(), status: 'active', workingDirectory });
+      // Resume: update client + lastActiveAt, preserve type/keepAlive.
+      // Only persist workingDirectory if explicitly provided in args — don't overwrite a null
+      // DB value with a process.cwd() fallback (that would ignore the user's intent to clear it).
+      updateThread(db, threadId, {
+        client: agentType,
+        lastActiveAt: new Date().toISOString(),
+        status: 'active',
+        ...(workingDirectoryExplicit ? { workingDirectory } : {}),
+      });
     } else {
       registerThread(db, {
         threadId,
