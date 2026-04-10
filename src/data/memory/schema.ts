@@ -337,6 +337,17 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     }
     log.info("[migration-20] Added identity_prompt column to thread_registry");
   },
+
+  21: (db) => {
+    // Add working_directory column — persistent CWD for thread spawning.
+    // Ensures threads restart in the correct directory on resume/keep-alive.
+    try {
+      db.exec(`ALTER TABLE thread_registry ADD COLUMN working_directory TEXT`);
+    } catch {
+      // Column may already exist
+    }
+    log.info("[migration-21] Added working_directory column to thread_registry");
+  },
 };
 
 /**

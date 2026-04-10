@@ -15,7 +15,7 @@ const expandedRoots = ref<Set<number>>(new Set())
 
 // Create form
 const showCreateForm = ref(false)
-const createForm = ref({ name: '', threadId: 0, client: 'claude' })
+const createForm = ref({ name: '', threadId: 0, client: 'claude', workingDirectory: '' })
 const createStatus = ref('')
 const creating = ref(false)
 
@@ -23,9 +23,13 @@ const creating = ref(false)
 const editingNameId = ref<number | null>(null)
 const editingNameValue = ref('')
 
+// Inline CWD editing
+const editingCwdId = ref<number | null>(null)
+const editingCwdValue = ref('')
+
 // Branch creation
 const branchingRoot = ref<number | null>(null)
-const branchForm = ref({ name: '', threadId: 0, client: 'claude' })
+const branchForm = ref({ name: '', threadId: 0, client: 'claude', workingDirectory: '' })
 const branchStatus = ref('')
 const branchCreating = ref(false)
 
@@ -100,6 +104,7 @@ async function createThread() {
         type: 'root',
         client: createForm.value.client,
         keepAlive: false,
+        ...(createForm.value.workingDirectory.trim() ? { workingDirectory: createForm.value.workingDirectory.trim() } : {}),
       }),
     })
     if (!r.ok) {
@@ -107,7 +112,7 @@ async function createThread() {
       throw new Error(err.error ?? r.statusText)
     }
     createStatus.value = 'Created ✓'
-    createForm.value = { name: '', threadId: 0, client: 'claude' }
+    createForm.value = { name: '', threadId: 0, client: 'claude', workingDirectory: '' }
     showCreateForm.value = false
     setTimeout(() => { createStatus.value = '' }, 3000)
     await load()
@@ -137,6 +142,7 @@ async function createBranch(rootThreadId: number) {
         type: 'branch',
         rootThreadId,
         client: branchForm.value.client,
+        ...(branchForm.value.workingDirectory.trim() ? { workingDirectory: branchForm.value.workingDirectory.trim() } : {}),
       }),
     })
     if (!r.ok) {
@@ -144,7 +150,7 @@ async function createBranch(rootThreadId: number) {
       throw new Error(err.error ?? r.statusText)
     }
     branchStatus.value = 'Branch created ✓'
-    branchForm.value = { name: '', threadId: 0, client: 'claude' }
+    branchForm.value = { name: '', threadId: 0, client: 'claude', workingDirectory: '' }
     branchingRoot.value = null
     setTimeout(() => { branchStatus.value = '' }, 3000)
     await load()
@@ -180,6 +186,30 @@ async function submitRename(threadId: number) {
     await load()
   } catch (e: unknown) {
     error.value = 'Failed to rename thread: ' + (e as Error).message
+  }
+}
+
+function startCwdEdit(thread: ThreadEntry) {
+  editingCwdId.value = thread.threadId
+  editingCwdValue.value = thread.workingDirectory ?? ''
+}
+
+async function submitCwdEdit(threadId: number) {
+  const newCwd = editingCwdValue.value.trim()
+  editingCwdId.value = null
+  try {
+    const r = await fetch(`/api/threads/${threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ workingDirectory: newCwd || null }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    await load()
+  } catch (e: unknown) {
+    error.value = 'Failed to update working directory: ' + (e as Error).message
   }
 }
 
@@ -344,6 +374,15 @@ onMounted(load)
             </select>
           </div>
         </div>
+        <div>
+          <label class="block text-xs text-textSecondary mb-1">Working Directory (optional)</label>
+          <input
+            v-model="createForm.workingDirectory"
+            type="text"
+            placeholder="e.g. C:\src\my-project"
+            class="w-full px-3 py-2 rounded-lg bg-card border border-gray-700 text-sm text-textPrimary placeholder-muted focus:outline-none focus:border-accent transition font-mono"
+          />
+        </div>
         <div class="flex justify-end">
           <button
             @click="createThread"
@@ -397,6 +436,23 @@ onMounted(load)
                 <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
               </select>
               <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
+              <!-- Inline CWD editing -->
+              <input
+                v-if="editingCwdId === t.threadId"
+                v-model="editingCwdValue"
+                @keyup.enter="submitCwdEdit(t.threadId)"
+                @keyup.escape="editingCwdId = null"
+                @blur="submitCwdEdit(t.threadId)"
+                type="text"
+                placeholder="Set working directory…"
+                class="text-xs font-mono bg-card border border-accent rounded px-1 py-0 text-textPrimary focus:outline-none w-48"
+              />
+              <span
+                v-else
+                class="text-xs text-muted font-mono truncate max-w-[200px] cursor-pointer hover:text-accent transition"
+                :title="(t.workingDirectory ?? 'Click to set CWD') + ' (dblclick to edit)'"
+                @dblclick="startCwdEdit(t)"
+              >📁 {{ t.workingDirectory ?? '—' }}</span>
 
               <div class="ml-auto flex items-center gap-3">
                 <!-- Keep-alive toggle -->
@@ -484,6 +540,12 @@ onMounted(load)
                   <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
                 </select>
               </div>
+              <input
+                v-model="branchForm.workingDirectory"
+                type="text"
+                placeholder="Working directory (optional)"
+                class="w-full px-3 py-1.5 rounded-lg bg-card border border-gray-700 text-sm text-textPrimary placeholder-muted focus:outline-none focus:border-accent transition font-mono"
+              />
               <div class="flex items-center gap-2">
                 <button
                   @click="createBranch(t.threadId)"
