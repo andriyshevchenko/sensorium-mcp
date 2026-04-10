@@ -385,6 +385,9 @@ function rebuildThreadRegistryWithExitedStatus(
   const selectIdentityPrompt = existingColumns.includes("identity_prompt")
     ? "identity_prompt"
     : "NULL";
+  const selectWorkingDirectory = existingColumns.includes("working_directory")
+    ? "working_directory"
+    : "NULL";
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS thread_registry_new (
@@ -405,17 +408,18 @@ function rebuildThreadRegistryWithExitedStatus(
       daily_rotation    INTEGER NOT NULL DEFAULT 0,
       autonomous_mode   INTEGER NOT NULL DEFAULT 0,
       telegram_topic_id INTEGER,
-      identity_prompt   TEXT
+      identity_prompt   TEXT,
+      working_directory TEXT
     );
     INSERT OR IGNORE INTO thread_registry_new (
       id, thread_id, name, type, root_thread_id, badge, client, max_retries,
       cooldown_ms, keep_alive, created_at, last_active_at, session_reset_at,
-      status, daily_rotation, autonomous_mode, telegram_topic_id, identity_prompt
+      status, daily_rotation, autonomous_mode, telegram_topic_id, identity_prompt, working_directory
     )
     SELECT
       id, thread_id, name, type, root_thread_id, badge, client, max_retries,
       cooldown_ms, keep_alive, created_at, last_active_at, ${selectSessionResetAt},
-      status, ${selectDailyRotation}, ${selectAutonomousMode}, ${selectTelegramTopicId}, ${selectIdentityPrompt}
+      status, ${selectDailyRotation}, ${selectAutonomousMode}, ${selectTelegramTopicId}, ${selectIdentityPrompt}, ${selectWorkingDirectory}
     FROM thread_registry;
     DROP TABLE thread_registry;
     ALTER TABLE thread_registry_new RENAME TO thread_registry;
@@ -612,7 +616,8 @@ function ensureSchemaIntegrity(db: Database): void {
         daily_rotation  INTEGER NOT NULL DEFAULT 0,
         autonomous_mode INTEGER NOT NULL DEFAULT 0,
         telegram_topic_id INTEGER,
-        identity_prompt TEXT
+        identity_prompt TEXT,
+        working_directory TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
       CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
@@ -625,6 +630,7 @@ function ensureSchemaIntegrity(db: Database): void {
     stampVersion(17);
     stampVersion(19);
     stampVersion(20);
+    stampVersion(21);
   } else {
     const threadRegistryCols = db
       .prepare("PRAGMA table_info(thread_registry)")
@@ -666,6 +672,12 @@ function ensureSchemaIntegrity(db: Database): void {
       log.info("[memory] Self-heal: adding missing identity_prompt column to thread_registry");
       db.exec("ALTER TABLE thread_registry ADD COLUMN identity_prompt TEXT");
       stampVersion(20);
+    }
+
+    if (!threadRegistryCols.includes("working_directory")) {
+      log.info("[memory] Self-heal: adding missing working_directory column to thread_registry");
+      db.exec("ALTER TABLE thread_registry ADD COLUMN working_directory TEXT");
+      stampVersion(21);
     }
   }
 }
