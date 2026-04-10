@@ -46,7 +46,7 @@ const SLASH_COMMANDS: Array<{ pattern: RegExp; expand: (m: RegExpMatchArray) => 
 
 // ── /mode command: handled specially (side-effect + expansion) ──────────
 import { setThreadConversationMode, type ConversationMode } from "../../config.js";
-const MODE_PATTERN = /^\/mode\s+(concise|voice|standard)\s*$/i;
+const MODE_PATTERN = /^\/mode\s+(concise|voice)\s*$/i;
 
 /** Expand /slash commands in message text. Expands matching lines, preserves the rest. */
 function expandSlashCommands(text: string | undefined): string | undefined {

@@ -117,14 +117,14 @@ export function setThreadAgentType(threadId: number, agentType: AgentType): void
 
 // ─── Per-thread conversation mode ───────────────────────────────────────────
 
-export type ConversationMode = "concise" | "voice" | "standard";
+export type ConversationMode = "concise" | "voice";
 
 /** Returns the conversation mode for a thread, defaulting to "concise". */
 export function getThreadConversationMode(threadId: number): ConversationMode {
   const map = readSettings().threadConversationModes as Record<string, unknown> | undefined;
   if (map) {
     const m = map[String(threadId)];
-    if (m === "concise" || m === "voice" || m === "standard") return m;
+    if (m === "concise" || m === "voice") return m;
   }
   return "concise"; // concise is the default
 }

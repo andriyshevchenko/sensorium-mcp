@@ -333,7 +333,7 @@ export function assembleOperatorResponse(
     ? getThreadConversationMode(ctx.effectiveThreadId)
     : "concise";
   if (convMode === "concise") {
-    directive += "\nConversation mode: CONCISE. Keep replies short (1\u20133 sentences). No preambles, no walls of text. If the operator wants detail, they\u2019ll ask.";
+    directive += "\nConversation mode: CONCISE. Max 1\u20132 sentences. No headers, no bullet lists, no code blocks, no preambles, no walls of text. Think mobile chat bubble. For anything longer than 3 lines, use a file or voice instead. If the operator wants detail, they\u2019ll ask.";
   } else if (convMode === "voice") {
     directive += "\nConversation mode: VOICE. Always respond with `send_voice` for conversational replies. Use spoken, natural language. Reserve text for code or structured data only.";
   }
