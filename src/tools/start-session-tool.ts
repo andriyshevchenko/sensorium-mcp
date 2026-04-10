@@ -177,9 +177,12 @@ export async function handleStartSession(
   // process — skip the heavy bootstrap (no stale message drain, no Telegram
   // notification, no 38K+ memory briefing).  A genuinely dead thread that
   // hasn't been active in > 5 minutes gets the full briefing.
+  // Exception: suppress lightweight reconnect in the first 3 minutes after
+  // server start \u2014 all threads need full briefings after a server restart.
   const RECONNECT_WINDOW_MS = 5 * 60 * 1000;
+  const SERVER_FRESH_THRESHOLD_S = 180; // 3 minutes
   let isReconnect = false;
-  if (resolvedPreexisting && session.currentThreadId !== undefined) {
+  if (resolvedPreexisting && session.currentThreadId !== undefined && process.uptime() > SERVER_FRESH_THRESHOLD_S) {
     try {
       const threadEntry = getThread(getMemoryDb(), session.currentThreadId);
       if (threadEntry?.lastActiveAt) {
