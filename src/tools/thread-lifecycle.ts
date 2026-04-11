@@ -79,17 +79,8 @@ export function isProcessAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code;
-    // EPERM on Windows is unreliable — the process may be dead but the handle
-    // hasn't been cleaned up yet. Do a secondary check via OS-level kill.
-    if (code === "EPERM" && process.platform === "win32") {
-      try {
-        const { execSync } = require("node:child_process");
-        const out = execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: "utf-8", timeout: 3000 });
-        return out.includes(String(pid));
-      } catch { return false; }
-    }
-    if (code === "EPERM") return true; // non-Windows: EPERM means process exists
+    // EPERM = process exists but we can't signal it (e.g. different security context on Windows)
+    if ((err as NodeJS.ErrnoException).code === "EPERM") return true;
     return false;
   }
 }
@@ -114,6 +105,20 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
   if (!pidEntry) {
     log.debug(`[findAliveThread] Thread ${threadId}: not in spawnedThreads (${spawnedThreads.length} entries), not in PID files`);
     return undefined;
+  }
+  // On Windows, EPERM from process.kill can be returned for dead processes whose
+  // handles haven't been cleaned up. Use tasklist as a secondary verification for
+  // PID-file-restored entries (not freshly spawned ones) to avoid zombie adoption.
+  if (process.platform === "win32") {
+    try {
+      const { execSync } = require("node:child_process");
+      const out = execSync(`tasklist /FI "PID eq ${pidEntry.pid}" /NH`, { encoding: "utf-8", timeout: 5000 });
+      if (!out.includes(String(pidEntry.pid))) {
+        log.warn(`[findAliveThread] Thread ${threadId} PID ${pidEntry.pid} EPERM-alive but not in tasklist — zombie`);
+        try { unlinkSync(pidEntry.filePath); } catch { /* ok */ }
+        return undefined;
+      }
+    } catch { /* tasklist failed, trust isProcessAlive */ }
   }
   const restored: SpawnedThread = {
     pid: pidEntry.pid,

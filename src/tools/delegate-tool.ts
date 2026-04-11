@@ -36,7 +36,6 @@ import {
   spawnAgentProcess,
   spawnCopilotProcess,
   spawnCodexProcess,
-  cleanupStalePidFiles,
 } from "./thread-lifecycle.js";
 
 // ---------------------------------------------------------------------------
@@ -302,8 +301,11 @@ export async function handleStartThread(
 
   setThreadAgentType(threadId, agentType);
 
-  // ── 3. Clean stale PID files & check if already running ──────────────
-  cleanupStalePidFiles();
+  // ── 3. Check if already running ──────────────────────────────────
+  // Note: cleanupStalePidFiles() was removed from this hot path because it
+  // races with concurrent start_thread calls — it can delete PID files for
+  // processes that JUST spawned (isProcessAlive returns false briefly).
+  // Stale PID files are cleaned up by findAliveThread and at server startup.
   const alive = findAliveThread(threadId);
   if (alive) {
     // Topic health check: verify the Telegram topic still exists.
