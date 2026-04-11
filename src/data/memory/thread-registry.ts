@@ -191,7 +191,7 @@ export function updateThread(
 
 export function archiveThread(db: Database, threadId: number): boolean {
   const result = db.prepare(
-    `UPDATE thread_registry SET status = 'archived' WHERE thread_id = ?`,
+    `UPDATE thread_registry SET status = 'archived', keep_alive = 0 WHERE thread_id = ?`,
   ).run(threadId);
   return result.changes > 0;
 }
