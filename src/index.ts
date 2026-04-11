@@ -18,7 +18,22 @@ process.on("unhandledRejection", (reason) => {
 
 // --watcher mode: update watcher + standby MCP server (replaces PowerShell script).
 // Checked before heavy initialisation so the watcher stays self-contained.
-if (process.argv.includes("--watcher")) {
+// --supervisor mode: launch the Go supervisor binary instead of the TS watcher.
+if (process.argv.includes("--supervisor")) {
+  const { execFileSync } = await import("node:child_process");
+  const { join } = await import("node:path");
+  const { homedir } = await import("node:os");
+  const binary = join(homedir(), ".remote-copilot-mcp", "bin",
+    process.platform === "win32" ? "sensorium-supervisor.exe" : "sensorium-supervisor");
+  try {
+    execFileSync(binary, { stdio: "inherit", env: process.env });
+  } catch (e: any) {
+    if (e.status != null) process.exit(e.status);
+    console.error(`Failed to start supervisor: ${e.message}`);
+    console.error("Run 'npm run supervisor:install' first, or install Go and run scripts/install-supervisor.ps1");
+    process.exit(1);
+  }
+} else if (process.argv.includes("--watcher")) {
   const { startWatcherService } = await import("./watcher-service.js");
   await startWatcherService();
 } else {
