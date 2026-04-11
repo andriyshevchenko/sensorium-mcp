@@ -280,7 +280,8 @@ func (k *Keeper) isRootKeepAlive(ctx context.Context) bool {
 		tidFloat, _ := r["threadId"].(float64)
 		if int(tidFloat) == k.cfg.ThreadID {
 			keepAlive, _ := r["keepAlive"].(bool)
-			return keepAlive
+			status, _ := r["status"].(string)
+			return keepAlive && (status == "" || status == "active")
 		}
 	}
 	k.log.Debug("isRootKeepAlive(%d): root thread not found in response", k.cfg.ThreadID)

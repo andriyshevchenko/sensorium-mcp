@@ -268,6 +268,11 @@ func fetchKeeperSettings(ctx context.Context, mcp *MCPClient, log *Logger) ([]Ke
 			continue
 		}
 
+		// Skip non-active roots (archived, expired, exited)
+		if status, _ := r["status"].(string); status != "" && status != "active" {
+			continue
+		}
+
 		tidFloat, _ := r["threadId"].(float64) // JSON numbers decode as float64
 		tid := int(tidFloat)
 		if tid <= 0 {
