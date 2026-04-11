@@ -62,3 +62,8 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: amd64
         run: go build -o /dev/null .
+
+      - name: Test supervisor
+        if: matrix.goos == 'linux'
+        working-directory: supervisor
+        run: go test -v -count=1 ./...
