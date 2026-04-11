@@ -19,7 +19,7 @@ import type { TelegramClient } from "../telegram.js";
 import type { ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
-import { registerThread, getThread, getThreadByName, updateThread } from "../data/memory/thread-registry.js";
+import { registerThread, getThread, getThreadByName, updateThread, resolveTelegramTopicId } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { forkMemory } from "../data/memory/synthesis.js";
 import {
@@ -306,6 +306,28 @@ export async function handleStartThread(
   cleanupStalePidFiles();
   const alive = findAliveThread(threadId);
   if (alive) {
+    // Topic health check: verify the Telegram topic still exists.
+    // Agents that survived a server restart may be sending to a deleted topic.
+    try {
+      const db = initMemoryDb();
+      const topicId = resolveTelegramTopicId(db, threadId);
+      await telegram.sendMessage(telegramChatId, "\u{1F504} Thread still running. Verifying topic.", undefined, topicId);
+    } catch (probeErr) {
+      const msg = errorMessage(probeErr);
+      if (/thread not found|topic.*(closed|deleted|not found)/i.test(msg)) {
+        log.warn(`[start_thread] Thread ${threadId} topic is dead (${msg}) — creating replacement.`);
+        const topicName = resolvedThreadName;
+        try {
+          const newTopic = await telegram.createForumTopic(telegramChatId, topicName);
+          const db = initMemoryDb();
+          updateThread(db, threadId, { telegramTopicId: newTopic.message_thread_id });
+          registerTopic(telegramChatId, topicName, threadId);
+          log.info(`[start_thread] Remapped thread ${threadId} \u2192 topic ${newTopic.message_thread_id}`);
+        } catch (createErr) {
+          log.warn(`[start_thread] Topic remap failed: ${errorMessage(createErr)}`);
+        }
+      }
+    }
     return {
       content: [{
         type: "text",
