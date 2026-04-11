@@ -220,25 +220,31 @@ Controlled by the `AUTONOMOUS_MODE` environment variable (default: `false`).
 
 ## Update Protocol
 
-The `scripts/update-watcher.ps1` PowerShell script manages zero-downtime updates:
+The Go supervisor (`supervisor/`) manages process lifecycle and zero-downtime updates:
 
 1. **Registry polling** — Monitors the npm registry for new `sensorium-mcp` versions
-   - **Production mode**: Daily check at a configured hour (`$POLL_AT_HOUR`, default: 4 AM)
-   - **Development mode**: Polls every 60 seconds (`$POLL_INTERVAL_SECONDS`)
+   - **Production mode**: Daily check at a configured hour (`WATCHER_POLL_HOUR`, default: 4 AM)
+   - **Development mode**: Polls every 60 seconds (`WATCHER_POLL_INTERVAL`)
 
 2. **Update detection** — When a new version is found:
    1. Writes a **maintenance flag** file (`~/.remote-copilot-mcp/maintenance.flag`) so agents can gracefully wind down
    2. Sends a **Telegram notification** to alert the operator
-   3. Waits a **grace period** (`$GRACE_PERIOD_SECONDS`, default: 300s) for agents to notice and call sleep
-   4. Enforces **minimum uptime** (`$MIN_UPTIME_SECONDS`, default: 600s) before allowing restart to batch rapid publishes
+   3. Waits a **grace period** (`WATCHER_GRACE_PERIOD`, default: 300s prod / 10s dev) for agents to notice and call sleep
+   4. Enforces **minimum uptime** (600s) before allowing restart to batch rapid publishes
 
 3. **Restart sequence**:
    1. Stops the running MCP server process
    2. Clears the npx cache to force a fresh download
-   3. Restarts the MCP server
+   3. Restarts the MCP server (retries up to 3 times)
    4. Removes the maintenance flag file
 
-4. **Agent-side handling** — During wait polling, the agent checks `checkMaintenanceFlag()`. When a flag is detected, the response instructs the agent to use Desktop Commander `Start-Sleep` to wait externally rather than calling MCP tools.
+4. **Keeper threads** — Each `keepAlive=true` root thread gets a dedicated goroutine that:
+   - Polls `IsThreadRunning` using the actual worker thread ID (not the root)
+   - Detects stuck threads via heartbeat age
+   - Restarts via MCP `start_thread` with exponential backoff
+   - Escalates on repeated fast exits (credit/API key issues)
+
+5. **Agent-side handling** — During wait polling, the agent checks `checkMaintenanceFlag()`. When a flag is detected, the response instructs the agent to use Desktop Commander `Start-Sleep` to wait externally rather than calling MCP tools.
 
 ## Rules
 
