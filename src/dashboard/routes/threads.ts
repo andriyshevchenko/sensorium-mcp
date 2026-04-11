@@ -291,12 +291,19 @@ export function handleDeleteThread(args: RouteArgs, threadId: number): boolean {
         json({ ok: true, action: "archived", threadId });
     }
 
+    // When archiving an active worker, also disable keepAlive on its root
+    // so the supervisor keeper stops restarting it.
+    if (existing.type === "worker" && existing.rootThreadId) {
+        const root = getThread(db, existing.rootThreadId);
+        if (root?.keepAlive) {
+            updateThread(db, existing.rootThreadId, { keepAlive: false });
+        }
+    }
+
     // Delete Telegram topic (best-effort, async)
     deleteTelegramTopic(db, threadId);
 
-    if (existing.keepAlive || existing.type === "root") {
-        syncKeepAliveToSettings(db);
-    }
+    syncKeepAliveToSettings(db);
     return true;
 }
 

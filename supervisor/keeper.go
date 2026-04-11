@@ -144,6 +144,16 @@ func (k *Keeper) run(ctx context.Context) {
 
 		k.log.Info("Thread %d not running — calling start_thread (attempt %d/%d)", k.cfg.ThreadID, retryCount+1, k.cfg.MaxRetries)
 
+		// Re-verify root still has keepAlive before restarting
+		// (user may have archived the worker, which disables keepAlive on the root)
+		if !k.isRootKeepAlive(ctx) {
+			k.log.Info("Thread %d root has keepAlive=false — stopping keeper", k.cfg.ThreadID)
+			k.mu.Lock()
+			k.stopped = true
+			k.mu.Unlock()
+			return
+		}
+
 		lastStartTime = time.Now()
 		ok, workerID := k.callStartThread(ctx)
 
@@ -257,6 +267,24 @@ func (k *Keeper) sleep(ctx context.Context, d time.Duration) {
 	case <-ctx.Done():
 	case <-time.After(d):
 	}
+}
+
+// isRootKeepAlive checks whether the root thread still has keepAlive=true.
+func (k *Keeper) isRootKeepAlive(ctx context.Context) bool {
+	roots, err := k.mcp.GetRootThreads(ctx)
+	if err != nil {
+		k.log.Debug("isRootKeepAlive(%d): failed to fetch roots: %v — assuming still alive", k.cfg.ThreadID, err)
+		return true // fail-open: don't stop keeper if we can't check
+	}
+	for _, r := range roots {
+		tidFloat, _ := r["threadId"].(float64)
+		if int(tidFloat) == k.cfg.ThreadID {
+			keepAlive, _ := r["keepAlive"].(bool)
+			return keepAlive
+		}
+	}
+	k.log.Debug("isRootKeepAlive(%d): root thread not found in response", k.cfg.ThreadID)
+	return false // root thread gone → stop keeper
 }
 
 // parseWorkerThreadID extracts the "threadId" field from a start_thread JSON response.
