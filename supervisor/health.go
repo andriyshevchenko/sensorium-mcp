@@ -108,11 +108,23 @@ func (m *MCPClient) GetRootThreads(ctx context.Context) ([]map[string]any, error
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("GET /api/threads/roots: %d", resp.StatusCode)
 	}
-	var result []map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return nil, err
 	}
-	return result, nil
+
+	// Try bare array first, then wrapped {"threads": [...]}
+	var result []map[string]any
+	if err := json.Unmarshal(body, &result); err == nil {
+		return result, nil
+	}
+	var wrapped struct {
+		Threads []map[string]any `json:"threads"`
+	}
+	if err := json.Unmarshal(body, &wrapped); err != nil {
+		return nil, fmt.Errorf("cannot parse /api/threads/roots response: %w", err)
+	}
+	return wrapped.Threads, nil
 }
 
 // IsThreadRunning checks if a specific thread is running on the MCP server.
