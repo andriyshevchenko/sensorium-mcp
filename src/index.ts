@@ -16,9 +16,8 @@ process.on("unhandledRejection", (reason) => {
   process.exit(1);
 });
 
-// --watcher mode: update watcher + standby MCP server (replaces PowerShell script).
-// Checked before heavy initialisation so the watcher stays self-contained.
-// --supervisor mode: launch the Go supervisor binary instead of the TS watcher.
+// --supervisor mode: launch the Go supervisor binary.
+// Checked before heavy initialisation so the supervisor stays self-contained.
 if (process.argv.includes("--supervisor")) {
   const { execFileSync } = await import("node:child_process");
   const { join } = await import("node:path");
@@ -33,9 +32,6 @@ if (process.argv.includes("--supervisor")) {
     console.error("Run 'npm run supervisor:install' first, or install Go and run scripts/install-supervisor.ps1");
     process.exit(1);
   }
-} else if (process.argv.includes("--watcher")) {
-  const { startWatcherService } = await import("./watcher-service.js");
-  await startWatcherService();
 } else {
 
 // Normal server startup ─────────────────────────────────────────────────────
