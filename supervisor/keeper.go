@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sync"
@@ -97,20 +98,22 @@ func (k *Keeper) run(ctx context.Context) {
 	fastExitCount := 0
 	fastExitEscalation := 0
 	var lastStartTime time.Time
+	activeThreadID := k.cfg.ThreadID // may differ from root after start_thread
 
 	checkAndStart := func() {
 		if k.isStopped() {
 			return
 		}
 
-		// Check if thread is running
-		running := k.mcp.IsThreadRunning(ctx, k.cfg.ThreadID)
+		// Check if thread is running — use activeThreadID (worker) not root
+		running := k.mcp.IsThreadRunning(ctx, activeThreadID)
 		if running {
 			// Check if stuck
-			if k.mcp.IsThreadStuck(ctx, k.cfg.ThreadID, k.global.StuckThreshold) {
-				k.log.Warn("Thread %d is stuck (no heartbeat for %v) — restarting", k.cfg.ThreadID, k.global.StuckThreshold)
+			if k.mcp.IsThreadStuck(ctx, activeThreadID, k.global.StuckThreshold) {
+				k.log.Warn("Thread %d (worker %d) is stuck (no heartbeat for %v) — restarting", k.cfg.ThreadID, activeThreadID, k.global.StuckThreshold)
 				// Kill via MCP API, then fall through to restart
-				k.killThread(ctx)
+				k.killThread(ctx, activeThreadID)
+				activeThreadID = k.cfg.ThreadID // reset — will get new worker ID on restart
 			} else {
 				// Healthy — reset counters
 				if retryCount > 0 {
@@ -142,10 +145,15 @@ func (k *Keeper) run(ctx context.Context) {
 		k.log.Info("Thread %d not running — calling start_thread (attempt %d/%d)", k.cfg.ThreadID, retryCount+1, k.cfg.MaxRetries)
 
 		lastStartTime = time.Now()
-		ok := k.callStartThread(ctx)
+		ok, workerID := k.callStartThread(ctx)
 
 		if ok {
-			k.log.Info("Thread %d start_thread succeeded", k.cfg.ThreadID)
+			if workerID > 0 {
+				activeThreadID = workerID
+				k.log.Info("Thread %d start_thread succeeded (worker %d)", k.cfg.ThreadID, workerID)
+			} else {
+				k.log.Info("Thread %d start_thread succeeded", k.cfg.ThreadID)
+			}
 			retryCount = 0
 			// Check for fast exit on next check
 		} else {
@@ -197,30 +205,35 @@ func (k *Keeper) run(ctx context.Context) {
 	}
 }
 
-func (k *Keeper) callStartThread(ctx context.Context) bool {
+// callStartThread starts the thread via MCP. Returns (success, workerThreadID).
+// workerThreadID is extracted from the response JSON when available.
+func (k *Keeper) callStartThread(ctx context.Context) (bool, int) {
 	sessionID, err := k.mcp.OpenMCPSession(ctx)
 	if err != nil {
 		k.log.Error("Failed to open MCP session: %v", err)
-		return false
+		return false, 0
 	}
 	defer k.mcp.CloseMCPSession(ctx, sessionID)
 
 	text, err := k.mcp.CallStartThread(ctx, sessionID, k.cfg.ThreadID, k.cfg.SessionName, k.cfg.Client, k.cfg.WorkingDirectory)
 	if err != nil {
 		k.log.Error("start_thread failed: %v", err)
-		return false
+		return false, 0
 	}
 
 	if text != "" {
 		k.log.Info("start_thread response: %.200s", text)
 	}
-	return true
+
+	// Parse the worker threadId from the response JSON
+	workerID := parseWorkerThreadID(text)
+	return true, workerID
 }
 
-func (k *Keeper) killThread(ctx context.Context) {
-	k.log.Info("Killing stuck thread %d", k.cfg.ThreadID)
+func (k *Keeper) killThread(ctx context.Context, threadID int) {
+	k.log.Info("Killing stuck thread %d", threadID)
 	// Read PID from thread PID file
-	pidFile := k.global.Paths.PIDsDir + "/" + fmt.Sprintf("%d.pid", k.cfg.ThreadID)
+	pidFile := k.global.Paths.PIDsDir + "/" + fmt.Sprintf("%d.pid", threadID)
 	pid, err := ReadPIDFile(pidFile)
 	if err != nil {
 		k.log.Warn("Cannot read PID for thread %d: %v", k.cfg.ThreadID, err)
@@ -246,4 +259,16 @@ func (k *Keeper) sleep(ctx context.Context, d time.Duration) {
 	}
 }
 
-// fmt import is used in killThread and logging
+// parseWorkerThreadID extracts the "threadId" field from a start_thread JSON response.
+func parseWorkerThreadID(text string) int {
+	if text == "" {
+		return 0
+	}
+	var resp struct {
+		ThreadID int `json:"threadId"`
+	}
+	if json.Unmarshal([]byte(text), &resp) == nil && resp.ThreadID > 0 {
+		return resp.ThreadID
+	}
+	return 0
+}
