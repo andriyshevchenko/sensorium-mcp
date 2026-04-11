@@ -35,3 +35,30 @@ jobs:
 
       - name: Test
         run: npm test
+
+  supervisor-build:
+    name: Build Supervisor (Go)
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: supervisor/go.mod
+
+      - name: Build supervisor (${{ matrix.goos }})
+        working-directory: supervisor
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: amd64
+        run: go build -o /dev/null .

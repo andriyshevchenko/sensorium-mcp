@@ -8,12 +8,20 @@
   },
   "files": [
     "dist",
-    "templates"
+    "templates",
+    "supervisor",
+    "scripts/install-supervisor.ps1",
+    "scripts/install-supervisor.sh",
+    "scripts/start-supervisor.ps1",
+    "scripts/start-supervisor.sh"
   ],
   "scripts": {
     "build": "cd src/dashboard/vue && npx vite build && cd ../../.. && node -e \"const fs=require('fs');if(fs.existsSync('dist/dashboard/index.html'))fs.renameSync('dist/dashboard/index.html','dist/dashboard/spa.html')\" && tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
+    "supervisor:install": "pwsh scripts/install-supervisor.ps1",
+    "supervisor:start": "pwsh scripts/start-supervisor.ps1",
+    "supervisor:dev": "pwsh scripts/start-supervisor.ps1 -Mode development",
     "prepublishOnly": "npm run build",
     "test": "echo \"No tests defined\" && exit 0"
   },
