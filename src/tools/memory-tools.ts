@@ -23,6 +23,7 @@ import {
   updateSemanticNote,
   parseRelativeTime,
 } from "../memory.js";
+import { scoreMemoryQuality, formatScoreComparison } from "../data/memory/quality-scoring.js";
 import { generateEmbedding } from "../openai.js";
 import { log } from "../logger.js";
 import type { ToolResult } from "../types.js";
@@ -255,6 +256,7 @@ function handleMemoryUpdate(
         keywords: origNote.keywords,
         confidence: typeof args.newConfidence === "number" ? args.newConfidence : 0.8,
         priority: typeof args.newPriority === "number" ? args.newPriority : undefined,
+        reason: reason || undefined,
       });
       return {
         content: [{ type: "text", text: `Superseded ${memId} → ${newId} (reason: ${reason})` + reminder }],
@@ -381,6 +383,22 @@ function handleMemoryForget(
   }
 }
 
+async function handleMemoryQualityScore(
+  db: MemoryDb,
+  args: Record<string, unknown>,
+  reminder: string,
+  errorResult: ToolContext["errorResult"],
+): Promise<ToolResult> {
+  try {
+    const sampleSize = typeof args.sample_size === "number" ? args.sample_size : undefined;
+    const result = await scoreMemoryQuality(db, { sampleSize });
+    const report = formatScoreComparison(db, result);
+    return { content: [{ type: "text", text: report + reminder }] };
+  } catch (err) {
+    return errorResult(`Quality scoring error: ${errorMessage(err)}` + reminder);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main dispatcher
 // ---------------------------------------------------------------------------
@@ -420,6 +438,9 @@ export async function handleMemoryTool(
 
     case "memory_forget":
       return handleMemoryForget(getMemoryDb(), args, threadId, reminder, errorResult);
+
+    case "memory_quality_score":
+      return handleMemoryQualityScore(getMemoryDb(), args, reminder, errorResult);
 
     default:
       return errorResult(`Unknown memory tool: ${name}`);

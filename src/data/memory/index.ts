@@ -21,3 +21,4 @@ export * from './topic-shift.js';
 export * from './synthesis.js';
 export * from './bootstrap.js';
 export * from './thread-registry.js';
+export * from './quality-scoring.js';

@@ -166,6 +166,26 @@ export const memoryToolDefs: ToolDefinition[] = [
     },
   },
   {
+    name: "memory_quality_score",
+    description:
+      "Score the quality of stored semantic memories by sampling random notes and evaluating them " +
+      "on specificity, actionability, and accuracy (1-5 each). " +
+      "Returns aggregate scores and comparison to the last run.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sample_size: {
+          type: "number",
+          description: "Number of random notes to score (default: 20).",
+        },
+        threadId: {
+          type: "number",
+          description: "Active thread ID.",
+        },
+      },
+    },
+  },
+  {
     name: "memory_forget",
     description:
       "Mark a memory as expired/forgotten. Use sparingly \u2014 most forgetting happens via decay. " +
