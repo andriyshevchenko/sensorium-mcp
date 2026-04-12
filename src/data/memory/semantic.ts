@@ -652,7 +652,7 @@ export function archiveNotesForThread(db: Database, threadId: number): number {
 
   const notes: ArchivedNoteInfo[] = activeNotes.map(row => ({
     noteId: row.note_id,
-    keywords: row.keywords ? JSON.parse(row.keywords) as string[] : [],
+    keywords: parseJsonArray(row.keywords) as string[],
   }));
 
   db.transaction(() => {
