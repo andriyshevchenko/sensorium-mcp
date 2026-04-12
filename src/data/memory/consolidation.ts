@@ -74,7 +74,8 @@ function sweepOrphanedNotes(db: Database): number {
   let totalArchived = 0;
   for (const threadId of threadIdsWithNotes) {
     const status = threadStatusMap.get(threadId);
-    if (status && TERMINAL_THREAD_STATUSES.has(status)) {
+    // Archive notes for terminal threads AND threads missing from registry
+    if (!status || TERMINAL_THREAD_STATUSES.has(status)) {
       totalArchived += archiveNotesForThread(db, threadId);
     }
   }
