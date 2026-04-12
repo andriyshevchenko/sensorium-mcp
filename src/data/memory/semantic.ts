@@ -447,13 +447,22 @@ export function supersedeNote(
     confidence?: number;
     priority?: number;
     sourceEpisodes?: string[];
+    reason?: string;
   }
 ): string {
   // Inherit thread_id and is_guardrail from the old note being superseded
-  const oldRow = db.prepare(`SELECT thread_id, is_guardrail, pinned FROM semantic_notes WHERE note_id = ?`).get(oldNoteId) as { thread_id: number | null; is_guardrail: number; pinned: number } | undefined;
+  const oldRow = db.prepare(`SELECT thread_id, is_guardrail, pinned, content FROM semantic_notes WHERE note_id = ?`).get(oldNoteId) as { thread_id: number | null; is_guardrail: number; pinned: number; content: string } | undefined;
+
+  // Build provenance-prefixed content
+  const oldContent = oldRow?.content ?? "";
+  const truncated = oldContent.length > 100 ? oldContent.slice(0, 100) + "…" : oldContent;
+  const reasonText = newNote.reason ?? "no reason given";
+  const provenanceLine = `[Supersedes ${oldNoteId}: "${truncated}", reason: "${reasonText}"]`;
+  const contentWithProvenance = `${provenanceLine}\n${newNote.content}`;
+
   const newId = saveSemanticNote(db, {
     type: newNote.type as SemanticNote["type"],
-    content: newNote.content,
+    content: contentWithProvenance,
     keywords: newNote.keywords,
     confidence: newNote.confidence,
     priority: newNote.priority,
