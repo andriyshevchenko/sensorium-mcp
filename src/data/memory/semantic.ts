@@ -7,6 +7,7 @@
 import type { Database } from "./schema.js";
 import { generateId, nowISO, jsonOrNull, parseJsonArray, parseJsonObject } from "./utils.js";
 import { cosineSimilarity } from "../../openai.js";
+import { log } from "../../logger.js";
 
 // ─── Type Definitions ────────────────────────────────────────────────────────
 
@@ -621,4 +622,60 @@ export function findPotentialConflicts(
       return overlap >= MIN_KEYWORD_OVERLAP;
     })
     .map(rowToSemanticNote);
+}
+
+// ─── Thread-scoped Note Archival ─────────────────────────────────────────────
+
+interface ArchivedNoteInfo {
+  noteId: string;
+  keywords: string[];
+}
+
+/**
+ * Expire all active semantic notes belonging to a given thread.
+ * Sets valid_to = NOW() and decrements the topic index for each note's keywords.
+ * Returns the count of archived notes.
+ */
+export function archiveNotesForThread(db: Database, threadId: number): number {
+  const now = nowISO();
+
+  const activeNotes = db.prepare(
+    `SELECT note_id, keywords FROM semantic_notes
+     WHERE thread_id = ? AND valid_to IS NULL`
+  ).all(threadId) as { note_id: string; keywords: string }[];
+
+  if (activeNotes.length === 0) return 0;
+
+  const expireStmt = db.prepare(
+    `UPDATE semantic_notes SET valid_to = ?, updated_at = ? WHERE note_id = ?`
+  );
+
+  const notes: ArchivedNoteInfo[] = activeNotes.map(row => ({
+    noteId: row.note_id,
+    keywords: row.keywords ? JSON.parse(row.keywords) as string[] : [],
+  }));
+
+  db.transaction(() => {
+    for (const note of notes) {
+      expireStmt.run(now, now, note.noteId);
+      if (note.keywords.length > 0) {
+        decrementTopicIndexForKeywords(db, note.keywords, "semantic");
+      }
+    }
+  })();
+
+  log.info(`[memory] Archived ${notes.length} semantic notes for thread ${threadId}`);
+  return notes.length;
+}
+
+/**
+ * Find thread IDs that have active (non-expired) semantic notes.
+ * Returns distinct thread IDs (excluding null/global notes).
+ */
+export function getThreadIdsWithActiveNotes(db: Database): number[] {
+  const rows = db.prepare(
+    `SELECT DISTINCT thread_id FROM semantic_notes
+     WHERE thread_id IS NOT NULL AND valid_to IS NULL`
+  ).all() as { thread_id: number }[];
+  return rows.map(r => r.thread_id);
 }

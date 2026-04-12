@@ -5,12 +5,15 @@ import {
   saveSemanticNote,
   searchSemanticNotesRanked,
   supersedeNote,
+  archiveNotesForThread,
+  getThreadIdsWithActiveNotes,
 } from "./semantic.js";
 import { log } from "../../logger.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
 import { nowISO, repairAndParseJSON } from "./utils.js";
 import { chatCompletion, type ChatMessage } from "../../integrations/openai/chat.js";
 import { errorMessage } from "../../utils.js";
+import { getAllThreads } from "./thread-registry.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -50,6 +53,37 @@ function logConsolidation(db: Database, entry: ConsolidationLog): void {
   );
 }
 
+
+// ─── Orphaned Notes Sweep ────────────────────────────────────────────────────
+
+/** Terminal thread statuses that indicate notes should be expired. */
+const TERMINAL_THREAD_STATUSES = new Set(['archived', 'expired', 'exited']);
+
+/**
+ * Find threads with active semantic notes whose registry status is terminal
+ * (archived/expired/exited) and expire those notes.
+ * Returns total number of notes archived.
+ */
+function sweepOrphanedNotes(db: Database): number {
+  const threadIdsWithNotes = getThreadIdsWithActiveNotes(db);
+  if (threadIdsWithNotes.length === 0) return 0;
+
+  const allThreads = getAllThreads(db);
+  const threadStatusMap = new Map(allThreads.map(t => [t.threadId, t.status]));
+
+  let totalArchived = 0;
+  for (const threadId of threadIdsWithNotes) {
+    const status = threadStatusMap.get(threadId);
+    if (status && TERMINAL_THREAD_STATUSES.has(status)) {
+      totalArchived += archiveNotesForThread(db, threadId);
+    }
+  }
+
+  if (totalArchived > 0) {
+    log.info(`[memory] Orphan sweep: archived ${totalArchived} notes from dead threads`);
+  }
+  return totalArchived;
+}
 
 // ─── Intelligent Consolidation ───────────────────────────────────────────────
 
@@ -123,6 +157,16 @@ export async function runConsolidationAllThreads(
     }
   } catch (err) {
     log.warn(`[memory] Pruning phase failed: ${errorMessage(err)}`);
+  }
+
+  // Phase 3: Orphaned notes sweep — expire notes for dead/archived threads
+  try {
+    const orphanedCount = sweepOrphanedNotes(db);
+    if (orphanedCount > 0) {
+      allDetails.push(`Orphan sweep: archived ${orphanedCount} notes from dead threads`);
+    }
+  } catch (err) {
+    log.warn(`[memory] Orphan notes sweep failed: ${errorMessage(err)}`);
   }
 
   return {

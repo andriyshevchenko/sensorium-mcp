@@ -15,6 +15,7 @@ import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "
 import { synthesizeGhostMemory } from "../memory.js";
 import { archiveThread, getAllThreads, getThread, resolveTelegramTopicId, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
+import { archiveNotesForThread } from "../data/memory/semantic.js";
 import { errorMessage } from "../utils.js";
 
 /** Env vars that must NOT leak to spawned agent processes. */
@@ -397,7 +398,10 @@ async function handleProcessExit(
         }
       } catch { /* topic deletion is best-effort */ }
       // Archive the worker in the registry
-      try { archiveThread(db, threadId); } catch { /* best-effort */ }
+      try {
+        archiveThread(db, threadId);
+        archiveNotesForThread(db, threadId);
+      } catch { /* best-effort */ }
     }
   } catch (err) {
     log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
@@ -1008,6 +1012,7 @@ export async function cleanupExpiredWorkers(
         // Delete Telegram topic for stale worker
         try { await telegram.deleteForumTopic(chatId, row.thread_id); } catch { /* topic might not exist */ }
         archiveThread(db, row.thread_id);
+        try { archiveNotesForThread(db, row.thread_id); } catch { /* best-effort */ }
         result.cleaned++;
       } catch { /* best-effort */ }
     }
@@ -1035,10 +1040,11 @@ async function cleanupSingleWorker(
   // 3. Delete Telegram topic
   try { await telegram.deleteForumTopic(chatId, thread.threadId); } catch { /* topic might not exist */ }
 
-  // 4. Archive in thread registry (best-effort)
+  // 4. Archive in thread registry and expire semantic notes (best-effort)
   try {
     const db = initMemoryDb();
     archiveThread(db, thread.threadId);
+    archiveNotesForThread(db, thread.threadId);
   } catch { /* registry archival is best-effort */ }
 
   // 5. Remove from tracking (PID file cleanup happens in the exit handler)
