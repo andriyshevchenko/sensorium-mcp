@@ -7,11 +7,13 @@ import {
   supersedeNote,
   archiveNotesForThread,
   getThreadIdsWithActiveNotes,
+  searchByEmbedding,
+  saveNoteEmbedding,
 } from "./semantic.js";
 import { log } from "../../logger.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
 import { nowISO, repairAndParseJSON } from "./utils.js";
-import { chatCompletion, type ChatMessage } from "../../integrations/openai/chat.js";
+import { chatCompletion, generateEmbedding, type ChatMessage } from "../../integrations/openai/chat.js";
 import { errorMessage } from "../../utils.js";
 import { getAllThreads } from "./thread-registry.js";
 
@@ -53,6 +55,34 @@ function logConsolidation(db: Database, entry: ConsolidationLog): void {
   );
 }
 
+
+// ─── Write-time deduplication ────────────────────────────────────────────────
+
+const CONSOLIDATION_DEDUP_THRESHOLD = 0.85;
+
+async function checkConsolidationDuplicate(
+  db: Database,
+  content: string,
+  apiKey: string,
+  threadId: number,
+): Promise<{ isDuplicate: boolean; matchId?: string; similarity?: number; embedding: Float32Array | null }> {
+  try {
+    const embedding = await generateEmbedding(content, apiKey);
+    const matches = searchByEmbedding(db, embedding, {
+      maxResults: 1,
+      minSimilarity: CONSOLIDATION_DEDUP_THRESHOLD,
+      skipAccessTracking: true,
+      threadId,
+    });
+    const match = matches.find((m) => m.similarity >= CONSOLIDATION_DEDUP_THRESHOLD);
+    if (match) {
+      return { isDuplicate: true, matchId: match.noteId, similarity: match.similarity, embedding };
+    }
+    return { isDuplicate: false, embedding };
+  } catch {
+    return { isDuplicate: false, embedding: null };
+  }
+}
 
 // ─── Orphaned Notes Sweep ────────────────────────────────────────────────────
 
@@ -361,6 +391,8 @@ Rules:
     const episodeIds = episodes.map((ep) => ep.episodeId);
 
     if (!dryRun) {
+      const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+
       for (const note of extractedNotes) {
         if (typeof note.content !== 'string' || note.content.length === 0 || note.content.length >= 2000) {
           log.warn(`[consolidation] Skipping note with invalid content (type=${typeof note.content}, len=${typeof note.content === 'string' ? note.content.length : 'N/A'})`);
@@ -371,15 +403,28 @@ Rules:
           ? (note.type as "fact" | "preference" | "pattern" | "entity" | "relationship")
           : "fact";
 
-        saveSemanticNote(db, {
+        // Write-time dedup: skip notes that are too similar to existing ones
+        const dedup = await checkConsolidationDuplicate(db, note.content, apiKey, knowledgeThreadId);
+        if (dedup.isDuplicate) {
+          log.debug(`[consolidation] Dedup: skipping note similar to ${dedup.matchId} at ${dedup.similarity?.toFixed(3)}`);
+          continue;
+        }
+
+        const noteId = saveSemanticNote(db, {
           type: noteType,
           content: note.content,
           keywords: Array.isArray(note.keywords) ? note.keywords : [],
           confidence: Math.max(0, Math.min(1, note.confidence ?? 0.5)),
           priority: Math.max(0, Math.min(2, note.priority ?? 0)),
-          threadId: resolveKnowledgeThreadId(threadId),
+          threadId: knowledgeThreadId,
           sourceEpisodes: episodeIds,
         });
+
+        // Persist the embedding computed during dedup check
+        if (dedup.embedding) {
+          saveNoteEmbedding(db, noteId, dedup.embedding);
+        }
+
         notesCreated++;
         details.push(`[${noteType}] ${note.content}`);
       }
