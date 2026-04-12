@@ -79,7 +79,8 @@ async function checkConsolidationDuplicate(
       return { isDuplicate: true, matchId: match.noteId, similarity: match.similarity, embedding };
     }
     return { isDuplicate: false, embedding };
-  } catch {
+  } catch (err) {
+    log.warn(`[consolidation] Dedup embedding check failed, proceeding without dedup: ${err instanceof Error ? err.message : err}`);
     return { isDuplicate: false, embedding: null };
   }
 }
