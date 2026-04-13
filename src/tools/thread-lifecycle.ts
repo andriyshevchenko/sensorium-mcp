@@ -944,17 +944,17 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
     if (isCopilot) {
       const cliPath = resolveCopilotPath();
       if (!cliPath) { result.errors.push(`Thread ${threadId} (${name}): copilot CLI not found`); continue; }
-      spawnResult = spawnCopilotProcess(cliPath, name, threadId, undefined, undefined, client);
+      spawnResult = spawnCopilotProcess(cliPath, name, threadId, undefined, threadId, client);
     } else if (isCodex) {
       const cliPath = resolveCodexPath();
       if (!cliPath) { result.errors.push(`Thread ${threadId} (${name}): codex CLI not found`); continue; }
-      spawnResult = spawnCodexProcess(cliPath, name, threadId);
+      spawnResult = spawnCodexProcess(cliPath, name, threadId, undefined, threadId);
     } else {
       const cliPath = resolveClaudePath();
       if (!cliPath) { result.errors.push(`Thread ${threadId} (${name}): claude CLI not found`); continue; }
       const mcpConfig = resolveMcpConfigPath();
       if (!mcpConfig) { result.errors.push(`Thread ${threadId} (${name}): MCP config not found`); continue; }
-      spawnResult = spawnAgentProcess(cliPath, mcpConfig, name, threadId);
+      spawnResult = spawnAgentProcess(cliPath, mcpConfig, name, threadId, undefined, threadId, threadId);
     }
 
     if ("error" in spawnResult) {

@@ -146,9 +146,9 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
 
   const activeProcedures = db
     .prepare(
-      `SELECT * FROM procedures WHERE thread_id = ? ORDER BY times_executed DESC, confidence DESC LIMIT 5`
+      `SELECT * FROM procedures ORDER BY times_executed DESC, confidence DESC LIMIT 5`
     )
-    .all(knowledgeThreadId) as Record<string, unknown>[];
+    .all() as Record<string, unknown>[];
   const procedures = activeProcedures.map(rowToProcedure);
 
   const baseline = getVoiceBaseline(db);
