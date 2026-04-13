@@ -119,7 +119,7 @@ func (k *Keeper) run(ctx context.Context) {
 				if retryCount > 0 {
 					k.log.Info("Thread %d is healthy again (was at retry %d)", k.cfg.ThreadID, retryCount)
 				} else {
-					k.log.Debug("Thread %d is healthy", k.cfg.ThreadID)
+					k.log.Info("Thread %d (worker %d) is healthy", k.cfg.ThreadID, activeThreadID)
 				}
 				retryCount = 0
 				return

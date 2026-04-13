@@ -261,15 +261,11 @@ export function handlePollTimeout(
   // Codex exits after any tool response unless the message is very explicit.
   // Use an imperative call-to-action that leaves no ambiguity about looping.
   const agentType = getEffectiveAgentType(effectiveThreadId);
-  const noMsgText = agentType === "codex"
-    ? `MANDATORY ACTION: Call \`remote_copilot_wait_for_instructions\` with threadId=${effectiveThreadId} RIGHT NOW. ` +
-      `No operator message arrived. You MUST keep polling — call the tool again immediately. Do NOT stop.` +
-      memoryRefresh +
-      scheduleHint
-    : `No new instructions. Call \`remote_copilot_wait_for_instructions\` again to keep listening.` +
-      memoryRefresh +
-      scheduleHint +
-      getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE);
+  const noMsgText = `MANDATORY: Call \`remote_copilot_wait_for_instructions\` with threadId=${effectiveThreadId} NOW. ` +
+    `No operator message arrived. You MUST keep polling — call the tool again immediately. Do NOT stop or exit.` +
+    memoryRefresh +
+    scheduleHint +
+    (agentType === "codex" ? "" : getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE));
 
   return {
     content: [{ type: "text", text: noMsgText }],
