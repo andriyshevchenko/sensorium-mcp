@@ -226,6 +226,19 @@ export function resolveTelegramTopicId(db: Database, threadId: number): number {
 }
 
 /**
+ * Returns the explicit telegram_topic_id for a thread, or null if not set.
+ * Unlike resolveTelegramTopicId, does NOT fall back to threadId.
+ * Use this for destructive operations (topic deletion) to avoid accidentally
+ * deleting a root thread's topic when a worker's telegram_topic_id is NULL.
+ */
+export function getExplicitTelegramTopicId(db: Database, threadId: number): number | null {
+  const row = db.prepare(
+    `SELECT telegram_topic_id FROM thread_registry WHERE thread_id = ?`,
+  ).get(threadId) as { telegram_topic_id: number | null } | undefined;
+  return row?.telegram_topic_id ?? null;
+}
+
+/**
  * Backfill thread names from topic_registry for threads with empty/missing names.
  * Returns the number of threads updated.
  */

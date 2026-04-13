@@ -30,7 +30,7 @@ import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./ty
 import { errorMessage } from "../../utils.js";
 import { isThreadRunning } from "../../tools/thread-lifecycle.js";
 import { readThreadHeartbeat } from "../../data/file-storage.js";
-import { resolveTelegramTopicId } from "../../data/memory/thread-registry.js";
+import { getExplicitTelegramTopicId, resolveTelegramTopicId } from "../../data/memory/thread-registry.js";
 import { config } from "../../config.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -313,7 +313,11 @@ function deleteTelegramTopic(db: Database, threadId: number): void {
     if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
     void (async () => {
         try {
-            const topicId = resolveTelegramTopicId(db, threadId);
+            const thread = getThread(db, threadId);
+            const topicId = thread?.type === 'worker'
+                ? getExplicitTelegramTopicId(db, threadId)
+                : resolveTelegramTopicId(db, threadId);
+            if (topicId == null) return;
             await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/deleteForumTopic`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
