@@ -13,7 +13,7 @@ import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
 import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "../sessions.js";
 import { synthesizeGhostMemory } from "../memory.js";
-import { archiveThread, getAllThreads, getThread, resolveTelegramTopicId, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
+import { archiveThread, getAllThreads, getExplicitTelegramTopicId, getThread, updateThread, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { archiveNotesForThread } from "../data/memory/semantic.js";
 import { errorMessage } from "../utils.js";
@@ -387,14 +387,16 @@ async function handleProcessExit(
         const token = process.env.TELEGRAM_TOKEN || "";
         const chatId = process.env.TELEGRAM_CHAT_ID || "";
         if (token && chatId) {
-          const topicId = resolveTelegramTopicId(db, threadId);
-          await fetch(`https://api.telegram.org/bot${token}/deleteForumTopic`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chat_id: chatId, message_thread_id: topicId }),
-            signal: AbortSignal.timeout(10_000),
-          });
-          log.info(`[cleanup] Deleted Telegram topic for worker ${threadId}`);
+          const topicId = getExplicitTelegramTopicId(db, threadId);
+          if (topicId != null) {
+            await fetch(`https://api.telegram.org/bot${token}/deleteForumTopic`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: chatId, message_thread_id: topicId }),
+              signal: AbortSignal.timeout(10_000),
+            });
+            log.info(`[cleanup] Deleted Telegram topic for worker ${threadId}`);
+          }
         }
       } catch { /* topic deletion is best-effort */ }
       // Archive the worker in the registry
@@ -1009,8 +1011,12 @@ export async function cleanupExpiredWorkers(
       // Skip if still alive in-memory (already handled above)
       if (spawnedThreads.some(t => t.threadId === row.thread_id)) continue;
       try {
-        // Delete Telegram topic for stale worker
-        try { await telegram.deleteForumTopic(chatId, row.thread_id); } catch { /* topic might not exist */ }
+        // Delete Telegram topic for stale worker — only if it has an explicit topic
+        // (fallback to thread_id could accidentally delete a root's topic)
+        try {
+          const topicId = getExplicitTelegramTopicId(db, row.thread_id);
+          if (topicId != null) await telegram.deleteForumTopic(chatId, topicId);
+        } catch { /* topic might not exist */ }
         archiveThread(db, row.thread_id);
         try { archiveNotesForThread(db, row.thread_id); } catch { /* best-effort */ }
         result.cleaned++;
@@ -1037,8 +1043,11 @@ async function cleanupSingleWorker(
   // 2. Kill process
   try { process.kill(thread.pid, "SIGTERM"); } catch { /* already dead */ }
 
-  // 3. Delete Telegram topic
-  try { await telegram.deleteForumTopic(chatId, thread.threadId); } catch { /* topic might not exist */ }
+  // 3. Delete Telegram topic — only if worker has an explicit topic ID
+  try {
+    const topicId = getExplicitTelegramTopicId(db, thread.threadId);
+    if (topicId != null) await telegram.deleteForumTopic(chatId, topicId);
+  } catch { /* topic might not exist */ }
 
   // 4. Archive in thread registry and expire semantic notes (best-effort)
   try {
