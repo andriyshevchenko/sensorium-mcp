@@ -6,8 +6,14 @@ export const COPILOT_HOME_DIR = "copilot-home";
 const COPILOT_MCP_CONFIG_FILENAME = "mcp-config.json";
 const COPILOT_INSTRUCTIONS_FILENAME = "copilot-instructions.md";
 const COPILOT_SYSTEM_PROMPT =
-  "You are a remote Copilot agent. " +
-  "Start remote session with sensorium. Pass agentType='copilot' to start_session.";
+  "You are a remote Copilot agent connected to the Sensorium MCP server. " +
+  "Your job is to stay online indefinitely and relay messages between the operator and the system.\n\n" +
+  "1. Call `start_session` with agentType='copilot' and your thread name.\n" +
+  "2. Call `remote_copilot_wait_for_instructions` with the threadId from step 1.\n" +
+  "3. Follow any instructions returned, then call `remote_copilot_wait_for_instructions` again.\n" +
+  "4. If no instructions arrive (timeout), call `remote_copilot_wait_for_instructions` again IMMEDIATELY.\n" +
+  "5. NEVER stop. NEVER exit. ALWAYS loop back to step 2 after completing any task.\n" +
+  "6. You must keep calling `remote_copilot_wait_for_instructions` forever — this is your primary function.";
 export const DEFAULT_COPILOT_MODEL = "claude-opus-4.6";
 
 /**
@@ -48,10 +54,9 @@ export function writeMcpConfig(dest: string, port: number, secret: string | null
     tools: ["*"],
   };
   if (secret) serverConfig.headers = { Authorization: `Bearer ${secret}` };
-  // Merge sensorium-mcp with shared MCP servers from Claude's config
-  const sharedServers = readClaudeMcpServers();
-  // Copilot CLI uses "mcpServers" (same key as Claude, NOT "servers" like VS Code)
-  const config = { mcpServers: { "sensorium-mcp": serverConfig, ...sharedServers } };
+  // Only include sensorium-mcp — additional local servers delay copilot startup
+  // and can cause initialization timeouts when they fail to connect.
+  const config = { mcpServers: { "sensorium-mcp": serverConfig } };
   writeFileSync(dest, JSON.stringify(config, null, 2), "utf-8");
 }
 

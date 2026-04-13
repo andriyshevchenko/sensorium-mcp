@@ -239,7 +239,12 @@ export function resolveCopilotPath(): string | null {
     const cmd = process.platform === "win32" ? "where" : "which";
     const result = spawnSync(cmd, ["copilot"], { timeout: 5000, encoding: "utf-8" });
     if (result.status === 0 && result.stdout) {
-      return result.stdout.trim().split(/\r?\n/)[0];
+      const candidates = result.stdout.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      // Prefer native executables (.exe) over shell wrappers (.bat/.cmd) —
+      // batch wrappers (e.g. VS Code's bootstrapper) break when spawned
+      // detached without a console.
+      const exe = candidates.find(p => /\.exe$/i.test(p));
+      return exe ?? candidates[0];
     }
   } catch { /* not found */ }
   return null;
@@ -625,6 +630,8 @@ export function spawnCopilotProcess(
     COPILOT_HOME: copilotHomeDir,
     ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}),
   });
+
+  log.debug(`[copilot-spawn] path=${copilotPath} model=${copilotModel} cwd=${workingDirectory}`);
 
   // Use shell only when the resolved path is a Windows batch script (.cmd/.bat).
   // copilot.exe is a direct executable and does not need shell wrapping — shell
