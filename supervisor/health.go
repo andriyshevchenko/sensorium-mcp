@@ -22,7 +22,7 @@ func NewMCPClient(port int, secret string) *MCPClient {
 	return &MCPClient{
 		BaseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
 		Secret:  secret,
-		Client:  &http.Client{Timeout: 10 * time.Second},
+		Client:  &http.Client{Timeout: 35 * time.Second},
 	}
 }
 
@@ -317,9 +317,10 @@ func (m *MCPClient) CallStartThread(ctx context.Context, sessionID string, threa
 	defer cancel()
 
 	args := map[string]any{
-		"threadId":  threadID,
-		"name":      sessionName,
-		"agentType": client,
+		"targetThreadId": threadID,
+		"mode":           "resume",
+		"name":           sessionName,
+		"agentType":      client,
 	}
 	if workingDir != "" {
 		args["workingDirectory"] = workingDir
