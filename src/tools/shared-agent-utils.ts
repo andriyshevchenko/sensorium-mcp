@@ -48,10 +48,9 @@ export function writeMcpConfig(dest: string, port: number, secret: string | null
     tools: ["*"],
   };
   if (secret) serverConfig.headers = { Authorization: `Bearer ${secret}` };
-  // Merge sensorium-mcp with shared MCP servers from Claude's config
-  const sharedServers = readClaudeMcpServers();
-  // Copilot CLI uses "mcpServers" (same key as Claude, NOT "servers" like VS Code)
-  const config = { mcpServers: { "sensorium-mcp": serverConfig, ...sharedServers } };
+  // Only include sensorium-mcp — additional local servers delay copilot startup
+  // and can cause initialization timeouts when they fail to connect.
+  const config = { mcpServers: { "sensorium-mcp": serverConfig } };
   writeFileSync(dest, JSON.stringify(config, null, 2), "utf-8");
 }
 
