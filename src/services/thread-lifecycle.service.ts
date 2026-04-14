@@ -1,3 +1,6 @@
+import { unlinkSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Database } from "../data/memory/schema.js";
 import type { IThreadRepository, ISessionRepository } from "../data/interfaces.js";
 
@@ -53,6 +56,21 @@ const VALID_TRANSITIONS: Record<ThreadState, ReadonlySet<ThreadState>> = {
   [ThreadState.Archived]: new Set(),
   [ThreadState.Expired]: new Set([ThreadState.Archived]),
 };
+
+function cleanupThreadFiles(threadId: number): void {
+  const base = join(homedir(), ".remote-copilot-mcp");
+  for (const filePath of [
+    join(base, "heartbeats", `${threadId}.json`),
+    join(base, "schedules", `${threadId}.json`),
+    join(base, "threads", `${threadId}.jsonl`),
+  ]) {
+    try {
+      unlinkSync(filePath);
+    } catch {
+      // Missing files are expected for some thread lifecycles.
+    }
+  }
+}
 
 export class ThreadLifecycleService {
   constructor(
@@ -124,6 +142,7 @@ export class ThreadLifecycleService {
     });
 
     const updated = this.requireThread(db, threadId, "markExited");
+    cleanupThreadFiles(threadId);
     this.logger.info(`[thread-lifecycle] markExited -> ${nextState} (${threadId})`);
     return updated;
   }
@@ -138,6 +157,7 @@ export class ThreadLifecycleService {
     });
 
     const updated = this.requireThread(db, threadId, "archiveThread");
+    cleanupThreadFiles(threadId);
     this.logger.info(`[thread-lifecycle] archiveThread -> archived (${threadId})`);
     return updated;
   }

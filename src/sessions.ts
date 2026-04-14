@@ -91,6 +91,8 @@ interface SessionRegistryEntry {
 
 /** Thread → active MCP transport sessions */
 const threadSessionRegistry = new Map<number, SessionRegistryEntry[]>();
+const sessionThreadRegistry = new Map<string, number>();
+const expectedSessionCloses = new Set<string>();
 
 export function registerMcpSession(
   threadId: number,
@@ -100,6 +102,37 @@ export function registerMcpSession(
   const entries = threadSessionRegistry.get(threadId) ?? [];
   entries.push({ mcpSessionId, closeTransport });
   threadSessionRegistry.set(threadId, entries);
+  sessionThreadRegistry.set(mcpSessionId, threadId);
+  expectedSessionCloses.delete(mcpSessionId);
+}
+
+export function getThreadIdForMcpSession(mcpSessionId: string): number | undefined {
+  return sessionThreadRegistry.get(mcpSessionId);
+}
+
+export function expectMcpSessionClose(mcpSessionId: string): void {
+  expectedSessionCloses.add(mcpSessionId);
+}
+
+export function consumeExpectedMcpSessionClose(mcpSessionId: string): boolean {
+  const expected = expectedSessionCloses.has(mcpSessionId);
+  expectedSessionCloses.delete(mcpSessionId);
+  return expected;
+}
+
+export function unregisterMcpSession(mcpSessionId: string): void {
+  const threadId = sessionThreadRegistry.get(mcpSessionId);
+  if (threadId !== undefined) {
+    const entries = threadSessionRegistry.get(threadId) ?? [];
+    const kept = entries.filter((entry) => entry.mcpSessionId !== mcpSessionId);
+    if (kept.length > 0) {
+      threadSessionRegistry.set(threadId, kept);
+    } else {
+      threadSessionRegistry.delete(threadId);
+    }
+  }
+  sessionThreadRegistry.delete(mcpSessionId);
+  expectedSessionCloses.delete(mcpSessionId);
 }
 
 /**
@@ -115,11 +148,14 @@ export function purgeOtherSessions(threadId: number, keepMcpSessionId?: string):
     if (entry.mcpSessionId === keepMcpSessionId) {
       kept.push(entry);
     } else {
+      expectMcpSessionClose(entry.mcpSessionId);
       try { entry.closeTransport(); } catch (_) { /* best-effort */ }
+      unregisterMcpSession(entry.mcpSessionId);
       purged++;
     }
   }
   threadSessionRegistry.set(threadId, kept);
+  if (keepMcpSessionId) sessionThreadRegistry.set(keepMcpSessionId, threadId);
   if (kept.length === 0) threadSessionRegistry.delete(threadId);
   return purged;
 }

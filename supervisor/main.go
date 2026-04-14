@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var globalCancel context.CancelFunc
+
 // KeeperEntry tracks a running keeper and its settings.
 type KeeperEntry struct {
 	keeper   *Keeper
@@ -17,11 +19,68 @@ type KeeperEntry struct {
 }
 
 func main() {
+	isService, err := isWindowsService()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to detect service mode: %v\n", err)
+		os.Exit(1)
+	}
+	if isService {
+		if err := runAsService(); err != nil {
+			fmt.Fprintf(os.Stderr, "Service run failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if handled, err := handleServiceCommand(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	} else if handled {
+		return
+	}
+
+	if err := runSupervisor(); err != nil {
+		fmt.Fprintf(os.Stderr, "Supervisor failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func handleServiceCommand(args []string) (bool, error) {
+	if len(args) == 0 {
+		return false, nil
+	}
+
+	switch args[0] {
+	case "install":
+		exePath, err := os.Executable()
+		if err != nil {
+			return true, fmt.Errorf("install failed: resolve executable: %w", err)
+		}
+		return true, installService(exePath)
+	case "uninstall":
+		return true, uninstallService()
+	case "start":
+		return true, startService()
+	case "stop":
+		return true, stopService()
+	case "status":
+		return true, serviceStatus()
+	default:
+		return false, nil
+	}
+}
+
+func stopSupervisor() {
+	if globalCancel != nil {
+		globalCancel()
+	}
+}
+
+func runSupervisor() error {
 	cfg := LoadConfig()
 
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot create data dir %s: %v\n", cfg.DataDir, err)
-		os.Exit(1)
+		return fmt.Errorf("cannot create data dir %s: %w", cfg.DataDir, err)
 	}
 
 	log := NewLogger(cfg.Paths.WatcherLog)
@@ -32,7 +91,7 @@ func main() {
 		log.Warn("Pending supervisor update could not be applied: %v", err)
 	}
 	if shouldRestart {
-		return
+		return nil
 	}
 
 	log.Info("sensorium-supervisor starting (mode=%s, port=%d, dataDir=%s)", cfg.Mode, cfg.MCPHttpPort, cfg.DataDir)
@@ -48,13 +107,13 @@ func main() {
 
 	// Acquire lock — prevent multiple instances
 	if !AcquireLock(cfg.Paths.WatcherLock, log) {
-		os.Exit(1)
+		return fmt.Errorf("another supervisor instance is already running")
 	}
 	defer ReleaseLock(cfg.Paths.WatcherLock)
 
 	if cfg.MCPHttpPort <= 0 {
 		log.Error("MCP_HTTP_PORT must be set (got %d)", cfg.MCPHttpPort)
-		os.Exit(1)
+		return fmt.Errorf("MCP_HTTP_PORT must be set (got %d)", cfg.MCPHttpPort)
 	}
 
 	mcp := NewMCPClient(cfg.MCPHttpPort, cfg.MCPHttpSecret)
@@ -70,12 +129,14 @@ func main() {
 	_, err = SpawnMCPServer(cfg, log)
 	if err != nil {
 		log.Error("Failed to start MCP server: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to start MCP server: %w", err)
 	}
 
 	// Wait for server to be ready
 	ctx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
+	globalCancel = rootCancel
+	defer func() { globalCancel = nil }()
 
 	if mcp.WaitForReady(ctx, 3*time.Second, cfg.KeeperReadyTimeout) {
 		log.Info("MCP server is ready")
@@ -216,9 +277,13 @@ func main() {
 
 	log.Info("All subsystems started — supervisor is running (PID %d)", os.Getpid())
 
-	sig := <-sigCh
-	log.Info("Received %s — shutting down", sig)
-	rootCancel()
+	select {
+	case sig := <-sigCh:
+		log.Info("Received %s — shutting down", sig)
+		rootCancel()
+	case <-ctx.Done():
+		log.Info("Shutdown requested")
+	}
 
 	// Stop keepers (with 10s timeout)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -259,6 +324,7 @@ func main() {
 	}
 
 	log.Info("Supervisor stopped cleanly")
+	return nil
 }
 
 // fetchKeeperSettings reads the root threads from the MCP server,

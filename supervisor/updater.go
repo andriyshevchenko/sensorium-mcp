@@ -371,6 +371,21 @@ func (u *Updater) checkSupervisorUpdate(ctx context.Context) {
 	}
 	NotifyOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: downloaded %s. Restarting supervisor to apply update...", remote), 0)
 
+	isService, err := isWindowsService()
+	if err != nil {
+		u.log.Error("Failed to detect service mode for restart: %v", err)
+		NotifyOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but service detection failed.", 0)
+		return
+	}
+
+	if isService {
+		if err := scheduleServiceRestartForUpdate(u.log); err != nil {
+			u.log.Error("Failed to schedule service restart: %v", err)
+			NotifyOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but service restart scheduling failed.", 0)
+		}
+		return
+	}
+
 	if err := signalSelf(syscall.SIGTERM); err != nil {
 		u.log.Error("Failed to signal supervisor for restart: %v", err)
 		NotifyOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but restart signal failed.", 0)
