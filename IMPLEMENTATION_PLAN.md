@@ -37,11 +37,11 @@
 
 ## Phase D — Split thread-lifecycle.ts *(scope: M, risk: Medium)*
 
-- [ ] Extract `src/services/process.service.ts` — spawn, PID files, adopt, health classification
-- [ ] Extract `src/services/topic.service.ts` — Telegram topic create / delete / remap
-- [ ] Extract `src/services/worker-cleanup.service.ts` — TTL cleanup, archival, deletion
-- [ ] Reduce `src/tools/thread-lifecycle.ts` to a thin shim or delete it
-- [ ] Verify: no file in this domain exceeds 400 LOC
+- [x] Extract `src/services/process.service.ts` — spawn, PID files, adopt, health classification
+- [x] Extract `src/services/topic.service.ts` — Telegram topic create / delete / remap
+- [x] Extract `src/services/worker-cleanup.service.ts` — TTL cleanup, archival, deletion
+- [x] Reduce `src/tools/thread-lifecycle.ts` to a thin shim or delete it
+- [x] Verify: no file in this domain exceeds 400 LOC
 
 ---
 
