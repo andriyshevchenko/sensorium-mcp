@@ -485,7 +485,11 @@ export function handleSendMessageToThread(
       `This is a one-shot task. Report progress to the operator via report_progress or send_voice. Do NOT message the sender back.`;
   }
 
-  ensureDirs();
+  try {
+    ensureDirs();
+  } catch (err) {
+    return errorResult(`Error: Failed to initialize task directories: ${errorMessage(err)}`);
+  }
   const taskFilePath = join(PENDING_TASKS_DIR, `${threadId}.txt`);
 
   // Append (with newline separator) instead of overwriting
