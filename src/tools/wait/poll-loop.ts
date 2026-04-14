@@ -25,6 +25,7 @@ import type { TelegramClient } from "../../telegram.js";
 import type { AppConfig, ToolResult } from "../../types.js";
 import { log } from "../../logger.js";
 import { getShortReminder, buildMaintenanceResponse } from "../../response-builders.js";
+import type { ThreadLifecycleService } from "../../services/thread-lifecycle.service.js";
 
 import { handleReactionOnly } from "./reaction-handler.js";
 import { checkForDueTasks } from "./task-handler.js";
@@ -118,6 +119,7 @@ export interface WaitToolContext {
   telegramChatId: string;
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
   config: AppConfig;
+  threadLifecycle: ThreadLifecycleService;
 
   // Response builders
   errorResult: (msg: string) => ToolResult & { isError: true };
@@ -322,8 +324,7 @@ export async function handleWaitForInstructions(
       if (Date.now() - lastRegistryUpdate > 60_000) {
         lastRegistryUpdate = Date.now();
         try {
-          const { updateThread } = await import("../../data/memory/thread-registry.js");
-          updateThread(getMemoryDb(), effectiveThreadId, { lastActiveAt: new Date().toISOString() });
+          ctx.threadLifecycle.touchThread(getMemoryDb(), effectiveThreadId, { lastActiveAt: new Date().toISOString() });
         } catch { /* non-critical */ }
       }
     }

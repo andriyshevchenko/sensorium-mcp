@@ -92,7 +92,7 @@ initVideoTempCleanup();
 // fresh processes for all keepAlive threads. This replaces the old PID-file
 // restoration approach — no more PID orphans or ghost duplicates.
 cleanupStalePidFiles();
-const keepAlive = spawnKeepAliveThreads();
+const keepAlive = spawnKeepAliveThreads(threadLifecycle);
 if (keepAlive.spawned > 0) log.info(`[startup] Spawned ${keepAlive.spawned} keepAlive thread(s).`);
 if (keepAlive.errors.length > 0) log.warn(`[startup] keepAlive errors: ${keepAlive.errors.join("; ")}`);
 
@@ -124,6 +124,7 @@ const backgroundRunner = new BackgroundJobRunner({
   getMemoryDb,
   telegram,
   chatId: TELEGRAM_CHAT_ID,
+  threadLifecycle,
   log,
 });
 

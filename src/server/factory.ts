@@ -193,7 +193,12 @@ function createMcpServer(
   // Maps tool names to handler functions. Each receives typed args and the
   // SDK `extra` object, returning a ToolResult (or Promise thereof).
 
-  const delegateCtx: DelegateToolContext = { telegram, telegramChatId };
+  const delegateCtx: DelegateToolContext = {
+    telegram,
+    telegramChatId,
+    getMemoryDb,
+    threadLifecycle,
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toolHandlers: Record<string, (typedArgs: Record<string, unknown>, extra: any) => Promise<ToolResult> | ToolResult> = {
@@ -273,6 +278,7 @@ function createMcpServer(
         telegramChatId,
         getMemoryDb,
         config,
+        threadLifecycle,
         errorResult,
       };
       return handleWaitForInstructions(typedArgs, waitCtx, extra as unknown as WaitToolExtra);

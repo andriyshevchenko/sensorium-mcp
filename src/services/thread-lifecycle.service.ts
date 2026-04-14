@@ -1,6 +1,5 @@
 import type { Database } from "../data/memory/schema.js";
 import type { IThreadRepository, ISessionRepository } from "../data/interfaces.js";
-import type { ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 
 export enum ThreadState {
   Active = "active",
@@ -10,7 +9,8 @@ export enum ThreadState {
   Expired = "expired",
 }
 
-type PersistedThreadState = ThreadRegistryEntry["status"];
+type ThreadRecord = NonNullable<ReturnType<IThreadRepository["getThread"]>>;
+type PersistedThreadState = ThreadRecord["status"];
 
 type RegisterThreadInput = Parameters<IThreadRepository["registerThread"]>[1] & {
   chatId?: string;
@@ -20,9 +20,13 @@ type RegisterThreadInput = Parameters<IThreadRepository["registerThread"]>[1] & 
 
 type ActivateThreadInput = Partial<
   Pick<
-    ThreadRegistryEntry,
+    ThreadRecord,
     "client" | "keepAlive" | "lastActiveAt" | "telegramTopicId" | "workingDirectory"
   >
+>;
+
+type TouchThreadInput = Partial<
+  Pick<ThreadRecord, "lastActiveAt" | "telegramTopicId">
 >;
 
 type RemapTopicInput = {
@@ -58,7 +62,7 @@ export class ThreadLifecycleService {
     private readonly logger: ThreadLifecycleLogger,
   ) {}
 
-  registerThread(db: Database, entry: RegisterThreadInput): ThreadRegistryEntry {
+  registerThread(db: Database, entry: RegisterThreadInput): ThreadRecord {
     const current = this.threadRepository.getThread(db, entry.threadId);
     this.assertTransition(current?.status, ThreadState.Active, "registerThread");
 
@@ -77,7 +81,7 @@ export class ThreadLifecycleService {
     return updated;
   }
 
-  activateThread(db: Database, threadId: number, updates: ActivateThreadInput = {}): ThreadRegistryEntry {
+  activateThread(db: Database, threadId: number, updates: ActivateThreadInput = {}): ThreadRecord {
     const current = this.requireThread(db, threadId, "activateThread");
     this.assertTransition(current.status, ThreadState.Active, "activateThread");
 
@@ -92,7 +96,22 @@ export class ThreadLifecycleService {
     return updated;
   }
 
-  markExited(db: Database, threadId: number): ThreadRegistryEntry {
+  touchThread(db: Database, threadId: number, updates: TouchThreadInput = {}): ThreadRecord {
+    const current = this.requireThread(db, threadId, "touchThread");
+    this.assertTransition(current.status, ThreadState.Active, "touchThread");
+
+    this.threadRepository.updateThread(db, threadId, {
+      ...updates,
+      status: ThreadState.Active,
+      lastActiveAt: updates.lastActiveAt ?? new Date().toISOString(),
+    });
+
+    const updated = this.requireThread(db, threadId, "touchThread");
+    this.logger.info(`[thread-lifecycle] touchThread -> active (${threadId})`);
+    return updated;
+  }
+
+  markExited(db: Database, threadId: number): ThreadRecord {
     const current = this.requireThread(db, threadId, "markExited");
     const nextState = current.type === "worker" && !current.keepAlive
       ? ThreadState.Exited
@@ -109,7 +128,7 @@ export class ThreadLifecycleService {
     return updated;
   }
 
-  archiveThread(db: Database, threadId: number): ThreadRegistryEntry {
+  archiveThread(db: Database, threadId: number): ThreadRecord {
     const current = this.requireThread(db, threadId, "archiveThread");
     this.assertTransition(current.status, ThreadState.Archived, "archiveThread");
 
@@ -123,7 +142,7 @@ export class ThreadLifecycleService {
     return updated;
   }
 
-  remapTopic(db: Database, input: RemapTopicInput): ThreadRegistryEntry {
+  remapTopic(db: Database, input: RemapTopicInput): ThreadRecord {
     const current = this.requireThread(db, input.threadId, "remapTopic");
     this.assertTransition(current.status, ThreadState.Active, "remapTopic");
 
@@ -157,7 +176,7 @@ export class ThreadLifecycleService {
     return thread ? this.toLifecycleState(thread.status) : null;
   }
 
-  private requireThread(db: Database, threadId: number, action: string): ThreadRegistryEntry {
+  private requireThread(db: Database, threadId: number, action: string): ThreadRecord {
     const thread = this.threadRepository.getThread(db, threadId);
     if (!thread) {
       throw new Error(`${action}: thread ${threadId} is not registered`);

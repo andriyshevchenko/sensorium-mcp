@@ -5,13 +5,14 @@ import { join } from "node:path";
 import { getClaudeMcpConfigPath } from "../config.js";
 import { log } from "../logger.js";
 import { synthesizeGhostMemory } from "../memory.js";
-import { getAllThreads, getExplicitTelegramTopicId, getThread, updateThread } from "../data/memory/thread-registry.js";
+import { getAllThreads, getExplicitTelegramTopicId } from "../data/memory/thread-registry.js";
 import { archiveNotesForThread } from "../data/memory/semantic.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 import { COPILOT_HOME_DIR, DEFAULT_COPILOT_MODEL, ensureCopilotWorkspace, writeCopilotHomeFiles } from "../tools/shared-agent-utils.js";
 import { deleteTelegramTopicByBotApi } from "./topic.service.js";
 import { PROCESS_BASE_DIR, PROCESS_LOGS_DIR, PROCESS_PIDS_DIR, ensureDirs, findAliveThread, isProcessAlive, readPidFiles, spawnedThreads, type SpawnedThread } from "./process.service.js";
+import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 
 const ENV_DENYLIST = new Set(["TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "MCP_HTTP_SECRET", "DASHBOARD_TOKEN", "MCP_START_COMMAND", "WATCHER_START_COMMAND"]);
 const WATCHER_PORT = Number.parseInt(process.env.WATCHER_PORT || "3848", 10);
@@ -111,15 +112,13 @@ const resolveCodexExe = (): string | null => {
   } catch { return null; }
 };
 
-async function handleProcessExit(code: number | null, threadId: number, pid: number, pidFilePath: string, entry: SpawnedThread, processLabel: string): Promise<void> {
+async function handleProcessExit(code: number | null, threadId: number, pid: number, pidFilePath: string, entry: SpawnedThread, processLabel: string, threadLifecycle: ThreadLifecycleService): Promise<void> {
   const idx = spawnedThreads.indexOf(entry);
   if (idx !== -1) spawnedThreads.splice(idx, 1);
   try { unlinkSync(pidFilePath); } catch {}
   try {
     const db = initMemoryDb();
-    const existing = getThread(db, threadId);
-    const newStatus = existing?.keepAlive || existing?.type === "root" || existing?.type === "branch" ? "active" : "exited";
-    updateThread(db, threadId, { status: newStatus, lastActiveAt: new Date().toISOString() });
+    threadLifecycle.markExited(db, threadId);
     if (entry.memorySourceThreadId !== undefined) {
       try { await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name); } catch (err) { log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`); }
     }
@@ -131,7 +130,7 @@ async function handleProcessExit(code: number | null, threadId: number, pid: num
         if (topicId != null) await deleteTelegramTopicByBotApi(token, chatId, topicId);
       } catch {}
       try { archiveNotesForThread(db, threadId); } catch {}
-      try { db.prepare(`UPDATE thread_registry SET status = 'archived', archived_at = CURRENT_TIMESTAMP WHERE thread_id = ?`).run(threadId); } catch {}
+      try { threadLifecycle.archiveThread(db, threadId); } catch {}
     }
   } catch (err) {
     log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
@@ -139,14 +138,14 @@ async function handleProcessExit(code: number | null, threadId: number, pid: num
   log.info(`[start_thread] ${processLabel} process PID=${pid} for thread ${threadId} exited with code ${code}`);
 }
 
-function registerSpawnedProcess(opts: RegisterSpawnOpts): { pid: number; logFile: string } | { error: string } {
+function registerSpawnedProcess(opts: RegisterSpawnOpts, threadLifecycle: ThreadLifecycleService): { pid: number; logFile: string } | { error: string } {
   const pid = opts.child.pid;
   if (pid === undefined) return { error: `${opts.agentLabel} process spawned but PID is undefined - spawn may have failed.` };
   const pidFilePath = join(PROCESS_PIDS_DIR, `${opts.threadId}.pid`);
   try { writeFileSync(pidFilePath, JSON.stringify({ pid, name: opts.name, configPath: opts.configPath, startedAt: Date.now() }), "utf-8"); } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
   const entry: SpawnedThread = { pid, threadId: opts.threadId, name: opts.name, startedAt: Date.now(), createdAt: Date.now(), logFile: opts.logFilePath, ...(opts.memorySourceThreadId !== undefined ? { memorySourceThreadId: opts.memorySourceThreadId } : {}), ...(opts.memoryTargetThreadId !== undefined ? { memoryTargetThreadId: opts.memoryTargetThreadId } : {}), ...(opts.threadType ? { threadType: opts.threadType } : {}) };
   spawnedThreads.push(entry);
-  opts.child.on("exit", (code) => { handleProcessExit(code, opts.threadId, pid, pidFilePath, entry, opts.agentLabel).catch((err) => log.warn(`[exit] cleanup failed: ${err}`)); });
+  opts.child.on("exit", (code) => { handleProcessExit(code, opts.threadId, pid, pidFilePath, entry, opts.agentLabel, threadLifecycle).catch((err) => log.warn(`[exit] cleanup failed: ${err}`)); });
   opts.child.unref();
   log.info(`[start_thread] Spawned ${opts.agentLabel} process PID=${pid} for thread ${opts.threadId} ("${opts.name}")`);
   return { pid, logFile: opts.logFilePath };
@@ -159,7 +158,7 @@ const normalizeWorkingDirectory = (workingDirectory?: string): string | undefine
   return fallback;
 };
 
-export function spawnAgentProcess(claudePath: string, mcpConfigPath: string, name: string, threadId: number, workingDirectory?: string, memorySourceThreadId?: number, memoryTargetThreadId?: number, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
+export function spawnAgentProcess(claudePath: string, mcpConfigPath: string, name: string, threadId: number, threadLifecycle: ThreadLifecycleService, workingDirectory?: string, memorySourceThreadId?: number, memoryTargetThreadId?: number, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
   if (startupCleanupInProgress) return { error: "Server startup cleanup in progress - try again in a few seconds" };
   if (spawnedThreads.length >= MAX_CONCURRENT_THREADS) return { error: `Concurrent thread limit reached (${MAX_CONCURRENT_THREADS}). Wait for existing threads to finish.` };
   workingDirectory = normalizeWorkingDirectory(workingDirectory);
@@ -172,11 +171,11 @@ export function spawnAgentProcess(claudePath: string, mcpConfigPath: string, nam
   try {
     const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "-p", `Start remote session with sensorium. Thread name = '${name}'`, "--output-format", "stream-json", "--include-partial-messages"], { stdio: ["ignore", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: true, env: spawnEnv, cwd: workingDirectory || undefined });
     closeSync(logFd);
-    return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: effectiveConfigPath, agentLabel: "Claude", memorySourceThreadId, memoryTargetThreadId, threadType });
+    return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: effectiveConfigPath, agentLabel: "Claude", memorySourceThreadId, memoryTargetThreadId, threadType }, threadLifecycle);
   } catch (err) { closeSync(logFd); return { error: `Failed to spawn Claude process: ${errorMessage(err)}` }; }
 }
 
-export function spawnCopilotProcess(copilotPath: string, name: string, threadId: number, workingDirectory?: string, memorySourceThreadId?: number, agentType?: string, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
+export function spawnCopilotProcess(copilotPath: string, name: string, threadId: number, threadLifecycle: ThreadLifecycleService, workingDirectory?: string, memorySourceThreadId?: number, agentType?: string, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
   const httpPort = parseInt(process.env.MCP_HTTP_PORT || "0", 10);
   if (!httpPort) return { error: "MCP_HTTP_PORT env var is not set or invalid. Copilot threads require HTTP transport." };
   workingDirectory = normalizeWorkingDirectory(workingDirectory) || ensureCopilotWorkspace(PROCESS_BASE_DIR);
@@ -188,11 +187,11 @@ export function spawnCopilotProcess(copilotPath: string, name: string, threadId:
   try {
     const child = spawn(copilotPath, ["-p", `Start remote session with sensorium. Thread name = '${name}'`, "--allow-all-tools", "--model", agentType === "copilot_codex" ? "gpt-5.3-codex" : (process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL), "--autopilot"], { stdio: ["ignore", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(copilotPath), detached: true, windowsHide: true, env: sanitizeSpawnEnv({ COPILOT_HOME: copilotHomeDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}) }), cwd: workingDirectory || undefined });
     closeSync(logFd);
-    return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: copilotHomeDir, agentLabel: "Copilot", memorySourceThreadId, threadType });
+    return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: copilotHomeDir, agentLabel: "Copilot", memorySourceThreadId, threadType }, threadLifecycle);
   } catch (err) { closeSync(logFd); return { error: `Failed to spawn Copilot process: ${errorMessage(err)}` }; }
 }
 
-export function spawnCodexProcess(codexPath: string, name: string, threadId: number, workingDirectory?: string, memorySourceThreadId?: number, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
+export function spawnCodexProcess(codexPath: string, name: string, threadId: number, threadLifecycle: ThreadLifecycleService, workingDirectory?: string, memorySourceThreadId?: number, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
   const httpPort = parseInt(process.env.MCP_HTTP_PORT || "0", 10);
   if (!httpPort) return { error: "MCP_HTTP_PORT env var is not set or invalid. Codex threads require HTTP transport." };
   workingDirectory = normalizeWorkingDirectory(workingDirectory);
@@ -210,11 +209,11 @@ export function spawnCodexProcess(codexPath: string, name: string, threadId: num
     const child = nativeExe ? spawn(nativeExe, cliArgs, { stdio: ["pipe", logFd, logFd], shell: false, detached: true, windowsHide: true, env: spawnEnv, cwd: workingDirectory || undefined }) : nodeExeResult ? spawn(nodeExeResult.nodeExe, [nodeExeResult.codexJs, ...cliArgs], { stdio: ["pipe", logFd, logFd], shell: false, detached: true, windowsHide: true, env: spawnEnv, cwd: workingDirectory || undefined }) : spawn(codexPath, cliArgs, { stdio: ["pipe", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath), detached: true, windowsHide: true, env: spawnEnv, cwd: workingDirectory || undefined });
     closeSync(logFd);
     try { child.stdin?.write(prompt + "\n"); child.stdin?.end(); } catch {}
-    return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: CODEX_HOME_DIR, agentLabel: "Codex", memorySourceThreadId, threadType });
+    return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: CODEX_HOME_DIR, agentLabel: "Codex", memorySourceThreadId, threadType }, threadLifecycle);
   } catch (err) { closeSync(logFd); return { error: `Failed to spawn Codex process: ${errorMessage(err)}` }; }
 }
 
-export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
+export function spawnKeepAliveThreads(threadLifecycle: ThreadLifecycleService): { spawned: number; errors: string[] } {
   const result = { spawned: 0, errors: [] as string[] };
   startupCleanupInProgress = true;
   let db: ReturnType<typeof initMemoryDb>;
@@ -231,12 +230,12 @@ export function spawnKeepAliveThreads(): { spawned: number; errors: string[] } {
     if (findAliveThread(thread.threadId)) continue;
     const client = thread.client ?? "claude";
     const spawnResult = client === "copilot" || client === "copilot_claude" || client === "copilot_codex"
-      ? (() => { const cliPath = resolveCopilotPath(); return cliPath ? spawnCopilotProcess(cliPath, thread.name, thread.threadId, undefined, undefined, client) : { error: `Thread ${thread.threadId} (${thread.name}): copilot CLI not found` }; })()
+      ? (() => { const cliPath = resolveCopilotPath(); return cliPath ? spawnCopilotProcess(cliPath, thread.name, thread.threadId, threadLifecycle, undefined, undefined, client) : { error: `Thread ${thread.threadId} (${thread.name}): copilot CLI not found` }; })()
       : client === "codex" || client === "openai_codex"
-      ? (() => { const cliPath = resolveCodexPath(); return cliPath ? spawnCodexProcess(cliPath, thread.name, thread.threadId) : { error: `Thread ${thread.threadId} (${thread.name}): codex CLI not found` }; })()
-      : (() => { const cliPath = resolveClaudePath(); const mcpConfig = resolveMcpConfigPath(); return cliPath && mcpConfig ? spawnAgentProcess(cliPath, mcpConfig, thread.name, thread.threadId) : { error: `Thread ${thread.threadId} (${thread.name}): ${!cliPath ? "claude CLI not found" : "MCP config not found"}` }; })();
+      ? (() => { const cliPath = resolveCodexPath(); return cliPath ? spawnCodexProcess(cliPath, thread.name, thread.threadId, threadLifecycle) : { error: `Thread ${thread.threadId} (${thread.name}): codex CLI not found` }; })()
+      : (() => { const cliPath = resolveClaudePath(); const mcpConfig = resolveMcpConfigPath(); return cliPath && mcpConfig ? spawnAgentProcess(cliPath, mcpConfig, thread.name, thread.threadId, threadLifecycle) : { error: `Thread ${thread.threadId} (${thread.name}): ${!cliPath ? "claude CLI not found" : "MCP config not found"}` }; })();
     if ("error" in spawnResult) { result.errors.push(spawnResult.error); continue; }
-    try { updateThread(db, thread.threadId, { lastActiveAt: new Date().toISOString(), status: "active" }); } catch {}
+    try { threadLifecycle.activateThread(db, thread.threadId); } catch {}
     result.spawned++;
   }
   return result;
