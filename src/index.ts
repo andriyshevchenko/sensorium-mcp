@@ -45,7 +45,7 @@ const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
 const { setTopicRegistryDb } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
-const { cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
+const { cleanupExpiredWorkers, cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
 const { log } = await import("./logger.js");
 const { errorMessage } = await import("./utils.js");
 const { rotateAllDailySessions } = await import("./daily-session.js");
@@ -112,6 +112,7 @@ function closeMemoryDb(): void {
 // ---------------------------------------------------------------------------
 
 const DAILY_ROTATION_HOUR = 4;
+const WORKER_CLEANUP_INTERVAL_MS = 5 * 60_000;
 
 function startDailyRotationTimer(): void {
   setInterval(async () => {
@@ -133,6 +134,25 @@ function startDailyRotationTimer(): void {
   }, 5 * 60_000);
 }
 
+function startExpiredWorkerCleanupTimer(): void {
+  const runCleanup = async (): Promise<void> => {
+    try {
+      const result = await cleanupExpiredWorkers(getMemoryDb(), telegram, TELEGRAM_CHAT_ID);
+      if (result.cleaned > 0) {
+        log.info(`[worker-cleanup] Cleaned ${result.cleaned} expired worker thread(s).`);
+      }
+      if (result.errors.length > 0) {
+        log.warn(`[worker-cleanup] Errors: ${result.errors.join("; ")}`);
+      }
+    } catch (err) {
+      log.error(`Expired worker cleanup error: ${errorMessage(err)}`);
+    }
+  };
+
+  void runCleanup();
+  setInterval(() => { void runCleanup(); }, WORKER_CLEANUP_INTERVAL_MS);
+}
+
 const httpPort = process.env.MCP_HTTP_PORT ? parseInt(process.env.MCP_HTTP_PORT, 10) : undefined;
 if (httpPort) {
   startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb);
@@ -142,5 +162,6 @@ if (httpPort) {
 
 // Start daily rotation timer after server is listening
 startDailyRotationTimer();
+startExpiredWorkerCleanupTimer();
 
 }
