@@ -313,6 +313,16 @@ func (u *Updater) setLocalSupervisorVersion(v string) {
 	}
 }
 
+func (u *Updater) stagePendingSupervisorVersion(v string) error {
+	if err := os.MkdirAll(filepath.Dir(u.cfg.Paths.PendingVersion), 0755); err != nil {
+		return fmt.Errorf("create pending supervisor version dir: %w", err)
+	}
+	if err := atomicWrite(u.cfg.Paths.PendingVersion, []byte(v)); err != nil {
+		return fmt.Errorf("write pending supervisor version: %w", err)
+	}
+	return nil
+}
+
 func (u *Updater) checkSupervisorUpdate(ctx context.Context) {
 	uptime := time.Since(u.startAt)
 	if uptime < u.cfg.MinUptime {
@@ -353,7 +363,12 @@ func (u *Updater) checkSupervisorUpdate(ctx context.Context) {
 		return
 	}
 
-	u.setLocalSupervisorVersion(remote)
+	if err := u.stagePendingSupervisorVersion(remote); err != nil {
+		_ = os.Remove(u.cfg.Paths.PendingBinary)
+		u.log.Error("Failed to stage supervisor version %s: %v", remote, err)
+		NotifyOperator(u.cfg, u.log, fmt.Sprintf("ðŸ”´ Supervisor: binary update to %s failed during staging.", remote), 0)
+		return
+	}
 	NotifyOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: downloaded %s. Restarting supervisor to apply update...", remote), 0)
 
 	if err := signalSelf(syscall.SIGTERM); err != nil {

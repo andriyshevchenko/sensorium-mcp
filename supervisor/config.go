@@ -50,6 +50,7 @@ type Paths struct {
 	VersionFile       string
 	SupervisorVersion string
 	PendingBinary     string
+	PendingVersion    string
 	LastActivity      string
 	MCPStderrLog      string
 	ServerPID         string
@@ -101,6 +102,7 @@ func LoadConfig() Config {
 			VersionFile:       filepath.Join(dataDir, "current-version.txt"),
 			SupervisorVersion: filepath.Join(dataDir, "supervisor-version.txt"),
 			PendingBinary:     filepath.Join(dataDir, "bin", "sensorium-supervisor.new.exe"),
+			PendingVersion:    filepath.Join(dataDir, "bin", "sensorium-supervisor.new.exe.version"),
 			LastActivity:      filepath.Join(dataDir, "last-activity.txt"),
 			MCPStderrLog:      filepath.Join(dataDir, "mcp-stderr.log"),
 			ServerPID:         filepath.Join(dataDir, "server.pid"),
