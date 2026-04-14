@@ -194,6 +194,13 @@ export function getRootThreads(db: Database): ThreadRegistryEntry[] {
   return rows.map(rowToEntry);
 }
 
+export function getKeepAliveThreads(db: Database): ThreadRegistryEntry[] {
+  const rows = db.prepare(
+    `SELECT * FROM thread_registry WHERE keep_alive = 1 AND type != 'worker' ORDER BY created_at DESC`,
+  ).all() as Record<string, unknown>[];
+  return rows.map(rowToEntry);
+}
+
 export function getAllThreads(db: Database): ThreadRegistryEntry[] {
   const rows = db.prepare(
     `SELECT * FROM thread_registry ORDER BY last_active_at DESC`,

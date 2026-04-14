@@ -81,6 +81,7 @@ import {
 import {
     handleGetThreads,
     handleGetRootThreads,
+    handleGetKeepAliveThreads,
     handleCreateThread,
     handleGetThread,
     handleGetThreadChildren,
@@ -137,6 +138,7 @@ const routeTable: Record<string, RouteHandler> = {
     // Threads
     "GET /api/threads":           handleGetThreads,
     "GET /api/threads/roots":     handleGetRootThreads,
+    "GET /api/threads/keepalive": handleGetKeepAliveThreads,
     "POST /api/threads":          handleCreateThread,
 };
 

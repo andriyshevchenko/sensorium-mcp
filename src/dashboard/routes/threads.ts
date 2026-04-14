@@ -7,6 +7,7 @@ import {
     registerThread,
     getThread,
     getRootThreads,
+    getKeepAliveThreads,
     getActiveThreads,
     getThreadsByRoot,
     updateThread,
@@ -121,6 +122,13 @@ export const handleGetThreads: RouteHandler = ({ json, db }) => {
 
 export const handleGetRootThreads: RouteHandler = ({ json, db }) => {
     json({ threads: enrichThreadNames(db, getRootThreads(db)) });
+    return true;
+};
+
+// ─── GET /api/threads/keepalive — list all threads with keepAlive=true (excl. workers) ─
+
+export const handleGetKeepAliveThreads: RouteHandler = ({ json, db }) => {
+    json({ threads: enrichThreadNames(db, getKeepAliveThreads(db)) });
     return true;
 };
 
