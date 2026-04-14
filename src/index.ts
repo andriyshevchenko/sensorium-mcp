@@ -43,12 +43,13 @@ const { TelegramClient } = await import("./telegram.js");
 const { startHttpServer } = await import("./http-server.js");
 const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
-const { setTopicRegistryDb } = await import("./sessions.js");
+const { setTopicRegistryDb, sessionRepository } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
 const { cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
 const { log } = await import("./logger.js");
-const { resolveTelegramTopicId } = await import("./data/memory/thread-registry.js");
+const { resolveTelegramTopicId, threadRepository } = await import("./data/memory/thread-registry.js");
 const { BackgroundJobRunner } = await import("./services/background-runner.js");
+const { ThreadLifecycleService } = await import("./services/thread-lifecycle.service.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -77,6 +78,13 @@ telegram.setTopicResolver((threadId) => resolveTelegramTopicId(getMemoryDb(), th
 // Wire up lazy DB access for SQLite-backed topic registry
 setTopicRegistryDb(getMemoryDb);
 
+const threadLifecycle = new ThreadLifecycleService(
+  threadRepository,
+  sessionRepository,
+  telegram,
+  log,
+);
+
 // Initialize video temp-file cleanup handlers (registers process exit hooks).
 initVideoTempCleanup();
 
@@ -92,7 +100,7 @@ if (keepAlive.errors.length > 0) log.warn(`[startup] keepAlive errors: ${keepAli
 // MCP Server factory (delegates to server/factory.ts)
 // ---------------------------------------------------------------------------
 
-const createMcpServer = buildMcpServerFactory(telegram, TELEGRAM_CHAT_ID, getMemoryDb);
+const createMcpServer = buildMcpServerFactory(telegram, TELEGRAM_CHAT_ID, getMemoryDb, threadLifecycle);
 
 // ---------------------------------------------------------------------------
 // Start the server
