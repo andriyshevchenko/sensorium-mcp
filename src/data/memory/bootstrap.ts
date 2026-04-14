@@ -16,6 +16,8 @@ import { parseJsonArray } from "./utils.js";
 import { getNarrativesForBootstrap } from "./narrative.js";
 import { getThread } from "./thread-registry.js";
 import { getGuardrailsEnabled, getBootstrapMessageCount, resolveKnowledgeThreadId } from "../../config.js";
+import { log } from "../../logger.js";
+import { errorMessage } from "../../utils.js";
 
 export const MAX_BOOTSTRAP_CONVERSATION_CHARS = 100_000;
 export const MAX_MESSAGE_CONTENT_CHARS = 500;
@@ -164,7 +166,8 @@ export function getBootstrapContext(
         day: fetched.day ?? undefined,
       };
     }
-  } catch {
+  } catch (err) {
+    log.warn(`[bootstrap] Failed to load narratives for thread ${knowledgeThreadId}: ${errorMessage(err)}`);
     narratives = null;
   }
 
@@ -183,7 +186,8 @@ export function getBootstrapContext(
       confidence: row.confidence,
       createdAt: row.created_at,
     }));
-  } catch {
+  } catch (err) {
+    log.warn(`[bootstrap] Failed to load reflections for thread ${knowledgeThreadId}: ${errorMessage(err)}`);
     reflections = [];
   }
 
