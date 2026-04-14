@@ -50,13 +50,13 @@ Notes:
 
 ## Phase E — Memory Layer Split *(scope: L, risk: Medium — do last)*
 
-- [ ] Split `src/data/memory/schema.ts` into:
+- [x] Split `src/data/memory/schema.ts` into:
   - `schema-ddl.ts` — DDL constants only
   - `migration-runner.ts` — migration logic
   - `schema-guard.ts` — self-heal / integrity checks
 - [ ] Extract `src/services/consolidation.service.ts` — LLM orchestration separate from DB mutations
 - [ ] Move prompt assembly out of `bootstrap.ts` into `src/services/memory-briefing.service.ts`
-- [ ] Move SQLite writes out of `telegram.ts` into `src/data/sent-message.repository.ts`
+- [x] Move SQLite writes out of `telegram.ts` into `src/data/sent-message.repository.ts`
 - [ ] Verify: no storage module calls OpenAI or assembles prompt strings; `tsc --noEmit` passes
 
 ---
