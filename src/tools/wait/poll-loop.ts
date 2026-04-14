@@ -18,6 +18,7 @@ import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { checkMaintenanceFlag, writeActivityHeartbeat, writeThreadHeartbeat } from "../../data/file-storage.js";
+import { onMaintenanceSignal } from "../../services/maintenance-signal.js";
 import { getEffectiveAgentType } from "../../config.js";
 import { peekThreadMessages } from "../../dispatcher.js";
 import type { initMemoryDb } from "../../memory.js";
@@ -311,10 +312,26 @@ export async function handleWaitForInstructions(
       }
     }
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, POLL_INTERVAL_MS);
+      let resolved = false;
+      let unsubMaintenance: (() => void) | null = null;
+      const done = () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          unsubMaintenance?.();
+          resolve();
+        }
+      };
+      const timer = setTimeout(done, POLL_INTERVAL_MS);
+      // Wake up immediately if the maintenance flag is written — don't wait
+      // for the next 2s tick, which could be too late if killServer() follows
+      // immediately after the flag is written.
+      unsubMaintenance = onMaintenanceSignal(done);
       if (!extra.signal.aborted) {
-        extra.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
-      } else { clearTimeout(timer); resolve(); }
+        extra.signal.addEventListener("abort", done, { once: true });
+      } else {
+        done();
+      }
     });
     writeActivityHeartbeat();
     if (effectiveThreadId !== undefined) {

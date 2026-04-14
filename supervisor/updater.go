@@ -176,8 +176,14 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 	case <-time.After(u.cfg.GracePeriod):
 	}
 
-	// Set maintenance flag — always clean up on exit
-	if err := atomicWrite(u.cfg.Paths.MaintenanceFlag, []byte(time.Now().Format(time.RFC3339))); err != nil {
+	// Set maintenance flag — always clean up on exit.
+	// Written as JSON so TypeScript's checkMaintenanceFlag() can parse the
+	// version and timestamp fields for accurate maintenance notifications.
+	maintenanceJSON, _ := json.Marshal(map[string]string{
+		"version":   remote,
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
+	if err := atomicWrite(u.cfg.Paths.MaintenanceFlag, maintenanceJSON); err != nil {
 		u.log.Warn("Failed to write maintenance flag: %v", err)
 	}
 	defer os.Remove(u.cfg.Paths.MaintenanceFlag)
