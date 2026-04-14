@@ -217,13 +217,17 @@ export function spawnKeepAliveThreads(threadLifecycle: ThreadLifecycleService): 
   const result = { spawned: 0, errors: [] as string[] };
   startupCleanupInProgress = true;
   let db: ReturnType<typeof initMemoryDb>;
-  try { db = initMemoryDb(); } catch (err) { return { spawned: 0, errors: [`Failed to open DB: ${errorMessage(err)}`] }; }
-  for (const { pid, filePath, threadId, name } of readPidFiles()) {
-    if (isProcessAlive(pid)) spawnedThreads.push({ pid, threadId, name: name ?? `thread-${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "" });
-    else try { unlinkSync(filePath); } catch {}
+  try { db = initMemoryDb(); } catch (err) { startupCleanupInProgress = false; return { spawned: 0, errors: [`Failed to open DB: ${errorMessage(err)}`] }; }
+  let threads: ReturnType<typeof getAllThreads>;
+  try {
+    for (const { pid, filePath, threadId, name } of readPidFiles()) {
+      if (isProcessAlive(pid)) spawnedThreads.push({ pid, threadId, name: name ?? `thread-${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "" });
+      else try { unlinkSync(filePath); } catch {}
+    }
+    threads = getAllThreads(db).filter((thread) => thread.keepAlive && thread.status === "active");
+  } finally {
+    startupCleanupInProgress = false;
   }
-  const threads = getAllThreads(db).filter((thread) => thread.keepAlive && thread.status === "active");
-  startupCleanupInProgress = false;
   if (threads.length === 0) return result;
   ensureDirs();
   for (const thread of threads) {
