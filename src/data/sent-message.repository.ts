@@ -26,7 +26,8 @@ export class SqliteSentMessageRepository implements SentMessageRepository {
         .prepare(`SELECT thread_id FROM sent_messages WHERE message_id = ?`)
         .get(messageId) as { thread_id: number } | undefined;
       return row?.thread_id;
-    } catch {
+    } catch (err) {
+      log.debug(`[telegram] sent_messages read failed: ${errorMessage(err)}`);
       return undefined;
     }
   }
