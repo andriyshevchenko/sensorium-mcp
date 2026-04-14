@@ -37,8 +37,9 @@ if (process.argv.includes("--supervisor")) {
 // Normal server startup ─────────────────────────────────────────────────────
 
 const { config } = await import("./config.js");
-const { startDispatcher, setBrokerDb } = await import("./dispatcher.js");
+const { startDispatcher, setBrokerDb, setBrokerSentMessageRepository } = await import("./dispatcher.js");
 const { initMemoryDb } = await import("./memory.js");
+const { SqliteSentMessageRepository } = await import("./data/sent-message.repository.js");
 const { TelegramClient } = await import("./telegram.js");
 const { startHttpServer } = await import("./http-server.js");
 const { startStdioServer } = await import("./stdio-server.js");
@@ -58,6 +59,7 @@ const { ThreadLifecycleService } = await import("./services/thread-lifecycle.ser
 const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID } = config;
 
 const telegram = new TelegramClient(TELEGRAM_TOKEN);
+const sentMessageRepository = new SqliteSentMessageRepository(getMemoryDb);
 
 await startDispatcher(telegram, TELEGRAM_CHAT_ID);
 
@@ -68,9 +70,10 @@ function getMemoryDb() {
   return memoryDb;
 }
 
-// Wire up lazy DB access for per-thread reaction routing
-telegram.setMessageDb(getMemoryDb);
+// Wire up sent-message persistence for per-thread reaction routing
+telegram.setSentMessageRepository(sentMessageRepository);
 setBrokerDb(getMemoryDb);
+setBrokerSentMessageRepository(sentMessageRepository);
 
 // Wire up topic ID resolver for logical-to-physical thread mapping
 telegram.setTopicResolver((threadId) => resolveTelegramTopicId(getMemoryDb(), threadId));

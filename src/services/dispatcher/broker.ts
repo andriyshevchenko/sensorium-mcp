@@ -17,6 +17,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../../logger.js";
+import type { SentMessageRepository } from "../../data/sent-message.repository.js";
 import { isPidAlive } from "./lock.js";
 import type { Database } from "better-sqlite3";
 import { errorMessage } from "../../utils.js";
@@ -34,6 +35,7 @@ export const OFFSET_FILE = join(BASE_DIR, "offset");
 // ---------------------------------------------------------------------------
 
 let brokerDbGetter: (() => Database) | null = null;
+let sentMessageRepository: SentMessageRepository | null = null;
 
 /**
  * Wire up a lazy database accessor so the broker can look up
@@ -41,6 +43,10 @@ let brokerDbGetter: (() => Database) | null = null;
  */
 export function setBrokerDb(getter: () => Database): void {
     brokerDbGetter = getter;
+}
+
+export function setBrokerSentMessageRepository(repository: SentMessageRepository): void {
+    sentMessageRepository = repository;
 }
 
 /**
@@ -105,16 +111,7 @@ export function resolveThreadForTopic(telegramTopicId: number): number {
  * Returns undefined if the lookup fails or the message isn't tracked.
  */
 function lookupThreadForMessage(messageId: number): number | undefined {
-    if (!brokerDbGetter) return undefined;
-    try {
-        const db = brokerDbGetter();
-        const row = db.prepare(
-            `SELECT thread_id FROM sent_messages WHERE message_id = ?`
-        ).get(messageId) as { thread_id: number } | undefined;
-        return row?.thread_id;
-    } catch {
-        return undefined; // non-fatal — fall back to global file
-    }
+    return sentMessageRepository?.findThreadIdByMessageId(messageId);
 }
 
 // ---------------------------------------------------------------------------

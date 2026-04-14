@@ -3,8 +3,8 @@
  * No third-party HTTP client required.
  */
 
-import type { Database } from "better-sqlite3";
 import { log } from "./logger.js";
+import type { SentMessageRepository } from "./data/sent-message.repository.js";
 import type {
   TelegramUpdate,
   TelegramFile,
@@ -43,8 +43,8 @@ export class TelegramClient {
   private readonly sentMessages: Array<{ messageId: number; snippet: string; timestamp: number }> = [];
   private static readonly MAX_SENT_MESSAGES = 50;
 
-  /** Optional lazy DB getter for persisting message_id → thread_id mapping. */
-  private dbGetter: (() => Database) | null = null;
+  /** Optional repository for persisting message_id → thread_id mappings. */
+  private sentMessageRepository: SentMessageRepository | null = null;
 
   /** Optional resolver for logical threadId → actual Telegram topic ID. */
   private topicResolver: ((threadId: number) => number) | null = null;
@@ -70,11 +70,10 @@ export class TelegramClient {
   }
 
   /**
-   * Wire up a lazy database accessor so sent message_id → thread_id
-   * mappings can be persisted for per-thread reaction routing.
+   * Wire up persistence for sent message_id → thread_id mappings.
    */
-  setMessageDb(getter: () => Database): void {
-    this.dbGetter = getter;
+  setSentMessageRepository(repository: SentMessageRepository): void {
+    this.sentMessageRepository = repository;
   }
 
   /** Record a sent message for later lookup (e.g. when a reaction arrives). */
@@ -84,13 +83,8 @@ export class TelegramClient {
       this.sentMessages.splice(0, this.sentMessages.length - TelegramClient.MAX_SENT_MESSAGES);
     }
     // Persist message_id → thread_id mapping for per-thread reaction routing
-    if (threadId !== undefined && this.dbGetter) {
-      try {
-        const db = this.dbGetter();
-        db.prepare(
-          `INSERT OR REPLACE INTO sent_messages (message_id, thread_id) VALUES (?, ?)`
-        ).run(messageId, threadId);
-      } catch (err) { log.debug(`[telegram] recordSentMessage DB write failed: ${errorMessage(err)}`); }
+    if (threadId !== undefined && this.sentMessageRepository) {
+      this.sentMessageRepository.saveThreadMessage(messageId, threadId);
     }
   }
 
