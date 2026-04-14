@@ -9,6 +9,7 @@
 import {
     existsSync,
     readFileSync,
+    renameSync,
     unlinkSync,
     writeFileSync,
 } from "node:fs";
@@ -75,18 +76,17 @@ export function refreshLock(): boolean {
     if (current && current.pid !== process.pid) {
         return false; // Someone else owns the lock now.
     }
-    // Use exclusive create (wx) to prevent overwriting another process's lock.
-    // Delete our own lock first, then atomically re-create it.
-    try { unlinkSync(LOCK_FILE); } catch { /* already gone */ }
     try {
+        const tmp = LOCK_FILE + ".tmp." + process.pid;
         writeFileSync(
-            LOCK_FILE,
+            tmp,
             JSON.stringify({ pid: process.pid, ts: Date.now() }),
-            { encoding: "utf8", flag: "wx" },
+            "utf8",
         );
+        renameSync(tmp, LOCK_FILE);
         return true;
     } catch {
-        return false; // Another process won the race.
+        return false;
     }
 }
 

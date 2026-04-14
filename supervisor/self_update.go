@@ -33,7 +33,13 @@ func applyPendingSupervisorUpdate(cfg Config, log *Logger) (bool, error) {
 	}
 
 	if runtime.GOOS == "windows" {
-		if err := launchWindowsApplyHelper(cfg, exePath); err != nil {
+		isService, serviceErr := isWindowsService()
+		if serviceErr != nil {
+			cleanupPendingSupervisorUpdate(cfg, log)
+			return false, fmt.Errorf("detect service mode for pending supervisor apply: %w", serviceErr)
+		}
+
+		if err := launchWindowsApplyHelper(cfg, exePath, isService); err != nil {
 			cleanupPendingSupervisorUpdate(cfg, log)
 			return false, fmt.Errorf("schedule pending supervisor apply: %w", err)
 		}
@@ -81,7 +87,7 @@ func cleanupPendingSupervisorUpdate(cfg Config, log *Logger) {
 	}
 }
 
-func launchWindowsApplyHelper(cfg Config, exePath string) error {
+func launchWindowsApplyHelper(cfg Config, exePath string, restartViaService bool) error {
 	if err := os.MkdirAll(filepath.Dir(cfg.Paths.SupervisorVersion), 0755); err != nil {
 		return fmt.Errorf("create supervisor version directory: %w", err)
 	}
@@ -100,10 +106,16 @@ func launchWindowsApplyHelper(cfg Config, exePath string) error {
 		"  timeout /T 1 /NOBREAK >NUL",
 		"  goto wait",
 		")",
+		"set attempts=0",
+		":move",
 		fmt.Sprintf(`move /Y %s %s >NUL`, batchQuote(cfg.Paths.PendingBinary), batchQuote(exePath)),
-		"if errorlevel 1 goto fail",
+		"if not errorlevel 1 goto applied",
+		"set /a attempts+=1",
+		"if %attempts% GEQ 5 goto fail",
+		"timeout /T 1 /NOBREAK >NUL",
+		"goto move",
+		":applied",
 		fmt.Sprintf(`if exist %s move /Y %s %s >NUL`, batchQuote(cfg.Paths.PendingVersion), batchQuote(cfg.Paths.PendingVersion), batchQuote(cfg.Paths.SupervisorVersion)),
-		fmt.Sprintf(`start "" %s`, batchQuote(exePath)),
 		"exit /b 0",
 		":fail",
 		fmt.Sprintf(`if exist %s del /F /Q %s`, batchQuote(cfg.Paths.PendingBinary), batchQuote(cfg.Paths.PendingBinary)),
@@ -111,6 +123,10 @@ func launchWindowsApplyHelper(cfg Config, exePath string) error {
 		"exit /b 1",
 		"",
 	}, "\r\n")
+
+	if !restartViaService {
+		script = strings.Replace(script, "exit /b 0\r\n:fail", fmt.Sprintf("start \"\" %s\r\nexit /b 0\r\n:fail", batchQuote(exePath)), 1)
+	}
 
 	if _, err := scriptFile.WriteString(script); err != nil {
 		scriptFile.Close()

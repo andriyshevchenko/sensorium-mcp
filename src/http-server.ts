@@ -21,13 +21,19 @@ import { config } from "./config.js";
 import { log } from "./logger.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
 import {
+  consumeExpectedMcpSessionClose,
+  expectMcpSessionClose,
+  getThreadIdForMcpSession,
   registerDashboardSession,
+  unregisterMcpSession,
   updateDashboardActivity,
   markDashboardSessionDisconnected,
   removeDashboardSession,
   getDashboardSessions,
   WAIT_LIVENESS_MS,
 } from "./sessions.js";
+import { getThread } from "./data/memory/thread-registry.js";
+import { findAliveThread } from "./services/process.service.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 class BodyParseError extends Error {
@@ -218,6 +224,7 @@ export function startHttpServer(
 
         transport.onclose = () => {
           const sid = transport.sessionId;
+          const expectedClose = sid ? consumeExpectedMcpSessionClose(sid) : false;
           if (sid) {
             const entry = sessions.get(sid);
             if (entry) {
@@ -228,6 +235,18 @@ export function startHttpServer(
               entry.disconnectedAt = Date.now();
             }
             markDashboardSessionDisconnected(sid);
+            const threadId = getThreadIdForMcpSession(sid);
+            unregisterMcpSession(sid);
+            if (!expectedClose && threadId !== undefined) {
+              const thread = getThread(getMemoryDb(), threadId);
+              if (thread?.status === "active") {
+                const alive = findAliveThread(threadId);
+                if (alive) {
+                  log.warn(`[session] Session closed for thread ${threadId} - killing process ${alive.pid} to force reconnect`);
+                  try { process.kill(alive.pid, "SIGTERM"); } catch (_) { /* best-effort */ }
+                }
+              }
+            }
           }
         };
 
@@ -370,6 +389,7 @@ export function startHttpServer(
       // 1. Close truly stale transports (was session-reaper)
       if (entry.transport && now - entry.lastActivity > STALE_SESSION_MS) {
         log.info(`[session-sweep] Closing stale session ${sid.slice(0, 8)}… (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
+        expectMcpSessionClose(sid);
         try { entry.transport.close(); } catch (_) { /* best-effort */ }
         void closeSessionServer(entry);
         sessions.delete(sid);
@@ -426,6 +446,7 @@ export function startHttpServer(
     // Tear down transports and HTTP server.
     for (const [sid, entry] of sessions) {
       if (entry.transport) {
+        expectMcpSessionClose(sid);
         try { entry.transport.close(); } catch (_) { /* best-effort */ }
       }
       if (entry.server) {
