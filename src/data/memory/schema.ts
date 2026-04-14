@@ -21,6 +21,11 @@ export type Database = BetterSqlite3.Database;
 
 const SCHEMA_VERSION = 20;
 
+function isDuplicateColumnError(err: unknown, columnName: string): boolean {
+  const message = errorMessage(err).toLowerCase();
+  return message.includes(`duplicate column name: ${columnName}`.toLowerCase());
+}
+
 // ─── Migrations ──────────────────────────────────────────────────────────────
 
 /**
@@ -42,11 +47,11 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
   },
   3: (db) => {
     // Add priority column: 0=normal, 1=notable, 2=high importance
-    // Use try/catch because new databases already have the column in SCHEMA_SQL
+    // New databases already have the column in SCHEMA_SQL.
     try {
       db.exec(`ALTER TABLE semantic_notes ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`);
-    } catch {
-      // Column already exists — safe to ignore
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "priority")) throw err;
     }
     db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_priority ON semantic_notes(priority DESC) WHERE valid_to IS NULL`);
   },
@@ -54,8 +59,8 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     // Add thread_id column: NULL = global, number = thread-scoped
     try {
       db.exec(`ALTER TABLE semantic_notes ADD COLUMN thread_id INTEGER`);
-    } catch {
-      // Column already exists — safe to ignore
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "thread_id")) throw err;
     }
     db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE valid_to IS NULL`);
 
