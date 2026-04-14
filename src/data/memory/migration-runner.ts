@@ -6,7 +6,7 @@ import { errorMessage } from "../../utils.js";
 import { nowISO } from "./utils.js";
 import type { Database } from "./schema.js";
 
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 
 function isDuplicateColumnError(err: unknown, columnName: string): boolean {
   const message = errorMessage(err).toLowerCase();
