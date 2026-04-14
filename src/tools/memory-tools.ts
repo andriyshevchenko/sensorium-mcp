@@ -28,6 +28,7 @@ import { log } from "../logger.js";
 import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
 import { resolveKnowledgeThreadId } from "../config.js";
+import { runConsolidationAllThreads } from "../services/consolidation.service.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -296,7 +297,6 @@ async function handleMemoryConsolidate(
   onConsolidation?: () => void,
 ): Promise<ToolResult> {
   try {
-    const { runConsolidationAllThreads } = await import("../data/memory/consolidation.js");
     const report = await runConsolidationAllThreads(db);
     onConsolidation?.();
     if (report.episodesProcessed === 0) {

@@ -1,37 +1,26 @@
-/**
- * Session memory bootstrap / briefing assembly.
- *
- * Extracted from memory.ts — assembles the memory briefing injected at
- * session start, provides memory status, topic index, forget, and
- * compact refresh helpers.
- */
-
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Database } from "./schema.js";
-import { getRecentEpisodes } from "./episodes.js";
+import { getRecentEpisodes, type Episode } from "./episodes.js";
 import {
   getTopSemanticNotes,
   getGuardrailNotes,
   getPinnedNotes,
   decrementTopicIndexForKeywords,
+  type SemanticNote,
 } from "./semantic.js";
-import { rowToProcedure } from "./procedures.js";
+import { rowToProcedure, type Procedure } from "./procedures.js";
 import { getVoiceBaseline } from "./voice-sig.js";
 import { parseJsonArray } from "./utils.js";
 import { getNarrativesForBootstrap } from "./narrative.js";
 import { getThread } from "./thread-registry.js";
 import { getGuardrailsEnabled, getBootstrapMessageCount, resolveKnowledgeThreadId } from "../../config.js";
 
-/** Maximum characters for the Recent Conversation section before truncation. */
-const MAX_BOOTSTRAP_CONVERSATION_CHARS = 100_000;
-/** Maximum characters per individual message in the Recent Conversation section. */
-const MAX_MESSAGE_CONTENT_CHARS = 500;
+export const MAX_BOOTSTRAP_CONVERSATION_CHARS = 100_000;
+export const MAX_MESSAGE_CONTENT_CHARS = 500;
 
-// ─── Type Definitions ────────────────────────────────────────────────────────
-
-interface TopicEntry {
+export interface TopicEntry {
   topic: string;
   semanticCount: number;
   proceduralCount: number;
@@ -40,7 +29,7 @@ interface TopicEntry {
   totalAccesses: number;
 }
 
-interface MemoryStatus {
+export interface MemoryStatus {
   totalEpisodes: number;
   unconsolidatedEpisodes: number;
   totalSemanticNotes: number;
@@ -51,7 +40,40 @@ interface MemoryStatus {
   dbSizeBytes: number;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+export interface BootstrapNarratives {
+  half_year?: string;
+  quarter?: string;
+  month?: string;
+  week?: string;
+  day?: string;
+}
+
+export interface BootstrapReflection {
+  content: string;
+  confidence: number;
+  createdAt: string;
+}
+
+export interface BootstrapContext {
+  identityPrompt?: string;
+  threadId: number;
+  queryThreadId: number;
+  memorySourceThreadId?: number;
+  recentEpisodes: Episode[];
+  guardrails: SemanticNote[];
+  pinnedNotes: SemanticNote[];
+  keyKnowledge: SemanticNote[];
+  procedures: Procedure[];
+  baseline: ReturnType<typeof getVoiceBaseline>;
+  narratives: BootstrapNarratives | null;
+  reflections: BootstrapReflection[];
+}
+
+interface ReflectionRow {
+  content: string;
+  confidence: number;
+  created_at: string;
+}
 
 function rowToTopicEntry(row: Record<string, unknown>): TopicEntry {
   return {
@@ -64,40 +86,18 @@ function rowToTopicEntry(row: Record<string, unknown>): TopicEntry {
   };
 }
 
-// ─── Memory Status ───────────────────────────────────────────────────────────
-
 export function getMemoryStatus(db: Database, threadId: number): MemoryStatus {
-  const totalEpisodes = (
-    db.prepare(`SELECT COUNT(*) as cnt FROM episodes`).get() as { cnt: number }
-  ).cnt;
-
-  const unconsolidatedEpisodes = (
-    db
-      .prepare(`SELECT COUNT(*) as cnt FROM episodes WHERE consolidated = 0`)
-      .get() as { cnt: number }
-  ).cnt;
-
+  const totalEpisodes = (db.prepare(`SELECT COUNT(*) as cnt FROM episodes`).get() as { cnt: number }).cnt;
+  const unconsolidatedEpisodes = (db.prepare(`SELECT COUNT(*) as cnt FROM episodes WHERE consolidated = 0`).get() as { cnt: number }).cnt;
   const totalSemanticNotes = (
-    db.prepare(`SELECT COUNT(*) as cnt FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND thread_id = ?`).get(threadId) as {
-      cnt: number;
-    }
+    db.prepare(`SELECT COUNT(*) as cnt FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND thread_id = ?`).get(threadId) as { cnt: number }
   ).cnt;
-
-  const totalProcedures = (
-    db.prepare(`SELECT COUNT(*) as cnt FROM procedures`).get() as { cnt: number }
-  ).cnt;
-
-  const totalVoiceSignatures = (
-    db.prepare(`SELECT COUNT(*) as cnt FROM voice_signatures`).get() as { cnt: number }
-  ).cnt;
-
+  const totalProcedures = (db.prepare(`SELECT COUNT(*) as cnt FROM procedures`).get() as { cnt: number }).cnt;
+  const totalVoiceSignatures = (db.prepare(`SELECT COUNT(*) as cnt FROM voice_signatures`).get() as { cnt: number }).cnt;
   const lastConsolidationRow = db
     .prepare(`SELECT run_at FROM meta_consolidation_log ORDER BY run_at DESC LIMIT 1`)
     .get() as { run_at: string } | undefined;
 
-  const topTopics = getTopicIndex(db).slice(0, 5);
-
-  // Database file size
   const dbPath = join(homedir(), ".remote-copilot-mcp", "memory.db");
   let dbSizeBytes = 0;
   try {
@@ -113,12 +113,10 @@ export function getMemoryStatus(db: Database, threadId: number): MemoryStatus {
     totalProcedures,
     totalVoiceSignatures,
     lastConsolidation: lastConsolidationRow?.run_at ?? null,
-    topTopics,
+    topTopics: getTopicIndex(db).slice(0, 5),
     dbSizeBytes,
   };
 }
-
-// ─── Topic Index ─────────────────────────────────────────────────────────────
 
 export function getTopicIndex(db: Database): TopicEntry[] {
   const rows = db
@@ -127,236 +125,102 @@ export function getTopicIndex(db: Database): TopicEntry[] {
   return rows.map(rowToTopicEntry);
 }
 
-// ─── Bootstrap ───────────────────────────────────────────────────────────────
-
-export function assembleBootstrap(db: Database, threadId: number, memorySourceThreadId?: number): string {
-  // Ghost threads: use the parent's thread ID for memory queries
+export function getBootstrapContext(
+  db: Database,
+  threadId: number,
+  memorySourceThreadId?: number,
+): BootstrapContext {
   const queryThreadId = memorySourceThreadId ?? threadId;
   const knowledgeThreadId = resolveKnowledgeThreadId(queryThreadId);
   const bootstrapMessageCount = getBootstrapMessageCount();
   const threadEntry = getThread(db, queryThreadId);
   const sessionResetAt = threadEntry?.sessionResetAt ?? undefined;
-  const recentEpisodesDesc = getRecentEpisodes(db, queryThreadId, bootstrapMessageCount, sessionResetAt ? { since: sessionResetAt } : undefined);
-  const recentEpisodes = [...recentEpisodesDesc].reverse(); // chronological order (oldest first)
+  const recentEpisodes = [...getRecentEpisodes(
+    db,
+    queryThreadId,
+    bootstrapMessageCount,
+    sessionResetAt ? { since: sessionResetAt } : undefined,
+  )].reverse();
+
   const topNotes = getTopSemanticNotes(db, { limit: 20, sortBy: "access_count", threadId: knowledgeThreadId });
-  // Preferences first, then other notes
-  const preferences = topNotes.filter((n) => n.type === "preference");
-  const otherNotes = topNotes.filter((n) => n.type !== "preference");
-  const sortedNotes = [...preferences, ...otherNotes].slice(0, 20);
+  const preferences = topNotes.filter((note) => note.type === "preference");
+  const otherNotes = topNotes.filter((note) => note.type !== "preference");
+  const pinnedNotes = getPinnedNotes(db, knowledgeThreadId);
+  const pinnedIds = new Set(pinnedNotes.map((note) => note.noteId));
 
-  const activeProcedures = db
-    .prepare(
-      `SELECT * FROM procedures ORDER BY times_executed DESC, confidence DESC LIMIT 5`
-    )
+  const procedures = db
+    .prepare(`SELECT * FROM procedures ORDER BY times_executed DESC, confidence DESC LIMIT 5`)
     .all() as Record<string, unknown>[];
-  const procedures = activeProcedures.map(rowToProcedure);
 
-  const baseline = getVoiceBaseline(db);
-
-  const lines: string[] = [];
-
-  // ── 1. Identity Anchor ─────────────────────────────────────────────
-  // First-person identity preamble — the most critical section for
-  // personality continuity across ephemeral sessions.
-  const identityPrompt = threadEntry?.identityPrompt;
-  if (identityPrompt) {
-    lines.push(identityPrompt);
-    lines.push("");
-  }
-
-  lines.push("# Memory Briefing");
-  if (memorySourceThreadId !== undefined) {
-    lines.push(`> **Ghost thread** — memory sourced from parent thread ${memorySourceThreadId}. Runtime memory ops use thread ${threadId}.`);
-    if (recentEpisodes.length === 0 && sortedNotes.length === 0 && procedures.length === 0) {
-      lines.push(`> ⚠️ No memory found for source thread ${memorySourceThreadId}. The ghost thread will start without parent context.`);
-    }
-  }
-  lines.push("");
-
-  // ── 2. Recent Conversation (highest priority for continuity) ───────
-  if (recentEpisodes.length > 0) {
-    lines.push("## Recent Conversation");
-    const conversationLines: string[] = [];
-    let totalChars = 0;
-    for (const ep of recentEpisodes) {
-      const raw = typeof ep.content === "object" && ep.content !== null
-        ? (ep.content.text ?? ep.content.caption ?? null)
-        : null;
-      const fullText = typeof raw === "string" ? raw : JSON.stringify(ep.content);
-      const textContent = fullText.length > MAX_MESSAGE_CONTENT_CHARS
-        ? fullText.slice(0, MAX_MESSAGE_CONTENT_CHARS) + "…"
-        : fullText;
-      let line: string;
-      if (ep.type === "operator_message") {
-        line = `**Operator** (${ep.timestamp}): ${textContent}`;
-      } else if (ep.type === "agent_action") {
-        line = `**You** (${ep.timestamp}): ${textContent}`;
-      } else {
-        // system_event, operator_reaction, etc.
-        line = `[${ep.type}] ${textContent} (${ep.timestamp})`;
-      }
-      totalChars += line.length;
-      conversationLines.push(line);
-    }
-    // Truncate from oldest if exceeds max chars
-    while (totalChars > MAX_BOOTSTRAP_CONVERSATION_CHARS && conversationLines.length > 1) {
-      const removed = conversationLines.shift()!;
-      totalChars -= removed.length;
-    }
-    for (const cl of conversationLines) {
-      lines.push(cl);
-    }
-    lines.push("");
-  }
-
-  // ── 3. Active Decisions (guardrails) ───────────────────────────────
-  if (getGuardrailsEnabled()) {
-    const guardrails = getGuardrailNotes(db);
-    if (guardrails.length > 0) {
-      lines.push("## Active Decisions (always enforced)");
-      for (const g of guardrails) {
-        const line = g.content.length > 120 ? g.content.slice(0, 117) + "..." : g.content;
-        lines.push(`- ${line}`);
-      }
-      lines.push("");
-    }
-  }
-
-  // ── 4. Temporal Context ────────────────────────────────────────────
+  let narratives: BootstrapNarratives | null = null;
   try {
-    const narratives = getNarrativesForBootstrap(db, knowledgeThreadId);
-    const hasNarrative = narratives.half_year || narratives.quarter || narratives.month || narratives.week || narratives.day;
-    if (hasNarrative) {
-      lines.push("## Temporal Context");
-      if (narratives.half_year) {
-        lines.push("### This Half-Year");
-        lines.push(narratives.half_year);
-        lines.push("");
-      }
-      if (narratives.quarter) {
-        lines.push("### This Quarter");
-        lines.push(narratives.quarter);
-        lines.push("");
-      }
-      if (narratives.month) {
-        lines.push("### This Month");
-        lines.push(narratives.month);
-        lines.push("");
-      }
-      if (narratives.week) {
-        lines.push("### This Week");
-        lines.push(narratives.week);
-        lines.push("");
-      }
-      if (narratives.day) {
-        lines.push("### Today");
-        lines.push(narratives.day);
-        lines.push("");
-      }
+    const fetched = getNarrativesForBootstrap(db, knowledgeThreadId);
+    if (fetched.half_year || fetched.quarter || fetched.month || fetched.week || fetched.day) {
+      narratives = {
+        half_year: fetched.half_year ?? undefined,
+        quarter: fetched.quarter ?? undefined,
+        month: fetched.month ?? undefined,
+        week: fetched.week ?? undefined,
+        day: fetched.day ?? undefined,
+      };
     }
-  } catch { /* table might not exist in older schemas */ }
-
-  // ── 5. Key Knowledge ──────────────────────────────────────────────
-  if (sortedNotes.length > 0) {
-    // Pinned notes — always shown, represent long-term invariants
-    const pinned = getPinnedNotes(db, knowledgeThreadId);
-    const pinnedIds = new Set(pinned.map(p => p.noteId));
-    if (pinned.length > 0) {
-      lines.push("## Pinned (Long-Term Context)");
-      for (const p of pinned) {
-        lines.push(`- **[${p.type}]** ${p.content} _(conf: ${p.confidence.toFixed(2)})_`);
-      }
-      lines.push("");
-    }
-
-    // Filter out pinned notes from key knowledge to avoid duplicates
-    const filtered = sortedNotes.filter(n => !pinnedIds.has(n.noteId));
-    if (filtered.length > 0) {
-      lines.push("## Key Knowledge");
-      for (const note of filtered) {
-        lines.push(`- **[${note.type}]** ${note.content} (conf: ${note.confidence.toFixed(2)}, accessed: ${note.accessCount}x)`);
-      }
-      lines.push("");
-    }
+  } catch {
+    narratives = null;
   }
 
-  // ── 6. Active Procedures ──────────────────────────────────────────
-  if (procedures.length > 0) {
-    lines.push("## Active Procedures");
-    for (const proc of procedures) {
-      lines.push(
-        `- **${proc.name}** (${proc.type}) — success: ${(proc.successRate * 100).toFixed(0)}%, used ${proc.timesExecuted}x`
-      );
-      if (proc.steps.length > 0) {
-        lines.push(`  Steps: ${proc.steps.join(" → ")}`);
-      }
-    }
-    lines.push("");
-  }
-
-  // ── 7. Voice Baseline (compact) ───────────────────────────────────
-  if (baseline && baseline.sampleCount > 0) {
-    lines.push("## Operator Voice Profile");
-    const parts: string[] = [`${baseline.sampleCount} samples`];
-    if (baseline.avgValence !== null) parts.push(`valence ${baseline.avgValence.toFixed(2)}`);
-    if (baseline.avgArousal !== null) parts.push(`arousal ${baseline.avgArousal.toFixed(2)}`);
-    if (baseline.avgSpeechRate !== null) parts.push(`speech rate ${baseline.avgSpeechRate.toFixed(1)}`);
-    lines.push(parts.join(" · "));
-    lines.push("");
-  }
-
-  // ── 8. Recent Reflections ─────────────────────────────────────────
+  let reflections: BootstrapReflection[] = [];
   try {
-    const reflections = db
+    const rows = db
       .prepare(
         `SELECT content, confidence, created_at FROM semantic_notes
          WHERE content LIKE '[REFLECTION]%'
            AND valid_to IS NULL AND superseded_by IS NULL AND thread_id = ?
          ORDER BY created_at DESC LIMIT 5`,
       )
-      .all(knowledgeThreadId) as { content: string; confidence: number; created_at: string }[];
-    if (reflections.length > 0) {
-      lines.push("## Recent Reflections");
-      for (const r of reflections) {
-        lines.push(`- ${r.content.slice(0, 300)} _(conf: ${r.confidence.toFixed(2)}, ${r.created_at.slice(0, 10)})_`);
-      }
-      lines.push("");
-    }
-  } catch { /* non-critical */ }
-
-  return lines.join("\n");
-}
-
-/**
- * Compact memory refresh — a condensed briefing for injection during long sessions.
- * Much shorter than full bootstrap. Designed to re-ground the agent after context compaction.
- */
-export function assembleCompactRefresh(db: Database, threadId: number): string {
-  const topNotes = getTopSemanticNotes(db, { limit: 12, sortBy: "access_count", threadId: resolveKnowledgeThreadId(threadId) });
-  if (topNotes.length === 0) return "";
-
-  const lines: string[] = [];
-  lines.push("## Memory Refresh");
-  for (const note of topNotes) {
-    lines.push(`- **[${note.type}]** ${note.content}`);
+      .all(knowledgeThreadId) as ReflectionRow[];
+    reflections = rows.map((row) => ({
+      content: row.content,
+      confidence: row.confidence,
+      createdAt: row.created_at,
+    }));
+  } catch {
+    reflections = [];
   }
-  return lines.join("\n");
+
+  return {
+    identityPrompt: threadEntry?.identityPrompt ?? undefined,
+    threadId,
+    queryThreadId,
+    memorySourceThreadId,
+    recentEpisodes,
+    guardrails: getGuardrailsEnabled() ? getGuardrailNotes(db) : [],
+    pinnedNotes,
+    keyKnowledge: [...preferences, ...otherNotes].slice(0, 20).filter((note) => !pinnedIds.has(note.noteId)),
+    procedures: procedures.map(rowToProcedure),
+    baseline: getVoiceBaseline(db),
+    narratives,
+    reflections,
+  };
 }
 
-// ─── Forget ──────────────────────────────────────────────────────────────────
+export function getCompactRefreshNotes(db: Database, threadId: number): SemanticNote[] {
+  return getTopSemanticNotes(db, {
+    limit: 12,
+    sortBy: "access_count",
+    threadId: resolveKnowledgeThreadId(threadId),
+  });
+}
 
 export function forgetMemory(
   db: Database,
   memoryId: string,
-  _reason: string
+  _reason: string,
 ): { layer: string; deleted: boolean } {
-  // Determine layer by prefix
   if (memoryId.startsWith("ep_")) {
     const existing = db.prepare(`SELECT episode_id FROM episodes WHERE episode_id = ?`).get(memoryId);
     if (!existing) return { layer: "episodic", deleted: false };
     db.transaction(() => {
       db.prepare(`DELETE FROM episodes WHERE episode_id = ?`).run(memoryId);
-      // Also delete associated voice signature
       db.prepare(`DELETE FROM voice_signatures WHERE episode_id = ?`).run(memoryId);
     })();
     return { layer: "episodic", deleted: true };
@@ -365,11 +229,11 @@ export function forgetMemory(
   if (memoryId.startsWith("sn_")) {
     const existing = db.prepare(`SELECT note_id, keywords FROM semantic_notes WHERE note_id = ?`).get(memoryId) as { note_id: string; keywords: string | null } | undefined;
     if (!existing) return { layer: "semantic", deleted: false };
-    const kws = parseJsonArray(existing.keywords);
+    const keywords = parseJsonArray(existing.keywords);
     db.transaction(() => {
       db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
       db.prepare(`DELETE FROM note_embeddings WHERE note_id = ?`).run(memoryId);
-      decrementTopicIndexForKeywords(db, kws, "semantic");
+      decrementTopicIndexForKeywords(db, keywords, "semantic");
     })();
     return { layer: "semantic", deleted: true };
   }
@@ -377,17 +241,16 @@ export function forgetMemory(
   if (memoryId.startsWith("pr_")) {
     const existing = db.prepare(`SELECT procedure_id, name FROM procedures WHERE procedure_id = ?`).get(memoryId) as { procedure_id: string; name: string } | undefined;
     if (!existing) return { layer: "procedural", deleted: false };
-    const kws = existing.name.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+    const keywords = existing.name.toLowerCase().split(/\s+/).filter((word) => word.length > 2);
     db.transaction(() => {
       db.prepare(`DELETE FROM procedures WHERE procedure_id = ?`).run(memoryId);
-      decrementTopicIndexForKeywords(db, kws, "procedural");
+      decrementTopicIndexForKeywords(db, keywords, "procedural");
     })();
     return { layer: "procedural", deleted: true };
   }
 
-  // Unknown prefix — try all layers
-  let row = db.prepare(`SELECT episode_id FROM episodes WHERE episode_id = ?`).get(memoryId);
-  if (row) {
+  const episodeRow = db.prepare(`SELECT episode_id FROM episodes WHERE episode_id = ?`).get(memoryId) as { episode_id: string } | undefined;
+  if (episodeRow) {
     db.transaction(() => {
       db.prepare(`DELETE FROM episodes WHERE episode_id = ?`).run(memoryId);
       db.prepare(`DELETE FROM voice_signatures WHERE episode_id = ?`).run(memoryId);
@@ -395,23 +258,23 @@ export function forgetMemory(
     return { layer: "episodic", deleted: true };
   }
 
-  row = db.prepare(`SELECT note_id, keywords FROM semantic_notes WHERE note_id = ?`).get(memoryId) as { note_id: string; keywords: string | null } | undefined;
-  if (row) {
-    const kws = parseJsonArray((row as { keywords: string | null }).keywords);
+  const noteRow = db.prepare(`SELECT note_id, keywords FROM semantic_notes WHERE note_id = ?`).get(memoryId) as { note_id: string; keywords: string | null } | undefined;
+  if (noteRow) {
+    const keywords = parseJsonArray(noteRow.keywords);
     db.transaction(() => {
       db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
       db.prepare(`DELETE FROM note_embeddings WHERE note_id = ?`).run(memoryId);
-      decrementTopicIndexForKeywords(db, kws, "semantic");
+      decrementTopicIndexForKeywords(db, keywords, "semantic");
     })();
     return { layer: "semantic", deleted: true };
   }
 
-  row = db.prepare(`SELECT procedure_id, name FROM procedures WHERE procedure_id = ?`).get(memoryId) as { procedure_id: string; name: string } | undefined;
-  if (row) {
-    const kws = ((row as { name: string }).name).toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  const procRow = db.prepare(`SELECT procedure_id, name FROM procedures WHERE procedure_id = ?`).get(memoryId) as { procedure_id: string; name: string } | undefined;
+  if (procRow) {
+    const keywords = procRow.name.toLowerCase().split(/\s+/).filter((word: string) => word.length > 2);
     db.transaction(() => {
       db.prepare(`DELETE FROM procedures WHERE procedure_id = ?`).run(memoryId);
-      decrementTopicIndexForKeywords(db, kws, "procedural");
+      decrementTopicIndexForKeywords(db, keywords, "procedural");
     })();
     return { layer: "procedural", deleted: true };
   }

@@ -8,7 +8,9 @@
 
 import { getMemorySourceThreadId, setThreadAgentType, type AgentType } from "../config.js";
 import { convertMarkdown } from "../markdown.js";
-import { assembleBootstrap, runConsolidationAllThreads, type initMemoryDb } from "../memory.js";
+import { type initMemoryDb } from "../memory.js";
+import { assembleBootstrap } from "../services/memory-briefing.service.js";
+import { runConsolidationAllThreads } from "../services/consolidation.service.js";
 import { addSchedule, generateTaskId, listSchedules, purgeSchedules } from "../scheduler.js";
 import {
   purgeOtherSessions,

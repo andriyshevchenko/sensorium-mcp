@@ -16,11 +16,11 @@ import {
   resetDailySession,
   resolveTelegramTopicId,
 } from "./data/memory/thread-registry.js";
-import { runIntelligentConsolidation } from "./data/memory/consolidation.js";
 import { runNarrativeGeneration } from "./data/memory/narrative.js";
 import { runReflection } from "./data/memory/reflection.js";
 import { initMemoryDb } from "./data/memory/schema.js";
 import { config } from "./config.js";
+import { runIntelligentConsolidation } from "./services/consolidation.service.js";
 import { errorMessage } from "./utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
