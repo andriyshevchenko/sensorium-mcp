@@ -327,10 +327,10 @@ func runSupervisor() error {
 	return nil
 }
 
-// fetchKeeperSettings reads the root threads from the MCP server,
-// filtering for those with keepAlive=true.
+// fetchKeeperSettings reads all keepAlive threads from the MCP server
+// (root, branch, and daily — excludes worker threads).
 func fetchKeeperSettings(ctx context.Context, mcp *MCPClient, log *Logger) ([]KeeperConfig, error) {
-	roots, err := mcp.GetRootThreads(ctx)
+	roots, err := mcp.GetKeepAliveThreads(ctx)
 	if err != nil {
 		return nil, err
 	}

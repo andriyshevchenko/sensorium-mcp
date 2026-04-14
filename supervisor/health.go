@@ -98,15 +98,25 @@ func (m *MCPClient) WaitForReady(ctx context.Context, pollInterval, timeout time
 
 // GetRootThreads fetches the list of root threads from the server.
 func (m *MCPClient) GetRootThreads(ctx context.Context) ([]map[string]any, error) {
+	return m.fetchThreadList(ctx, "/api/threads/roots")
+}
+
+// GetKeepAliveThreads fetches all threads with keepAlive=true (excluding worker threads).
+func (m *MCPClient) GetKeepAliveThreads(ctx context.Context) ([]map[string]any, error) {
+	return m.fetchThreadList(ctx, "/api/threads/keepalive")
+}
+
+// fetchThreadList is a shared helper for thread-list endpoints.
+func (m *MCPClient) fetchThreadList(ctx context.Context, path string) ([]map[string]any, error) {
 	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	resp, err := m.doReq(ctx2, "GET", "/api/threads/roots", nil)
+	resp, err := m.doReq(ctx2, "GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("GET /api/threads/roots: %d", resp.StatusCode)
+		return nil, fmt.Errorf("GET %s: %d", path, resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -122,7 +132,7 @@ func (m *MCPClient) GetRootThreads(ctx context.Context) ([]map[string]any, error
 		Threads []map[string]any `json:"threads"`
 	}
 	if err := json.Unmarshal(body, &wrapped); err != nil {
-		return nil, fmt.Errorf("cannot parse /api/threads/roots response: %w", err)
+		return nil, fmt.Errorf("cannot parse %s response: %w", path, err)
 	}
 	return wrapped.Threads, nil
 }
