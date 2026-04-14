@@ -186,7 +186,9 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
   8: (db) => {
     try {
       db.exec(`ALTER TABLE semantic_notes ADD COLUMN is_guardrail INTEGER NOT NULL DEFAULT 0`);
-    } catch {}
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "is_guardrail")) throw err;
+    }
     db.exec(`CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL`);
   },
   9: (db) => {
@@ -204,7 +206,9 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
   10: (db) => {
     try {
       db.exec("ALTER TABLE semantic_notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
-    } catch {}
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "pinned")) throw err;
+    }
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_sem_pinned ON semantic_notes(pinned) WHERE pinned = 1 AND valid_to IS NULL",
     );
@@ -293,13 +297,17 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
   16: (db) => {
     try {
       db.exec(`ALTER TABLE thread_registry ADD COLUMN daily_rotation INTEGER NOT NULL DEFAULT 0`);
-    } catch {}
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "daily_rotation")) throw err;
+    }
     log.info("[migration-16] Added daily_rotation column to thread_registry (default OFF)");
   },
   17: (db) => {
     try {
       db.exec(`ALTER TABLE thread_registry ADD COLUMN autonomous_mode INTEGER NOT NULL DEFAULT 0`);
-    } catch {}
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "autonomous_mode")) throw err;
+    }
     log.info("[migration-17] Added autonomous_mode column to thread_registry (default OFF)");
   },
   18: (db) => {
@@ -347,19 +355,25 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
   19: (db) => {
     try {
       db.exec(`ALTER TABLE thread_registry ADD COLUMN telegram_topic_id INTEGER`);
-    } catch {}
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "telegram_topic_id")) throw err;
+    }
     log.info("[migration-19] Added telegram_topic_id column to thread_registry");
   },
   20: (db) => {
     try {
       db.exec(`ALTER TABLE thread_registry ADD COLUMN identity_prompt TEXT`);
-    } catch {}
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "identity_prompt")) throw err;
+    }
     log.info("[migration-20] Added identity_prompt column to thread_registry");
   },
   21: (db) => {
     try {
       db.exec(`ALTER TABLE thread_registry ADD COLUMN working_directory TEXT`);
-    } catch {}
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "working_directory")) throw err;
+    }
     log.info("[migration-21] Added working_directory column to thread_registry");
   },
 };
