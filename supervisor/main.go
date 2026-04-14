@@ -27,6 +27,14 @@ func main() {
 	log := NewLogger(cfg.Paths.WatcherLog)
 	defer log.Close()
 
+	shouldRestart, err := applyPendingSupervisorUpdate(cfg, log)
+	if err != nil {
+		log.Warn("Pending supervisor update could not be applied: %v", err)
+	}
+	if shouldRestart {
+		return
+	}
+
 	log.Info("sensorium-supervisor starting (mode=%s, port=%d, dataDir=%s)", cfg.Mode, cfg.MCPHttpPort, cfg.DataDir)
 	log.Debug("Config: MCPStartCommand=%q, PollInterval=%v, MinUptime=%v, KeeperMaxRetries=%d", cfg.MCPStartCommand, cfg.PollInterval, cfg.MinUptime, cfg.KeeperMaxRetries)
 	log.Debug("Config: TelegramToken=%v, HealthFailThresh=%d, StuckThreshold=%v", cfg.TelegramToken != "", cfg.HealthFailThresh, cfg.StuckThreshold)
@@ -59,7 +67,7 @@ func main() {
 	KillByPort(cfg.MCPHttpPort, log)
 
 	// Spawn MCP server
-	_, err := SpawnMCPServer(cfg, log)
+	_, err = SpawnMCPServer(cfg, log)
 	if err != nil {
 		log.Error("Failed to start MCP server: %v", err)
 		os.Exit(1)
