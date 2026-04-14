@@ -21,16 +21,26 @@ func SpawnMCPServer(cfg Config, log *Logger) (int, error) {
 		return 0, errors.New("empty MCP_START_COMMAND")
 	}
 
+	if err := os.MkdirAll(filepath.Dir(cfg.Paths.MCPStderrLog), 0755); err != nil {
+		return 0, fmt.Errorf("create MCP stderr log directory: %w", err)
+	}
+	stderrFile, err := os.OpenFile(cfg.Paths.MCPStderrLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return 0, fmt.Errorf("open MCP stderr log: %w", err)
+	}
+
 	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Env = os.Environ()
 	cmd.Stdin = nil
 	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd.Stderr = stderrFile
 	setSysProcAttr(cmd)
 
 	log.Info("Starting MCP server: %s", cfg.MCPStartCommand)
+	log.Info("Capturing MCP server stderr to %s", cfg.Paths.MCPStderrLog)
 
 	if err := cmd.Start(); err != nil {
+		_ = stderrFile.Close()
 		return 0, fmt.Errorf("spawn MCP server: %w", err)
 	}
 
@@ -38,7 +48,10 @@ func SpawnMCPServer(cfg Config, log *Logger) (int, error) {
 	log.Info("MCP server started with PID %d", pid)
 
 	// Don't wait — detached process
-	go func() { _ = cmd.Wait() }()
+	go func() {
+		_ = cmd.Wait()
+		_ = stderrFile.Close()
+	}()
 
 	if err := writePIDFile(cfg.Paths.ServerPID, pid); err != nil {
 		log.Warn("Failed to write server PID file: %v", err)
