@@ -14,7 +14,7 @@
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { setThreadAgentType, type AgentType } from "../config.js";
-import { lookupSession, persistSession, lookupTopicRegistry, registerTopic } from "../sessions.js";
+import { persistSession } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import type { ToolResult } from "../types.js";
 import { log } from "../logger.js";
@@ -37,6 +37,7 @@ import {
   spawnCopilotProcess,
   spawnCodexProcess,
 } from "./thread-lifecycle.js";
+import { createManagedTopic, probeOrRemapTopic, resolveExistingTopic } from "../services/topic.service.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,34 +64,17 @@ export interface DelegateToolContext {
  *
  * Returns the thread ID if found, or undefined.
  */
-function resolveExistingTopic(
-  chatId: string,
-  name: string,
-): number | undefined {
-  // 1. Topic registry (SQLite – source of truth)
-  const registryId = lookupTopicRegistry(chatId, name);
-  if (registryId !== undefined) {
-    // Sync session store so it never holds a stale mapping
-    persistSession(chatId, name, registryId);
-    return registryId;
-  }
-
-  // 2. Session store (fallback for topics not yet in the registry)
-  const sessionId = lookupSession(chatId, name);
-  if (sessionId !== undefined) return sessionId;
-
-  // 3. Thread registry (fallback — has threadId from previous sessions)
+function resolveKnownTopic(chatId: string, name: string): number | undefined {
+  const resolved = resolveExistingTopic(chatId, [name]);
+  if (resolved !== undefined) return resolved;
   try {
     const db = initMemoryDb();
     const registryEntry = getThreadByName(db, name);
     if (registryEntry) {
-      // Sync back to topic registry and session store
-      registerTopic(chatId, name, registryEntry.threadId);
       persistSession(chatId, name, registryEntry.threadId);
       return registryEntry.threadId;
     }
-  } catch { /* registry lookup is best-effort */ }
-
+  } catch {}
   return undefined;
 }
 
@@ -261,23 +245,15 @@ export async function handleStartThread(
     }
     log.info(`[start_thread] Using explicit threadId ${threadId}` + (name ? ` ("${name}")` : ""));
   } else {
-    const resolvedId = resolveExistingTopic(telegramChatId, topicName)
-                    ?? resolveExistingTopic(telegramChatId, name);
+    const resolvedId = resolveKnownTopic(telegramChatId, topicName)
+                    ?? resolveKnownTopic(telegramChatId, name);
     if (resolvedId !== undefined) {
       threadId = resolvedId;
       topicExisted = true;
       log.info(`[start_thread] Resolved existing forum topic "${name}" → thread ${threadId}`);
     } else {
       try {
-        const topic = await telegram.createForumTopic(telegramChatId, topicName);
-        threadId = topic.message_thread_id;
-        persistSession(telegramChatId, topicName, threadId);
-        registerTopic(telegramChatId, topicName, threadId);
-        // Also persist under the original unprefixed name so spawned agents
-        // can resolve the session when they call start_session(name)
-        if (topicName !== name && name) {
-          persistSession(telegramChatId, name, threadId);
-        }
+        threadId = await createManagedTopic(telegram, telegramChatId, topicName, topicName !== name && name ? [name] : []);
         log.info(`[start_thread] Created forum topic "${name}" → thread ${threadId}`);
       } catch (err) {
         return errorResult(
@@ -312,23 +288,17 @@ export async function handleStartThread(
     // Agents that survived a server restart may be sending to a deleted topic.
     try {
       const db = initMemoryDb();
-      const topicId = resolveTelegramTopicId(db, threadId);
-      await telegram.sendMessage(telegramChatId, "\u{1F504} Thread still running. Verifying topic.", undefined, topicId);
+      await probeOrRemapTopic({
+        telegram,
+        chatId: telegramChatId,
+        logicalThreadId: threadId,
+        topicName: resolvedThreadName,
+        db,
+        aliases: [resolvedThreadName],
+        probeText: "\u{1F504} Thread still running. Verifying topic.",
+      });
     } catch (probeErr) {
-      const msg = errorMessage(probeErr);
-      if (/thread not found|topic.*(closed|deleted|not found)/i.test(msg)) {
-        log.warn(`[start_thread] Thread ${threadId} topic is dead (${msg}) — creating replacement.`);
-        const topicName = resolvedThreadName;
-        try {
-          const newTopic = await telegram.createForumTopic(telegramChatId, topicName);
-          const db = initMemoryDb();
-          updateThread(db, threadId, { telegramTopicId: newTopic.message_thread_id });
-          registerTopic(telegramChatId, topicName, threadId);
-          log.info(`[start_thread] Remapped thread ${threadId} \u2192 topic ${newTopic.message_thread_id}`);
-        } catch (createErr) {
-          log.warn(`[start_thread] Topic remap failed: ${errorMessage(createErr)}`);
-        }
-      }
+      log.warn(`[start_thread] Topic remap failed: ${errorMessage(probeErr)}`);
     }
     return {
       content: [{

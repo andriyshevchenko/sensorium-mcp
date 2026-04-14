@@ -25,6 +25,7 @@ import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
 import { readThreadMessages } from "../dispatcher.js";
 import { getThread, registerThread, updateThread } from "../data/memory/thread-registry.js";
+import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -200,7 +201,19 @@ export async function handleStartSession(
     // are detected and remapped promptly.
     if (!startupNotificationSent) {
       try {
-        await telegram.sendMessage(TELEGRAM_CHAT_ID, "\u{1F504} Session resumed. Continuing in this thread.", undefined, session.currentThreadId);
+        await probeOrRemapTopic({
+          telegram,
+          chatId: TELEGRAM_CHAT_ID,
+          logicalThreadId: session.currentThreadId!,
+          topicName: customName ??
+            `Copilot — ${new Date().toLocaleString("en-GB", {
+              day: "2-digit", month: "short", year: "numeric",
+              hour: "2-digit", minute: "2-digit", hour12: false,
+            })}`,
+          db: getMemoryDb(),
+          aliases: customName ? [customName] : [],
+          probeText: "\u{1F504} Session resumed. Continuing in this thread.",
+        });
         startupNotificationSent = true;
       } catch (err) {
         const errMsg = errorMessage(err);
@@ -217,27 +230,7 @@ export async function handleStartSession(
               day: "2-digit", month: "short", year: "numeric",
               hour: "2-digit", minute: "2-digit", hour12: false,
             })}`;
-          try {
-            const newTopic = await telegram.createForumTopic(TELEGRAM_CHAT_ID, topicName);
-            const newTopicId = newTopic.message_thread_id;
-            log.info(
-              `[start_session] Remapped thread ${session.currentThreadId} \u2192 Telegram topic ${newTopicId}`,
-            );
-            try {
-              updateThread(getMemoryDb(), session.currentThreadId!, { telegramTopicId: newTopicId });
-            } catch (e) {
-              log.warn(`[start_session] Failed to persist topic remap: ${e instanceof Error ? e.message : String(e)}`);
-            }
-            if (customName) persistSession(TELEGRAM_CHAT_ID, topicName, session.currentThreadId!);
-            registerTopic(TELEGRAM_CHAT_ID, topicName, session.currentThreadId!);
-            startupNotificationSent = true;
-          } catch (createErr) {
-            log.warn(`[start_session] Remap failed, falling back to new session: ${errorMessage(createErr)}`);
-            if (session.currentThreadId !== undefined) purgeSchedules(session.currentThreadId);
-            if (customName) removeSession(TELEGRAM_CHAT_ID, customName);
-            resolvedPreexisting = false;
-            session.currentThreadId = undefined;
-          }
+          log.info(`[start_session] Probe reported deleted topic for thread ${session.currentThreadId}; retry will create a replacement if needed.`);
         }
         // Other errors (network, etc.) are non-fatal — proceed anyway.
       }
@@ -271,11 +264,7 @@ export async function handleStartSession(
         hour: "2-digit", minute: "2-digit", hour12: false,
       })}`;
     try {
-      const topic = await telegram.createForumTopic(TELEGRAM_CHAT_ID, topicName);
-      session.currentThreadId = topic.message_thread_id;
-      // Persist so the same name resumes this thread next time.
-      persistSession(TELEGRAM_CHAT_ID, topicName, session.currentThreadId);
-      registerTopic(TELEGRAM_CHAT_ID, topicName, session.currentThreadId);
+      session.currentThreadId = await createManagedTopic(telegram, TELEGRAM_CHAT_ID, topicName);
       // Register in thread_registry so the dashboard can see it
       try {
         registerThread(getMemoryDb(), {
