@@ -18,13 +18,13 @@
 
 - [x] Define explicit thread state machine (states: active / dormant / exited / archived / expired + valid transitions doc)
 - [x] Create `src/services/thread-lifecycle.service.ts` — single owner of all thread state transitions
-- [ ] Consolidate 5 creation paths into 1 via the service
-- [ ] Consolidate 4 destruction paths into 1 via the service
-- [ ] Remove JSON session file as a primary lookup; SQLite `thread_registry` is the only source of truth
-- [ ] Verify: all create/destroy flows call the service, no direct `updateThread()` from tool handlers
+- [x] Consolidate 5 creation paths into 1 via the service
+- [x] Consolidate 4 destruction paths into 1 via the service
+- [x] Remove JSON session file as a primary lookup; SQLite `thread_registry` is the only source of truth
+- [x] Verify: all create/destroy flows call the service, no direct `updateThread()` from tool handlers
 
 Notes:
-`start_session` now uses `ThreadLifecycleService` for thread registration and activation as the first migrated creation path. Remaining create/destroy flows still need to be moved off direct `thread-registry` writes.
+`start_session`, `start_thread`, keepAlive restores, worker cleanup, topic remap, process-exit handling, and poll-loop heartbeats all route through `ThreadLifecycleService`. Name-based thread lookup in `start_session` and `start_thread` now resolves from SQLite `thread_registry` rather than the JSON session map.
 
 ---
 
