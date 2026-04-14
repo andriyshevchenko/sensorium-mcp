@@ -7,6 +7,7 @@ import type { Database } from "better-sqlite3";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { ISessionRepository } from "./data/interfaces.js";
 import { log } from "./logger.js";
 import { errorMessage } from "./utils.js";
 
@@ -15,6 +16,30 @@ import { errorMessage } from "./utils.js";
 const SESSION_STORE_PATH = join(homedir(), ".remote-copilot-mcp-sessions.json");
 
 type SessionMap = Record<string, Record<string, number>>;
+
+export class SessionRepository implements ISessionRepository {
+  getSession(chatId: string, name: string): number | undefined {
+    return lookupSession(chatId, name);
+  }
+
+  setSession(chatId: string, name: string, threadId: number): void {
+    persistSession(chatId, name, threadId);
+  }
+
+  deleteSession(chatId: string, name: string): void {
+    removeSession(chatId, name);
+  }
+
+  lookupTopicRegistry(chatId: string, name: string): number | undefined {
+    return lookupTopicRegistry(chatId, name);
+  }
+
+  registerTopicRegistry(chatId: string, name: string, threadId: number): void {
+    registerTopicRegistry(chatId, name, threadId);
+  }
+}
+
+export const sessionRepository = new SessionRepository();
 
 function loadSessionMap(): SessionMap {
   try {
@@ -214,6 +239,10 @@ export function lookupTopicRegistry(chatId: string, name: string): number | unde
 
 /** Register a topic name → threadId mapping in the registry. */
 export function registerTopic(chatId: string, name: string, threadId: number): void {
+  registerTopicRegistry(chatId, name, threadId);
+}
+
+export function registerTopicRegistry(chatId: string, name: string, threadId: number): void {
   try {
     const db = getTopicDb();
     db.prepare(
