@@ -225,8 +225,8 @@ export function handleGetThreadRunning(args: RouteArgs, threadId: number): boole
 
 /** GET /api/threads/:threadId/heartbeat — last MCP activity timestamp for stuck-process detection */
 export function handleGetThreadHeartbeat(args: RouteArgs, threadId: number): boolean {
-    const lastActivity = readThreadHeartbeat(threadId);
-    args.json({ threadId, lastActivity });
+    const lastActivityMs = readThreadHeartbeat(threadId);
+    args.json({ threadId, lastActivityMs });
     return true;
 }
 
