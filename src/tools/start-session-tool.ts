@@ -75,8 +75,7 @@ export async function handleStartSession(
 ): Promise<ToolResult> {
   const { session, telegram, telegramChatId: TELEGRAM_CHAT_ID, config, getMemoryDb, threadLifecycle } = ctx;
 
-  const typedArgs = args;
-  const rawThreadId = typedArgs.threadId;
+  const rawThreadId = args.threadId;
   const parseThreadId = (value: unknown): number | undefined => {
     const parsed = typeof value === "number" ? value
       : typeof value === "string" ? Number(value)
@@ -84,10 +83,10 @@ export async function handleStartSession(
     return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
   };
   const explicitThreadId = parseThreadId(rawThreadId);
-  const customName = typeof typedArgs.name === "string" && typedArgs.name.trim()
-    ? typedArgs.name.trim()
+  const customName = typeof args.name === "string" && args.name.trim()
+    ? args.name.trim()
     : undefined;
-  const rawAgentType = typeof typedArgs.agentType === "string" ? typedArgs.agentType.trim() : "";
+  const rawAgentType = typeof args.agentType === "string" ? args.agentType.trim() : "";
   const agentType: AgentType | undefined =
     rawAgentType === "copilot" || rawAgentType === "copilot_claude" || rawAgentType === "copilot_codex"
     || rawAgentType === "claude" || rawAgentType === "cursor"
@@ -226,22 +225,22 @@ export async function handleStartSession(
     }
 
     if (!isReconnect) {
-    // Drain any stale messages from the thread file so they aren't
-    // re-delivered in the next wait_for_instructions call.
-    const stale = readThreadMessages(session.currentThreadId);
-    if (stale.length > 0) {
-      log.info(
-        `[start_session] Drained ${stale.length} stale message(s) from thread ${session.currentThreadId}.`,
-      );
-      // Notify the operator that stale messages were discarded.
-      try {
-        const notice = convertMarkdown(
-          `\u26A0\uFE0F **${stale.length} message(s) from before the session resumed were discarded.** ` +
-          `If you sent instructions while the agent was offline, please resend them.`,
+      // Drain any stale messages from the thread file so they aren't
+      // re-delivered in the next wait_for_instructions call.
+      const stale = readThreadMessages(session.currentThreadId);
+      if (stale.length > 0) {
+        log.info(
+          `[start_session] Drained ${stale.length} stale message(s) from thread ${session.currentThreadId}.`,
         );
-        await telegram.sendMessage(TELEGRAM_CHAT_ID, notice, "MarkdownV2", session.currentThreadId);
-      } catch { /* non-fatal */ }
-    }
+        // Notify the operator that stale messages were discarded.
+        try {
+          const notice = convertMarkdown(
+            `\u26A0\uFE0F **${stale.length} message(s) from before the session resumed were discarded.** ` +
+            `If you sent instructions while the agent was offline, please resend them.`,
+          );
+          await telegram.sendMessage(TELEGRAM_CHAT_ID, notice, "MarkdownV2", session.currentThreadId);
+        } catch { /* non-fatal */ }
+      }
     } // end if (!isReconnect)
   }
 
@@ -327,33 +326,33 @@ export async function handleStartSession(
   // Skipped on lightweight reconnect — consolidation already ran in the
   // original start_session for this process.
   if (!isReconnect) {
-  try {
-    if (session.currentThreadId !== undefined) {
-      const db = getMemoryDb();
-      const uncons = db.prepare(
-        "SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0",
-      ).get() as { c: number };
-      if (uncons.c > STARTUP_CONSOLIDATION_THRESHOLD) {
-        log.info(`[start_session] Startup consolidation triggered: ${uncons.c} unconsolidated episodes across all threads`);
-        session.lastConsolidationAt = Date.now();
-        void runConsolidationAllThreads(db)
-          .then((report) => {
-            if (report.episodesProcessed > 0) {
-              log.info(
-                `[memory] Startup consolidation: ${report.episodesProcessed} episodes \u2192 ${report.notesCreated} notes (${report.details.length} threads)`,
+    try {
+      if (session.currentThreadId !== undefined) {
+        const db = getMemoryDb();
+        const uncons = db.prepare(
+          "SELECT COUNT(*) as c FROM episodes WHERE consolidated = 0",
+        ).get() as { c: number };
+        if (uncons.c > STARTUP_CONSOLIDATION_THRESHOLD) {
+          log.info(`[start_session] Startup consolidation triggered: ${uncons.c} unconsolidated episodes across all threads`);
+          session.lastConsolidationAt = Date.now();
+          void runConsolidationAllThreads(db)
+            .then((report) => {
+              if (report.episodesProcessed > 0) {
+                log.info(
+                  `[memory] Startup consolidation: ${report.episodesProcessed} episodes \u2192 ${report.notesCreated} notes (${report.details.length} threads)`,
+                );
+              }
+            })
+            .catch((err) => {
+              log.error(
+                `[memory] Startup consolidation error: ${errorMessage(err)}`,
               );
-            }
-          })
-          .catch((err) => {
-            log.error(
-              `[memory] Startup consolidation error: ${errorMessage(err)}`,
-            );
-          });
+            });
+        }
       }
+    } catch (err) {
+      log.debug(`[memory] Startup consolidation check failed (non-fatal): ${errorMessage(err)}`);
     }
-  } catch (err) {
-    log.debug(`[memory] Startup consolidation check failed (non-fatal): ${errorMessage(err)}`);
-  }
   } // end if (!isReconnect) for consolidation
 
   // Purge stale MCP sessions for this thread (from before a server restart)
