@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -138,7 +139,7 @@ func IsProcessAlive(pid int) bool {
 	if err != nil {
 		return false
 	}
-	return proc.Signal(nil) == nil // signal 0 = existence check on Unix
+	return proc.Signal(syscall.Signal(0)) == nil // signal 0 = existence check on Unix
 }
 
 // --- PID File Helpers ---

@@ -282,7 +282,10 @@ func (m *MCPClient) OpenMCPSession(ctx context.Context) (string, error) {
 		"jsonrpc": "2.0",
 		"method":  "notifications/initialized",
 	}
-	notifReq, _ := http.NewRequestWithContext(ctx2, "POST", m.BaseURL+"/mcp", nil)
+	notifReq, err := http.NewRequestWithContext(ctx2, "POST", m.BaseURL+"/mcp", nil)
+	if err != nil {
+		return sessionID, nil // session created, notification failed — non-fatal
+	}
 	data, err := json.Marshal(notifPayload)
 	if err != nil {
 		return sessionID, nil // session created, notification failed — non-fatal
