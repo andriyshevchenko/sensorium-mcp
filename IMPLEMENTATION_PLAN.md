@@ -54,10 +54,10 @@ Notes:
   - `schema-ddl.ts` — DDL constants only
   - `migration-runner.ts` — migration logic
   - `schema-guard.ts` — self-heal / integrity checks
-- [ ] Extract `src/services/consolidation.service.ts` — LLM orchestration separate from DB mutations
-- [ ] Move prompt assembly out of `bootstrap.ts` into `src/services/memory-briefing.service.ts`
+- [x] Extract `src/services/consolidation.service.ts` — LLM orchestration separate from DB mutations
+- [x] Move prompt assembly out of `bootstrap.ts` into `src/services/memory-briefing.service.ts`
 - [x] Move SQLite writes out of `telegram.ts` into `src/data/sent-message.repository.ts`
-- [ ] Verify: no storage module calls OpenAI or assembles prompt strings; `tsc --noEmit` passes
+- [x] Verify: no storage module calls OpenAI or assembles prompt strings; `tsc --noEmit` passes
 
 ---
 

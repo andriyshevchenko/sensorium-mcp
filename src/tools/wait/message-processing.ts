@@ -10,11 +10,12 @@
  */
 
 import { readThreadMessages } from "../../dispatcher.js";
-import { assembleCompactRefresh, detectTopicShift } from "../../memory.js";
+import { detectTopicShift } from "../../memory.js";
 import { log } from "../../logger.js";
 import { getReminders } from "../../response-builders.js";
 import { getEffectiveAgentType } from "../../config.js";
 import { listSchedules } from "../../scheduler.js";
+import { assembleCompactRefresh } from "../../services/memory-briefing.service.js";
 
 import { processVoice, processAnimation, processVideoNote, type MediaContext } from "./media-processor.js";
 import { handleReactionWithMessages } from "./reaction-handler.js";

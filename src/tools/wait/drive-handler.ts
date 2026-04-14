@@ -8,7 +8,8 @@
 
 import { formatDrivePrompt, PHASE3_APPROVAL_PROMPT } from "../../drive.js";
 import { log } from "../../logger.js";
-import { runIntelligentConsolidation, runNarrativeGeneration, runReflection, type initMemoryDb } from "../../memory.js";
+import { runNarrativeGeneration, runReflection, type initMemoryDb } from "../../memory.js";
+import { runIntelligentConsolidation } from "../../services/consolidation.service.js";
 import { getReminders } from "../../response-builders.js";
 import { backfillEmbeddings } from "../memory-tools.js";
 import type { ToolResult } from "../../types.js";
