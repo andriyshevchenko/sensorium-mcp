@@ -43,7 +43,7 @@ const { TelegramClient } = await import("./telegram.js");
 const { startHttpServer } = await import("./http-server.js");
 const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
-const { setTopicRegistryDb, lookupTopicRegistry } = await import("./sessions.js");
+const { setTopicRegistryDb } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
 const { cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
 const { log } = await import("./logger.js");
@@ -77,13 +77,6 @@ telegram.setTopicResolver((threadId) => resolveTelegramTopicId(getMemoryDb(), th
 
 // Wire up lazy DB access for SQLite-backed topic registry
 setTopicRegistryDb(getMemoryDb);
-
-// Ensure SecureVault topic exists in the registry (resolved dynamically, not hardcoded).
-// If no entry exists yet, the operator should register it via the topic-registry tools.
-const secureVaultThreadId = lookupTopicRegistry(TELEGRAM_CHAT_ID, "SecureVault");
-if (secureVaultThreadId === undefined) {
-  console.warn("[init] SecureVault topic not found in registry — register it via topic-registry tools or start_session.");
-}
 
 // Initialize video temp-file cleanup handlers (registers process exit hooks).
 initVideoTempCleanup();

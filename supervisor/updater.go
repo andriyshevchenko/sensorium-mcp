@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
 const registryURL = "https://registry.npmjs.org/sensorium-mcp/latest"
+const supervisorReleaseURL = "https://api.github.com/repos/andriyshevchenko/remote-copilot-mcp/releases/tags/supervisor-latest"
 
 // Updater checks the npm registry for new versions and performs updates.
 type Updater struct {
@@ -75,6 +78,10 @@ func (u *Updater) run(ctx context.Context) {
 		}
 
 		u.checkAndUpdate(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		u.checkSupervisorUpdate(ctx)
 	}
 }
 
@@ -222,6 +229,205 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 
 	// Reset start time for min uptime tracking
 	u.startAt = time.Now()
+}
+
+type githubRelease struct {
+	TagName string `json:"tag_name"`
+	Name    string `json:"name"`
+	Assets  []struct {
+		Name string `json:"name"`
+		URL  string `json:"browser_download_url"`
+		Size int64  `json:"size"`
+	} `json:"assets"`
+}
+
+func (u *Updater) getSupervisorRelease(ctx context.Context) (string, string, error) {
+	ctx2, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx2, http.MethodGet, supervisorReleaseURL, nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "sensorium-supervisor-updater")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("GitHub releases HTTP %d", resp.StatusCode)
+	}
+
+	var release githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", "", err
+	}
+
+	assetName := supervisorAssetName()
+	for _, asset := range release.Assets {
+		if asset.Name != assetName {
+			continue
+		}
+
+		version := strings.TrimSpace(release.Name)
+		if version == "" {
+			version = strings.TrimSpace(release.TagName)
+		}
+		if version == "" {
+			return "", "", fmt.Errorf("release version missing for %s", assetName)
+		}
+		if strings.TrimSpace(asset.URL) == "" {
+			return "", "", fmt.Errorf("release asset URL missing for %s", assetName)
+		}
+
+		return version, asset.URL, nil
+	}
+
+	return "", "", fmt.Errorf("release asset %q not found", assetName)
+}
+
+func supervisorAssetName() string {
+	suffix := ""
+	if runtime.GOOS == "windows" {
+		suffix = ".exe"
+	}
+	return fmt.Sprintf("sensorium-supervisor-%s-%s%s", runtime.GOOS, runtime.GOARCH, suffix)
+}
+
+func (u *Updater) getLocalSupervisorVersion() string {
+	data, err := os.ReadFile(u.cfg.Paths.SupervisorVersion)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func (u *Updater) setLocalSupervisorVersion(v string) {
+	os.MkdirAll(u.cfg.DataDir, 0755)
+	if err := atomicWrite(u.cfg.Paths.SupervisorVersion, []byte(v)); err != nil {
+		u.log.Warn("Failed to write supervisor version file: %v", err)
+	}
+}
+
+func (u *Updater) checkSupervisorUpdate(ctx context.Context) {
+	uptime := time.Since(u.startAt)
+	if uptime < u.cfg.MinUptime {
+		u.log.Info("Deferring supervisor update — too early (uptime %v < %v)", uptime.Round(time.Second), u.cfg.MinUptime)
+		return
+	}
+
+	remote, downloadURL, err := u.getSupervisorRelease(ctx)
+	if err != nil {
+		u.log.Warn("Failed to check supervisor release: %v", err)
+		return
+	}
+
+	local := u.getLocalSupervisorVersion()
+	if local == "" {
+		u.log.Info("No local supervisor version recorded — storing %s", remote)
+		u.setLocalSupervisorVersion(remote)
+		return
+	}
+
+	if local == remote {
+		u.log.Debug("Supervisor updater: version %s is up to date", local)
+		return
+	}
+
+	u.log.Info("Supervisor update available: %s → %s", local, remote)
+	NotifyOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: updating binary %s → %s. Grace period %v...", local, remote, u.cfg.GracePeriod), 0)
+
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(u.cfg.GracePeriod):
+	}
+
+	if err := u.downloadSupervisorBinary(ctx, downloadURL); err != nil {
+		u.log.Error("Supervisor binary download failed: %v", err)
+		NotifyOperator(u.cfg, u.log, fmt.Sprintf("🔴 Supervisor: binary update to %s failed during download.", remote), 0)
+		return
+	}
+
+	u.setLocalSupervisorVersion(remote)
+	NotifyOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: downloaded %s. Restarting supervisor to apply update...", remote), 0)
+
+	if err := signalSelf(syscall.SIGTERM); err != nil {
+		u.log.Error("Failed to signal supervisor for restart: %v", err)
+		NotifyOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but restart signal failed.", 0)
+	}
+}
+
+func (u *Updater) downloadSupervisorBinary(ctx context.Context, downloadURL string) error {
+	if err := os.MkdirAll(u.cfg.Paths.BinaryDir, 0755); err != nil {
+		return fmt.Errorf("create binary dir: %w", err)
+	}
+
+	tmpPath := u.cfg.Paths.PendingBinary + ".download"
+	defer os.Remove(tmpPath)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "sensorium-supervisor-updater")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download HTTP %d", resp.StatusCode)
+	}
+
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	if err != nil {
+		return err
+	}
+
+	written, copyErr := io.Copy(f, resp.Body)
+	closeErr := f.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if written <= 0 {
+		return fmt.Errorf("downloaded empty binary")
+	}
+
+	info, err := os.Stat(tmpPath)
+	if err != nil {
+		return err
+	}
+	if info.Size() <= 0 {
+		return fmt.Errorf("downloaded binary has invalid size %d", info.Size())
+	}
+
+	if err := os.Remove(u.cfg.Paths.PendingBinary); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(tmpPath, u.cfg.Paths.PendingBinary); err != nil {
+		return err
+	}
+
+	u.log.Info("Supervisor binary downloaded to %s (%d bytes)", u.cfg.Paths.PendingBinary, info.Size())
+	return nil
+}
+
+func signalSelf(sig os.Signal) error {
+	proc, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		return err
+	}
+	return proc.Signal(sig)
 }
 
 func (u *Updater) killServer() {
