@@ -1,6 +1,5 @@
 import { archiveNotesForThread } from "../data/memory/semantic.js";
 import { getExplicitTelegramTopicId } from "../data/memory/thread-registry.js";
-import { initMemoryDb } from "../data/memory/schema.js";
 import { synthesizeGhostMemory } from "../memory.js";
 import { errorMessage } from "../utils.js";
 import { spawnedThreads, type SpawnedThread } from "./process.service.js";
@@ -35,7 +34,7 @@ export async function cleanupExpiredWorkers(
       if (spawnedThreads.some((t) => t.threadId === row.thread_id)) continue;
       try {
         try {
-          const topicId = getExplicitTelegramTopicId(initMemoryDb(), row.thread_id);
+          const topicId = getExplicitTelegramTopicId(db, row.thread_id);
           if (topicId != null) await telegram.deleteForumTopic(chatId, topicId);
         } catch {}
         threadLifecycle.archiveThread(db, row.thread_id);
@@ -59,13 +58,12 @@ async function cleanupSingleWorker(
   }
   try { process.kill(thread.pid, "SIGTERM"); } catch {}
   try {
-    const topicId = getExplicitTelegramTopicId(initMemoryDb(), thread.threadId);
+    const topicId = getExplicitTelegramTopicId(db, thread.threadId);
     if (topicId != null) await telegram.deleteForumTopic(chatId, topicId);
   } catch {}
   try {
-    const cleanupDb = initMemoryDb();
-    threadLifecycle.archiveThread(cleanupDb, thread.threadId);
-    archiveNotesForThread(cleanupDb, thread.threadId);
+    threadLifecycle.archiveThread(db, thread.threadId);
+    archiveNotesForThread(db, thread.threadId);
   } catch {}
   const idx = spawnedThreads.indexOf(thread);
   if (idx !== -1) spawnedThreads.splice(idx, 1);
