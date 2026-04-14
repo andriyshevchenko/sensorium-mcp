@@ -75,10 +75,14 @@ export async function deleteTelegramTopicByBotApi(
   chatId: string,
   topicId: number,
 ): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${token}/deleteForumTopic`, {
+  const res = await fetch(`https://api.telegram.org/bot${token}/deleteForumTopic`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, message_thread_id: topicId }),
     signal: AbortSignal.timeout(10_000),
   });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`deleteForumTopic failed: HTTP ${res.status} ${res.statusText} — ${body}`);
+  }
 }
