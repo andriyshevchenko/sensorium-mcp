@@ -34,6 +34,7 @@ import { handleWaitForInstructions, type WaitToolContext, type WaitToolExtra } f
 import { handleStartThread, handleSendMessageToThread as handleSendMessageToThreadFile, type DelegateToolContext } from "../tools/delegate-tool.js";
 import { getThreadsHealth } from "../tools/thread-lifecycle.js";
 import { handleSearchSkills, handleGetSkill } from "../tools/skill-tools.js";
+import type { ThreadLifecycleService } from "../services/thread-lifecycle.service.js";
 import type { CreateMcpServerFn, ToolResult } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -49,9 +50,10 @@ export function buildMcpServerFactory(
   telegram: TelegramClient,
   telegramChatId: string,
   getMemoryDb: () => Database,
+  threadLifecycle: ThreadLifecycleService,
 ): CreateMcpServerFn {
   return (getMcpSessionId, closeTransport) =>
-    createMcpServer(telegram, telegramChatId, getMemoryDb, getMcpSessionId, closeTransport);
+    createMcpServer(telegram, telegramChatId, getMemoryDb, threadLifecycle, getMcpSessionId, closeTransport);
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +64,7 @@ function createMcpServer(
   telegram: TelegramClient,
   telegramChatId: string,
   getMemoryDb: () => Database,
+  threadLifecycle: ThreadLifecycleService,
   getMcpSessionId?: () => string | undefined,
   closeTransport?: () => void,
 ): Server {
@@ -221,6 +224,7 @@ function createMcpServer(
         telegramChatId,
         config,
         getMemoryDb,
+        threadLifecycle,
         getReminders,
         getMcpSessionId,
         closeTransport,

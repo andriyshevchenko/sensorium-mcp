@@ -24,8 +24,9 @@ import type { AppConfig, ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
 import { readThreadMessages } from "../dispatcher.js";
-import { getThread, registerThread, updateThread } from "../data/memory/thread-registry.js";
+import { getThread } from "../data/memory/thread-registry.js";
 import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
+import type { ThreadLifecycleService } from "../services/thread-lifecycle.service.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,6 +52,7 @@ export interface StartSessionContext {
   telegramChatId: string;
   config: AppConfig;
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
+  threadLifecycle: ThreadLifecycleService;
   getReminders: (
     threadId: number | undefined,
     sessionStartedAt: number,
@@ -74,7 +76,7 @@ export async function handleStartSession(
   args: Record<string, unknown>,
   ctx: StartSessionContext,
 ): Promise<ToolResult> {
-  const { session, telegram, telegramChatId: TELEGRAM_CHAT_ID, config, getMemoryDb } = ctx;
+  const { session, telegram, telegramChatId: TELEGRAM_CHAT_ID, config, getMemoryDb, threadLifecycle } = ctx;
 
   const typedArgs = args;
   const rawThreadId = typedArgs.threadId;
@@ -267,11 +269,13 @@ export async function handleStartSession(
       session.currentThreadId = await createManagedTopic(telegram, TELEGRAM_CHAT_ID, topicName);
       // Register in thread_registry so the dashboard can see it
       try {
-        registerThread(getMemoryDb(), {
+        threadLifecycle.registerThread(getMemoryDb(), {
           threadId: session.currentThreadId,
           name: topicName,
           type: 'root',
           client: agentType ?? 'claude',
+          chatId: TELEGRAM_CHAT_ID,
+          telegramTopicId: session.currentThreadId,
         });
       } catch { /* best-effort — DB may not be ready */ }
     } catch (err) {
@@ -413,19 +417,17 @@ export async function handleStartSession(
       const db = getMemoryDb();
       const existingThread = getThread(db, threadId);
       if (!existingThread) {
-        registerThread(db, {
+        threadLifecycle.registerThread(db, {
           threadId,
           name: customName ?? `Thread ${threadId}`,
           type: 'root',
           client: agentType,
+          chatId: TELEGRAM_CHAT_ID,
         });
-      } else if (!existingThread.keepAlive) {
-        // Only update client for non-keepAlive threads; keepAlive threads
-        // have their client set by the keeper and shouldn't be overwritten.
-        updateThread(db, threadId, { client: agentType, status: 'active' });
       } else {
-        // keepAlive thread: just ensure status is active
-        updateThread(db, threadId, { status: 'active' });
+        threadLifecycle.activateThread(db, threadId, existingThread.keepAlive
+          ? {}
+          : { client: agentType });
       }
     } catch { /* best-effort */ }
   }
