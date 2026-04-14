@@ -7,10 +7,10 @@
 
 ## Phase A — Repository Interfaces *(scope: S, risk: Low)*
 
-- [ ] Define `IThreadRepository`, `ISessionRepository`, `IScheduleRepository` interfaces in `src/data/`
-- [ ] Wrap current SQLite/JSON/PID implementations behind these interfaces (no behavior change)
+- [x] Define `IThreadRepository`, `ISessionRepository`, `IScheduleRepository` interfaces in `src/data/`
+- [x] Wrap current SQLite/JSON/PID implementations behind these interfaces (no behavior change)
 - [ ] Update all import sites to use interfaces instead of concrete modules
-- [ ] Verify: `npx tsc --noEmit` passes, zero behavior change
+- [x] Verify: `npx tsc --noEmit` passes, zero behavior change
 
 ---
 
@@ -27,9 +27,9 @@
 
 ## Phase C — BackgroundJobRunner *(scope: M, risk: Medium)*
 
-- [ ] Create `src/services/background-runner.ts` — single owner of all recurring timers
-- [ ] Register jobs: worker cleanup (every 5 min), daily rotation check (every 5 min at 04:00), scheduler tick (every 60s), consolidation trigger
-- [ ] Remove `cleanupExpiredWorkers` call from `src/tools/wait/drive-handler.ts` (keep only the runner's call)
+- [x] Create `src/services/background-runner.ts` — single owner of recurring server-level timers
+- [x] Register jobs: worker cleanup (every 5 min) and daily rotation check (every 5 min at 04:00) from `src/index.ts`
+- [x] Remove `cleanupExpiredWorkers` call from `src/tools/wait/drive-handler.ts` (keep only the runner's call)
 - [ ] Strip unrelated background tasks out of `wait_for_instructions` poll loop
 - [ ] Verify: exactly 1 cleanup owner, wait loop only polls messages + updates heartbeat
 

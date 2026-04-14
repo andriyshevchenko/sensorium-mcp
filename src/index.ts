@@ -45,11 +45,10 @@ const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
 const { setTopicRegistryDb } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
-const { cleanupExpiredWorkers, cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
+const { cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
 const { log } = await import("./logger.js");
-const { errorMessage } = await import("./utils.js");
-const { rotateAllDailySessions } = await import("./daily-session.js");
 const { resolveTelegramTopicId } = await import("./data/memory/thread-registry.js");
+const { BackgroundJobRunner } = await import("./services/background-runner.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -106,53 +105,6 @@ function closeMemoryDb(): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Daily session rotation timer (runs in the MCP server process which has
-// all env vars — OpenAI, Telegram, etc.)
-// ---------------------------------------------------------------------------
-
-const DAILY_ROTATION_HOUR = 4;
-const WORKER_CLEANUP_INTERVAL_MS = 5 * 60_000;
-
-function startDailyRotationTimer(): void {
-  setInterval(async () => {
-    const now = new Date();
-    if (now.getHours() !== DAILY_ROTATION_HOUR || now.getMinutes() >= 5) return;
-    try {
-      log.info("Starting daily session rotation...");
-      const results = await rotateAllDailySessions();
-      for (const r of results) {
-        if (r.error) {
-          log.error(`Daily rotation failed for root ${r.rootThreadId}: ${r.error}`);
-        } else {
-          log.info(`Daily rotation complete for root ${r.rootThreadId}`);
-        }
-      }
-    } catch (err) {
-      log.error(`Daily rotation error: ${errorMessage(err)}`);
-    }
-  }, 5 * 60_000);
-}
-
-function startExpiredWorkerCleanupTimer(): void {
-  const runCleanup = async (): Promise<void> => {
-    try {
-      const result = await cleanupExpiredWorkers(getMemoryDb(), telegram, TELEGRAM_CHAT_ID);
-      if (result.cleaned > 0) {
-        log.info(`[worker-cleanup] Cleaned ${result.cleaned} expired worker thread(s).`);
-      }
-      if (result.errors.length > 0) {
-        log.warn(`[worker-cleanup] Errors: ${result.errors.join("; ")}`);
-      }
-    } catch (err) {
-      log.error(`Expired worker cleanup error: ${errorMessage(err)}`);
-    }
-  };
-
-  void runCleanup();
-  setInterval(() => { void runCleanup(); }, WORKER_CLEANUP_INTERVAL_MS);
-}
-
 const httpPort = process.env.MCP_HTTP_PORT ? parseInt(process.env.MCP_HTTP_PORT, 10) : undefined;
 if (httpPort) {
   startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb);
@@ -160,8 +112,14 @@ if (httpPort) {
   await startStdioServer(createMcpServer, closeMemoryDb);
 }
 
-// Start daily rotation timer after server is listening
-startDailyRotationTimer();
-startExpiredWorkerCleanupTimer();
+const backgroundRunner = new BackgroundJobRunner({
+  getMemoryDb,
+  telegram,
+  chatId: TELEGRAM_CHAT_ID,
+  log,
+});
+
+// Start background jobs after the server is listening.
+backgroundRunner.start();
 
 }

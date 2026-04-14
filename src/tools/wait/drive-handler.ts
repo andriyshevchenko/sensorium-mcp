@@ -11,7 +11,6 @@ import { log } from "../../logger.js";
 import { runIntelligentConsolidation, runNarrativeGeneration, runReflection, type initMemoryDb } from "../../memory.js";
 import { getReminders } from "../../response-builders.js";
 import { backfillEmbeddings } from "../memory-tools.js";
-import { cleanupExpiredWorkers } from "../thread-lifecycle.js";
 import type { ToolResult } from "../../types.js";
 import { errorMessage } from "../../utils.js";
 
@@ -42,10 +41,6 @@ interface DriveContext {
 }
 
 const EPISODE_COUNT_CONSOLIDATION_THRESHOLD = 15;
-
-// Worker thread auto-cleanup timer
-let lastWorkerCleanupAt = 0;
-const WORKER_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ---------------------------------------------------------------------------
 // Auto-consolidation (3 strategies)
@@ -147,21 +142,6 @@ export function runAutoConsolidation(ctx: DriveContext): void {
     }
   } catch (err) { log.debug(`[memory] Consolidation check failed (non-fatal): ${errorMessage(err)}`); }
 
-  // Strategy 4: Worker thread auto-cleanup (every 5 minutes)
-  if (Date.now() - lastWorkerCleanupAt > WORKER_CLEANUP_INTERVAL_MS) {
-    lastWorkerCleanupAt = Date.now();
-    const chatId = process.env.TELEGRAM_CHAT_ID || "";
-    if (chatId) {
-      void (async () => {
-        const { TelegramClient } = await import("../../telegram.js");
-        const telegram = new TelegramClient(process.env.TELEGRAM_TOKEN || "");
-        const result = await cleanupExpiredWorkers(getMemoryDb(), telegram, chatId);
-        if (result.cleaned > 0) {
-          log.info(`[cleanup] Cleaned ${result.cleaned} expired worker threads`);
-        }
-      })().catch(() => { /* non-fatal */ });
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
