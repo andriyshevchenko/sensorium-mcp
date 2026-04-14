@@ -269,14 +269,16 @@ func (k *Keeper) sleep(ctx context.Context, d time.Duration) {
 	}
 }
 
-// isRootKeepAlive checks whether the root thread still has keepAlive=true.
+// isRootKeepAlive checks whether the thread still has keepAlive=true.
+// Uses the /api/threads/keepalive endpoint (root, branch, daily — excludes workers)
+// so that branch and daily threads are correctly included in the check.
 func (k *Keeper) isRootKeepAlive(ctx context.Context) bool {
-	roots, err := k.mcp.GetRootThreads(ctx)
+	threads, err := k.mcp.GetKeepAliveThreads(ctx)
 	if err != nil {
-		k.log.Debug("isRootKeepAlive(%d): failed to fetch roots: %v — assuming still alive", k.cfg.ThreadID, err)
+		k.log.Debug("isRootKeepAlive(%d): failed to fetch keepalive threads: %v — assuming still alive", k.cfg.ThreadID, err)
 		return true // fail-open: don't stop keeper if we can't check
 	}
-	for _, r := range roots {
+	for _, r := range threads {
 		tidFloat, _ := r["threadId"].(float64)
 		if int(tidFloat) == k.cfg.ThreadID {
 			keepAlive, _ := r["keepAlive"].(bool)
@@ -284,8 +286,8 @@ func (k *Keeper) isRootKeepAlive(ctx context.Context) bool {
 			return keepAlive && (status == "" || status == "active")
 		}
 	}
-	k.log.Debug("isRootKeepAlive(%d): root thread not found in response", k.cfg.ThreadID)
-	return false // root thread gone → stop keeper
+	k.log.Debug("isRootKeepAlive(%d): thread not found in keepalive list", k.cfg.ThreadID)
+	return false // thread gone or keepAlive removed → stop keeper
 }
 
 // parseWorkerThreadID extracts the "threadId" field from a start_thread JSON response.
