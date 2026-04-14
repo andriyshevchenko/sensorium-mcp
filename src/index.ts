@@ -116,8 +116,7 @@ function closeMemoryDb(): void {
   }
 }
 
-const httpPort = process.env.MCP_HTTP_PORT ? parseInt(process.env.MCP_HTTP_PORT, 10) : undefined;
-if (httpPort) {
+if (process.env.MCP_HTTP_PORT) {
   startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb);
 } else {
   await startStdioServer(createMcpServer, closeMemoryDb);
