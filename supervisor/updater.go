@@ -179,11 +179,13 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 	// Set maintenance flag — always clean up on exit.
 	// Written as JSON so TypeScript's checkMaintenanceFlag() can parse the
 	// version and timestamp fields for accurate maintenance notifications.
-	maintenanceJSON, _ := json.Marshal(map[string]string{
+	maintenanceJSON, err := json.Marshal(map[string]string{
 		"version":   remote,
 		"timestamp": time.Now().Format(time.RFC3339),
 	})
-	if err := atomicWrite(u.cfg.Paths.MaintenanceFlag, maintenanceJSON); err != nil {
+	if err != nil {
+		u.log.Warn("Failed to marshal maintenance flag: %v", err)
+	} else if err := atomicWrite(u.cfg.Paths.MaintenanceFlag, maintenanceJSON); err != nil {
 		u.log.Warn("Failed to write maintenance flag: %v", err)
 	}
 	defer os.Remove(u.cfg.Paths.MaintenanceFlag)
@@ -372,7 +374,7 @@ func (u *Updater) checkSupervisorUpdate(ctx context.Context) {
 	if err := u.stagePendingSupervisorVersion(remote); err != nil {
 		_ = os.Remove(u.cfg.Paths.PendingBinary)
 		u.log.Error("Failed to stage supervisor version %s: %v", remote, err)
-		NotifyOperator(u.cfg, u.log, fmt.Sprintf("ðŸ”´ Supervisor: binary update to %s failed during staging.", remote), 0)
+		NotifyOperator(u.cfg, u.log, fmt.Sprintf("🔴 Supervisor: binary update to %s failed during staging.", remote), 0)
 		return
 	}
 	NotifyOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: downloaded %s. Restarting supervisor to apply update...", remote), 0)
