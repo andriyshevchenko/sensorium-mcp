@@ -47,44 +47,46 @@ export function rebuildThreadRegistryWithExitedStatus(
     ? "working_directory"
     : "NULL";
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS thread_registry_new (
-      id                INTEGER PRIMARY KEY AUTOINCREMENT,
-      thread_id         INTEGER NOT NULL UNIQUE,
-      name              TEXT NOT NULL,
-      type              TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
-      root_thread_id    INTEGER,
-      badge             TEXT NOT NULL DEFAULT 'root',
-      client            TEXT DEFAULT 'claude',
-      max_retries       INTEGER DEFAULT 5,
-      cooldown_ms       INTEGER DEFAULT 300000,
-      keep_alive        INTEGER DEFAULT 0,
-      created_at        TEXT NOT NULL,
-      last_active_at    TEXT,
-      session_reset_at  TEXT,
-      status            TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
-      daily_rotation    INTEGER NOT NULL DEFAULT 0,
-      autonomous_mode   INTEGER NOT NULL DEFAULT 0,
-      telegram_topic_id INTEGER,
-      identity_prompt   TEXT,
-      working_directory TEXT
-    );
-    INSERT OR IGNORE INTO thread_registry_new (
-      id, thread_id, name, type, root_thread_id, badge, client, max_retries,
-      cooldown_ms, keep_alive, created_at, last_active_at, session_reset_at,
-      status, daily_rotation, autonomous_mode, telegram_topic_id, identity_prompt, working_directory
-    )
-    SELECT
-      id, thread_id, name, type, root_thread_id, badge, client, max_retries,
-      cooldown_ms, keep_alive, created_at, last_active_at, ${selectSessionResetAt},
-      status, ${selectDailyRotation}, ${selectAutonomousMode}, ${selectTelegramTopicId}, ${selectIdentityPrompt}, ${selectWorkingDirectory}
-    FROM thread_registry;
-    DROP TABLE thread_registry;
-    ALTER TABLE thread_registry_new RENAME TO thread_registry;
-    CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
-    CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
-    CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
-  `);
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS thread_registry_new (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id         INTEGER NOT NULL UNIQUE,
+        name              TEXT NOT NULL,
+        type              TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
+        root_thread_id    INTEGER,
+        badge             TEXT NOT NULL DEFAULT 'root',
+        client            TEXT DEFAULT 'claude',
+        max_retries       INTEGER DEFAULT 5,
+        cooldown_ms       INTEGER DEFAULT 300000,
+        keep_alive        INTEGER DEFAULT 0,
+        created_at        TEXT NOT NULL,
+        last_active_at    TEXT,
+        session_reset_at  TEXT,
+        status            TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived','expired','exited')),
+        daily_rotation    INTEGER NOT NULL DEFAULT 0,
+        autonomous_mode   INTEGER NOT NULL DEFAULT 0,
+        telegram_topic_id INTEGER,
+        identity_prompt   TEXT,
+        working_directory TEXT
+      );
+      INSERT OR IGNORE INTO thread_registry_new (
+        id, thread_id, name, type, root_thread_id, badge, client, max_retries,
+        cooldown_ms, keep_alive, created_at, last_active_at, session_reset_at,
+        status, daily_rotation, autonomous_mode, telegram_topic_id, identity_prompt, working_directory
+      )
+      SELECT
+        id, thread_id, name, type, root_thread_id, badge, client, max_retries,
+        cooldown_ms, keep_alive, created_at, last_active_at, ${selectSessionResetAt},
+        status, ${selectDailyRotation}, ${selectAutonomousMode}, ${selectTelegramTopicId}, ${selectIdentityPrompt}, ${selectWorkingDirectory}
+      FROM thread_registry;
+      DROP TABLE thread_registry;
+      ALTER TABLE thread_registry_new RENAME TO thread_registry;
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
+      CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
+    `);
+  })();
 }
 
 const MIGRATIONS: Record<number, (db: Database) => void> = {
@@ -138,29 +140,31 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     }
   },
   5: (db) => {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS episodes_new (
-        episode_id     TEXT PRIMARY KEY,
-        session_id     TEXT NOT NULL,
-        thread_id      INTEGER NOT NULL,
-        timestamp      TEXT NOT NULL,
-        type           TEXT NOT NULL CHECK(type IN ('operator_message','agent_action','system_event','operator_reaction')),
-        modality       TEXT NOT NULL CHECK(modality IN ('text','voice','photo','video_note','document','mixed','reaction')),
-        content        TEXT NOT NULL,
-        topic_tags     TEXT,
-        importance     REAL NOT NULL DEFAULT 0.5,
-        consolidated   INTEGER DEFAULT 0,
-        accessed_count INTEGER DEFAULT 0,
-        last_accessed  TEXT,
-        created_at     TEXT NOT NULL
-      );
-      INSERT INTO episodes_new SELECT * FROM episodes;
-      DROP TABLE episodes;
-      ALTER TABLE episodes_new RENAME TO episodes;
-      CREATE INDEX IF NOT EXISTS idx_ep_thread_time ON episodes(thread_id, timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_ep_importance ON episodes(importance DESC);
-      CREATE INDEX IF NOT EXISTS idx_ep_uncons ON episodes(consolidated) WHERE consolidated = 0;
-    `);
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS episodes_new (
+          episode_id     TEXT PRIMARY KEY,
+          session_id     TEXT NOT NULL,
+          thread_id      INTEGER NOT NULL,
+          timestamp      TEXT NOT NULL,
+          type           TEXT NOT NULL CHECK(type IN ('operator_message','agent_action','system_event','operator_reaction')),
+          modality       TEXT NOT NULL CHECK(modality IN ('text','voice','photo','video_note','document','mixed','reaction')),
+          content        TEXT NOT NULL,
+          topic_tags     TEXT,
+          importance     REAL NOT NULL DEFAULT 0.5,
+          consolidated   INTEGER DEFAULT 0,
+          accessed_count INTEGER DEFAULT 0,
+          last_accessed  TEXT,
+          created_at     TEXT NOT NULL
+        );
+        INSERT INTO episodes_new SELECT * FROM episodes;
+        DROP TABLE episodes;
+        ALTER TABLE episodes_new RENAME TO episodes;
+        CREATE INDEX IF NOT EXISTS idx_ep_thread_time ON episodes(thread_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_ep_importance ON episodes(importance DESC);
+        CREATE INDEX IF NOT EXISTS idx_ep_uncons ON episodes(consolidated) WHERE consolidated = 0;
+      `);
+    })();
   },
   6: (db) => {
     db.exec(`
@@ -265,25 +269,27 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     log.info("[migration-13] Added session_reset_at column to thread_registry");
   },
   14: (db) => {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS temporal_narratives_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        thread_id INTEGER NOT NULL,
-        resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month', 'quarter', 'half_year')),
-        period_start TEXT NOT NULL,
-        period_end TEXT NOT NULL,
-        narrative TEXT NOT NULL,
-        source_episode_count INTEGER NOT NULL DEFAULT 0,
-        source_note_count INTEGER NOT NULL DEFAULT 0,
-        model TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(thread_id, resolution, period_start)
-      );
-      INSERT OR IGNORE INTO temporal_narratives_new SELECT * FROM temporal_narratives;
-      DROP TABLE temporal_narratives;
-      ALTER TABLE temporal_narratives_new RENAME TO temporal_narratives;
-      CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
-    `);
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS temporal_narratives_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          thread_id INTEGER NOT NULL,
+          resolution TEXT NOT NULL CHECK(resolution IN ('day', 'week', 'month', 'quarter', 'half_year')),
+          period_start TEXT NOT NULL,
+          period_end TEXT NOT NULL,
+          narrative TEXT NOT NULL,
+          source_episode_count INTEGER NOT NULL DEFAULT 0,
+          source_note_count INTEGER NOT NULL DEFAULT 0,
+          model TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(thread_id, resolution, period_start)
+        );
+        INSERT OR IGNORE INTO temporal_narratives_new SELECT * FROM temporal_narratives;
+        DROP TABLE temporal_narratives;
+        ALTER TABLE temporal_narratives_new RENAME TO temporal_narratives;
+        CREATE INDEX IF NOT EXISTS idx_narrative_thread_res ON temporal_narratives(thread_id, resolution, created_at DESC);
+      `);
+    })();
     log.info("[migration-14] Widened temporal_narratives resolution CHECK to include quarter and half_year");
   },
   15: (db) => {
