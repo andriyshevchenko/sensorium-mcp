@@ -6,6 +6,7 @@
  */
 
 import type { Database } from "./schema.js";
+import type { IThreadRepository } from "../interfaces.js";
 import { nowISO } from "./utils.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -31,6 +32,66 @@ export interface ThreadRegistryEntry {
   sessionResetAt: string | null;
   status: 'active' | 'archived' | 'expired' | 'exited';
 }
+
+type RegisterThreadEntry = {
+  threadId: number;
+  name: string;
+  type: ThreadRegistryEntry["type"];
+  rootThreadId?: number;
+  badge?: string;
+  client?: string;
+  maxRetries?: number;
+  cooldownMs?: number;
+  keepAlive?: boolean;
+  workingDirectory?: string;
+};
+
+type UpdateThreadPatch = Partial<
+  Pick<
+    ThreadRegistryEntry,
+    | "name"
+    | "status"
+    | "lastActiveAt"
+    | "keepAlive"
+    | "dailyRotation"
+    | "autonomousMode"
+    | "client"
+    | "maxRetries"
+    | "cooldownMs"
+    | "badge"
+    | "telegramTopicId"
+    | "identityPrompt"
+    | "workingDirectory"
+  >
+>;
+
+export class ThreadRepository implements IThreadRepository {
+  registerThread(db: Database, entry: RegisterThreadEntry): ThreadRegistryEntry {
+    return registerThread(db, entry);
+  }
+
+  updateThread(db: Database, threadId: number, updates: UpdateThreadPatch): boolean {
+    return updateThread(db, threadId, updates);
+  }
+
+  archiveThread(db: Database, threadId: number): boolean {
+    return archiveThread(db, threadId);
+  }
+
+  getThread(db: Database, threadId: number): ThreadRegistryEntry | null {
+    return getThread(db, threadId);
+  }
+
+  getAllThreads(db: Database): ThreadRegistryEntry[] {
+    return getAllThreads(db);
+  }
+
+  getRootThreads(db: Database): ThreadRegistryEntry[] {
+    return getRootThreads(db);
+  }
+}
+
+export const threadRepository = new ThreadRepository();
 
 
 
@@ -64,18 +125,7 @@ function rowToEntry(row: Record<string, unknown>): ThreadRegistryEntry {
 
 export function registerThread(
   db: Database,
-  entry: {
-    threadId: number;
-    name: string;
-    type: ThreadRegistryEntry['type'];
-    rootThreadId?: number;
-    badge?: string;
-    client?: string;
-    maxRetries?: number;
-    cooldownMs?: number;
-    keepAlive?: boolean;
-    workingDirectory?: string;
-  },
+  entry: RegisterThreadEntry,
 ): ThreadRegistryEntry {
   const now = nowISO();
   db.prepare(
@@ -161,7 +211,7 @@ export function getActiveThreads(db: Database): ThreadRegistryEntry[] {
 export function updateThread(
   db: Database,
   threadId: number,
-  updates: Partial<Pick<ThreadRegistryEntry, 'name' | 'status' | 'lastActiveAt' | 'keepAlive' | 'dailyRotation' | 'autonomousMode' | 'client' | 'maxRetries' | 'cooldownMs' | 'badge' | 'telegramTopicId' | 'identityPrompt' | 'workingDirectory'>>,
+  updates: UpdateThreadPatch,
 ): boolean {
   const setClauses: string[] = [];
   const params: unknown[] = [];

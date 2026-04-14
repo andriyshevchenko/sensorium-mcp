@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { IScheduleRepository } from "./data/interfaces.js";
 import { log } from "./logger.js";
 
 const SCHEDULES_DIR = join(homedir(), ".remote-copilot-mcp", "schedules");
@@ -39,6 +40,26 @@ export interface ScheduledTask {
     /** Creation timestamp (ISO string). */
     createdAt: string;
 }
+
+export class ScheduleRepository implements IScheduleRepository {
+    loadSchedule(threadId: number): ScheduledTask[] {
+        return loadSchedules(threadId);
+    }
+
+    saveSchedule(threadId: number, tasks: ScheduledTask[]): void {
+        saveSchedules(threadId, tasks);
+    }
+
+    deleteSchedule(threadId: number): void {
+        purgeSchedules(threadId);
+    }
+
+    listSchedules(threadId: number): ScheduledTask[] {
+        return listSchedules(threadId);
+    }
+}
+
+export const scheduleRepository = new ScheduleRepository();
 
 function schedulesFilePath(threadId: number): string {
     return join(SCHEDULES_DIR, `${threadId}.json`);
