@@ -11,20 +11,15 @@ import { convertMarkdown } from "../markdown.js";
 import { assembleBootstrap, runConsolidationAllThreads, type initMemoryDb } from "../memory.js";
 import { addSchedule, generateTaskId, listSchedules, purgeSchedules } from "../scheduler.js";
 import {
-  lookupSession,
-  persistSession,
   purgeOtherSessions,
   registerMcpSession,
-  removeSession,
-  lookupTopicRegistry,
-  registerTopic,
 } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig, ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
 import { readThreadMessages } from "../dispatcher.js";
-import { getThread } from "../data/memory/thread-registry.js";
+import { getThread, getThreadByName } from "../data/memory/thread-registry.js";
 import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
 import type { ThreadLifecycleService } from "../services/thread-lifecycle.service.js";
 
@@ -155,23 +150,12 @@ export async function handleStartSession(
 
   if (explicitThreadId !== undefined) {
     session.currentThreadId = explicitThreadId;
-    // If a name was also supplied, keep the mapping up to date.
-    if (customName) persistSession(TELEGRAM_CHAT_ID, customName, explicitThreadId);
     resolvedPreexisting = true;
   } else if (customName !== undefined) {
-    const stored = lookupSession(TELEGRAM_CHAT_ID, customName);
-    if (stored !== undefined) {
-      session.currentThreadId = stored;
+    const existingThread = getThreadByName(getMemoryDb(), customName);
+    if (existingThread) {
+      session.currentThreadId = existingThread.threadId;
       resolvedPreexisting = true;
-    } else {
-      // Fallback: check the operator-managed topic registry
-      const registryId = lookupTopicRegistry(TELEGRAM_CHAT_ID, customName);
-      if (registryId !== undefined) {
-        session.currentThreadId = registryId;
-        // Promote to session store for future fast lookups
-        persistSession(TELEGRAM_CHAT_ID, customName, registryId);
-        resolvedPreexisting = true;
-      }
     }
   }
 
@@ -213,6 +197,7 @@ export async function handleStartSession(
               hour: "2-digit", minute: "2-digit", hour12: false,
             })}`,
           db: getMemoryDb(),
+          threadLifecycle,
           aliases: customName ? [customName] : [],
           probeText: "\u{1F504} Session resumed. Continuing in this thread.",
         });

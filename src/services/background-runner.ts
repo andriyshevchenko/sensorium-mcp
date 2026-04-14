@@ -2,6 +2,7 @@ import type { initMemoryDb } from "../memory.js";
 import type { TelegramClient } from "../telegram.js";
 import { rotateAllDailySessions } from "../daily-session.js";
 import { cleanupExpiredWorkers } from "../tools/thread-lifecycle.js";
+import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { errorMessage } from "../utils.js";
 
 const DAILY_ROTATION_INTERVAL_MS = 5 * 60_000;
@@ -12,6 +13,7 @@ interface BackgroundRunnerDeps {
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
   telegram: TelegramClient;
   chatId: string;
+  threadLifecycle: ThreadLifecycleService;
   log: {
     info(message: string): void;
     warn(message: string): void;
@@ -53,6 +55,7 @@ export class BackgroundJobRunner {
         this.deps.getMemoryDb(),
         this.deps.telegram,
         this.deps.chatId,
+        this.deps.threadLifecycle,
       );
       if (result.cleaned > 0) {
         this.deps.log.info(`[worker-cleanup] Cleaned ${result.cleaned} expired worker thread(s).`);

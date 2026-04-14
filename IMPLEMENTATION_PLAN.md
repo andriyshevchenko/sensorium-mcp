@@ -9,7 +9,7 @@
 
 - [x] Define `IThreadRepository`, `ISessionRepository`, `IScheduleRepository` interfaces in `src/data/`
 - [x] Wrap current SQLite/JSON/PID implementations behind these interfaces (no behavior change)
-- [ ] Update all import sites to use interfaces instead of concrete modules
+- [x] Update all import sites to use interfaces instead of concrete modules
 - [x] Verify: `npx tsc --noEmit` passes, zero behavior change
 
 ---

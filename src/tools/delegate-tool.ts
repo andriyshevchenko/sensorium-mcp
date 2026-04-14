@@ -14,14 +14,14 @@
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { setThreadAgentType, type AgentType } from "../config.js";
-import { persistSession } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import type { ToolResult } from "../types.js";
 import { log } from "../logger.js";
 import { errorMessage, errorResult } from "../utils.js";
-import { registerThread, getThread, getThreadByName, updateThread, resolveTelegramTopicId } from "../data/memory/thread-registry.js";
+import { getThread, getThreadByName } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { forkMemory } from "../data/memory/synthesis.js";
+import type { ThreadLifecycleService } from "../services/thread-lifecycle.service.js";
 import {
   findAliveThread,
   isThreadRunning,
@@ -37,7 +37,7 @@ import {
   spawnCopilotProcess,
   spawnCodexProcess,
 } from "./thread-lifecycle.js";
-import { createManagedTopic, probeOrRemapTopic, resolveExistingTopic } from "../services/topic.service.js";
+import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +46,8 @@ import { createManagedTopic, probeOrRemapTopic, resolveExistingTopic } from "../
 export interface DelegateToolContext {
   telegram: TelegramClient;
   telegramChatId: string;
+  getMemoryDb: () => ReturnType<typeof initMemoryDb>;
+  threadLifecycle: ThreadLifecycleService;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,25 +57,13 @@ export interface DelegateToolContext {
 /**
  * Attempt to resolve an existing Telegram forum topic by name.
  *
- * Resolution order:
- *   1. Topic registry (SQLite topic_registry table — source of truth)
- *   2. Session store (fallback for topics not in the registry)
- *
- * If a match is found in the registry, the session store is synced
- * so future lookups stay consistent.
- *
  * Returns the thread ID if found, or undefined.
  */
-function resolveKnownTopic(chatId: string, name: string): number | undefined {
-  const resolved = resolveExistingTopic(chatId, [name]);
-  if (resolved !== undefined) return resolved;
+function resolveKnownTopic(getMemoryDb: () => ReturnType<typeof initMemoryDb>, name: string): number | undefined {
   try {
-    const db = initMemoryDb();
+    const db = getMemoryDb();
     const registryEntry = getThreadByName(db, name);
-    if (registryEntry) {
-      persistSession(chatId, name, registryEntry.threadId);
-      return registryEntry.threadId;
-    }
+    if (registryEntry) return registryEntry.threadId;
   } catch {}
   return undefined;
 }
@@ -86,7 +76,7 @@ export async function handleStartThread(
   args: Record<string, unknown>,
   ctx: DelegateToolContext,
 ): Promise<ToolResult> {
-  const { telegram, telegramChatId } = ctx;
+  const { telegram, telegramChatId, getMemoryDb, threadLifecycle } = ctx;
 
   // ── Parse args ──────────────────────────────────────────────────────
   const mode = typeof args.mode === "string" ? args.mode : "";
@@ -240,13 +230,10 @@ export async function handleStartThread(
   if (explicitThreadId !== undefined) {
     threadId = explicitThreadId;
     topicExisted = true;
-    if (name) {
-      persistSession(telegramChatId, name, threadId);
-    }
     log.info(`[start_thread] Using explicit threadId ${threadId}` + (name ? ` ("${name}")` : ""));
   } else {
-    const resolvedId = resolveKnownTopic(telegramChatId, topicName)
-                    ?? resolveKnownTopic(telegramChatId, name);
+    const resolvedId = resolveKnownTopic(getMemoryDb, topicName)
+                    ?? resolveKnownTopic(getMemoryDb, name);
     if (resolvedId !== undefined) {
       threadId = resolvedId;
       topicExisted = true;
@@ -287,13 +274,14 @@ export async function handleStartThread(
     // Topic health check: verify the Telegram topic still exists.
     // Agents that survived a server restart may be sending to a deleted topic.
     try {
-      const db = initMemoryDb();
+      const db = getMemoryDb();
       await probeOrRemapTopic({
         telegram,
         chatId: telegramChatId,
         logicalThreadId: threadId,
         topicName: resolvedThreadName,
         db,
+        threadLifecycle,
         aliases: [resolvedThreadName],
         probeText: "\u{1F504} Thread still running. Verifying topic.",
       });
@@ -346,28 +334,26 @@ export async function handleStartThread(
   }
 
   const result = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex"
-    ? spawnCopilotProcess(cliPath, resolvedThreadName, threadId, workingDirectory, memorySourceThreadId, agentType, runtimeThreadType)
+    ? spawnCopilotProcess(cliPath, resolvedThreadName, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, agentType, runtimeThreadType)
     : agentType === "codex" || agentType === "openai_codex"
-    ? spawnCodexProcess(cliPath, resolvedThreadName, threadId, workingDirectory, memorySourceThreadId, runtimeThreadType)
-    : spawnAgentProcess(cliPath, mcpConfigPath!, resolvedThreadName, threadId, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
+    ? spawnCodexProcess(cliPath, resolvedThreadName, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, runtimeThreadType)
+    : spawnAgentProcess(cliPath, mcpConfigPath!, resolvedThreadName, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
   // ── 6. Register in memory thread registry ───────────────────────────
   try {
-    const db = initMemoryDb();
+    const db = getMemoryDb();
     const existing = getThread(db, threadId);
     if (existing && (mode === "resume" || (explicitThreadId !== undefined && !mode))) {
       // Resume: update client + lastActiveAt, preserve type/keepAlive.
       // Only persist workingDirectory if explicitly provided in args — don't overwrite a null
       // DB value with a process.cwd() fallback (that would ignore the user's intent to clear it).
-      updateThread(db, threadId, {
+      threadLifecycle.activateThread(db, threadId, {
         client: agentType,
-        lastActiveAt: new Date().toISOString(),
-        status: 'active',
         ...(workingDirectoryExplicit ? { workingDirectory } : {}),
       });
     } else {
-      registerThread(db, {
+      threadLifecycle.registerThread(db, {
         threadId,
         name: resolvedThreadName,
         type: threadRegistryType,
@@ -375,6 +361,7 @@ export async function handleStartThread(
         badge: mode || threadRegistryType,
         client: agentType,
         workingDirectory,
+        chatId: telegramChatId,
       });
     }
   } catch { /* registration is best-effort */ }

@@ -1,6 +1,6 @@
 import { persistSession, lookupSession, lookupTopicRegistry, registerTopic } from "../sessions.js";
-import { updateThread } from "../data/memory/thread-registry.js";
 import type { Database } from "../data/memory/schema.js";
+import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { errorMessage } from "../utils.js";
 import { log } from "../logger.js";
 
@@ -44,10 +44,11 @@ export async function probeOrRemapTopic(opts: {
   logicalThreadId: number;
   topicName: string;
   db: Database;
+  threadLifecycle: ThreadLifecycleService;
   aliases?: string[];
   probeText: string;
 }): Promise<{ remapped: boolean }> {
-  const { telegram, chatId, logicalThreadId, topicName, db, aliases = [], probeText } = opts;
+  const { telegram, chatId, logicalThreadId, topicName, db, threadLifecycle, aliases = [], probeText } = opts;
   try {
     await telegram.sendMessage(chatId, probeText, undefined, logicalThreadId);
     return { remapped: false };
@@ -56,7 +57,13 @@ export async function probeOrRemapTopic(opts: {
     if (!/thread not found|topic.*(closed|deleted|not found)/i.test(msg)) return { remapped: false };
     log.warn(`[topic] Thread ${logicalThreadId} topic is dead (${msg}) - creating replacement.`);
     const newTopicId = await createManagedTopic(telegram, chatId, topicName, aliases);
-    updateThread(db, logicalThreadId, { telegramTopicId: newTopicId });
+    threadLifecycle.remapTopic(db, {
+      threadId: logicalThreadId,
+      chatId,
+      topicName,
+      telegramTopicId: newTopicId,
+      aliases,
+    });
     registerTopic(chatId, topicName, logicalThreadId);
     log.info(`[topic] Remapped thread ${logicalThreadId} -> topic ${newTopicId}`);
     return { remapped: true };
