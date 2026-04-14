@@ -33,8 +33,8 @@ Notes:
 - [x] Create `src/services/background-runner.ts` — single owner of recurring server-level timers
 - [x] Register jobs: worker cleanup (every 5 min) and daily rotation check (every 5 min at 04:00) from `src/index.ts`
 - [x] Remove `cleanupExpiredWorkers` call from `src/tools/wait/drive-handler.ts` (keep only the runner's call)
-- [ ] Strip unrelated background tasks out of `wait_for_instructions` poll loop
-- [ ] Verify: exactly 1 cleanup owner, wait loop only polls messages + updates heartbeat
+- [x] Strip unrelated background tasks out of `wait_for_instructions` poll loop
+- [x] Verify: exactly 1 cleanup owner, wait loop only polls messages + updates heartbeat
 
 ---
 

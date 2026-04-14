@@ -73,8 +73,8 @@ export function readLock(): { pid: number; ts: number } | null {
  */
 export function refreshLock(): boolean {
     const current = readLock();
-    if (current && current.pid !== process.pid) {
-        return false; // Someone else owns the lock now.
+    if (!current || current.pid !== process.pid) {
+        return false; // Lock missing or owned by someone else.
     }
     try {
         const tmp = LOCK_FILE + ".tmp." + process.pid;
