@@ -22,6 +22,7 @@ import { initMemoryDb } from "./data/memory/schema.js";
 import { config } from "./config.js";
 import { runIntelligentConsolidation } from "./services/consolidation.service.js";
 import { errorMessage } from "./utils.js";
+import { sendTelegramMessage } from "./telegram.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,17 +45,9 @@ async function notifyTelegram(text: string, threadId?: number): Promise<void> {
     if (threadId) {
       try { topicId = resolveTelegramTopicId(db, threadId); } catch { /* use original */ }
     }
-    const body: Record<string, unknown> = {
-      chat_id: TELEGRAM_CHAT_ID,
-      text,
-      parse_mode: "HTML",
-    };
-    if (topicId) body.message_thread_id = topicId;
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10_000),
+    await sendTelegramMessage(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, text, {
+      parseMode: "HTML",
+      threadId: topicId ?? undefined,
     });
   } catch (err) {
     log.warn(`Daily rotation Telegram notify failed: ${errorMessage(err)}`);
