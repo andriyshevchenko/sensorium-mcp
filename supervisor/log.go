@@ -63,7 +63,11 @@ func (l *Logger) log(level, format string, args ...any) {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	fmt.Fprint(os.Stderr, line)
+	// Always write to file for post-mortem debugging; only emit DEBUG to stderr
+	// when SUPERVISOR_DEBUG is set.
+	if level != "DEBUG" || l.debug {
+		fmt.Fprint(os.Stderr, line)
+	}
 	if l.file != nil {
 		n, err := l.file.WriteString(line)
 		if err != nil {
@@ -79,11 +83,7 @@ func (l *Logger) log(level, format string, args ...any) {
 func (l *Logger) Info(format string, args ...any)  { l.log("INFO", format, args...) }
 func (l *Logger) Warn(format string, args ...any)  { l.log("WARN", format, args...) }
 func (l *Logger) Error(format string, args ...any) { l.log("ERROR", format, args...) }
-func (l *Logger) Debug(format string, args ...any) {
-	if l.debug {
-		l.log("DEBUG", format, args...)
-	}
-}
+func (l *Logger) Debug(format string, args ...any) { l.log("DEBUG", format, args...) }
 
 // rotateDailyIfNeeded renames the current log to a dated archive if it was
 // written on a previous day. Called without mu held (used at startup and from
