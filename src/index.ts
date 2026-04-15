@@ -36,7 +36,7 @@ if (process.argv.includes("--supervisor")) {
 
 // Normal server startup ─────────────────────────────────────────────────────
 
-const { config } = await import("./config.js");
+const { config, setThreadDb } = await import("./config.js");
 const { startDispatcher, setBrokerDb, setBrokerSentMessageRepository } = await import("./dispatcher.js");
 const { initMemoryDb } = await import("./memory.js");
 const { SqliteSentMessageRepository } = await import("./data/sent-message.repository.js");
@@ -80,6 +80,8 @@ telegram.setTopicResolver((threadId) => resolveTelegramTopicId(getMemoryDb(), th
 
 // Wire up lazy DB access for SQLite-backed topic registry
 setTopicRegistryDb(getMemoryDb);
+// Wire up DB access for per-thread autonomous-mode resolution
+setThreadDb(getMemoryDb);
 
 const threadLifecycle = new ThreadLifecycleService(
   threadRepository,

@@ -10,8 +10,8 @@ Findings from codebase scan (2026-04-15). Grouped by severity.
 - **Problem:** No central getter. `config.AUTONOMOUS_MODE` (global) is used directly in `start-session-tool.ts:114/424`, `task-handler.ts:60`, `drive-handler.ts:178/199`, `message-processing.ts:193/217`. `poll-loop.ts:157–165` correctly resolves per-thread and patches `ctx.config`, but the other sites bypass it.
 - **Fix:** Add `getEffectiveAutonomousMode(threadId: number): boolean` to `src/config.ts` (mirrors `getEffectiveAgentType`). Replace all direct `config.AUTONOMOUS_MODE` reads with this function.
 - **Files:** `config.ts`, `start-session-tool.ts`, `task-handler.ts`, `drive-handler.ts`, `message-processing.ts`, `poll-loop.ts`
-- [ ] Implement `getEffectiveAutonomousMode(threadId)` in `config.ts`
-- [ ] Replace all `config.AUTONOMOUS_MODE` direct reads in tool/wait files
+- [x] Implement `getEffectiveAutonomousMode(threadId)` in `config.ts`
+- [x] Replace all `config.AUTONOMOUS_MODE` direct reads in tool/wait files
 
 ---
 

@@ -362,7 +362,6 @@ export async function handleStartSession(
   // Only create on active thread — purge stale DMN tasks from other threads
   // to avoid every thread accumulating reflection tasks.
   if (session.currentThreadId !== undefined) {
-    const threadEntry = getThread(getMemoryDb(), session.currentThreadId);
     const effectiveAutonomousMode = getEffectiveAutonomousMode(session.currentThreadId);
     if (effectiveAutonomousMode) {
       const existingTasks = listSchedules(session.currentThreadId);
