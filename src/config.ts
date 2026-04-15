@@ -427,5 +427,4 @@ export const config: AppConfig = {
   DMN_ACTIVATION_HOURS,
   FILES_DIR,
   PKG_VERSION,
-  AUTONOMOUS_MODE,
 };
