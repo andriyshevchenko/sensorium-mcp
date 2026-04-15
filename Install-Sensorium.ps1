@@ -28,9 +28,9 @@ $ErrorActionPreference = "Stop"
 # ── Constants ────────────────────────────────────────────────────────────────
 $GithubRepo   = "andriyshevchenko/sensorium-mcp"
 $ReleaseTag   = "supervisor-latest"
-$AssetName    = "sensorium-supervisor.exe"
+$AssetName    = "sensorium-supervisor-windows-amd64.exe"
 $ServiceName  = "SensoriumSupervisor"
-$ServiceDesc  = "Sensorium MCP Supervisor — manages the sensorium-mcp npx process"
+$ServiceDesc  = "Sensorium MCP Supervisor - manages the sensorium-mcp npx process"
 
 $DataDir = Join-Path $env:USERPROFILE ".remote-copilot-mcp"
 $BinDir  = Join-Path $DataDir "bin"
@@ -199,7 +199,7 @@ Download-Binary -Destination $Binary
 if ($isAdmin) {
     Install-AsService
 } else {
-    Write-Host "Not running as Administrator — skipping service registration." -ForegroundColor Yellow
+    Write-Host "Not running as Administrator - skipping service registration." -ForegroundColor Yellow
     Start-AsBackground
 }
 
