@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/zalando/go-keyring"
 )
@@ -32,4 +33,19 @@ func resolveSecretWithKeyring(envKey, keyringService string) string {
 		return ""
 	}
 	return secret
+}
+
+// resolveIntWithKeyring parses an integer value from env first, then keyring fallback.
+// If parsing fails or no value exists, it returns fallback.
+func resolveIntWithKeyring(envKey, keyringService string, fallback int) int {
+	v := resolveSecretWithKeyring(envKey, keyringService)
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(v)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WARN: invalid integer for %s: %q\n", envKey, v)
+		return fallback
+	}
+	return parsed
 }
