@@ -154,7 +154,7 @@ export async function handleStartThread(
   // Resolve workingDirectory: prefer explicit arg → stored in DB → process.cwd()
   if (!workingDirectory && explicitThreadId) {
     try {
-      const db = initMemoryDb();
+      const db = getMemoryDb();
       const stored = getThread(db, explicitThreadId);
       if (stored?.workingDirectory) {
         workingDirectory = stored.workingDirectory;
@@ -230,7 +230,7 @@ export async function handleStartThread(
   // ── 2. Set per-thread agent type ──────────────────────────────────────
   const resolvedThreadName = name || (() => {
     try {
-      const db = initMemoryDb();
+      const db = getMemoryDb();
       const thread = getThread(db, threadId);
       return thread?.name ?? `Thread ${threadId}`;
     } catch {
@@ -301,7 +301,7 @@ export async function handleStartThread(
 
   if (mode === "branch" && rootThreadId) {
     try {
-      const db = initMemoryDb();
+      const db = getMemoryDb();
       const forkResult = forkMemory(db, rootThreadId, threadId);
       log.info(`[start_thread] Forked memory from ${rootThreadId} → ${threadId}: ${forkResult.notesCopied} notes, ${forkResult.narrativesCopied} narratives`);
     } catch (err) {
