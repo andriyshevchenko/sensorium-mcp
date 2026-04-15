@@ -206,11 +206,11 @@ async function handleMemorySave(
     });
     // Fire-and-forget embedding generation
     if (apiKey) {
-        void generateEmbedding(content, apiKey).then(emb => {
-            saveNoteEmbedding(getMemoryDb(), noteId, emb);
-        }).catch(err => {
-            log.error(`[memory] Embedding failed for ${noteId}: ${errorMessage(err)}`);
-        });
+      void generateEmbedding(content, apiKey).then(emb => {
+        saveNoteEmbedding(getMemoryDb(), noteId, emb);
+      }).catch(err => {
+        log.error(`[memory] Embedding failed for ${noteId}: ${errorMessage(err)}`);
+      });
     }
     // Check for potential conflicts with existing notes
     let conflictWarning = "";
