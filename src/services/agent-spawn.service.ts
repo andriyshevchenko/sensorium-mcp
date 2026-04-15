@@ -12,7 +12,7 @@ import { errorMessage } from "../utils.js";
 import { COPILOT_HOME_DIR, DEFAULT_COPILOT_MODEL, ensureCopilotWorkspace, writeCopilotHomeFiles } from "../tools/shared-agent-utils.js";
 import { deleteTelegramTopicByBotApi } from "./topic.service.js";
 import { PROCESS_BASE_DIR, PROCESS_LOGS_DIR, PROCESS_PIDS_DIR, ensureDirs, findAliveThread, isProcessAlive, readPidFiles, spawnedThreads, type SpawnedThread } from "./process.service.js";
-import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
+import { ThreadState, type ThreadLifecycleService } from "./thread-lifecycle.service.js";
 
 const ENV_DENYLIST = new Set(["TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "MCP_HTTP_SECRET", "DASHBOARD_TOKEN", "MCP_START_COMMAND", "WATCHER_START_COMMAND"]);
 const WATCHER_PORT = Number.parseInt(process.env.WATCHER_PORT || "3848", 10);
@@ -118,19 +118,23 @@ async function handleProcessExit(code: number | null, threadId: number, pid: num
   try { unlinkSync(pidFilePath); } catch {}
   try {
     const db = initMemoryDb();
-    threadLifecycle.markExited(db, threadId);
-    if (entry.memorySourceThreadId !== undefined) {
-      try { await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name); } catch (err) { log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`); }
-    }
-    if (entry.threadType === "worker") {
-      try {
-        const token = process.env.TELEGRAM_TOKEN || "";
-        const chatId = process.env.TELEGRAM_CHAT_ID || "";
-        const topicId = token && chatId ? getExplicitTelegramTopicId(db, threadId) : null;
-        if (topicId != null) await deleteTelegramTopicByBotApi(token, chatId, topicId);
-      } catch {}
-      try { archiveNotesForThread(db, threadId); } catch {}
-      try { threadLifecycle.archiveThread(db, threadId); } catch {}
+    const currentState = threadLifecycle.getThreadState(db, threadId);
+    const isTerminal = currentState === ThreadState.Archived || currentState === ThreadState.Expired;
+    if (!isTerminal) {
+      threadLifecycle.markExited(db, threadId);
+      if (entry.memorySourceThreadId !== undefined) {
+        try { await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name); } catch (err) { log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`); }
+      }
+      if (entry.threadType === "worker") {
+        try {
+          const token = process.env.TELEGRAM_TOKEN || "";
+          const chatId = process.env.TELEGRAM_CHAT_ID || "";
+          const topicId = token && chatId ? getExplicitTelegramTopicId(db, threadId) : null;
+          if (topicId != null) await deleteTelegramTopicByBotApi(token, chatId, topicId);
+        } catch (err) { log.warn(`[start_thread] Failed to delete Telegram topic for worker ${threadId}: ${errorMessage(err)}`); }
+        try { archiveNotesForThread(db, threadId); } catch (err) { log.warn(`[start_thread] Failed to archive notes for worker ${threadId}: ${errorMessage(err)}`); }
+        try { threadLifecycle.archiveThread(db, threadId); } catch (err) { log.warn(`[start_thread] Failed to archive worker thread ${threadId}: ${errorMessage(err)}`); }
+      }
     }
   } catch (err) {
     log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
