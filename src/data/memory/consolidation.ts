@@ -93,7 +93,7 @@ export function getActiveNoteContent(
   noteId: string,
 ): { noteId: string; content: string } | null {
   const row = db.prepare(
-    `SELECT note_id, content FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL`,
+    `SELECT note_id, content FROM semantic_notes WHERE note_id = ? AND valid_to IS NULL AND superseded_by IS NULL`,
   ).get(noteId) as { note_id: string; content: string } | undefined;
   if (!row) return null;
   return { noteId: row.note_id, content: row.content };

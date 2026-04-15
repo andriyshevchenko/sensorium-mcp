@@ -245,14 +245,14 @@ export function forkMemory(
 
   // Copy temporal narratives
   const narratives = db.prepare(
-    `INSERT INTO temporal_narratives (
+    `INSERT OR IGNORE INTO temporal_narratives (
        thread_id, resolution, period_start, period_end, narrative,
        source_episode_count, source_note_count, model, created_at
      )
      SELECT ?, resolution, period_start, period_end, narrative,
             source_episode_count, source_note_count, model, ?
      FROM temporal_narratives WHERE thread_id = ?`
-  ).run(targetThreadId, new Date().toISOString(), sourceThreadId);
+  ).run(targetThreadId, now, sourceThreadId);
 
   return {
     notesCopied: notes.changes,
