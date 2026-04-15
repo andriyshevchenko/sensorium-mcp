@@ -4,11 +4,24 @@
  * Writes to BOTH ~/.remote-copilot-mcp/server.log AND process.stderr
  * so existing stdio transport behaviour is preserved.
  *
- * Log rotation: when the file exceeds 5 MB it is renamed to server.log.1
- * (overwriting any previous backup) and a fresh file is started.
+ * Log rotation:
+ *   - Daily: on startup, if server.log is from a previous day it is renamed to
+ *     server.YYYY-MM-DD.log (using the file's mtime). Only the 7 most-recent
+ *     daily archives are kept; older ones are deleted automatically.
+ *   - Size: when the active server.log exceeds 5 MB it is renamed to
+ *     server.YYYY-MM-DD.log (using today's date, with a counter suffix if that
+ *     name already exists) and the same 7-file retention limit is applied.
  */
 
-import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -18,14 +31,75 @@ import { join } from "node:path";
 
 const LOG_DIR = join(homedir(), ".remote-copilot-mcp");
 const LOG_FILE = join(LOG_DIR, "server.log");
-const LOG_FILE_BACKUP = join(LOG_DIR, "server.log.1");
 const MAX_LOG_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_DAILY_ARCHIVES = 7;
 
 type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
+
+/** Format a Date as YYYY-MM-DD in local time. */
+function dateStamp(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Return today's date stamp in local time. */
+function todayStamp(): string {
+  return dateStamp(new Date());
+}
+
+/**
+ * Derive an archive path for a daily log.
+ * If `server.YYYY-MM-DD.log` already exists a numeric suffix is appended
+ * (server.YYYY-MM-DD.1.log, .2.log, …) to avoid clobbering an existing file.
+ */
+function archivePath(stamp: string): string {
+  const base = join(LOG_DIR, `server.${stamp}.log`);
+  if (!existsSync(base)) return base;
+  for (let i = 1; i < 1000; i++) {
+    const candidate = join(LOG_DIR, `server.${stamp}.${i}.log`);
+    if (!existsSync(candidate)) return candidate;
+  }
+  // Fallback — extremely unlikely but avoids an infinite loop.
+  return base;
+}
+
+/**
+ * Delete all but the MAX_DAILY_ARCHIVES most-recent daily archive files
+ * (files matching server.YYYY-MM-DD*.log in LOG_DIR).
+ */
+function pruneOldArchives(): void {
+  try {
+    const archives = readdirSync(LOG_DIR)
+      .filter(f => /^server\.\d{4}-\d{2}-\d{2}/.test(f) && f.endsWith(".log"))
+      .map(f => ({ name: f, mtime: statSync(join(LOG_DIR, f)).mtimeMs }))
+      .sort((a, b) => a.mtime - b.mtime); // oldest first
+
+    const toDelete = archives.slice(0, Math.max(0, archives.length - MAX_DAILY_ARCHIVES));
+    for (const f of toDelete) {
+      try { unlinkSync(join(LOG_DIR, f.name)); } catch { /* non-fatal */ }
+    }
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Rotate server.log to a dated archive.
+ * Resets trackedFileSize to 0 on success.
+ */
+function rotateTo(stamp: string): void {
+  try {
+    renameSync(LOG_FILE, archivePath(stamp));
+    trackedFileSize = 0;
+    pruneOldArchives();
+  } catch {
+    // Non-fatal — keep appending if rotation fails.
+  }
+}
 
 /** Track current log file size in memory to avoid stat calls on every write. */
 let trackedFileSize = 0;
@@ -34,24 +108,32 @@ let logDirEnsured = false;
 function ensureLogDir(): void {
   if (logDirEnsured) return;
   mkdirSync(LOG_DIR, { recursive: true });
-  // Seed trackedFileSize from disk if the file already exists.
+
   try {
     if (existsSync(LOG_FILE)) {
-      trackedFileSize = statSync(LOG_FILE).size;
+      const st = statSync(LOG_FILE);
+      const fileDateStamp = dateStamp(new Date(st.mtimeMs));
+
+      if (fileDateStamp !== todayStamp()) {
+        // File is from a previous day — archive it before this session starts.
+        rotateTo(fileDateStamp);
+      } else {
+        trackedFileSize = st.size;
+      }
     }
   } catch { /* non-fatal */ }
+
   logDirEnsured = true;
 }
 
-// Ensure log directory exists once at module init.
+// Ensure log directory exists and perform startup daily rotation.
 ensureLogDir();
 
 /** Rotate log file if it exceeds MAX_LOG_SIZE. */
 function rotateIfNeeded(): void {
   try {
     if (trackedFileSize >= MAX_LOG_SIZE) {
-      renameSync(LOG_FILE, LOG_FILE_BACKUP);
-      trackedFileSize = 0;
+      rotateTo(todayStamp());
     }
   } catch {
     // Non-fatal — if rotation fails we keep appending.
