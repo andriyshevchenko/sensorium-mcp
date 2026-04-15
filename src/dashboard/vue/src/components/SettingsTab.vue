@@ -47,6 +47,16 @@ async function load() {
 async function save() {
   saving.value = true
   saveStatus.value = ''
+  if (!defaultThreadModel.value) {
+    saveStatus.value = 'Error: Thread model cannot be empty'
+    saving.value = false
+    return
+  }
+  if (!defaultWorkerModel.value) {
+    saveStatus.value = 'Error: Worker model cannot be empty'
+    saving.value = false
+    return
+  }
   try {
     const headers = { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' }
     const [r1, r2, r3, r4] = await Promise.all([
@@ -182,7 +192,7 @@ onMounted(load)
             <span class="font-mono text-accentLight">CLAUDE_MODEL</span> env var if set.
           </p>
           <input
-            v-model="defaultThreadModel"
+            v-model.trim="defaultThreadModel"
             type="text"
             placeholder="claude-opus-4-6"
             class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition"
@@ -197,7 +207,7 @@ onMounted(load)
             <span class="font-mono text-accentLight">CLAUDE_WORKER_MODEL</span> env var if set.
           </p>
           <input
-            v-model="defaultWorkerModel"
+            v-model.trim="defaultWorkerModel"
             type="text"
             placeholder="claude-sonnet-4-5"
             class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition"
