@@ -146,9 +146,13 @@ function formatLine(level: LogLevel, message: string): string {
 
 function write(level: LogLevel, message: string): void {
   const line = formatLine(level, message);
-  // Always write to stderr (preserves existing stdio behaviour).
-  process.stderr.write(line);
-  // Write to log file.
+  // Gate DEBUG on stderr behind the DEBUG env var; all other levels always
+  // appear on stderr. All levels are always written to the log file so that
+  // post-mortem debugging has full context.
+  if (level !== "DEBUG" || process.env.DEBUG) {
+    process.stderr.write(line);
+  }
+  // Always write to log file.
   try {
     rotateIfNeeded();
     appendFileSync(LOG_FILE, line, "utf8");
