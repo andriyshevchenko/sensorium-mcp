@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { log } from "./logger.js";
 import type { AppConfig } from "./types.js";
 import { FILES_DIR } from "./data/file-storage.js";
+import { getThread } from "./data/memory/thread-registry.js";
+import type { Database } from "./data/memory/schema.js";
 
 const esmRequire = createRequire(import.meta.url);
 const { version: PKG_VERSION } = esmRequire("../package.json") as { version: string };
@@ -161,6 +163,30 @@ export function getEffectiveAgentType(threadId?: number): AgentType {
     if (override) return override;
   }
   return getAgentType();
+}
+
+// ─── Per-thread autonomous mode ──────────────────────────────────────────────
+
+type DbGetter = () => Database;
+let _threadDbGetter: DbGetter | null = null;
+
+/** Wire up the memory DB accessor so per-thread autonomous-mode lookups work. */
+export function setThreadDb(getter: DbGetter): void {
+  _threadDbGetter = getter;
+}
+
+/**
+ * Returns the effective autonomous mode for a given thread.
+ * Per-thread DB value takes precedence over the global AUTONOMOUS_MODE env var.
+ */
+export function getEffectiveAutonomousMode(threadId: number | undefined): boolean {
+  if (threadId !== undefined && _threadDbGetter) {
+    try {
+      const threadEntry = getThread(_threadDbGetter(), threadId);
+      if (threadEntry != null) return threadEntry.autonomousMode;
+    } catch { /* fallback */ }
+  }
+  return AUTONOMOUS_MODE;
 }
 
 // ─── Claude MCP config path setting ─────────────────────────────────────────

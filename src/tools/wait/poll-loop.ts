@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { checkMaintenanceFlag, writeActivityHeartbeat, writeThreadHeartbeat } from "../../data/file-storage.js";
 import { onMaintenanceSignal } from "../../services/maintenance-signal.js";
-import { getEffectiveAgentType } from "../../config.js";
+import { getEffectiveAgentType, getEffectiveAutonomousMode } from "../../config.js";
 import { peekThreadMessages } from "../../dispatcher.js";
 import type { initMemoryDb } from "../../memory.js";
 import type { TelegramClient } from "../../telegram.js";
@@ -142,7 +142,7 @@ export async function handleWaitForInstructions(
   extra: WaitToolExtra,
 ): Promise<ToolResult> {
   const { state, telegram, telegramChatId, config, getMemoryDb } = ctx;
-  const { WAIT_TIMEOUT_MINUTES, AUTONOMOUS_MODE } = config;
+  const { WAIT_TIMEOUT_MINUTES } = config;
 
   state.toolCallsSinceLastDelivery = 0;
 
@@ -153,17 +153,6 @@ export async function handleWaitForInstructions(
     );
   }
 
-  // Per-thread autonomousMode overrides global AUTONOMOUS_MODE
-  let autonomousMode = AUTONOMOUS_MODE;
-  try {
-    const { getThread } = await import("../../data/memory/thread-registry.js");
-    const threadEntry = getThread(getMemoryDb(), effectiveThreadId);
-    if (threadEntry) autonomousMode = threadEntry.autonomousMode ?? AUTONOMOUS_MODE;
-  } catch { /* fallback to global */ }
-  // Override config for downstream consumers so they see per-thread value
-  if (autonomousMode !== AUTONOMOUS_MODE) {
-    Object.assign(ctx, { config: { ...config, AUTONOMOUS_MODE: autonomousMode } });
-  }
   const callNumber = ++state.waitCallCount;
   const timeoutMs = WAIT_TIMEOUT_MINUTES * 60 * 1000;
   // Codex CLI enforces a hard ~120s tool-call timeout and does not handle
@@ -252,7 +241,7 @@ export async function handleWaitForInstructions(
         getMemoryDb,
         effectiveThreadId,
         sessionStartedAt: state.sessionStartedAt,
-        autonomousMode: autonomousMode,
+        autonomousMode: getEffectiveAutonomousMode(effectiveThreadId),
       });
       if (reactionResult) return reactionResult;
     }
@@ -267,7 +256,7 @@ export async function handleWaitForInstructions(
     }
 
     // Check scheduled tasks every ~60s during idle polling.
-    if (effectiveThreadId !== undefined && autonomousMode && Date.now() - lastScheduleCheck >= 60_000) {
+    if (effectiveThreadId !== undefined && getEffectiveAutonomousMode(effectiveThreadId) && Date.now() - lastScheduleCheck >= 60_000) {
       lastScheduleCheck = Date.now();
       const taskResult = checkForDueTasks(ctx, effectiveThreadId);
       if (taskResult) return taskResult;
@@ -276,11 +265,10 @@ export async function handleWaitForInstructions(
     // ── In-loop drive activation check (every 30 min) ──────────────────
     // Without this, the drive only fires on poll TIMEOUT (every 2h default).
     // Checking inside the loop ensures consistent activation during long polls.
-    if (effectiveThreadId !== undefined && autonomousMode && Date.now() - lastDriveCheck >= DRIVE_CHECK_INTERVAL_MS) {
+    if (effectiveThreadId !== undefined && getEffectiveAutonomousMode(effectiveThreadId) && Date.now() - lastDriveCheck >= DRIVE_CHECK_INTERVAL_MS) {
       lastDriveCheck = Date.now();
-      const driveConfig = { ...config, AUTONOMOUS_MODE: autonomousMode };
-      runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config: driveConfig, memoryRefresh: "", scheduleHint: "" });
-      const driveResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config: driveConfig, memoryRefresh: "", scheduleHint: "" });
+      runAutoConsolidation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
+      const driveResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, apiKey: config.OPENAI_API_KEY || undefined, config, memoryRefresh: "", scheduleHint: "" });
       if (driveResult) return driveResult;
     }
 

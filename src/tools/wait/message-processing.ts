@@ -13,7 +13,7 @@ import { readThreadMessages } from "../../dispatcher.js";
 import { detectTopicShift } from "../../memory.js";
 import { log } from "../../logger.js";
 import { getReminders } from "../../response-builders.js";
-import { getEffectiveAgentType } from "../../config.js";
+import { getEffectiveAgentType, getEffectiveAutonomousMode } from "../../config.js";
 import { listSchedules } from "../../scheduler.js";
 import { assembleCompactRefresh } from "../../services/memory-briefing.service.js";
 
@@ -55,7 +55,7 @@ export async function processIncomingMessages(
   extra: WaitToolExtra,
 ): Promise<ToolResult> {
   const { state, telegram, telegramChatId, config, getMemoryDb } = ctx;
-  const { OPENAI_API_KEY, VOICE_ANALYSIS_URL, AUTONOMOUS_MODE } = config;
+  const { OPENAI_API_KEY, VOICE_ANALYSIS_URL } = config;
 
   // Verify SSE connection is alive BEFORE consuming messages.
   // This prevents the destructive readThreadMessages from eating
@@ -190,7 +190,7 @@ export async function processIncomingMessages(
     operatorText,
     hasVoiceMessages,
     autoMemoryContext,
-    { effectiveThreadId: effectiveThreadId, sessionStartedAt: state.sessionStartedAt, autonomousMode: AUTONOMOUS_MODE },
+    { effectiveThreadId: effectiveThreadId, sessionStartedAt: state.sessionStartedAt, autonomousMode: getEffectiveAutonomousMode(effectiveThreadId) },
     intent,
   );
 }
@@ -211,10 +211,10 @@ export function handlePollTimeout(
   ctx: WaitToolContext,
 ): ToolResult {
   const { state, config, getMemoryDb } = ctx;
-  const { OPENAI_API_KEY, AUTONOMOUS_MODE } = config;
+  const { OPENAI_API_KEY } = config;
 
   // Check for scheduled wake-up tasks (only when autonomous mode is active for this thread).
-  if (effectiveThreadId !== undefined && AUTONOMOUS_MODE) {
+  if (effectiveThreadId !== undefined && getEffectiveAutonomousMode(effectiveThreadId)) {
     const taskResult = checkForDueTasks(ctx, effectiveThreadId);
     if (taskResult) return taskResult;
   }
@@ -270,7 +270,7 @@ export function handlePollTimeout(
     : `No new instructions. Call \`remote_copilot_wait_for_instructions\` again to keep listening.` +
       memoryRefresh +
       scheduleHint +
-      getReminders(effectiveThreadId, state.sessionStartedAt, AUTONOMOUS_MODE);
+      getReminders(effectiveThreadId, state.sessionStartedAt, getEffectiveAutonomousMode(effectiveThreadId));
 
   return {
     content: [{ type: "text", text: noMsgText }],

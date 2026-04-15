@@ -11,6 +11,7 @@ import { log } from "../../logger.js";
 import { runNarrativeGeneration, runReflection, type initMemoryDb } from "../../memory.js";
 import { runIntelligentConsolidation } from "../../services/consolidation.service.js";
 import { getReminders } from "../../response-builders.js";
+import { getEffectiveAutonomousMode } from "../../config.js";
 import { backfillEmbeddings } from "../memory-tools.js";
 import type { ToolResult } from "../../types.js";
 import { errorMessage } from "../../utils.js";
@@ -33,7 +34,6 @@ interface DriveContext {
   apiKey: string | undefined;
   config: {
     DMN_ACTIVATION_HOURS: number;
-    AUTONOMOUS_MODE: boolean;
   };
   /** Pre-computed memory refresh text (may be empty). */
   memoryRefresh: string;
@@ -175,7 +175,7 @@ export function checkDriveActivation(ctx: DriveContext): ToolResult | null {
           text: PHASE3_APPROVAL_PROMPT +
             memoryRefresh +
             scheduleHint +
-            getReminders(effectiveThreadId, state.sessionStartedAt, config.AUTONOMOUS_MODE),
+            getReminders(effectiveThreadId, state.sessionStartedAt, getEffectiveAutonomousMode(effectiveThreadId)),
         },
       ],
     };
@@ -196,7 +196,7 @@ export function checkDriveActivation(ctx: DriveContext): ToolResult | null {
             text: driveResult.prompt,
           },
           ...(memoryRefresh ? [{ type: "text" as const, text: memoryRefresh.replace(/^\n\n/, "") }] : []),
-          { type: "text", text: scheduleHint + getReminders(effectiveThreadId, state.sessionStartedAt, config.AUTONOMOUS_MODE) },
+          { type: "text", text: scheduleHint + getReminders(effectiveThreadId, state.sessionStartedAt, getEffectiveAutonomousMode(effectiveThreadId)) },
         ],
       };
     }

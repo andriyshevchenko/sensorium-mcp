@@ -7,6 +7,7 @@
 
 import { checkDueTasks } from "../../scheduler.js";
 import { getReminders } from "../../response-builders.js";
+import { getEffectiveAutonomousMode } from "../../config.js";
 import type { ToolResult } from "../../types.js";
 
 // ---------------------------------------------------------------------------
@@ -19,9 +20,6 @@ interface TaskContext {
     sessionStartedAt: number;
   };
   generateDmnReflection: (threadId: number) => string;
-  config: {
-    AUTONOMOUS_MODE: boolean;
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -41,7 +39,7 @@ export function checkForDueTasks(
   ctx: TaskContext,
   effectiveThreadId: number,
 ): ToolResult | null {
-  const { state, config } = ctx;
+  const { state } = ctx;
 
   const dueTask = checkDueTasks(effectiveThreadId, state.lastOperatorMessageAt, false);
   if (!dueTask) return null;
@@ -57,7 +55,7 @@ export function checkForDueTasks(
     content: [
       {
         type: "text",
-        text: taskPrompt + getReminders(effectiveThreadId, state.sessionStartedAt, config.AUTONOMOUS_MODE),
+        text: taskPrompt + getReminders(effectiveThreadId, state.sessionStartedAt, getEffectiveAutonomousMode(effectiveThreadId)),
       },
     ],
   };
