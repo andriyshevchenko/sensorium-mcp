@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AgentType } from "../config.js";
+import { isValidAgentType, type AgentType } from "../config.js";
 
 // ---------------------------------------------------------------------------
 // Shared argument parsers
@@ -21,11 +21,7 @@ export function parsePositiveInt(v: unknown): number | undefined {
  */
 export function parseAgentType(raw: unknown, fallback?: AgentType): AgentType | undefined {
   const s = typeof raw === "string" ? raw.trim() : "";
-  return s === "copilot" || s === "copilot_claude" || s === "copilot_codex"
-    || s === "claude" || s === "cursor"
-    || s === "codex" || s === "openai_codex"
-    ? s
-    : fallback;
+  return isValidAgentType(s) ? s : fallback;
 }
 
 export const COPILOT_HOME_DIR = "copilot-home";
