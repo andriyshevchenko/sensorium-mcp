@@ -25,6 +25,7 @@ import {
     setKeepAliveCooldownMs,
     setThreadKeepAlive,
     removeThreadKeepAlive,
+    isValidKeeperClient,
 } from "../../config.js";
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
@@ -344,7 +345,7 @@ function syncKeepAliveToSettings(db: Database): void {
         if (activeKeepAlive) {
             setKeepAliveEnabled(true);
             setKeepAliveThreadId(activeKeepAlive.threadId);
-            setKeepAliveClient(activeKeepAlive.client);
+            if (isValidKeeperClient(activeKeepAlive.client)) setKeepAliveClient(activeKeepAlive.client);
             setKeepAliveMaxRetries(activeKeepAlive.maxRetries);
             setKeepAliveCooldownMs(activeKeepAlive.cooldownMs);
         } else {
