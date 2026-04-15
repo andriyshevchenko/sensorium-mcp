@@ -47,6 +47,10 @@ import {
     handlePostKeepAlive,
     handleGetThreadKeepAlive,
     handlePostThreadKeepAlive,
+    handleGetDefaultThreadModel,
+    handlePostDefaultThreadModel,
+    handleGetDefaultWorkerModel,
+    handlePostDefaultWorkerModel,
 } from "./routes/settings.js";
 
 // Domain handlers — templates
@@ -126,6 +130,10 @@ const routeTable: Record<string, RouteHandler> = {
     "POST /api/settings/keep-alive":              handlePostKeepAlive,
     "GET /api/settings/thread-keep-alive":        handleGetThreadKeepAlive,
     "POST /api/settings/thread-keep-alive":       handlePostThreadKeepAlive,
+    "GET /api/settings/default-thread-model":     handleGetDefaultThreadModel,
+    "POST /api/settings/default-thread-model":    handlePostDefaultThreadModel,
+    "GET /api/settings/default-worker-model":     handleGetDefaultWorkerModel,
+    "POST /api/settings/default-worker-model":    handlePostDefaultWorkerModel,
 
     // Topic registry
     "GET /api/topic-registry":    handleGetTopicRegistry,

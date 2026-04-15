@@ -30,6 +30,10 @@ import {
     setThreadKeepAlive,
     removeThreadKeepAlive,
     getAllThreadKeepAlive,
+    getDefaultThreadModel,
+    updateDefaultThreadModel,
+    getDefaultWorkerModel,
+    updateDefaultWorkerModel,
     type AgentType,
     type KeeperClient,
     type ThreadKeepAliveSettings,
@@ -319,6 +323,58 @@ export const handlePostThreadKeepAlive: RouteHandler = ({ req, json }) => {
             }
             setThreadKeepAlive(threadId, settings);
             json({ ok: true, threadKeepAlive: getAllThreadKeepAlive() });
+        } catch (err) {
+            json({ error: errorMessage(err) }, 500);
+        }
+    })();
+    return true;
+};
+
+// ─── Default thread model ─────────────────────────────────────────────────────
+
+export const handleGetDefaultThreadModel: RouteHandler = ({ json }) => {
+    json({ defaultThreadModel: getDefaultThreadModel() });
+    return true;
+};
+
+export const handlePostDefaultThreadModel: RouteHandler = ({ req, json }) => {
+    void (async () => {
+        try {
+            const raw = await readBody(req);
+            const body = safeParseJSON(raw) as Record<string, unknown> | null;
+            const model = body && typeof body === "object" ? body.model : undefined;
+            if (typeof model !== "string" || !model.trim()) {
+                json({ error: "model must be a non-empty string" }, 400);
+                return;
+            }
+            updateDefaultThreadModel(model.trim());
+            json({ ok: true, defaultThreadModel: getDefaultThreadModel() });
+        } catch (err) {
+            json({ error: errorMessage(err) }, 500);
+        }
+    })();
+    return true;
+};
+
+// ─── Default worker model ─────────────────────────────────────────────────────
+
+export const handleGetDefaultWorkerModel: RouteHandler = ({ json }) => {
+    json({ defaultWorkerModel: getDefaultWorkerModel() });
+    return true;
+};
+
+export const handlePostDefaultWorkerModel: RouteHandler = ({ req, json }) => {
+    void (async () => {
+        try {
+            const raw = await readBody(req);
+            const body = safeParseJSON(raw) as Record<string, unknown> | null;
+            const model = body && typeof body === "object" ? body.model : undefined;
+            if (typeof model !== "string" || !model.trim()) {
+                json({ error: "model must be a non-empty string" }, 400);
+                return;
+            }
+            updateDefaultWorkerModel(model.trim());
+            json({ ok: true, defaultWorkerModel: getDefaultWorkerModel() });
         } catch (err) {
             json({ error: errorMessage(err) }, 500);
         }

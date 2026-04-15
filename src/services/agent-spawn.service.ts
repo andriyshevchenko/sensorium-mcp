@@ -2,7 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { getClaudeMcpConfigPath } from "../config.js";
+import { getClaudeMcpConfigPath, getDefaultThreadModel, getDefaultWorkerModel } from "../config.js";
 import { log } from "../logger.js";
 import { synthesizeGhostMemory } from "../memory.js";
 import { getAllThreads, getExplicitTelegramTopicId } from "../data/memory/thread-registry.js";
@@ -169,7 +169,9 @@ export function spawnAgentProcess(claudePath: string, mcpConfigPath: string, nam
   const spawnEnv = sanitizeSpawnEnv({ ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) for (const candidate of [join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"), "C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"]) if (existsSync(candidate)) { spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate; break; }
   try {
-    const claudeModel = process.env.CLAUDE_MODEL || "claude-opus-4-6";
+    const claudeModel = threadType === "worker"
+      ? (process.env.CLAUDE_WORKER_MODEL || getDefaultWorkerModel())
+      : (process.env.CLAUDE_MODEL || getDefaultThreadModel());
     const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "--model", claudeModel, "-p", `Start remote session with sensorium. Thread name = '${name}'`, "--output-format", "stream-json", "--include-partial-messages"], { stdio: ["ignore", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: true, env: spawnEnv, cwd: workingDirectory || undefined });
     closeSync(logFd);
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: effectiveConfigPath, agentLabel: "Claude", memorySourceThreadId, memoryTargetThreadId, threadType }, threadLifecycle);
