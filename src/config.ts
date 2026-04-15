@@ -209,6 +209,29 @@ export function setWaitTimeoutMinutes(minutes: number): void {
   updateSettings(s => { s.waitTimeoutMinutes = clamped; });
 }
 
+// ─── Default model settings ──────────────────────────────────────────────────
+
+const DEFAULT_THREAD_MODEL = "claude-opus-4-6";
+const DEFAULT_WORKER_MODEL = "claude-sonnet-4-5";
+
+export function getDefaultThreadModel(): string {
+  const v = readSettings().defaultThreadModel;
+  return typeof v === "string" && v.length > 0 ? v : DEFAULT_THREAD_MODEL;
+}
+
+export function getDefaultWorkerModel(): string {
+  const v = readSettings().defaultWorkerModel;
+  return typeof v === "string" && v.length > 0 ? v : DEFAULT_WORKER_MODEL;
+}
+
+export function updateDefaultThreadModel(model: string): void {
+  updateSettings(s => { s.defaultThreadModel = model; });
+}
+
+export function updateDefaultWorkerModel(model: string): void {
+  updateSettings(s => { s.defaultWorkerModel = model; });
+}
+
 // ─── Guardrails setting ─────────────────────────────────────────────────────
 
 /** Whether guardrail (Active Decisions) notes are injected into memory briefings. */
