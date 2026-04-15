@@ -249,11 +249,11 @@ func (k *Keeper) killThread(ctx context.Context, threadID int) {
 	pidFile := filepath.Join(k.global.Paths.PIDsDir, fmt.Sprintf("%d.pid", threadID))
 	pid, err := ReadPIDFile(pidFile)
 	if err != nil {
-		k.log.Warn("Cannot read PID for thread %d: %v", k.cfg.ThreadID, err)
+		k.log.Warn("Cannot read PID for thread %d: %v", threadID, err)
 		return
 	}
 	if err := KillProcess(pid, k.log); err != nil {
-		k.log.Error("Failed to kill thread %d (PID %d): %v", k.cfg.ThreadID, pid, err)
+		k.log.Error("Failed to kill thread %d (PID %d): %v", threadID, pid, err)
 	}
 }
 
