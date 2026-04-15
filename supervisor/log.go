@@ -3,30 +3,40 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Logger writes to both stderr and a rotating log file.
-// Rotates when the file exceeds maxSize bytes.
+// Rotates daily (at midnight) and when the file exceeds maxSize bytes.
 type Logger struct {
-	mu      sync.Mutex
-	logPath string
-	file    *os.File
-	debug   bool
-	size    int64
-	maxSize int64 // default 5 MB
-	maxKeep int   // max rotated files to keep
+	mu        sync.Mutex
+	logPath   string
+	file      *os.File
+	debug     bool
+	size      int64
+	maxSize   int64 // default 5 MB
+	maxKeep   int   // max daily rotated files to keep
+	today     string
+	stopTimer chan struct{}
 }
 
 func NewLogger(logPath string) *Logger {
 	l := &Logger{
-		logPath: logPath,
-		debug:   os.Getenv("SUPERVISOR_DEBUG") == "1" || os.Getenv("SUPERVISOR_DEBUG") == "true",
-		maxSize: 5 * 1024 * 1024, // 5 MB
-		maxKeep: 3,
+		logPath:   logPath,
+		debug:     os.Getenv("SUPERVISOR_DEBUG") == "1" || os.Getenv("SUPERVISOR_DEBUG") == "true",
+		maxSize:   5 * 1024 * 1024, // 5 MB
+		maxKeep:   7,               // keep 7 daily files
+		stopTimer: make(chan struct{}),
 	}
+	// Rotate previous day's log on startup if needed
+	l.today = time.Now().Format("2006-01-02")
+	l.rotateDailyIfNeeded()
 	l.openFile()
+	l.startMidnightTimer()
 	return l
 }
 
@@ -75,24 +85,88 @@ func (l *Logger) Debug(format string, args ...any) {
 	}
 }
 
-// rotate closes the current log file, renames it with a .1 suffix (shifting
-// older rotated files), and opens a fresh log. Called with mu held.
+// rotateDailyIfNeeded renames the current log to a dated archive if it was
+// written on a previous day. Called without mu held (used at startup and from
+// the midnight timer before the lock is acquired).
+func (l *Logger) rotateDailyIfNeeded() {
+	info, err := os.Stat(l.logPath)
+	if err != nil {
+		return // file doesn't exist yet — nothing to rotate
+	}
+	modDay := info.ModTime().Format("2006-01-02")
+	if modDay == l.today {
+		return // same day — no rotation needed
+	}
+	// Rename to dated file
+	ext := filepath.Ext(l.logPath)
+	base := strings.TrimSuffix(l.logPath, ext)
+	dated := fmt.Sprintf("%s.%s%s", base, modDay, ext)
+	if err := os.Rename(l.logPath, dated); err != nil {
+		fmt.Fprintf(os.Stderr, "[WARN] daily log rotate: %v\n", err)
+	}
+	l.pruneOldLogs()
+}
+
+// pruneOldLogs deletes daily log files beyond maxKeep. Called without mu held.
+func (l *Logger) pruneOldLogs() {
+	dir := filepath.Dir(l.logPath)
+	base := strings.TrimSuffix(filepath.Base(l.logPath), filepath.Ext(l.logPath))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	var dated []string
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, base+".") && name != filepath.Base(l.logPath) {
+			dated = append(dated, filepath.Join(dir, name))
+		}
+	}
+	sort.Strings(dated) // ascending — oldest first
+	for len(dated) > l.maxKeep {
+		os.Remove(dated[0])
+		dated = dated[1:]
+	}
+}
+
+// startMidnightTimer fires a daily rotation at local midnight.
+func (l *Logger) startMidnightTimer() {
+	go func() {
+		for {
+			now := time.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+			select {
+			case <-time.After(time.Until(next)):
+			case <-l.stopTimer:
+				return
+			}
+			l.mu.Lock()
+			l.today = time.Now().Format("2006-01-02")
+			if l.file != nil {
+				l.file.Close()
+				l.file = nil
+			}
+			l.rotateDailyIfNeeded()
+			l.size = 0
+			l.openFile()
+			l.mu.Unlock()
+		}
+	}()
+}
+
+// rotate closes the current log file, renames it with a dated suffix for
+// size-based rotation mid-day, and opens a fresh log. Called with mu held.
 func (l *Logger) rotate() {
 	if l.file != nil {
 		l.file.Close()
 		l.file = nil
 	}
-
-	// Shift existing rotated logs: .3 → delete, .2 → .3, .1 → .2, current → .1
-	for i := l.maxKeep; i >= 1; i-- {
-		old := fmt.Sprintf("%s.%d", l.logPath, i)
-		if i == l.maxKeep {
-			os.Remove(old)
-		} else {
-			os.Rename(old, fmt.Sprintf("%s.%d", l.logPath, i+1))
-		}
-	}
-	os.Rename(l.logPath, l.logPath+".1")
+	// Use a timestamp suffix to avoid colliding with the daily dated file
+	ts := time.Now().Format("2006-01-02T150405")
+	ext := filepath.Ext(l.logPath)
+	base := strings.TrimSuffix(l.logPath, ext)
+	os.Rename(l.logPath, fmt.Sprintf("%s.%s%s", base, ts, ext))
+	l.pruneOldLogs()
 
 	// Open a fresh file
 	l.size = 0
@@ -105,6 +179,10 @@ func (l *Logger) rotate() {
 }
 
 func (l *Logger) Close() {
+	if l.stopTimer != nil {
+		close(l.stopTimer)
+		l.stopTimer = nil
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file != nil {
