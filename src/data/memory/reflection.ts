@@ -168,7 +168,7 @@ Respond in JSON format:
 - "Should consider..." — wishy-washy, not a concrete instruction
 - "In general..." / "Overall..." — too abstract
 - Restating the outcome as the root cause
-- Lesson that doesn\\\\t start with a verb
+- Lesson that doesn't start with a verb
 - Any field shorter than 10 characters
 
 Rules:

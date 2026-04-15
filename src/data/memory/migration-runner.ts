@@ -296,7 +296,7 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     const existingColumns = db
       .prepare("PRAGMA table_info(thread_registry)")
       .all()
-      .map((r: any) => r.name as string);
+      .map((r) => (r as Record<string, unknown>).name as string);
     rebuildThreadRegistryWithExitedStatus(db, existingColumns);
     log.info("[migration-15] Widened thread_registry status CHECK to include 'exited'");
   },
@@ -397,7 +397,8 @@ export function runMigrations(db: Database): void {
       ).run(v, nowISO());
       log.info(`[memory] Migrated schema to version ${v}`);
     } catch (err) {
-      log.error(`[memory] Migration ${v} failed: ${errorMessage(err)}. Will attempt self-heal.`);
+      log.error(`[memory] Migration ${v} failed: ${errorMessage(err)}. Halting migrations to avoid cascading schema corruption.`);
+      break;
     }
   }
 }
