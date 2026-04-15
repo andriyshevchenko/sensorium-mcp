@@ -86,7 +86,7 @@ func KillProcess(pid int, log *Logger) error {
 		log.Debug("KillProcess: FindProcess(%d) failed: %v", pid, err)
 		return err
 	}
-	if err := proc.Signal(os.Interrupt); err != nil {
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		// Already dead
 		return nil
 	}

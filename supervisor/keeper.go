@@ -123,6 +123,8 @@ func (k *Keeper) run(ctx context.Context) {
 					k.log.Info("Thread %d is healthy", k.cfg.ThreadID)
 				}
 				retryCount = 0
+				fastExitCount = 0
+				fastExitEscalation = 0
 				return
 			}
 		}

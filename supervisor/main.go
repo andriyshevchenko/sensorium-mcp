@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-var globalCancel context.CancelFunc
+var (
+	globalCancelMu sync.Mutex
+	globalCancel   context.CancelFunc
+)
 
 // KeeperEntry tracks a running keeper and its settings.
 type KeeperEntry struct {
@@ -71,8 +74,11 @@ func handleServiceCommand(args []string) (bool, error) {
 }
 
 func stopSupervisor() {
-	if globalCancel != nil {
-		globalCancel()
+	globalCancelMu.Lock()
+	fn := globalCancel
+	globalCancelMu.Unlock()
+	if fn != nil {
+		fn()
 	}
 }
 
@@ -135,8 +141,14 @@ func runSupervisor() error {
 	// Wait for server to be ready
 	ctx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
+	globalCancelMu.Lock()
 	globalCancel = rootCancel
-	defer func() { globalCancel = nil }()
+	globalCancelMu.Unlock()
+	defer func() {
+		globalCancelMu.Lock()
+		globalCancel = nil
+		globalCancelMu.Unlock()
+	}()
 
 	if mcp.WaitForReady(ctx, 3*time.Second, cfg.KeeperReadyTimeout) {
 		log.Info("MCP server is ready")
