@@ -310,7 +310,10 @@ func (m *MCPClient) CloseMCPSession(ctx context.Context, sessionID string) {
 	}
 	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx2, "DELETE", m.BaseURL+"/mcp", nil)
+	req, err := http.NewRequestWithContext(ctx2, "DELETE", m.BaseURL+"/mcp", nil)
+	if err != nil {
+		return
+	}
 	for k, v := range m.authHeaders() {
 		req.Header.Set(k, v)
 	}
