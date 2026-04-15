@@ -65,24 +65,20 @@ func LoadConfig() Config {
 	dataDir := filepath.Join(homeDir(), ".remote-copilot-mcp")
 
 	mode := envOr("WATCHER_MODE", "development")
-	graceDef := "300"
+	graceDef := 300
 	if mode == "development" {
-		graceDef = "10"
+		graceDef = 10
 	}
 
 	c := Config{
 		Mode:             mode,
 		PollAtHour:       envInt("WATCHER_POLL_HOUR", 4),
 		PollInterval:     time.Duration(envInt("WATCHER_POLL_INTERVAL", 60)) * time.Second,
-		GracePeriod:      time.Duration(envInt("WATCHER_GRACE_PERIOD", safeAtoi(graceDef))) * time.Second,
+		GracePeriod:      time.Duration(envInt("WATCHER_GRACE_PERIOD", graceDef)) * time.Second,
 		MinUptime:        600 * time.Second,
 		MCPStartCommand:  envOr("MCP_START_COMMAND", "npx -y sensorium-mcp@latest"),
 		DataDir:          dataDir,
 		KeyringService:   envOr("SUPERVISOR_KEYRING_SERVICE", defaultKeyringService),
-		MCPHttpPort:      envInt("MCP_HTTP_PORT", 0),
-		MCPHttpSecret:    "",
-		TelegramToken:    "",
-		TelegramChatID:   "",
 		HealthFailThresh: 3,
 
 		KeeperBaseBackoff:         5 * time.Second,
@@ -115,6 +111,7 @@ func LoadConfig() Config {
 		},
 	}
 
+	c.MCPHttpPort = resolveIntWithKeyring("MCP_HTTP_PORT", c.KeyringService, 0)
 	c.MCPHttpSecret = resolveSecretWithKeyring("MCP_HTTP_SECRET", c.KeyringService)
 	c.TelegramToken = resolveSecretWithKeyring("TELEGRAM_TOKEN", c.KeyringService)
 	c.TelegramChatID = resolveSecretWithKeyring("TELEGRAM_CHAT_ID", c.KeyringService)
@@ -147,10 +144,5 @@ func envInt(key string, fallback int) int {
 	if err != nil {
 		return fallback
 	}
-	return v
-}
-
-func safeAtoi(s string) int {
-	v, _ := strconv.Atoi(s)
 	return v
 }
