@@ -505,12 +505,19 @@ export async function sendTelegramMessage(
   const body: Record<string, unknown> = { chat_id: chatId, text };
   if (options?.parseMode) body.parse_mode = options.parseMode;
   if (options?.threadId != null) body.message_thread_id = options.threadId;
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    // Redact the bot token from any network-level error message before re-throwing.
+    const msg = String(err instanceof Error ? err.message : err).replaceAll(token, "***REDACTED***");
+    throw new Error(`Telegram sendMessage failed (network): ${msg}`);
+  }
   if (!response.ok) {
     let description: string | undefined;
     try { description = ((await response.json()) as { description?: string }).description; } catch { /* ignore */ }

@@ -19,6 +19,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import { config } from "./config.js";
 import { log } from "./logger.js";
+import { errorMessage } from "./utils.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
 import {
   consumeExpectedMcpSessionClose,
@@ -346,7 +347,7 @@ export function startHttpServer(
     res.writeHead(405, { "Content-Type": "text/plain" });
     res.end("Method Not Allowed");
    } catch (err) {
-    log.error(`[http] Unhandled error: ${typeof err === 'object' && err !== null && 'message' in err ? (err as Error).message : String(err)}`);
+    log.error(`[http] Unhandled error: ${errorMessage(err)}`);
     if (!res.headersSent) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null }));
