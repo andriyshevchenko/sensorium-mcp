@@ -5,7 +5,7 @@
  */
 
 import { readFile, stat } from "fs/promises";
-import { basename, resolve as resolvePath } from "node:path";
+import { basename, resolve as resolvePath, sep } from "node:path";
 import { homedir } from "node:os";
 import { checkMaintenanceFlag } from "../data/file-storage.js";
 import { saveAgentEpisodeSafe, type Database } from "../memory.js";
@@ -86,7 +86,11 @@ async function handleSendFile(
       const resolved = resolvePath(filePath);
       const home = homedir();
       const cwd = process.cwd();
-      if (!resolved.startsWith(cwd) && !resolved.startsWith(home)) {
+      // Use sep-terminated prefixes to prevent sibling-directory bypass
+      // (e.g. /home/user/project-evil would incorrectly match /home/user/project).
+      const inDir = (p: string, dir: string) =>
+        p === dir || p.startsWith(dir.endsWith(sep) ? dir : dir + sep);
+      if (!inDir(resolved, cwd) && !inDir(resolved, home)) {
         return errorResult("Error: filePath must be within the working directory or home directory.");
       }
       const info = await stat(resolved);
