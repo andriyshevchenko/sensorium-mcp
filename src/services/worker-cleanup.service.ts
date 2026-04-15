@@ -47,7 +47,9 @@ export async function cleanupExpiredWorkers(
         log.warn(`[worker-cleanup] Failed to archive stale DB worker: ${msg}`);
       }
     }
-  } catch {}
+  } catch (err) {
+    log.warn(`[worker-cleanup] Failed to query stale DB workers: ${errorMessage(err)}`);
+  }
   return result;
 }
 
@@ -66,10 +68,8 @@ async function cleanupSingleWorker(
     const topicId = getExplicitTelegramTopicId(db, thread.threadId);
     if (topicId != null) await telegram.deleteForumTopic(chatId, topicId);
   } catch {}
-  try {
-    threadLifecycle.archiveThread(db, thread.threadId);
-    archiveNotesForThread(db, thread.threadId);
-  } catch {}
+  try { threadLifecycle.archiveThread(db, thread.threadId); } catch {}
+  try { archiveNotesForThread(db, thread.threadId); } catch {}
   const idx = spawnedThreads.indexOf(thread);
   if (idx !== -1) spawnedThreads.splice(idx, 1);
 }
