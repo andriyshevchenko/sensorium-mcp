@@ -51,14 +51,14 @@ Findings from codebase scan (2026-04-15). Grouped by severity.
 - **Problem:** Same `copilot/codex/claude` if-chain in `delegate-tool.ts:336–340` AND `agent-spawn.service.ts:239–243`.
 - **Fix:** Add `dispatchSpawn(agentType, ...params)` to `agent-spawn.service.ts`. `delegate-tool.ts` calls the dispatcher.
 - **Files:** `delegate-tool.ts`, `agent-spawn.service.ts`
-- [ ] Add `dispatchSpawn()` to `agent-spawn.service.ts`
-- [ ] Update `delegate-tool.ts` to call dispatcher
+- [x] Add `dispatchSpawn()` to `agent-spawn.service.ts`
+- [x] Update `delegate-tool.ts` to call dispatcher
 
 ### M4 — `parsePositiveInt` and `parseAgentType` duplicated
 - **Problem:** `parseNumArg` in `delegate-tool.ts:90–95` and `parseThreadId` in `start-session-tool.ts:79–83` are identical. `agentType` enum validation also duplicated between the two files.
 - **Fix:** Extract to `src/tools/shared-agent-utils.ts` (file already exists).
-- [ ] Add `parsePositiveInt()` and `parseAgentType()` to `shared-agent-utils.ts`
-- [ ] Update both tool files to use shared helpers
+- [x] Add `parsePositiveInt()` and `parseAgentType()` to `shared-agent-utils.ts`
+- [x] Update both tool files to use shared helpers
 
 ### M5 — Direct Telegram `fetch()` calls outside service layer (2 files)
 - **Problem:** `daily-session.ts:53` calls Telegram sendMessage directly. `dashboard/routes/threads.ts:331` calls deleteForumTopic directly (duplicates `topic.service.ts`).

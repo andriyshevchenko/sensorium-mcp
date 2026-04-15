@@ -13,7 +13,8 @@
 
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { setThreadAgentType, type AgentType } from "../config.js";
+import { setThreadAgentType } from "../config.js";
+import { parsePositiveInt, parseAgentType } from "./shared-agent-utils.js";
 import type { TelegramClient } from "../telegram.js";
 import type { ToolResult } from "../types.js";
 import { log } from "../logger.js";
@@ -33,9 +34,7 @@ import {
   resolveClaudePath,
   resolveCopilotPath,
   resolveCodexPath,
-  spawnAgentProcess,
-  spawnCopilotProcess,
-  spawnCodexProcess,
+  dispatchSpawn,
 } from "./thread-lifecycle.js";
 import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
 
@@ -87,24 +86,11 @@ export async function handleStartThread(
     : "";
   const workingDirectoryExplicit = workingDirectory !== "";
 
-  const parseNumArg = (v: unknown): number | undefined => {
-    const parsed = typeof v === "number" ? v
-      : typeof v === "string" ? Number(v)
-      : Number.NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  };
+  const explicitThreadId = parsePositiveInt(args.targetThreadId);
+  const parentThreadId = parsePositiveInt(args.parentThreadId);
+  const rootThreadId = parsePositiveInt(args.rootThreadId);
 
-  const explicitThreadId = parseNumArg(args.targetThreadId);
-  const parentThreadId = parseNumArg(args.parentThreadId);
-  const rootThreadId = parseNumArg(args.rootThreadId);
-
-  const rawAgentType = typeof args.agentType === "string" ? args.agentType.trim() : "claude";
-  const agentType: AgentType =
-    rawAgentType === "copilot" || rawAgentType === "copilot_claude" || rawAgentType === "copilot_codex"
-    || rawAgentType === "claude" || rawAgentType === "cursor"
-    || rawAgentType === "codex" || rawAgentType === "openai_codex"
-      ? rawAgentType
-      : "claude";
+  const agentType = parseAgentType(args.agentType, "claude") ?? "claude";
 
   // ── Mode-specific validation & memory resolution ────────────────────
   let memorySourceThreadId: number | undefined;
@@ -164,8 +150,6 @@ export async function handleStartThread(
   }
 
   // ── Verify CLI availability ─────────────────────────────────────────
-  let cliPath: string;
-  let mcpConfigPath: string | undefined;
 
   // Resolve workingDirectory: prefer explicit arg → stored in DB → process.cwd()
   if (!workingDirectory && explicitThreadId) {
@@ -181,40 +165,32 @@ export async function handleStartThread(
   if (!workingDirectory) workingDirectory = process.cwd();
 
   if (agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex") {
-    const copilotPath = resolveCopilotPath();
-    if (!copilotPath) {
+    if (!resolveCopilotPath()) {
       return errorResult(
         "Error: 'copilot' CLI is not installed or not on PATH. " +
         "Set COPILOT_CLI_CMD env var or ensure 'copilot' is on PATH.",
       );
     }
-    cliPath = copilotPath;
   } else if (agentType === "codex" || agentType === "openai_codex") {
-    const codexPath = resolveCodexPath();
-    if (!codexPath) {
+    if (!resolveCodexPath()) {
       return errorResult(
         "Error: 'codex' CLI is not installed or not on PATH. " +
         "Set CODEX_CLI_CMD env var or ensure 'codex' is on PATH.",
       );
     }
-    cliPath = codexPath;
   } else {
-    const claudePath = resolveClaudePath();
-    if (!claudePath) {
+    if (!resolveClaudePath()) {
       return errorResult(
         "Error: 'claude' CLI is not installed or not on PATH. " +
         "Install it with: npm install -g @anthropic-ai/claude-code",
       );
     }
-    const resolvedConfig = resolveMcpConfigPath();
-    if (!resolvedConfig) {
+    if (!resolveMcpConfigPath()) {
       return errorResult(
         "Error: Could not find MCP config for Claude. " +
         "Set CLAUDE_MCP_CONFIG env var or place config at ~/.claude/mcp_config.json",
       );
     }
-    cliPath = claudePath;
-    mcpConfigPath = resolvedConfig;
   }
 
   // ── 1. Resolve or create Telegram forum topic ───────────────────────
@@ -333,11 +309,7 @@ export async function handleStartThread(
     }
   }
 
-  const result = agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex"
-    ? spawnCopilotProcess(cliPath, resolvedThreadName, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, agentType, runtimeThreadType)
-    : agentType === "codex" || agentType === "openai_codex"
-    ? spawnCodexProcess(cliPath, resolvedThreadName, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, runtimeThreadType)
-    : spawnAgentProcess(cliPath, mcpConfigPath!, resolvedThreadName, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
+  const result = dispatchSpawn(agentType, resolvedThreadName, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
   // ── 6. Register in memory thread registry ───────────────────────────
