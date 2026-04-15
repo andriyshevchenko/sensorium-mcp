@@ -33,6 +33,7 @@ import { isThreadRunning } from "../../tools/thread-lifecycle.js";
 import { readThreadHeartbeat } from "../../data/file-storage.js";
 import { getExplicitTelegramTopicId, resolveTelegramTopicId } from "../../data/memory/thread-registry.js";
 import { config } from "../../config.js";
+import { deleteTelegramTopicByBotApi } from "../../services/topic.service.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -326,16 +327,7 @@ function deleteTelegramTopic(topicId: number | null | undefined): void {
     if (topicId == null) return;
     const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID } = config;
     if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
-    void (async () => {
-        try {
-            await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/deleteForumTopic`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, message_thread_id: topicId }),
-                signal: AbortSignal.timeout(10_000),
-            });
-        } catch { /* topic might not exist or already deleted */ }
-    })();
+    void deleteTelegramTopicByBotApi(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, topicId).catch(() => { /* topic might not exist or already deleted */ });
 }
 
 // ─── Settings.json sync for watcher backward compatibility ──────────────────

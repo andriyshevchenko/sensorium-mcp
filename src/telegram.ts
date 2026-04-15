@@ -487,3 +487,28 @@ export class TelegramClient {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Standalone helpers (no TelegramClient instance required)
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a text message via the Telegram Bot API without a TelegramClient instance.
+ * Suitable for fire-and-forget notification helpers that only have the token and chat ID.
+ */
+export async function sendTelegramMessage(
+  token: string,
+  chatId: string,
+  text: string,
+  options?: { parseMode?: string; threadId?: number },
+): Promise<void> {
+  const body: Record<string, unknown> = { chat_id: chatId, text };
+  if (options?.parseMode) body.parse_mode = options.parseMode;
+  if (options?.threadId != null) body.message_thread_id = options.threadId;
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
+  });
+}
