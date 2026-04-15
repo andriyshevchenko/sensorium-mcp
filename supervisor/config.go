@@ -19,6 +19,7 @@ type Config struct {
 	MinUptime        time.Duration
 	MCPStartCommand  string
 	DataDir          string
+	KeyringService   string
 	MCPHttpPort      int
 	MCPHttpSecret    string
 	TelegramToken    string
@@ -77,10 +78,11 @@ func LoadConfig() Config {
 		MinUptime:        600 * time.Second,
 		MCPStartCommand:  envOr("MCP_START_COMMAND", "npx -y sensorium-mcp@latest"),
 		DataDir:          dataDir,
+		KeyringService:   envOr("SUPERVISOR_KEYRING_SERVICE", defaultKeyringService),
 		MCPHttpPort:      envInt("MCP_HTTP_PORT", 0),
-		MCPHttpSecret:    os.Getenv("MCP_HTTP_SECRET"),
-		TelegramToken:    os.Getenv("TELEGRAM_TOKEN"),
-		TelegramChatID:   os.Getenv("TELEGRAM_CHAT_ID"),
+		MCPHttpSecret:    "",
+		TelegramToken:    "",
+		TelegramChatID:   "",
 		HealthFailThresh: 3,
 
 		KeeperBaseBackoff:         5 * time.Second,
@@ -112,6 +114,10 @@ func LoadConfig() Config {
 			HeartbeatsDir:     filepath.Join(dataDir, "heartbeats"),
 		},
 	}
+
+	c.MCPHttpSecret = resolveSecretWithKeyring("MCP_HTTP_SECRET", c.KeyringService)
+	c.TelegramToken = resolveSecretWithKeyring("TELEGRAM_TOKEN", c.KeyringService)
+	c.TelegramChatID = resolveSecretWithKeyring("TELEGRAM_CHAT_ID", c.KeyringService)
 
 	return c
 }
