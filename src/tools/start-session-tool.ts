@@ -373,20 +373,24 @@ export async function handleStartSession(
   // first-person introspection prompt sourced from memory.
   // Only create on active thread — purge stale DMN tasks from other threads
   // to avoid every thread accumulating reflection tasks.
-  if (config.AUTONOMOUS_MODE && session.currentThreadId !== undefined) {
-    const existingTasks = listSchedules(session.currentThreadId);
-    const hasDmn = existingTasks.some(t => t.label === "dmn-reflection");
-    if (!hasDmn) {
-      addSchedule({
-        id: generateTaskId(),
-        threadId: session.currentThreadId,
-        prompt: "__DMN__", // Sentinel — handler generates dynamic content
-        label: "dmn-reflection",
-        afterIdleMinutes: 240, // 4 hours
-        oneShot: false,
-        createdAt: new Date().toISOString(),
-      });
-      log.info(`[start_session] Auto-scheduled DMN reflection task for thread ${session.currentThreadId}.`);
+  if (session.currentThreadId !== undefined) {
+    const threadEntry = getThread(getMemoryDb(), session.currentThreadId);
+    const effectiveAutonomousMode = threadEntry?.autonomousMode ?? config.AUTONOMOUS_MODE;
+    if (effectiveAutonomousMode) {
+      const existingTasks = listSchedules(session.currentThreadId);
+      const hasDmn = existingTasks.some(t => t.label === "dmn-reflection");
+      if (!hasDmn) {
+        addSchedule({
+          id: generateTaskId(),
+          threadId: session.currentThreadId,
+          prompt: "__DMN__", // Sentinel — handler generates dynamic content
+          label: "dmn-reflection",
+          afterIdleMinutes: 240, // 4 hours
+          oneShot: false,
+          createdAt: new Date().toISOString(),
+        });
+        log.info(`[start_session] Auto-scheduled DMN reflection task for thread ${session.currentThreadId}.`);
+      }
     }
   }
 
