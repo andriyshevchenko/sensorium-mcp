@@ -267,7 +267,7 @@ export async function handleWaitForInstructions(
     }
 
     // Check scheduled tasks every ~60s during idle polling.
-    if (effectiveThreadId !== undefined && Date.now() - lastScheduleCheck >= 60_000) {
+    if (effectiveThreadId !== undefined && autonomousMode && Date.now() - lastScheduleCheck >= 60_000) {
       lastScheduleCheck = Date.now();
       const taskResult = checkForDueTasks(ctx, effectiveThreadId);
       if (taskResult) return taskResult;

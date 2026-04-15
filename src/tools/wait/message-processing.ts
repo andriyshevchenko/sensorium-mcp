@@ -213,8 +213,8 @@ export function handlePollTimeout(
   const { state, config, getMemoryDb } = ctx;
   const { OPENAI_API_KEY, AUTONOMOUS_MODE } = config;
 
-  // Check for scheduled wake-up tasks.
-  if (effectiveThreadId !== undefined) {
+  // Check for scheduled wake-up tasks (only when autonomous mode is active for this thread).
+  if (effectiveThreadId !== undefined && AUTONOMOUS_MODE) {
     const taskResult = checkForDueTasks(ctx, effectiveThreadId);
     if (taskResult) return taskResult;
   }
