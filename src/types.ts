@@ -19,7 +19,6 @@ export interface AppConfig {
   DMN_ACTIVATION_HOURS: number;
   FILES_DIR: string;
   PKG_VERSION: string;
-  AUTONOMOUS_MODE: boolean;
 }
 
 // ─── MCP server factory function type ───────────────────────────────────────
