@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -243,7 +244,7 @@ func (k *Keeper) callStartThread(ctx context.Context) (bool, int) {
 func (k *Keeper) killThread(ctx context.Context, threadID int) {
 	k.log.Info("Killing stuck thread %d", threadID)
 	// Read PID from thread PID file
-	pidFile := k.global.Paths.PIDsDir + "/" + fmt.Sprintf("%d.pid", threadID)
+	pidFile := filepath.Join(k.global.Paths.PIDsDir, fmt.Sprintf("%d.pid", threadID))
 	pid, err := ReadPIDFile(pidFile)
 	if err != nil {
 		k.log.Warn("Cannot read PID for thread %d: %v", k.cfg.ThreadID, err)
