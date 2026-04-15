@@ -212,7 +212,7 @@ export function setWaitTimeoutMinutes(minutes: number): void {
 // ─── Default model settings ──────────────────────────────────────────────────
 
 const DEFAULT_THREAD_MODEL = "claude-opus-4-6";
-const DEFAULT_WORKER_MODEL = "claude-sonnet-4-5";
+const DEFAULT_WORKER_MODEL = "claude-sonnet-4-6";
 
 export function getDefaultThreadModel(): string {
   const v = readSettings().defaultThreadModel;

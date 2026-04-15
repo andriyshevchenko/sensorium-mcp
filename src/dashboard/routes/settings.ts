@@ -342,7 +342,11 @@ export const handlePostDefaultThreadModel: RouteHandler = ({ req, json }) => {
         try {
             const raw = await readBody(req);
             const body = safeParseJSON(raw) as Record<string, unknown> | null;
-            const model = body && typeof body === "object" ? body.model : undefined;
+            if (body === null) {
+                json({ error: "Invalid JSON body" }, 400);
+                return;
+            }
+            const model = typeof body === "object" ? body.model : undefined;
             if (typeof model !== "string" || !model.trim()) {
                 json({ error: "model must be a non-empty string" }, 400);
                 return;
@@ -368,7 +372,11 @@ export const handlePostDefaultWorkerModel: RouteHandler = ({ req, json }) => {
         try {
             const raw = await readBody(req);
             const body = safeParseJSON(raw) as Record<string, unknown> | null;
-            const model = body && typeof body === "object" ? body.model : undefined;
+            if (body === null) {
+                json({ error: "Invalid JSON body" }, 400);
+                return;
+            }
+            const model = typeof body === "object" ? body.model : undefined;
             if (typeof model !== "string" || !model.trim()) {
                 json({ error: "model must be a non-empty string" }, 400);
                 return;
