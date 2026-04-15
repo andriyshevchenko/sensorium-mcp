@@ -71,6 +71,12 @@ Findings from codebase scan (2026-04-15). Grouped by severity.
 - **Fix:** `worker-cleanup.service.ts` should query `thread_registry.type = 'worker'` from DB for cleanup decisions, not the in-memory list.
 - [x] Update `worker-cleanup.service.ts` to query DB for worker thread type
 
+### M7 — `spawnKeepAliveThreads` ignores `exited` threads on startup
+- **Problem:** `spawnKeepAliveThreads` filters `thread.status === "active"` only. If a thread exits (status → `'exited'`) while the supervisor is dead, it will never be restarted on server restart — it's stuck until manually resumed. Observed: thread 3868 ("Work (NICE)") had to be manually restarted via `start_thread(mode='resume')`.
+- **Fix:** Extend the startup filter to include `status IN ('active', 'exited')` for threads with `keepAlive = true`. After spawn, `activateThread` already resets the status.
+- **File:** `src/services/agent-spawn.service.ts:260`
+- [x] Change filter to include `'exited'` status for keep-alive threads
+
 ---
 
 ## Priority Order
