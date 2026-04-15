@@ -34,7 +34,7 @@ const COPILOT_INSTRUCTIONS_FILENAME = "copilot-instructions.md";
 const COPILOT_SYSTEM_PROMPT =
   "You are a remote Copilot agent. " +
   "Start remote session with sensorium. Pass agentType='copilot' to start_session.";
-export const DEFAULT_COPILOT_MODEL = "claude-opus-4.6";
+export const DEFAULT_COPILOT_MODEL = "claude-opus-4-6";
 
 /**
  * Read MCP servers from Claude's settings.json (stdio + http servers).
