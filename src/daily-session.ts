@@ -36,11 +36,10 @@ interface DailyRotationResult {
 
 // ─── Telegram notification ───────────────────────────────────────────────────
 
-async function notifyTelegram(text: string, threadId?: number): Promise<void> {
+async function notifyTelegram(db: ReturnType<typeof initMemoryDb>, text: string, threadId?: number): Promise<void> {
   const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID } = config;
   if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
   try {
-    const db = initMemoryDb();
     let topicId = threadId;
     if (threadId) {
       try { topicId = resolveTelegramTopicId(db, threadId); } catch { /* use original */ }
@@ -64,8 +63,10 @@ async function notifyTelegram(text: string, threadId?: number): Promise<void> {
  */
 export async function rotateDailySession(
   rootThreadId: number,
+  db?: ReturnType<typeof initMemoryDb>,
 ): Promise<DailyRotationResult> {
-  const db = initMemoryDb();
+  const ownDb = !db;
+  const activeDb = db ?? initMemoryDb();
   const now = new Date().toISOString();
   const result: DailyRotationResult = {
     rootThreadId,
@@ -76,7 +77,7 @@ export async function rotateDailySession(
 
   try {
     // Capture current session_reset_at before overwriting
-    const thread = getThread(db, rootThreadId);
+    const thread = getThread(activeDb, rootThreadId);
     if (!thread) {
       result.error = `Thread ${rootThreadId} not found`;
       log.error(result.error);
@@ -86,7 +87,7 @@ export async function rotateDailySession(
 
     // 1. Run consolidation on the root thread (distill episodes into knowledge)
     try {
-      await runIntelligentConsolidation(db, rootThreadId);
+      await runIntelligentConsolidation(activeDb, rootThreadId);
       result.consolidated = true;
       log.info(`Consolidation completed for root ${rootThreadId}`);
     } catch (err) {
@@ -95,19 +96,19 @@ export async function rotateDailySession(
 
     // 2. Run reflection and narrative generation (best-effort, non-blocking)
     try {
-      await runReflection(db, rootThreadId);
+      await runReflection(activeDb, rootThreadId);
     } catch (err) {
       log.warn(`Reflection failed during daily rotation for root ${rootThreadId}: ${errorMessage(err)}`);
     }
     try {
-      await runNarrativeGeneration(db, rootThreadId);
+      await runNarrativeGeneration(activeDb, rootThreadId);
     } catch (err) {
       log.warn(`Narrative generation failed during daily rotation for root ${rootThreadId}: ${errorMessage(err)}`);
     }
 
     // 3. Reset the daily session timestamp (only if consolidation succeeded)
     if (result.consolidated) {
-      resetDailySession(db, rootThreadId);
+      resetDailySession(activeDb, rootThreadId);
       result.newSessionResetAt = new Date().toISOString();
       log.info(`Daily session reset for root ${rootThreadId} at ${result.newSessionResetAt}`);
     }
@@ -115,6 +116,8 @@ export async function rotateDailySession(
   } catch (err) {
     result.error = errorMessage(err);
     log.error(`Daily rotation failed for root ${rootThreadId}: ${result.error}`);
+  } finally {
+    if (ownDb) activeDb.close();
   }
 
   return result;
@@ -145,8 +148,8 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
   }
   _rotating = true;
 
+  const db = initMemoryDb();
   try {
-    const db = initMemoryDb();
     const roots = getRootThreads(db);
     const results: DailyRotationResult[] = [];
 
@@ -165,11 +168,11 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
 
     if (pending.length > 0) {
       const names = pending.map(r => `${r.name} (${r.threadId})`).join(", ");
-      await notifyTelegram(`🔄 <b>Daily session rotation starting</b>\nThreads: ${names}`);
+      await notifyTelegram(db, `🔄 <b>Daily session rotation starting</b>\nThreads: ${names}`);
     }
 
     for (const root of pending) {
-      const result = await rotateDailySession(root.threadId);
+      const result = await rotateDailySession(root.threadId, db);
       results.push(result);
     }
 
@@ -179,13 +182,14 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
         if (r.error) return `❌ ${r.rootThreadId}: ${r.error}`;
         return `✅ ${r.rootThreadId}: consolidated=${r.consolidated}`;
       });
-      await notifyTelegram(`🔄 <b>Daily rotation complete</b>\n${lines.join("\n")}`);
+      await notifyTelegram(db, `🔄 <b>Daily rotation complete</b>\n${lines.join("\n")}`);
     }
 
     const allSucceeded = results.length > 0 && results.every(r => !r.error);
     if (allSucceeded) _lastRotationDate = todayDate;
     return results;
   } finally {
+    db.close();
     _rotating = false;
   }
 }
