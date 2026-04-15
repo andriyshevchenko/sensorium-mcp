@@ -199,14 +199,8 @@ export async function handleStartSession(
         const isThreadGone = /thread not found|topic.*(closed|deleted|not found)/i.test(errMsg);
         if (isThreadGone) {
           log.info(
-            `[start_session] Cached thread ${session.currentThreadId} is gone (${errMsg}). Creating replacement topic.`,
+            `[start_session] Cached thread ${session.currentThreadId} is gone (${errMsg}); operator must call start_session without a threadId to create a replacement.`,
           );
-          const topicName = customName ??
-            `Copilot \u2014 ${new Date().toLocaleString("en-GB", {
-              day: "2-digit", month: "short", year: "numeric",
-              hour: "2-digit", minute: "2-digit", hour12: false,
-            })}`;
-          log.info(`[start_session] Probe reported deleted topic for thread ${session.currentThreadId}; retry will create a replacement if needed.`);
         }
         // Other errors (network, etc.) are non-fatal — proceed anyway.
       }
