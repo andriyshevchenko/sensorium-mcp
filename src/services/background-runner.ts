@@ -1,7 +1,7 @@
 import type { initMemoryDb } from "../memory.js";
 import type { TelegramClient } from "../telegram.js";
 import { rotateAllDailySessions } from "../daily-session.js";
-import { cleanupExpiredWorkers } from "../tools/thread-lifecycle.js";
+import { cleanupExpiredWorkers } from "./worker-cleanup.service.js";
 import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { errorMessage } from "../utils.js";
 
