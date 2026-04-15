@@ -4,6 +4,7 @@ import { synthesizeGhostMemory } from "../memory.js";
 import { errorMessage } from "../utils.js";
 import { spawnedThreads, type SpawnedThread } from "./process.service.js";
 import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
+import { log } from "../logger.js";
 
 const DEFAULT_WORKER_TTL_MS = 60 * 60 * 1000;
 
@@ -40,7 +41,11 @@ export async function cleanupExpiredWorkers(
         threadLifecycle.archiveThread(db, row.thread_id);
         try { archiveNotesForThread(db, row.thread_id); } catch {}
         result.cleaned++;
-      } catch {}
+      } catch (err) {
+        const msg = `Thread ${row.thread_id}: ${errorMessage(err)}`;
+        result.errors.push(msg);
+        log.warn(`[worker-cleanup] Failed to archive stale DB worker: ${msg}`);
+      }
     }
   } catch {}
   return result;
