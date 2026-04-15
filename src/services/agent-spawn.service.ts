@@ -261,7 +261,7 @@ export function spawnKeepAliveThreads(threadLifecycle: ThreadLifecycleService): 
       if (isProcessAlive(pid)) spawnedThreads.push({ pid, threadId, name: name ?? `thread-${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "" });
       else try { unlinkSync(filePath); } catch {}
     }
-    threads = getAllThreads(db).filter((thread) => thread.keepAlive && thread.status === "active");
+    threads = getAllThreads(db).filter((thread) => thread.keepAlive && (thread.status === "active" || thread.status === "exited"));
   } finally {
     startupCleanupInProgress = false;
   }
