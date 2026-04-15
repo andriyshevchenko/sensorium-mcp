@@ -291,6 +291,12 @@ export function handleDeleteThread(args: RouteArgs, threadId: number): boolean {
         return true;
     }
 
+    // Resolve Telegram topic ID before deletion — hard delete removes the DB
+    // record, so any lookup inside deleteTelegramTopic would return null.
+    const resolvedTopicId = existing.type === "worker"
+        ? getExplicitTelegramTopicId(db, threadId)
+        : resolveTelegramTopicId(db, threadId);
+
     if (hard) {
         deleteThread(db, threadId);
         json({ ok: true, action: "deleted", threadId });
@@ -309,23 +315,19 @@ export function handleDeleteThread(args: RouteArgs, threadId: number): boolean {
     }
 
     // Delete Telegram topic (best-effort, async)
-    deleteTelegramTopic(db, threadId);
+    deleteTelegramTopic(resolvedTopicId);
 
     syncKeepAliveToSettings(db);
     return true;
 }
 
-/** Best-effort deletion of a Telegram forum topic for a thread. */
-function deleteTelegramTopic(db: Database, threadId: number): void {
+/** Best-effort deletion of a Telegram forum topic by its pre-resolved topic ID. */
+function deleteTelegramTopic(topicId: number | null | undefined): void {
+    if (topicId == null) return;
     const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID } = config;
     if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
     void (async () => {
         try {
-            const thread = getThread(db, threadId);
-            const topicId = thread?.type === 'worker'
-                ? getExplicitTelegramTopicId(db, threadId)
-                : resolveTelegramTopicId(db, threadId);
-            if (topicId == null) return;
             await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/deleteForumTopic`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
