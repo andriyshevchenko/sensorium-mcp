@@ -1,6 +1,32 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { AgentType } from "../config.js";
+
+// ---------------------------------------------------------------------------
+// Shared argument parsers
+// ---------------------------------------------------------------------------
+
+/** Parse an unknown value to a positive integer, or return undefined. */
+export function parsePositiveInt(v: unknown): number | undefined {
+  const parsed = typeof v === "number" ? v
+    : typeof v === "string" ? Number(v)
+    : Number.NaN;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Validate an agentType string. Returns the value if valid, otherwise `fallback`
+ * (defaults to `undefined`).
+ */
+export function parseAgentType(raw: unknown, fallback?: AgentType): AgentType | undefined {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  return s === "copilot" || s === "copilot_claude" || s === "copilot_codex"
+    || s === "claude" || s === "cursor"
+    || s === "codex" || s === "openai_codex"
+    ? s
+    : fallback;
+}
 
 export const COPILOT_HOME_DIR = "copilot-home";
 const COPILOT_MCP_CONFIG_FILENAME = "mcp-config.json";

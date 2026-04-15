@@ -2,7 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { getClaudeMcpConfigPath, getDefaultThreadModel, getDefaultWorkerModel } from "../config.js";
+import { getClaudeMcpConfigPath, getDefaultThreadModel, getDefaultWorkerModel, type AgentType } from "../config.js";
 import { log } from "../logger.js";
 import { synthesizeGhostMemory } from "../memory.js";
 import { getAllThreads, getExplicitTelegramTopicId } from "../data/memory/thread-registry.js";
@@ -216,6 +216,36 @@ export function spawnCodexProcess(codexPath: string, name: string, threadId: num
   } catch (err) { closeSync(logFd); return { error: `Failed to spawn Codex process: ${errorMessage(err)}` }; }
 }
 
+/**
+ * Resolve the right spawn function for `agentType` and call it.
+ * Handles CLI path resolution and error reporting internally.
+ */
+export function dispatchSpawn(
+  agentType: AgentType,
+  name: string,
+  threadId: number,
+  threadLifecycle: ThreadLifecycleService,
+  workingDirectory?: string,
+  memorySourceThreadId?: number,
+  memoryTargetThreadId?: number,
+  runtimeThreadType?: "worker" | "branch",
+): { pid: number; logFile: string } | { error: string } {
+  if (agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex") {
+    const cliPath = resolveCopilotPath();
+    if (!cliPath) return { error: `Thread ${threadId} (${name}): copilot CLI not found` };
+    return spawnCopilotProcess(cliPath, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, agentType, runtimeThreadType);
+  }
+  if (agentType === "codex" || agentType === "openai_codex") {
+    const cliPath = resolveCodexPath();
+    if (!cliPath) return { error: `Thread ${threadId} (${name}): codex CLI not found` };
+    return spawnCodexProcess(cliPath, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, runtimeThreadType);
+  }
+  const cliPath = resolveClaudePath();
+  const mcpConfig = resolveMcpConfigPath();
+  if (!cliPath || !mcpConfig) return { error: `Thread ${threadId} (${name}): ${!cliPath ? "claude CLI not found" : "MCP config not found"}` };
+  return spawnAgentProcess(cliPath, mcpConfig, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
+}
+
 export function spawnKeepAliveThreads(threadLifecycle: ThreadLifecycleService): { spawned: number; errors: string[] } {
   const result = { spawned: 0, errors: [] as string[] };
   startupCleanupInProgress = true;
@@ -236,11 +266,7 @@ export function spawnKeepAliveThreads(threadLifecycle: ThreadLifecycleService): 
   for (const thread of threads) {
     if (findAliveThread(thread.threadId)) continue;
     const client = thread.client ?? "claude";
-    const spawnResult = client === "copilot" || client === "copilot_claude" || client === "copilot_codex"
-      ? (() => { const cliPath = resolveCopilotPath(); return cliPath ? spawnCopilotProcess(cliPath, thread.name, thread.threadId, threadLifecycle, undefined, undefined, client) : { error: `Thread ${thread.threadId} (${thread.name}): copilot CLI not found` }; })()
-      : client === "codex" || client === "openai_codex"
-      ? (() => { const cliPath = resolveCodexPath(); return cliPath ? spawnCodexProcess(cliPath, thread.name, thread.threadId, threadLifecycle) : { error: `Thread ${thread.threadId} (${thread.name}): codex CLI not found` }; })()
-      : (() => { const cliPath = resolveClaudePath(); const mcpConfig = resolveMcpConfigPath(); return cliPath && mcpConfig ? spawnAgentProcess(cliPath, mcpConfig, thread.name, thread.threadId, threadLifecycle) : { error: `Thread ${thread.threadId} (${thread.name}): ${!cliPath ? "claude CLI not found" : "MCP config not found"}` }; })();
+    const spawnResult = dispatchSpawn(client as AgentType, thread.name, thread.threadId, threadLifecycle);
     if ("error" in spawnResult) { result.errors.push(spawnResult.error); continue; }
     try { threadLifecycle.activateThread(db, thread.threadId); } catch {}
     result.spawned++;

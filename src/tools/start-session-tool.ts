@@ -6,7 +6,8 @@
  * session greeting with reminders.
  */
 
-import { getMemorySourceThreadId, setThreadAgentType, type AgentType } from "../config.js";
+import { getEffectiveAutonomousMode, getMemorySourceThreadId, setThreadAgentType } from "../config.js";
+import { parsePositiveInt, parseAgentType } from "./shared-agent-utils.js";
 import { convertMarkdown } from "../markdown.js";
 import { type initMemoryDb } from "../memory.js";
 import { assembleBootstrap } from "../services/memory-briefing.service.js";
@@ -75,24 +76,11 @@ export async function handleStartSession(
 ): Promise<ToolResult> {
   const { session, telegram, telegramChatId: TELEGRAM_CHAT_ID, config, getMemoryDb, threadLifecycle } = ctx;
 
-  const rawThreadId = args.threadId;
-  const parseThreadId = (value: unknown): number | undefined => {
-    const parsed = typeof value === "number" ? value
-      : typeof value === "string" ? Number(value)
-      : Number.NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  };
-  const explicitThreadId = parseThreadId(rawThreadId);
+  const explicitThreadId = parsePositiveInt(args.threadId);
   const customName = typeof args.name === "string" && args.name.trim()
     ? args.name.trim()
     : undefined;
-  const rawAgentType = typeof args.agentType === "string" ? args.agentType.trim() : "";
-  const agentType: AgentType | undefined =
-    rawAgentType === "copilot" || rawAgentType === "copilot_claude" || rawAgentType === "copilot_codex"
-    || rawAgentType === "claude" || rawAgentType === "cursor"
-    || rawAgentType === "codex" || rawAgentType === "openai_codex"
-      ? rawAgentType
-      : undefined;
+  const agentType = parseAgentType(args.agentType);
 
   // ── Re-entry guard ────────────────────────────────────────────────────
   // If the requested thread is already the active session AND the full
@@ -111,7 +99,7 @@ export async function handleStartSession(
     );
     // Include reminders + wait directive so the agent doesn't stall after
     // a duplicate start_session call (e.g. post-update context replay).
-    const reminders = ctx.getReminders(explicitThreadId, session.sessionStartedAt, config.AUTONOMOUS_MODE);
+    const reminders = ctx.getReminders(explicitThreadId, session.sessionStartedAt, getEffectiveAutonomousMode(explicitThreadId));
     const endDirective =
       `\n\n**⚠️ ACTION REQUIRED: Call the \`remote_copilot_wait_for_instructions\` tool NOW with threadId=${explicitThreadId}. Do NOT stop or end your turn.**`;
     return {
@@ -375,7 +363,7 @@ export async function handleStartSession(
   // to avoid every thread accumulating reflection tasks.
   if (session.currentThreadId !== undefined) {
     const threadEntry = getThread(getMemoryDb(), session.currentThreadId);
-    const effectiveAutonomousMode = threadEntry?.autonomousMode ?? config.AUTONOMOUS_MODE;
+    const effectiveAutonomousMode = getEffectiveAutonomousMode(session.currentThreadId);
     if (effectiveAutonomousMode) {
       const existingTasks = listSchedules(session.currentThreadId);
       const hasDmn = existingTasks.some(t => t.label === "dmn-reflection");
@@ -421,7 +409,7 @@ export async function handleStartSession(
       }
     } catch { /* best-effort */ }
   }
-  const reminders = ctx.getReminders(threadId, session.sessionStartedAt, config.AUTONOMOUS_MODE);
+  const reminders = ctx.getReminders(threadId, session.sessionStartedAt, getEffectiveAutonomousMode(threadId));
   // Mark session as fully initialized — subsequent start_session calls with
   // the same threadId will hit the re-entry guard instead of re-bootstrapping.
   session.sessionFullyInitialized = true;
