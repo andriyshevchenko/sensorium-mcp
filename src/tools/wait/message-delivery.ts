@@ -168,7 +168,7 @@ export function handleEmptyContent(
     log.warn(`[wait] No content blocks from ${stored.length} messages. Fields: ${msgKeys}`);
     contentBlocks.push({
       type: "text",
-      text: "[Unsupported message type received — the operator sent a message type that cannot be processed (e.g., sticker, location, contact). Please ask them to resend as text, photo, document, or voice.]",
+      text: "[Unsupported message type received — the operator sent a message type that cannot be processed (e.g., location, contact, poll). Please ask them to resend as text, photo, document, voice, or sticker.]",
     });
   }
 }

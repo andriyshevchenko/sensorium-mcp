@@ -285,7 +285,7 @@ export async function handleStartThread(
     }
   } catch { /* best-effort orphan cleanup */ }
 
-  // ── 4. Pre-queue task & spawn ───────────────────────────────────────
+  // ── 4. Pre-queue task, fork memory & spawn ──────────────────────────
   ensureDirs();
 
   // Pre-queue task message if provided (written before agent starts polling)
@@ -312,7 +312,7 @@ export async function handleStartThread(
   const result = dispatchSpawn(agentType, resolvedThreadName, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
   if ("error" in result) return errorResult(`Error: ${result.error}`);
 
-  // ── 6. Register in memory thread registry ───────────────────────────
+  // ── 5. Register in memory thread registry ───────────────────────────
   try {
     const db = getMemoryDb();
     const existing = getThread(db, threadId);
