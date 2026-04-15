@@ -131,13 +131,14 @@ func (l *Logger) pruneOldLogs() {
 
 // startMidnightTimer fires a daily rotation at local midnight.
 func (l *Logger) startMidnightTimer() {
+	stopCh := l.stopTimer // capture channel value; Close() may nil the field concurrently
 	go func() {
 		for {
 			now := time.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
 			select {
 			case <-time.After(time.Until(next)):
-			case <-l.stopTimer:
+			case <-stopCh:
 				return
 			}
 			l.mu.Lock()
@@ -165,7 +166,9 @@ func (l *Logger) rotate() {
 	ts := time.Now().Format("2006-01-02T150405")
 	ext := filepath.Ext(l.logPath)
 	base := strings.TrimSuffix(l.logPath, ext)
-	os.Rename(l.logPath, fmt.Sprintf("%s.%s%s", base, ts, ext))
+	if err := os.Rename(l.logPath, fmt.Sprintf("%s.%s%s", base, ts, ext)); err != nil {
+		fmt.Fprintf(os.Stderr, "[WARN] log size-rotate rename: %v\n", err)
+	}
 	l.pruneOldLogs()
 
 	// Open a fresh file
