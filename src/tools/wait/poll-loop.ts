@@ -15,7 +15,6 @@
  */
 
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { checkMaintenanceFlag, writeActivityHeartbeat, writeThreadHeartbeat } from "../../data/file-storage.js";
 import { onMaintenanceSignal } from "../../services/maintenance-signal.js";
@@ -28,6 +27,7 @@ import { log } from "../../logger.js";
 import { getShortReminder, buildMaintenanceResponse } from "../../response-builders.js";
 import type { ThreadLifecycleService } from "../../services/thread-lifecycle.service.js";
 
+import { PENDING_TASKS_DIR } from "../thread-lifecycle.js";
 import { handleReactionOnly } from "./reaction-handler.js";
 import { checkForDueTasks } from "./task-handler.js";
 import { processIncomingMessages, handlePollTimeout } from "./message-processing.js";
@@ -56,8 +56,6 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 // Pending-task file helper
 // ---------------------------------------------------------------------------
-
-const PENDING_TASKS_DIR = join(homedir(), ".remote-copilot-mcp", "pending-tasks");
 
 /**
  * Check for a pending task file written by send_message_to_thread.
