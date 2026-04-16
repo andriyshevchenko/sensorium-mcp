@@ -25,6 +25,7 @@ import { readThreadMessages } from "../dispatcher.js";
 import { getThread, getThreadByName } from "../data/memory/thread-registry.js";
 import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
 import type { ThreadLifecycleService } from "../services/thread-lifecycle.service.js";
+import { checkMaintenanceFlag } from "../data/file-storage.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -148,26 +149,16 @@ export async function handleStartSession(
     }
   }
 
-  // Lightweight reconnect: if the thread is pre-existing, was recently active
-  // (within 5 minutes), AND we've already completed a full bootstrap in this
-  // process (sessionFullyInitialized), this is a context reset — skip the
-  // heavy bootstrap.  The sessionFullyInitialized guard ensures a server
-  // restart always delivers the full briefing even when lastActiveAt is fresh
-  // from the previous process's heartbeat.
-  const RECONNECT_WINDOW_MS = 5 * 60 * 1000;
+  // Lightweight reconnect: only activated when a server update is in progress
+  // (maintenance.flag exists).  Purpose: avoid interrupting threads that are
+  // deep in a work session by skipping the heavy bootstrap.  In all other
+  // cases (context compaction, manual restart, server restart) the thread
+  // receives a full memory briefing.
   let isReconnect = false;
-  if (resolvedPreexisting && session.currentThreadId !== undefined && session.sessionFullyInitialized) {
-    try {
-      const threadEntry = getThread(getMemoryDb(), session.currentThreadId);
-      if (threadEntry?.lastActiveAt) {
-        const lastActive = new Date(threadEntry.lastActiveAt).getTime();
-        isReconnect = (Date.now() - lastActive) < RECONNECT_WINDOW_MS;
-      }
-    } catch { /* fall through to full bootstrap */ }
-  }
-  if (isReconnect) {
+  if (resolvedPreexisting && checkMaintenanceFlag() !== null) {
+    isReconnect = true;
     log.info(
-      `[start_session] Lightweight reconnect for thread ${session.currentThreadId} — skipping briefing.`,
+      `[start_session] Lightweight reconnect for thread ${session.currentThreadId} — update in progress, skipping briefing.`,
     );
   }
 
