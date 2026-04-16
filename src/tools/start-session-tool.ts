@@ -148,14 +148,15 @@ export async function handleStartSession(
     }
   }
 
-  // Lightweight reconnect: if the thread is pre-existing AND was recently
-  // active (within 5 minutes), this is likely a context reset within the same
-  // process — skip the heavy bootstrap (no stale message drain, no Telegram
-  // notification, no 38K+ memory briefing).  A genuinely dead thread that
-  // hasn't been active in > 5 minutes gets the full briefing.
+  // Lightweight reconnect: if the thread is pre-existing, was recently active
+  // (within 5 minutes), AND we've already completed a full bootstrap in this
+  // process (sessionFullyInitialized), this is a context reset — skip the
+  // heavy bootstrap.  The sessionFullyInitialized guard ensures a server
+  // restart always delivers the full briefing even when lastActiveAt is fresh
+  // from the previous process's heartbeat.
   const RECONNECT_WINDOW_MS = 5 * 60 * 1000;
   let isReconnect = false;
-  if (resolvedPreexisting && session.currentThreadId !== undefined) {
+  if (resolvedPreexisting && session.currentThreadId !== undefined && session.sessionFullyInitialized) {
     try {
       const threadEntry = getThread(getMemoryDb(), session.currentThreadId);
       if (threadEntry?.lastActiveAt) {
