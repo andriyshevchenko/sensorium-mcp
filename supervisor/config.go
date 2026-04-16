@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,6 +19,7 @@ type Config struct {
 	GracePeriod        time.Duration
 	MinUptime          time.Duration
 	MCPStartCommand    string
+	HostMode           string
 	DataDir            string
 	KeyringService     string
 	SecureVaultProfile string
@@ -52,6 +54,8 @@ type Paths struct {
 	MaintenanceFlag   string
 	VersionFile       string
 	SupervisorVersion string
+	UpdateState       string
+	UpdateApplyLock   string
 	PendingBinary     string
 	PendingVersion    string
 	LastActivity      string
@@ -63,7 +67,7 @@ type Paths struct {
 	HeartbeatsDir     string
 }
 
-func LoadConfig() Config {
+func LoadConfig(runningAsService bool) Config {
 	dataDir := filepath.Join(homeDir(), ".remote-copilot-mcp")
 
 	mode := envOr("WATCHER_MODE", "development")
@@ -79,6 +83,7 @@ func LoadConfig() Config {
 		GracePeriod:        time.Duration(envInt("WATCHER_GRACE_PERIOD", graceDef)) * time.Second,
 		MinUptime:          600 * time.Second,
 		MCPStartCommand:    envOr("MCP_START_COMMAND", "npx -y sensorium-mcp@latest"),
+		HostMode:           parseHostMode(os.Getenv("HOST_MODE"), runningAsService),
 		DataDir:            dataDir,
 		KeyringService:     envOr("SUPERVISOR_KEYRING_SERVICE", defaultKeyringService),
 		SecureVaultProfile: os.Getenv("SUPERVISOR_SECUREVAULT_PROFILE"),
@@ -103,6 +108,8 @@ func LoadConfig() Config {
 			MaintenanceFlag:   filepath.Join(dataDir, "maintenance.flag"),
 			VersionFile:       filepath.Join(dataDir, "current-version.txt"),
 			SupervisorVersion: filepath.Join(dataDir, "supervisor-version.txt"),
+			UpdateState:       filepath.Join(dataDir, "update-state.json"),
+			UpdateApplyLock:   filepath.Join(dataDir, "update-apply.lock"),
 			PendingBinary:     filepath.Join(dataDir, "bin", "sensorium-supervisor.new.exe"),
 			PendingVersion:    filepath.Join(dataDir, "bin", "sensorium-supervisor.new.exe.version"),
 			LastActivity:      filepath.Join(dataDir, "last-activity.txt"),
@@ -158,4 +165,31 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return v
+}
+
+func parseHostMode(value string, runningAsService bool) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if runningAsService {
+		if normalized == "" || normalized == "service" {
+			return "service"
+		}
+		if normalized == "task" {
+			fmt.Fprintf(os.Stderr, "WARN: HOST_MODE=%q ignored because process is running as a Windows service; forcing \"service\"\n", value)
+		} else {
+			fmt.Fprintf(os.Stderr, "WARN: invalid HOST_MODE=%q ignored because process is running as a Windows service; forcing \"service\" (allowed: task|service)\n", value)
+		}
+		return "service"
+	}
+
+	if normalized == "" {
+		return "task"
+	}
+
+	switch normalized {
+	case "task", "service":
+		return normalized
+	default:
+		fmt.Fprintf(os.Stderr, "WARN: invalid HOST_MODE=%q (allowed: task|service); using default \"task\"\n", value)
+		return "task"
+	}
 }

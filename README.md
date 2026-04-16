@@ -199,6 +199,28 @@ Add it alongside `sensorium-mcp` in your agent's MCP config:
 
 If the watcher is not configured, the maintenance response falls back to a Desktop Commander sleep command.
 
+## Supervisor Host Modes (Windows)
+
+The Go supervisor supports `HOST_MODE` values:
+
+- `service` - intended for Windows Service hosting
+- `task` - intended for Task Scheduler user-context hosting
+
+Default behavior is automatic:
+
+- running as a Windows service -> default `service`
+- not running as a Windows service -> default `task`
+
+For local SecureVault setups, prefer **Task Scheduler** (user context) so profile-scoped secrets resolve under your user account:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-supervisor-task.ps1
+```
+
+Use `-Status` to inspect task state, and `-Uninstall` to remove it.
+
+The helper script installs an **AtLogOn** trigger for your current user with unlimited run time (`ExecutionTimeLimit=0`). In user-context mode this is the reliable behavior: the supervisor starts when that user signs in (not pre-login at machine boot).
+
 ## How It Works
 
 1. `start_session` creates a Telegram topic (or resumes one by name). Memory bootstrap auto-loads your context.
