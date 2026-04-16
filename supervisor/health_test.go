@@ -91,3 +91,32 @@ func TestIsThreadRunning_False(t *testing.T) {
 		t.Error("expected thread to not be running")
 	}
 }
+
+func TestGetKeepAliveThreads_FallbackToThreadsEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/threads/keepalive":
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"not found"}`))
+		case "/api/threads":
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"threads":[{"threadId":1,"name":"root","type":"root","keepAlive":true},{"threadId":2,"name":"worker","type":"worker","keepAlive":true},{"threadId":3,"name":"off","type":"root","keepAlive":false}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	mcp := &MCPClient{BaseURL: srv.URL, Client: srv.Client()}
+	threads, err := mcp.GetKeepAliveThreads(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(threads) != 1 {
+		t.Fatalf("got %d threads, want 1", len(threads))
+	}
+	if got, _ := threads[0]["threadId"].(float64); int(got) != 1 {
+		t.Fatalf("unexpected thread returned: %v", threads[0])
+	}
+}
