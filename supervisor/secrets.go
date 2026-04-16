@@ -8,7 +8,7 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	sv "github.com/andriyshevchenko/sandboxed-ui/securevault-go"
+	sv "github.com/andriyshevchenko/SecureVault/securevault-go"
 )
 
 const defaultKeyringService = "sensorium-supervisor"
