@@ -35,11 +35,15 @@
     disable SecureVault profile resolution.
 .PARAMETER WatcherMode
     Supervisor mode to use (`production` or `development`).
+.PARAMETER MCPStartCommand
+    Command used by supervisor to start MCP child process. When omitted, installer
+    uses published npm package command `npx -y sensorium-mcp@latest`.
 .EXAMPLE
     .\Install-Sensorium.ps1
     .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc"
     .\Install-Sensorium.ps1 -Foreground
     .\Install-Sensorium.ps1 -SecureVaultProfile "SENSORIUM" -WatcherMode production
+    .\Install-Sensorium.ps1 -MCPStartCommand "node C:\src\remote-copilot-mcp\dist\index.js"
 #>
 param(
     [switch]$Update,
@@ -48,7 +52,8 @@ param(
     [switch]$Foreground,
     [string]$SecureVaultProfile = "SENSORIUM",
     [ValidateSet("production", "development")]
-    [string]$WatcherMode = "production"
+    [string]$WatcherMode = "production",
+    [string]$MCPStartCommand = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,6 +71,14 @@ $BinDir  = Join-Path $DataDir "bin"
 $Binary  = Join-Path $BinDir $InstalledBinaryName
 $StartupDir = [Environment]::GetFolderPath("Startup")
 $StartupLauncher = Join-Path $StartupDir "SensoriumSupervisor.cmd"
+function Resolve-MCPStartCommand {
+    if (-not [string]::IsNullOrWhiteSpace($MCPStartCommand)) {
+        return $MCPStartCommand.Trim()
+    }
+    return "npx -y sensorium-mcp@latest"
+}
+
+$EffectiveMCPStartCommand = Resolve-MCPStartCommand
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 function Test-IsAdmin {
@@ -148,16 +161,19 @@ function Get-BinaryAsset {
         Copy-Item $Destination $backupPath -Force
     }
     Move-Item $tmpFile $Destination -Force
+    Unblock-File -Path $Destination -ErrorAction SilentlyContinue
     Write-Host "Binary placed at: $Destination" -ForegroundColor Green
 }
 
 function Install-StartupLauncher {
     $safeProfile = $SecureVaultProfile.Replace('"', '')
     $safeMode = $WatcherMode.Replace('"', '')
+    $safeMcpStart = $EffectiveMCPStartCommand.Replace('"', '""')
     $launcherContent = @(
         "@echo off",
         "set `"SUPERVISOR_SECUREVAULT_PROFILE=$safeProfile`"",
         "set `"WATCHER_MODE=$safeMode`"",
+        "set `"MCP_START_COMMAND=$safeMcpStart`"",
         "start `"`" /min `"$Binary`""
     ) -join [Environment]::NewLine
 
@@ -224,6 +240,7 @@ function Start-AsBackground {
     Write-Host "Starting sensorium-supervisor as a background process..."
     $env:SUPERVISOR_SECUREVAULT_PROFILE = $SecureVaultProfile
     $env:WATCHER_MODE = $WatcherMode
+    $env:MCP_START_COMMAND = $EffectiveMCPStartCommand
     $logOut = Join-Path $DataDir "supervisor.log"
     $logErr = Join-Path $DataDir "supervisor-error.log"
     try {
@@ -246,6 +263,7 @@ function Start-AsBackground {
 function Start-InForeground {
     $env:SUPERVISOR_SECUREVAULT_PROFILE = $SecureVaultProfile
     $env:WATCHER_MODE = $WatcherMode
+    $env:MCP_START_COMMAND = $EffectiveMCPStartCommand
     Write-Host "Starting sensorium-supervisor in foreground (live logs)..." -ForegroundColor Cyan
     Write-Host "Press Ctrl+C to stop." -ForegroundColor Yellow
     & $Binary
@@ -279,8 +297,9 @@ function Show-Status {
 # ── Main ─────────────────────────────────────────────────────────────────────
 $isAdmin       = Test-IsAdmin
 $alreadyExists = Test-Path $Binary
-$isUpdate      = $Update -or $alreadyExists
+$isUpdate      = $Update
 $useService    = $isAdmin -and -not [string]::IsNullOrWhiteSpace($ServiceUser)
+$needsDownload = $Update -or -not $alreadyExists
 
 Write-Host ""
 if ($isUpdate) {
@@ -292,11 +311,12 @@ Write-Host "Admin mode : $isAdmin"
 Write-Host "Install mode: $(if ($useService) { 'service' } else { 'startup' })"
 Write-Host "SecureVault profile: $(if ([string]::IsNullOrWhiteSpace($SecureVaultProfile)) { '<disabled>' } else { $SecureVaultProfile })"
 Write-Host "Watcher mode: $WatcherMode"
+Write-Host "MCP start command: $EffectiveMCPStartCommand"
 Write-Host "Binary     : $Binary"
 Write-Host ""
 
-# Step 1 — stop existing instance
-if ($isUpdate) {
+# Step 1 — stop existing instance (always restart to apply latest config/runtime mode)
+if ($alreadyExists) {
     if ($useService) {
         Stop-SupervisorService
     } else {
@@ -307,8 +327,12 @@ if ($isUpdate) {
 # Step 2 — ensure bin dir exists
 New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 
-# Step 3 — download binary
-Get-BinaryAsset -Destination $Binary
+# Step 3 — download binary when missing or explicitly requested
+if ($needsDownload) {
+    Get-BinaryAsset -Destination $Binary
+} else {
+    Write-Host "Using existing binary: $Binary" -ForegroundColor Cyan
+}
 
 # Step 4 — register / start
 if ($useService) {
