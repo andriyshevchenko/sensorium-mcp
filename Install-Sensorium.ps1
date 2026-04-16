@@ -27,14 +27,19 @@
 .PARAMETER ServicePassword
     SecureString password for the service account. Prompted securely if -ServiceUser
     is set but -ServicePassword is omitted.
+.PARAMETER Foreground
+    In startup mode (non-service), run supervisor in the current console with live
+    logs instead of background hidden mode.
 .EXAMPLE
     .\Install-Sensorium.ps1
     .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc"
+    .\Install-Sensorium.ps1 -Foreground
 #>
 param(
     [switch]$Update,
     [string]$ServiceUser = "",
-    [System.Security.SecureString]$ServicePassword
+    [System.Security.SecureString]$ServicePassword,
+    [switch]$Foreground
 )
 
 $ErrorActionPreference = "Stop"
@@ -140,7 +145,7 @@ function Get-BinaryAsset {
 function Install-StartupLauncher {
     $launcherContent = @(
         "@echo off",
-        "start \"\" /min \"$Binary\""
+        "start `"`" /min `"$Binary`""
     ) -join [Environment]::NewLine
 
     Set-Content -LiteralPath $StartupLauncher -Value $launcherContent -Encoding ASCII
@@ -206,12 +211,28 @@ function Start-AsBackground {
     Write-Host "Starting sensorium-supervisor as a background process..."
     $logOut = Join-Path $DataDir "supervisor.log"
     $logErr = Join-Path $DataDir "supervisor-error.log"
-    Start-Process -FilePath $Binary `
-                  -RedirectStandardOutput $logOut `
-                  -RedirectStandardError  $logErr `
-                  -WindowStyle Hidden `
-                  -PassThru | Out-Null
+    try {
+        Start-Process -FilePath $Binary `
+                      -RedirectStandardOutput $logOut `
+                      -RedirectStandardError  $logErr `
+                      -WindowStyle Hidden `
+                      -PassThru | Out-Null
+    } catch {
+        Write-Host "[ERROR] Failed to start supervisor in background: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[HINT] If Windows Defender blocked the binary, run:" -ForegroundColor Yellow
+        Write-Host "       Unblock-File -Path \"$Binary\"" -ForegroundColor Yellow
+        Write-Host "[HINT] Then run foreground mode for live logs:" -ForegroundColor Yellow
+        Write-Host "       .\Install-Sensorium.ps1 -Foreground" -ForegroundColor Yellow
+        throw
+    }
     Start-Sleep -Seconds 2
+}
+
+function Start-InForeground {
+    Write-Host "Starting sensorium-supervisor in foreground (live logs)..." -ForegroundColor Cyan
+    Write-Host "Press Ctrl+C to stop." -ForegroundColor Yellow
+    & $Binary
+    exit $LASTEXITCODE
 }
 
 function Show-Status {
@@ -276,7 +297,11 @@ if ($useService) {
     Install-AsService
 } else {
     Install-StartupLauncher
-    Start-AsBackground
+    if ($Foreground) {
+        Start-InForeground
+    } else {
+        Start-AsBackground
+    }
 }
 
 # Step 5 — verify
