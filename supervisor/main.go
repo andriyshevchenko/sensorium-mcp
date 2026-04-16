@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -55,11 +56,20 @@ func handleServiceCommand(args []string) (bool, error) {
 
 	switch args[0] {
 	case "install":
+		fs := flag.NewFlagSet("install", flag.ContinueOnError)
+		serviceUser := fs.String("service-user", "", "Windows account to run service as (e.g. .\\YourUser). Defaults to LocalSystem if empty.")
+		servicePassword := fs.String("service-password", "", "Password for the service account (required when -service-user is set).")
+		if err := fs.Parse(args[1:]); err != nil {
+			return true, err
+		}
+		if *serviceUser != "" && *servicePassword == "" {
+			return true, fmt.Errorf("install failed: -service-password is required when -service-user is set\nNote: passing passwords via command-line arguments is visible in process listings; prefer using the Install-Sensorium.ps1 script which prompts securely")
+		}
 		exePath, err := os.Executable()
 		if err != nil {
 			return true, fmt.Errorf("install failed: resolve executable: %w", err)
 		}
-		return true, installService(exePath)
+		return true, installService(exePath, *serviceUser, *servicePassword)
 	case "uninstall":
 		return true, uninstallService()
 	case "start":

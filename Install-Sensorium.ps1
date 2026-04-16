@@ -12,15 +12,27 @@
 
     Re-running this script performs an update: stops the existing service/process,
     replaces the binary, then restarts.
+
+    RECOMMENDED: Use -ServiceUser to run the service under a dedicated low-privilege
+    account instead of LocalSystem. The account must have the "Log on as a service"
+    right (secpol.msc -> Local Policies -> User Rights Assignment).
 .PARAMETER Update
-    Explicitly force update mode even if the binary doesn't exist yet (no-op difference
-    for fresh installs — included for scripted pipelines that always pass -Update).
+    Explicitly force update mode even if the binary doesn't exist yet.
+.PARAMETER ServiceUser
+    Windows account to run the service as (e.g. ".\sensorium-svc" or "DOMAIN\user").
+    Defaults to LocalSystem when not supplied.
+.PARAMETER ServicePassword
+    Password for the service account. Prompted securely if -ServiceUser is set but
+    -ServicePassword is omitted.
 .EXAMPLE
     .\Install-Sensorium.ps1
-    .\Install-Sensorium.ps1 -Update
+    .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc"
+    .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc" -ServicePassword "s3cr3t"
 #>
 param(
-    [switch]$Update
+    [switch]$Update,
+    [string]$ServiceUser = "",
+    [string]$ServicePassword = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -112,22 +124,45 @@ function Download-Binary {
 }
 
 function Install-AsService {
+    # Resolve service identity
+    $resolvedUser = $ServiceUser
+    $resolvedPassword = $ServicePassword
+    if ($resolvedUser -ne "" -and $resolvedPassword -eq "") {
+        # NOTE: The resolved plain-text password is passed to sc.exe as a command-line
+        # argument. This is unavoidable with sc.exe and is standard Windows practice for
+        # service installation. Minimize exposure by using a dedicated service account
+        # with a strong password and restricting its access scopes.
+        $securePass = Read-Host "Password for service account '$resolvedUser'" -AsSecureString
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePass)
+        try { $resolvedPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    }
+
     $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 
     if ($existing) {
         Write-Host "Updating existing service '$ServiceName'..."
-        # sc.exe config is the most reliable way to update the binary path
         $result = sc.exe config $ServiceName binPath= "`"$Binary`""
-        if ($LASTEXITCODE -ne 0) {
-            throw "sc.exe config failed (exit $LASTEXITCODE): $result"
+        if ($LASTEXITCODE -ne 0) { throw "sc.exe config failed (exit $LASTEXITCODE): $result" }
+        if ($resolvedUser -ne "") {
+            $result = sc.exe config $ServiceName obj= $resolvedUser password= $resolvedPassword
+            if ($LASTEXITCODE -ne 0) { throw "sc.exe config (user) failed (exit $LASTEXITCODE): $result" }
+            Write-Host "Service account updated to '$resolvedUser'." -ForegroundColor Cyan
         }
     } else {
         Write-Host "Registering Windows Service '$ServiceName'..."
-        $result = sc.exe create $ServiceName binPath= "`"$Binary`"" start= auto DisplayName= $ServiceName
-        if ($LASTEXITCODE -ne 0) {
-            throw "sc.exe create failed (exit $LASTEXITCODE): $result"
+        if ($resolvedUser -ne "") {
+            $result = sc.exe create $ServiceName binPath= "`"$Binary`"" start= auto DisplayName= $ServiceName obj= $resolvedUser password= $resolvedPassword
+        } else {
+            $result = sc.exe create $ServiceName binPath= "`"$Binary`"" start= auto DisplayName= $ServiceName
         }
+        if ($LASTEXITCODE -ne 0) { throw "sc.exe create failed (exit $LASTEXITCODE): $result" }
         sc.exe description $ServiceName $ServiceDesc | Out-Null
+        if ($resolvedUser -ne "") {
+            Write-Host "Service will run as '$resolvedUser'." -ForegroundColor Cyan
+        } else {
+            Write-Host "Service will run as LocalSystem. Use -ServiceUser for a dedicated low-privilege account." -ForegroundColor Yellow
+        }
     }
 
     Write-Host "Starting service '$ServiceName'..."

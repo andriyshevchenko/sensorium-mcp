@@ -58,7 +58,7 @@ func runAsService() error {
 	return svc.Run(serviceName, &supervisorService{})
 }
 
-func installService(exePath string) error {
+func installService(exePath, serviceUser, servicePassword string) error {
 	m, err := mgr.Connect()
 	if err != nil {
 		return fmt.Errorf("install failed: connect to service manager: %w", err)
@@ -71,12 +71,21 @@ func installService(exePath string) error {
 		return fmt.Errorf("install failed: service %q already exists", serviceName)
 	}
 
-	s, err = m.CreateService(serviceName, exePath, mgr.Config{
+	cfg := mgr.Config{
 		DisplayName:      serviceDisplay,
 		Description:      serviceDesc,
 		StartType:        mgr.StartAutomatic,
 		DelayedAutoStart: true,
-	})
+	}
+	if serviceUser != "" {
+		cfg.ServiceStartName = serviceUser
+		cfg.Password = servicePassword
+		fmt.Printf("Installing service as user %q\n", serviceUser)
+	} else {
+		fmt.Println("Installing service as LocalSystem (default). Use -service-user to run as a specific user account.")
+	}
+
+	s, err = m.CreateService(serviceName, exePath, cfg)
 	if err != nil {
 		return fmt.Errorf("install failed: create service: %w", err)
 	}
