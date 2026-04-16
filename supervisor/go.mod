@@ -7,6 +7,8 @@ require (
 	golang.org/x/sys v0.30.0
 )
 
+require github.com/andriyshevchenko/sandboxed-ui/securevault-go v0.1.0
+
 require (
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect

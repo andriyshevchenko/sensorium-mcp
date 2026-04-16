@@ -12,19 +12,21 @@ import (
 // with sensible defaults matching the TypeScript watcher-service.ts CONFIG object.
 type Config struct {
 	// Watcher
-	Mode             string
-	PollAtHour       int
-	PollInterval     time.Duration
-	GracePeriod      time.Duration
-	MinUptime        time.Duration
-	MCPStartCommand  string
-	DataDir          string
-	KeyringService   string
-	MCPHttpPort      int
-	MCPHttpSecret    string
-	TelegramToken    string
-	TelegramChatID   string
-	HealthFailThresh int
+	Mode               string
+	PollAtHour         int
+	PollInterval       time.Duration
+	GracePeriod        time.Duration
+	MinUptime          time.Duration
+	MCPStartCommand    string
+	DataDir            string
+	KeyringService     string
+	SecureVaultProfile string
+	SecureVaultBaseDir string
+	MCPHttpPort        int
+	MCPHttpSecret      string
+	TelegramToken      string
+	TelegramChatID     string
+	HealthFailThresh   int
 
 	// Keeper defaults
 	KeeperBaseBackoff         time.Duration
@@ -71,15 +73,17 @@ func LoadConfig() Config {
 	}
 
 	c := Config{
-		Mode:             mode,
-		PollAtHour:       envInt("WATCHER_POLL_HOUR", 4),
-		PollInterval:     time.Duration(envInt("WATCHER_POLL_INTERVAL", 60)) * time.Second,
-		GracePeriod:      time.Duration(envInt("WATCHER_GRACE_PERIOD", graceDef)) * time.Second,
-		MinUptime:        600 * time.Second,
-		MCPStartCommand:  envOr("MCP_START_COMMAND", "npx -y sensorium-mcp@latest"),
-		DataDir:          dataDir,
-		KeyringService:   envOr("SUPERVISOR_KEYRING_SERVICE", defaultKeyringService),
-		HealthFailThresh: 3,
+		Mode:               mode,
+		PollAtHour:         envInt("WATCHER_POLL_HOUR", 4),
+		PollInterval:       time.Duration(envInt("WATCHER_POLL_INTERVAL", 60)) * time.Second,
+		GracePeriod:        time.Duration(envInt("WATCHER_GRACE_PERIOD", graceDef)) * time.Second,
+		MinUptime:          600 * time.Second,
+		MCPStartCommand:    envOr("MCP_START_COMMAND", "npx -y sensorium-mcp@latest"),
+		DataDir:            dataDir,
+		KeyringService:     envOr("SUPERVISOR_KEYRING_SERVICE", defaultKeyringService),
+		SecureVaultProfile: os.Getenv("SUPERVISOR_SECUREVAULT_PROFILE"),
+		SecureVaultBaseDir: os.Getenv("SUPERVISOR_SECUREVAULT_BASEDIR"),
+		HealthFailThresh:   3,
 
 		KeeperBaseBackoff:         5 * time.Second,
 		KeeperMaxBackoff:          5 * time.Minute,
@@ -111,10 +115,19 @@ func LoadConfig() Config {
 		},
 	}
 
-	c.MCPHttpPort = resolveIntWithKeyring("MCP_HTTP_PORT", c.KeyringService, 0)
-	c.MCPHttpSecret = resolveSecretWithKeyring("MCP_HTTP_SECRET", c.KeyringService)
-	c.TelegramToken = resolveSecretWithKeyring("TELEGRAM_TOKEN", c.KeyringService)
-	c.TelegramChatID = resolveSecretWithKeyring("TELEGRAM_CHAT_ID", c.KeyringService)
+	// Use the full chain (env → SecureVault → keyring) when a profile is configured;
+	// otherwise fall back to the plain env → keyring path.
+	if c.SecureVaultProfile != "" {
+		c.MCPHttpPort = resolveIntChain("MCP_HTTP_PORT", c.SecureVaultProfile, c.SecureVaultBaseDir, c.KeyringService, 0)
+		c.MCPHttpSecret = resolveStringChain("MCP_HTTP_SECRET", c.SecureVaultProfile, c.SecureVaultBaseDir, c.KeyringService)
+		c.TelegramToken = resolveStringChain("TELEGRAM_TOKEN", c.SecureVaultProfile, c.SecureVaultBaseDir, c.KeyringService)
+		c.TelegramChatID = resolveStringChain("TELEGRAM_CHAT_ID", c.SecureVaultProfile, c.SecureVaultBaseDir, c.KeyringService)
+	} else {
+		c.MCPHttpPort = resolveIntWithKeyring("MCP_HTTP_PORT", c.KeyringService, 0)
+		c.MCPHttpSecret = resolveSecretWithKeyring("MCP_HTTP_SECRET", c.KeyringService)
+		c.TelegramToken = resolveSecretWithKeyring("TELEGRAM_TOKEN", c.KeyringService)
+		c.TelegramChatID = resolveSecretWithKeyring("TELEGRAM_CHAT_ID", c.KeyringService)
+	}
 
 	return c
 }
