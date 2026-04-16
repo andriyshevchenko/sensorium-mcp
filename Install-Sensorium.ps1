@@ -3,12 +3,15 @@
 .SYNOPSIS
     Install or update sensorium-supervisor from GitHub Releases.
 .DESCRIPTION
-    Downloads the latest sensorium-supervisor.exe from GitHub Releases
+    Downloads the latest sensorium-supervisor release binary from GitHub Releases
     (tag: supervisor-latest, repo: andriyshevchenko/sensorium-mcp) and places
-    it in ~/.remote-copilot-mcp/bin/.
+    it in ~/.remote-copilot-mcp/bin/ as sensorium-supervisor.exe.
 
-    If running as Administrator, registers and manages a Windows Service named
-    'SensoriumSupervisor'. Otherwise starts the supervisor as a background process.
+    Default behavior installs user-context autorun via shell:startup and starts
+    the supervisor as a background process immediately.
+
+    If -ServiceUser is provided while running as Administrator, the script instead
+    registers and manages a Windows Service named 'SensoriumSupervisor'.
 
     Re-running this script performs an update: stops the existing service/process,
     replaces the binary, then restarts.
@@ -20,20 +23,18 @@
     Explicitly force update mode even if the binary doesn't exist yet.
 .PARAMETER ServiceUser
     Windows account to run the service as (e.g. ".\sensorium-svc" or "DOMAIN\user").
-    Defaults to LocalSystem when not supplied.
+    When omitted, the installer uses shell:startup autorun in the current user context.
 .PARAMETER ServicePassword
-    Password for the service account. Prompted securely if -ServiceUser is set but
-    -ServicePassword is omitted.
+    SecureString password for the service account. Prompted securely if -ServiceUser
+    is set but -ServicePassword is omitted.
 .EXAMPLE
     .\Install-Sensorium.ps1
-    .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc"
-    # Script prompts securely for the password when needed:
     .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc"
 #>
 param(
     [switch]$Update,
     [string]$ServiceUser = "",
-    [string]$ServicePassword = ""
+    [System.Security.SecureString]$ServicePassword
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,12 +43,15 @@ $ErrorActionPreference = "Stop"
 $GithubRepo   = "andriyshevchenko/sensorium-mcp"
 $ReleaseTag   = "supervisor-latest"
 $AssetName    = "sensorium-supervisor-windows-amd64.exe"
+$InstalledBinaryName = "sensorium-supervisor.exe"
 $ServiceName  = "SensoriumSupervisor"
 $ServiceDesc  = "Sensorium MCP Supervisor - manages the sensorium-mcp npx process"
 
 $DataDir = Join-Path $env:USERPROFILE ".remote-copilot-mcp"
 $BinDir  = Join-Path $DataDir "bin"
-$Binary  = Join-Path $BinDir $AssetName
+$Binary  = Join-Path $BinDir $InstalledBinaryName
+$StartupDir = [Environment]::GetFolderPath("Startup")
+$StartupLauncher = Join-Path $StartupDir "SensoriumSupervisor.cmd"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 function Test-IsAdmin {
@@ -86,7 +90,16 @@ function Stop-SupervisorProcess {
     }
 }
 
-function Download-Binary {
+function Convert-SecureStringToPlainText {
+    param([System.Security.SecureString]$Value)
+
+    if (-not $Value) { return "" }
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+}
+
+function Get-BinaryAsset {
     param([string]$Destination)
 
     $apiUrl = "https://api.github.com/repos/$GithubRepo/releases/tags/$ReleaseTag"
@@ -124,19 +137,34 @@ function Download-Binary {
     Write-Host "Binary placed at: $Destination" -ForegroundColor Green
 }
 
+function Install-StartupLauncher {
+    $launcherContent = @(
+        "@echo off",
+        "start \"\" /min \"$Binary\""
+    ) -join [Environment]::NewLine
+
+    Set-Content -LiteralPath $StartupLauncher -Value $launcherContent -Encoding ASCII
+    Write-Host "Startup launcher installed: $StartupLauncher" -ForegroundColor Green
+}
+
+function Remove-StartupLauncher {
+    if (Test-Path -LiteralPath $StartupLauncher) {
+        Remove-Item -LiteralPath $StartupLauncher -Force
+        Write-Host "Startup launcher removed: $StartupLauncher" -ForegroundColor Yellow
+    }
+}
+
 function Install-AsService {
     # Resolve service identity
     $resolvedUser = $ServiceUser
-    $resolvedPassword = $ServicePassword
-    if ($resolvedUser -ne "" -and $resolvedPassword -eq "") {
+    $resolvedPassword = Convert-SecureStringToPlainText $ServicePassword
+    if ($resolvedUser -ne "" -and [string]::IsNullOrWhiteSpace($resolvedPassword)) {
         # NOTE: The resolved plain-text password is passed to sc.exe as a command-line
         # argument. This is unavoidable with sc.exe and is standard Windows practice for
         # service installation. Minimize exposure by using a dedicated service account
         # with a strong password and restricting its access scopes.
         $securePass = Read-Host "Password for service account '$resolvedUser'" -AsSecureString
-        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePass)
-        try { $resolvedPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
-        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+        $resolvedPassword = Convert-SecureStringToPlainText $securePass
     }
 
     $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -175,7 +203,7 @@ function Install-AsService {
 }
 
 function Start-AsBackground {
-    Write-Host "Starting sensorium-supervisor as a background process (non-admin mode)..."
+    Write-Host "Starting sensorium-supervisor as a background process..."
     $logOut = Join-Path $DataDir "supervisor.log"
     $logErr = Join-Path $DataDir "supervisor-error.log"
     Start-Process -FilePath $Binary `
@@ -187,8 +215,8 @@ function Start-AsBackground {
 }
 
 function Show-Status {
-    param([bool]$IsAdminContext)
-    if ($IsAdminContext) {
+    param([bool]$IsServiceMode)
+    if ($IsServiceMode) {
         $state = Get-ServiceState
         if ($state -eq "Running") {
             Write-Host "`n[OK] Service '$ServiceName' is RUNNING." -ForegroundColor Green
@@ -197,6 +225,11 @@ function Show-Status {
         }
     } else {
         $procs = Get-Process -Name "sensorium-supervisor" -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $StartupLauncher) {
+            Write-Host "[OK] Autorun launcher present: $StartupLauncher" -ForegroundColor Green
+        } else {
+            Write-Host "[WARN] Autorun launcher missing: $StartupLauncher" -ForegroundColor Yellow
+        }
         if ($procs) {
             Write-Host "`n[OK] sensorium-supervisor is RUNNING (PID: $(($procs | Select-Object -ExpandProperty Id) -join ', '))." -ForegroundColor Green
         } else {
@@ -209,6 +242,7 @@ function Show-Status {
 $isAdmin       = Test-IsAdmin
 $alreadyExists = Test-Path $Binary
 $isUpdate      = $Update -or $alreadyExists
+$useService    = $isAdmin -and -not [string]::IsNullOrWhiteSpace($ServiceUser)
 
 Write-Host ""
 if ($isUpdate) {
@@ -217,12 +251,13 @@ if ($isUpdate) {
     Write-Host "=== Sensorium Supervisor INSTALL ===" -ForegroundColor Cyan
 }
 Write-Host "Admin mode : $isAdmin"
+Write-Host "Install mode: $(if ($useService) { 'service' } else { 'startup' })"
 Write-Host "Binary     : $Binary"
 Write-Host ""
 
 # Step 1 — stop existing instance
 if ($isUpdate) {
-    if ($isAdmin) {
+    if ($useService) {
         Stop-SupervisorService
     } else {
         Stop-SupervisorProcess
@@ -233,15 +268,16 @@ if ($isUpdate) {
 New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 
 # Step 3 — download binary
-Download-Binary -Destination $Binary
+Get-BinaryAsset -Destination $Binary
 
 # Step 4 — register / start
-if ($isAdmin) {
+if ($useService) {
+    Remove-StartupLauncher
     Install-AsService
 } else {
-    Write-Host "Not running as Administrator - skipping service registration." -ForegroundColor Yellow
+    Install-StartupLauncher
     Start-AsBackground
 }
 
 # Step 5 — verify
-Show-Status -IsAdminContext $isAdmin
+Show-Status -IsServiceMode $useService

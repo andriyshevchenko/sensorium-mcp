@@ -199,27 +199,19 @@ Add it alongside `sensorium-mcp` in your agent's MCP config:
 
 If the watcher is not configured, the maintenance response falls back to a Desktop Commander sleep command.
 
-## Supervisor Host Modes (Windows)
+## Supervisor Install (Windows)
 
-The Go supervisor supports `HOST_MODE` values:
-
-- `service` - intended for Windows Service hosting
-- `task` - intended for Task Scheduler user-context hosting
-
-Default behavior is automatic:
-
-- running as a Windows service -> default `service`
-- not running as a Windows service -> default `task`
-
-For local SecureVault setups, prefer **Task Scheduler** (user context) so profile-scoped secrets resolve under your user account:
+Use the distribution installer at the repository/package root:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-supervisor-task.ps1
+powershell -ExecutionPolicy Bypass -File .\Install-Sensorium.ps1
 ```
 
-Use `-Status` to inspect task state, and `-Uninstall` to remove it.
+Default behavior installs the supervisor binary under `~/.remote-copilot-mcp/bin/`, adds a `shell:startup` launcher for the current user, and starts the supervisor immediately.
 
-The helper script installs an **AtLogOn** trigger for your current user with unlimited run time (`ExecutionTimeLimit=0`). In user-context mode this is the reliable behavior: the supervisor starts when that user signs in (not pre-login at machine boot).
+If you explicitly pass `-ServiceUser` while running as Administrator, the installer configures a Windows Service instead.
+
+For local SecureVault setups, prefer the default user-context startup mode so profile-scoped secrets resolve under your user account.
 
 ## How It Works
 
