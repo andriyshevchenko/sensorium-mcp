@@ -80,7 +80,11 @@ func installService(exePath, serviceUser, servicePassword string) error {
 	if serviceUser != "" {
 		cfg.ServiceStartName = serviceUser
 		cfg.Password = servicePassword
-		fmt.Printf("Installing service as user %q\n", serviceUser)
+		if servicePassword == "" {
+			fmt.Printf("Installing service as passwordless identity %q\n", serviceUser)
+		} else {
+			fmt.Printf("Installing service as user %q\n", serviceUser)
+		}
 	} else {
 		fmt.Println("Installing service as LocalSystem (default). Use -service-user to run as a specific user account.")
 	}

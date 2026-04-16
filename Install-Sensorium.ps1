@@ -27,7 +27,8 @@
 .EXAMPLE
     .\Install-Sensorium.ps1
     .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc"
-    .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc" -ServicePassword "s3cr3t"
+    # Script prompts securely for the password when needed:
+    .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc"
 #>
 param(
     [switch]$Update,
@@ -148,6 +149,10 @@ function Install-AsService {
             $result = sc.exe config $ServiceName obj= $resolvedUser password= $resolvedPassword
             if ($LASTEXITCODE -ne 0) { throw "sc.exe config (user) failed (exit $LASTEXITCODE): $result" }
             Write-Host "Service account updated to '$resolvedUser'." -ForegroundColor Cyan
+        } else {
+            $result = sc.exe config $ServiceName obj= LocalSystem
+            if ($LASTEXITCODE -ne 0) { throw "sc.exe config (LocalSystem) failed (exit $LASTEXITCODE): $result" }
+            Write-Host "Service account reset to LocalSystem (default)." -ForegroundColor Yellow
         }
     } else {
         Write-Host "Registering Windows Service '$ServiceName'..."

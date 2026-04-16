@@ -6,7 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	sv "github.com/andriyshevchenko/sandboxed-ui/securevault-go"
+	sv "github.com/andriyshevchenko/SecureVault/securevault-go"
+	"github.com/zalando/go-keyring"
 )
 
 // writeProfileFixture writes a minimal profiles.json to dir and returns the dir.
@@ -36,7 +37,7 @@ func TestResolveStringChain_EnvWins(t *testing.T) {
 	}
 }
 
-func TestResolveStringChain_SecureVaultFallback_MissingCred(t *testing.T) {
+func TestResolveStringChain_SecureVaultFallback_MissingCred_UsesKeyring(t *testing.T) {
 	t.Setenv("TELEGRAM_TOKEN", "")
 	dir := t.TempDir()
 	writeProfileFixture(t, dir, []sv.Profile{
@@ -45,19 +46,39 @@ func TestResolveStringChain_SecureVaultFallback_MissingCred(t *testing.T) {
 		}},
 	})
 
-	// Credential not in store → falls through to keyring, then empty.
-	got := resolveStringChain("TELEGRAM_TOKEN", "TEST", dir, "")
-	// Should be empty (no env, no real cred in store, no keyring entry in test context).
-	// We only assert no panic and that the result is a string.
-	_ = got
+	orig := keyringGet
+	keyringGet = func(service, user string) (string, error) {
+		if service != "sensorium-supervisor" {
+			t.Fatalf("service = %q, want %q", service, "sensorium-supervisor")
+		}
+		if user != "TELEGRAM_TOKEN" {
+			t.Fatalf("user = %q, want %q", user, "TELEGRAM_TOKEN")
+		}
+		return "from-keyring", nil
+	}
+	t.Cleanup(func() { keyringGet = orig })
+
+	// Credential not in store → falls through to keyring.
+	got := resolveStringChain("TELEGRAM_TOKEN", "TEST", dir, "sensorium-supervisor")
+	if got != "from-keyring" {
+		t.Errorf("resolveStringChain = %q, want from-keyring", got)
+	}
 }
 
 func TestResolveStringChain_NoProfile_FallsToKeyring(t *testing.T) {
 	t.Setenv("TELEGRAM_TOKEN", "")
+
+	orig := keyringGet
+	keyringGet = func(service, user string) (string, error) {
+		return "", keyring.ErrNotFound
+	}
+	t.Cleanup(func() { keyringGet = orig })
+
 	// No profiles file in dir → securevault returns empty → keyring path taken.
-	got := resolveStringChain("TELEGRAM_TOKEN", "NONEXISTENT_PROFILE", t.TempDir(), "")
-	// Result is empty in test context (no keyring entry), but no panic.
-	_ = got
+	got := resolveStringChain("TELEGRAM_TOKEN", "NONEXISTENT_PROFILE", t.TempDir(), "sensorium-supervisor")
+	if got != "" {
+		t.Errorf("resolveStringChain = %q, want empty", got)
+	}
 }
 
 func TestResolveIntChain_EnvWins(t *testing.T) {

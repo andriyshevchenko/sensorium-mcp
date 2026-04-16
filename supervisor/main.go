@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -58,12 +59,12 @@ func handleServiceCommand(args []string) (bool, error) {
 	case "install":
 		fs := flag.NewFlagSet("install", flag.ContinueOnError)
 		serviceUser := fs.String("service-user", "", "Windows account to run service as (e.g. .\\YourUser). Defaults to LocalSystem if empty.")
-		servicePassword := fs.String("service-password", "", "Password for the service account (required when -service-user is set).")
+		servicePassword := fs.String("service-password", "", "Password for the service account (required for regular user accounts; not needed for LocalSystem/LocalService/NetworkService, NT SERVICE\\*, or gMSA names ending with '$').")
 		if err := fs.Parse(args[1:]); err != nil {
 			return true, err
 		}
-		if *serviceUser != "" && *servicePassword == "" {
-			return true, fmt.Errorf("install failed: -service-password is required when -service-user is set\nNote: passing passwords via command-line arguments is visible in process listings; prefer using the Install-Sensorium.ps1 script which prompts securely")
+		if *serviceUser != "" && *servicePassword == "" && !isPasswordlessServiceIdentity(*serviceUser) {
+			return true, fmt.Errorf("install failed: -service-password is required for regular -service-user accounts\nAllowed passwordless identities: LocalSystem/LocalService/NetworkService, NT SERVICE\\*, and gMSA names ending with '$'\nNote: prefer using Install-Sensorium.ps1, which prompts securely for passwords")
 		}
 		exePath, err := os.Executable()
 		if err != nil {
@@ -81,6 +82,25 @@ func handleServiceCommand(args []string) (bool, error) {
 	default:
 		return false, nil
 	}
+}
+
+func isPasswordlessServiceIdentity(user string) bool {
+	trimmed := strings.TrimSpace(user)
+	if trimmed == "" {
+		return false
+	}
+
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "localsystem", "nt authority\\system", "localservice", "nt authority\\localservice", "networkservice", "nt authority\\networkservice":
+		return true
+	}
+
+	if strings.HasPrefix(lower, "nt service\\") {
+		return true
+	}
+
+	return strings.HasSuffix(trimmed, "$")
 }
 
 func stopSupervisor() {
