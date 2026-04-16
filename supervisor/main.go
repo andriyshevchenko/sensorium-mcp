@@ -395,6 +395,10 @@ func fetchKeeperSettings(ctx context.Context, mcp *MCPClient, log *Logger) ([]Ke
 			continue
 		}
 
+		if typ, _ := r["type"].(string); typ == "worker" {
+			continue
+		}
+
 		// Skip non-active roots (archived, expired, exited)
 		if status, _ := r["status"].(string); status != "" && status != "active" {
 			continue

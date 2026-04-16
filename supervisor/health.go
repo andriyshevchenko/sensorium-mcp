@@ -103,7 +103,39 @@ func (m *MCPClient) GetRootThreads(ctx context.Context) ([]map[string]any, error
 
 // GetKeepAliveThreads fetches all threads with keepAlive=true (excluding worker threads).
 func (m *MCPClient) GetKeepAliveThreads(ctx context.Context) ([]map[string]any, error) {
-	return m.fetchThreadList(ctx, "/api/threads/keepalive")
+	threads, err := m.fetchThreadList(ctx, "/api/threads/keepalive")
+	if err == nil {
+		return threads, nil
+	}
+
+	// Backward compatibility: older MCP builds may not expose /api/threads/keepalive.
+	if strings.Contains(err.Error(), "GET /api/threads/keepalive: 404") {
+		if m.Log != nil {
+			m.Log.Warn("/api/threads/keepalive unavailable (404); falling back to /api/threads with client-side filtering")
+		}
+		allThreads, err2 := m.fetchThreadList(ctx, "/api/threads")
+		if err2 != nil {
+			return nil, err2
+		}
+		return filterKeepAliveThreads(allThreads), nil
+	}
+
+	return nil, err
+}
+
+func filterKeepAliveThreads(threads []map[string]any) []map[string]any {
+	result := make([]map[string]any, 0, len(threads))
+	for _, t := range threads {
+		keepAlive, _ := t["keepAlive"].(bool)
+		if !keepAlive {
+			continue
+		}
+		if typ, _ := t["type"].(string); typ == "worker" {
+			continue
+		}
+		result = append(result, t)
+	}
+	return result
 }
 
 // fetchThreadList is a shared helper for thread-list endpoints.
