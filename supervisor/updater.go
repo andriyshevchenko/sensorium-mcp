@@ -17,11 +17,18 @@ import (
 const registryURL = "https://registry.npmjs.org/sensorium-mcp/latest"
 const supervisorReleaseURL = "https://api.github.com/repos/andriyshevchenko/remote-copilot-mcp/releases/tags/supervisor-latest"
 
+var (
+	notifyUpdaterOperator      = NotifyOperator
+	mcpUpdateReadyPollInterval = 3 * time.Second
+	mcpUpdateReadyTimeout      = 60 * time.Second
+)
+
 // Updater checks the npm registry for new versions and performs updates.
 type Updater struct {
 	cfg     Config
 	mcp     *MCPClient
 	log     *Logger
+	state   *UpdateStateStore
 	startAt time.Time
 	cancel  context.CancelFunc
 	done    chan struct{}
@@ -32,6 +39,7 @@ func NewUpdater(cfg Config, mcp *MCPClient, log *Logger) *Updater {
 		cfg:     cfg,
 		mcp:     mcp,
 		log:     log,
+		state:   NewUpdateStateStore(cfg.Paths.UpdateState, log),
 		startAt: time.Now(),
 		done:    make(chan struct{}),
 	}
@@ -166,12 +174,25 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 	}
 
 	u.log.Info("Update available: %s → %s", local, remote)
-	NotifyOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: updating sensorium v%s → v%s. Grace period %v...", local, remote, u.cfg.GracePeriod), 0)
+	coordLock, ok := AcquireUpdateCoordinatorLock(u.cfg.Paths.UpdateApplyLock, updateScopeMCP, u.log)
+	if !ok {
+		u.log.Info("Deferring MCP update %s → %s due to active update apply lock", local, remote)
+		return
+	}
+	defer coordLock.Release()
+
+	u.state.Transition(updateScopeMCP, updatePhaseApplying, remote, local, "")
+	markFailed := func(err error) {
+		u.state.Transition(updateScopeMCP, updatePhaseFailed, remote, local, err.Error())
+	}
+
+	notifyUpdaterOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: updating sensorium v%s → v%s. Grace period %v...", local, remote, u.cfg.GracePeriod), 0)
 
 	// Grace period
 	u.log.Info("Grace period %v...", u.cfg.GracePeriod)
 	select {
 	case <-ctx.Done():
+		markFailed(ctx.Err())
 		return
 	case <-time.After(u.cfg.GracePeriod):
 	}
@@ -192,12 +213,15 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 
 	// Kill the current MCP server
 	if ctx.Err() != nil {
+		markFailed(ctx.Err())
 		return
 	}
+	u.state.Transition(updateScopeMCP, updatePhaseRestarting, remote, local, "")
 	u.killServer()
 
 	// Clean npx cache
 	if ctx.Err() != nil {
+		markFailed(ctx.Err())
 		return
 	}
 	u.clearNpxCache()
@@ -206,6 +230,7 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 	var pid int
 	for attempt := 1; attempt <= 3; attempt++ {
 		if ctx.Err() != nil {
+			markFailed(ctx.Err())
 			return
 		}
 		pid, err = SpawnMCPServer(u.cfg, u.log)
@@ -219,24 +244,37 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 	}
 	if err != nil {
 		u.log.Error("All spawn attempts failed — server is down!")
-		NotifyOperator(u.cfg, u.log, "🔴 Supervisor: update FAILED — server is down! Manual intervention required.", 0)
+		markFailed(err)
+		notifyUpdaterOperator(u.cfg, u.log, "🔴 Supervisor: update FAILED — server is down! Manual intervention required.", 0)
 		return
 	}
 
-	// Wait for new server to be ready
-	if u.mcp.WaitForReady(ctx, 3*time.Second, 60*time.Second) {
-		u.log.Info("Updated MCP server ready (PID %d)", pid)
-	} else {
-		u.log.Warn("Updated server did not become ready in 60s")
+	if !u.verifyUpdatedMCPServerReady(ctx, remote, local, pid) {
+		return
 	}
 
 	u.setLocalVersion(remote)
+	u.state.Transition(updateScopeMCP, updatePhaseIdle, remote, local, "")
 
-	NotifyOperator(u.cfg, u.log, fmt.Sprintf("✅ Supervisor: update to v%s complete. Server ready.", remote), 0)
+	notifyUpdaterOperator(u.cfg, u.log, fmt.Sprintf("✅ Supervisor: update to v%s complete. Server ready.", remote), 0)
 	u.log.Info("Update complete: v%s → v%s", local, remote)
 
 	// Reset start time for min uptime tracking
 	u.startAt = time.Now()
+}
+
+func (u *Updater) verifyUpdatedMCPServerReady(ctx context.Context, remote, local string, pid int) bool {
+	u.state.Transition(updateScopeMCP, updatePhaseVerifying, remote, local, "")
+	if u.mcp.WaitForReady(ctx, mcpUpdateReadyPollInterval, mcpUpdateReadyTimeout) {
+		u.log.Info("Updated MCP server ready (PID %d)", pid)
+		return true
+	}
+
+	errMsg := fmt.Sprintf("updated MCP server did not become ready within %v after restart (pid=%d)", mcpUpdateReadyTimeout, pid)
+	u.log.Error(errMsg)
+	u.state.Transition(updateScopeMCP, updatePhaseFailed, remote, local, errMsg)
+	notifyUpdaterOperator(u.cfg, u.log, fmt.Sprintf("🔴 Supervisor: update to v%s FAILED verification. Server did not become ready after restart.", remote), 0)
+	return false
 }
 
 type githubRelease struct {
@@ -357,46 +395,65 @@ func (u *Updater) checkSupervisorUpdate(ctx context.Context) {
 	}
 
 	u.log.Info("Supervisor update available: %s → %s", local, remote)
-	NotifyOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: updating binary %s → %s. Grace period %v...", local, remote, u.cfg.GracePeriod), 0)
+	coordLock, ok := AcquireUpdateCoordinatorLock(u.cfg.Paths.UpdateApplyLock, updateScopeSupervisor, u.log)
+	if !ok {
+		u.log.Info("Deferring supervisor binary update %s → %s due to active update apply lock", local, remote)
+		return
+	}
+	defer coordLock.Release()
+
+	markFailed := func(err error) {
+		u.state.Transition(updateScopeSupervisor, updatePhaseFailed, remote, local, err.Error())
+	}
+
+	notifyUpdaterOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: updating binary %s → %s. Grace period %v...", local, remote, u.cfg.GracePeriod), 0)
 
 	select {
 	case <-ctx.Done():
+		markFailed(ctx.Err())
 		return
 	case <-time.After(u.cfg.GracePeriod):
 	}
 
 	if err := u.downloadSupervisorBinary(ctx, downloadURL); err != nil {
+		markFailed(err)
 		u.log.Error("Supervisor binary download failed: %v", err)
-		NotifyOperator(u.cfg, u.log, fmt.Sprintf("🔴 Supervisor: binary update to %s failed during download.", remote), 0)
+		notifyUpdaterOperator(u.cfg, u.log, fmt.Sprintf("🔴 Supervisor: binary update to %s failed during download.", remote), 0)
 		return
 	}
 
 	if err := u.stagePendingSupervisorVersion(remote); err != nil {
 		_ = os.Remove(u.cfg.Paths.PendingBinary)
+		markFailed(err)
 		u.log.Error("Failed to stage supervisor version %s: %v", remote, err)
-		NotifyOperator(u.cfg, u.log, fmt.Sprintf("🔴 Supervisor: binary update to %s failed during staging.", remote), 0)
+		notifyUpdaterOperator(u.cfg, u.log, fmt.Sprintf("🔴 Supervisor: binary update to %s failed during staging.", remote), 0)
 		return
 	}
-	NotifyOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: downloaded %s. Restarting supervisor to apply update...", remote), 0)
+	u.state.Transition(updateScopeSupervisor, updatePhaseStaged, remote, local, "")
+	notifyUpdaterOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: downloaded %s. Restarting supervisor to apply update...", remote), 0)
 
 	isService, err := isWindowsService()
 	if err != nil {
+		markFailed(err)
 		u.log.Error("Failed to detect service mode for restart: %v", err)
-		NotifyOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but service detection failed.", 0)
+		notifyUpdaterOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but service detection failed.", 0)
 		return
 	}
+	u.state.Transition(updateScopeSupervisor, updatePhaseRestarting, remote, local, "")
 
 	if isService {
 		if err := scheduleServiceRestartForUpdate(u.log); err != nil {
+			markFailed(err)
 			u.log.Error("Failed to schedule service restart: %v", err)
-			NotifyOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but service restart scheduling failed.", 0)
+			notifyUpdaterOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but service restart scheduling failed.", 0)
 		}
 		return
 	}
 
 	if err := signalSelf(syscall.SIGTERM); err != nil {
+		markFailed(err)
 		u.log.Error("Failed to signal supervisor for restart: %v", err)
-		NotifyOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but restart signal failed.", 0)
+		notifyUpdaterOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but restart signal failed.", 0)
 	}
 }
 

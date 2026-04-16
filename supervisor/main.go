@@ -44,10 +44,19 @@ func main() {
 		return
 	}
 
-	if err := runSupervisor(); err != nil {
+	runningAsService := resolveRunSupervisorMode(isService, os.Getenv("HOST_MODE"))
+	if err := runSupervisor(runningAsService); err != nil {
 		fmt.Fprintf(os.Stderr, "Supervisor failed: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func resolveRunSupervisorMode(processIsService bool, hostModeValue string) bool {
+	if processIsService {
+		return true
+	}
+
+	return parseHostMode(hostModeValue, false) == "service"
 }
 
 func handleServiceCommand(args []string) (bool, error) {
@@ -112,8 +121,8 @@ func stopSupervisor() {
 	}
 }
 
-func runSupervisor() error {
-	cfg := LoadConfig()
+func runSupervisor(runningAsService bool) error {
+	cfg := LoadConfig(runningAsService)
 
 	if err := os.MkdirAll(cfg.DataDir, 0755); err != nil {
 		return fmt.Errorf("cannot create data dir %s: %w", cfg.DataDir, err)
@@ -121,6 +130,12 @@ func runSupervisor() error {
 
 	log := NewLogger(cfg.Paths.WatcherLog)
 	defer log.Close()
+
+	// Acquire lock — prevent multiple instances
+	if !AcquireLock(cfg.Paths.WatcherLock, log) {
+		return fmt.Errorf("another supervisor instance is already running")
+	}
+	defer ReleaseLock(cfg.Paths.WatcherLock)
 
 	shouldRestart, err := applyPendingSupervisorUpdate(cfg, log)
 	if err != nil {
@@ -130,7 +145,9 @@ func runSupervisor() error {
 		return nil
 	}
 
-	log.Info("sensorium-supervisor starting (mode=%s, port=%d, dataDir=%s)", cfg.Mode, cfg.MCPHttpPort, cfg.DataDir)
+	recoverPersistedUpdateStateOnStartup(cfg, log)
+
+	log.Info("sensorium-supervisor starting (mode=%s, hostMode=%s, port=%d, dataDir=%s)", cfg.Mode, cfg.HostMode, cfg.MCPHttpPort, cfg.DataDir)
 	log.Debug("Config: MCPStartCommand=%q, PollInterval=%v, MinUptime=%v, KeeperMaxRetries=%d", cfg.MCPStartCommand, cfg.PollInterval, cfg.MinUptime, cfg.KeeperMaxRetries)
 	log.Debug("Config: TelegramToken=%v, HealthFailThresh=%d, StuckThreshold=%v", cfg.TelegramToken != "", cfg.HealthFailThresh, cfg.StuckThreshold)
 
@@ -140,12 +157,6 @@ func runSupervisor() error {
 	if err := os.MkdirAll(cfg.Paths.HeartbeatsDir, 0755); err != nil {
 		log.Warn("Cannot create heartbeats dir %s: %v", cfg.Paths.HeartbeatsDir, err)
 	}
-
-	// Acquire lock — prevent multiple instances
-	if !AcquireLock(cfg.Paths.WatcherLock, log) {
-		return fmt.Errorf("another supervisor instance is already running")
-	}
-	defer ReleaseLock(cfg.Paths.WatcherLock)
 
 	if cfg.MCPHttpPort <= 0 {
 		log.Error("MCP_HTTP_PORT must be set (got %d)", cfg.MCPHttpPort)

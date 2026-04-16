@@ -155,7 +155,9 @@ func (m *MCPClient) IsThreadRunning(ctx context.Context, threadID int) bool {
 		}
 		return false
 	}
-	var result struct{ Running bool `json:"running"` }
+	var result struct {
+		Running bool `json:"running"`
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		if m.Log != nil {
 			m.Log.Debug("IsThreadRunning(%d): decode error: %v", threadID, err)

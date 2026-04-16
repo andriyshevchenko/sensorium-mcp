@@ -22,7 +22,7 @@ func (s *supervisorService) Execute(args []string, r <-chan svc.ChangeRequest, s
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runSupervisor()
+		done <- runSupervisor(true)
 	}()
 
 	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}

@@ -10,11 +10,16 @@ import (
 	"strings"
 )
 
+const supervisorRollbackAttemptedMarker = "rollback_attempted=true"
+const supervisorWindowsServiceName = "SensoriumSupervisor"
+
 // applyPendingSupervisorUpdate applies a downloaded supervisor binary before the
 // rest of the process starts. On Windows, a detached helper performs the swap
 // after this bootstrap process exits because a running .exe cannot overwrite
 // itself in place.
 func applyPendingSupervisorUpdate(cfg Config, log *Logger) (bool, error) {
+	recordPendingSupervisorApplyFailureIfPresent(cfg, log)
+
 	if _, err := os.Stat(cfg.Paths.PendingBinary); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if _, versionErr := os.Stat(cfg.Paths.PendingVersion); versionErr == nil {
@@ -35,11 +40,13 @@ func applyPendingSupervisorUpdate(cfg Config, log *Logger) (bool, error) {
 	if runtime.GOOS == "windows" {
 		isService, serviceErr := isWindowsService()
 		if serviceErr != nil {
+			markSupervisorApplyFailure(cfg, log, fmt.Sprintf("detect service mode for pending supervisor apply: %v", serviceErr))
 			cleanupPendingSupervisorUpdate(cfg, log)
 			return false, fmt.Errorf("detect service mode for pending supervisor apply: %w", serviceErr)
 		}
 
 		if err := launchWindowsApplyHelper(cfg, exePath, isService); err != nil {
+			markSupervisorApplyFailure(cfg, log, fmt.Sprintf("schedule pending supervisor apply: %v", err))
 			cleanupPendingSupervisorUpdate(cfg, log)
 			return false, fmt.Errorf("schedule pending supervisor apply: %w", err)
 		}
@@ -97,36 +104,7 @@ func launchWindowsApplyHelper(cfg Config, exePath string, restartViaService bool
 		return fmt.Errorf("create apply helper script: %w", err)
 	}
 
-	script := strings.Join([]string{
-		"@echo off",
-		"setlocal",
-		":wait",
-		fmt.Sprintf(`tasklist /FI "PID eq %d" 2>NUL | find "%d" >NUL`, os.Getpid(), os.Getpid()),
-		"if not errorlevel 1 (",
-		"  timeout /T 1 /NOBREAK >NUL",
-		"  goto wait",
-		")",
-		"set attempts=0",
-		":move",
-		fmt.Sprintf(`move /Y %s %s >NUL`, batchQuote(cfg.Paths.PendingBinary), batchQuote(exePath)),
-		"if not errorlevel 1 goto applied",
-		"set /a attempts+=1",
-		"if %attempts% GEQ 5 goto fail",
-		"timeout /T 1 /NOBREAK >NUL",
-		"goto move",
-		":applied",
-		fmt.Sprintf(`if exist %s move /Y %s %s >NUL`, batchQuote(cfg.Paths.PendingVersion), batchQuote(cfg.Paths.PendingVersion), batchQuote(cfg.Paths.SupervisorVersion)),
-		"exit /b 0",
-		":fail",
-		fmt.Sprintf(`if exist %s del /F /Q %s`, batchQuote(cfg.Paths.PendingBinary), batchQuote(cfg.Paths.PendingBinary)),
-		fmt.Sprintf(`if exist %s del /F /Q %s`, batchQuote(cfg.Paths.PendingVersion), batchQuote(cfg.Paths.PendingVersion)),
-		"exit /b 1",
-		"",
-	}, "\r\n")
-
-	if !restartViaService {
-		script = strings.Replace(script, "exit /b 0\r\n:fail", fmt.Sprintf("start \"\" %s\r\nexit /b 0\r\n:fail", batchQuote(exePath)), 1)
-	}
+	script := buildWindowsApplyHelperScript(cfg, exePath, restartViaService)
 
 	if _, err := scriptFile.WriteString(script); err != nil {
 		scriptFile.Close()
@@ -154,6 +132,151 @@ func launchWindowsApplyHelper(cfg Config, exePath string, restartViaService bool
 	return nil
 }
 
+func buildWindowsApplyHelperScript(cfg Config, exePath string, restartViaService bool) string {
+	failReason := fmt.Sprintf("helper failed to swap pending supervisor binary after retries (pending=%s current=%s)", cfg.Paths.PendingBinary, exePath)
+	escapedFailReason := batchEscapeForSetValue(failReason)
+
+	failLines := []string{
+		fmt.Sprintf(`set "FAIL_REASON=%s"`, escapedFailReason),
+		fmt.Sprintf(`<nul set /p "=%%FAIL_REASON%%" > %s`, batchQuote(supervisorApplyFailureMarkerPath(cfg))),
+		fmt.Sprintf(`if exist %s del /F /Q %s`, batchQuote(cfg.Paths.PendingBinary), batchQuote(cfg.Paths.PendingBinary)),
+		fmt.Sprintf(`if exist %s del /F /Q %s`, batchQuote(cfg.Paths.PendingVersion), batchQuote(cfg.Paths.PendingVersion)),
+	}
+
+	if restartViaService {
+		failLines = append(failLines,
+			fmt.Sprintf(`sc start %s >NUL 2>&1`, batchQuote(supervisorWindowsServiceName)),
+			"if errorlevel 1 (",
+			"  timeout /T 2 /NOBREAK >NUL",
+			fmt.Sprintf(`  sc start %s >NUL 2>&1`, batchQuote(supervisorWindowsServiceName)),
+			")",
+		)
+	} else {
+		failLines = append(failLines, fmt.Sprintf(`start "" %s`, batchQuote(exePath)))
+	}
+
+	failLines = append(failLines, "exit /b 1")
+
+	scriptLines := []string{
+		"@echo off",
+		"setlocal",
+		":wait",
+		fmt.Sprintf(`tasklist /FI "PID eq %d" 2>NUL | find "%d" >NUL`, os.Getpid(), os.Getpid()),
+		"if not errorlevel 1 (",
+		"  timeout /T 1 /NOBREAK >NUL",
+		"  goto wait",
+		")",
+		"set attempts=0",
+		":move",
+		fmt.Sprintf(`move /Y %s %s >NUL`, batchQuote(cfg.Paths.PendingBinary), batchQuote(exePath)),
+		"if not errorlevel 1 goto applied",
+		"set /a attempts+=1",
+		"if %attempts% GEQ 5 goto fail",
+		"timeout /T 1 /NOBREAK >NUL",
+		"goto move",
+		":applied",
+		fmt.Sprintf(`if exist %s move /Y %s %s >NUL`, batchQuote(cfg.Paths.PendingVersion), batchQuote(cfg.Paths.PendingVersion), batchQuote(cfg.Paths.SupervisorVersion)),
+		fmt.Sprintf(`if exist %s del /F /Q %s`, batchQuote(supervisorApplyFailureMarkerPath(cfg)), batchQuote(supervisorApplyFailureMarkerPath(cfg))),
+	}
+
+	if !restartViaService {
+		scriptLines = append(scriptLines, fmt.Sprintf(`start "" %s`, batchQuote(exePath)))
+	}
+
+	scriptLines = append(scriptLines,
+		"exit /b 0",
+		":fail",
+	)
+
+	scriptLines = append(scriptLines, failLines...)
+	scriptLines = append(scriptLines, "")
+
+	return strings.Join(scriptLines, "\r\n")
+}
+
+func supervisorApplyFailureMarkerPath(cfg Config) string {
+	return cfg.Paths.PendingBinary + ".failed"
+}
+
+func recordPendingSupervisorApplyFailureIfPresent(cfg Config, log *Logger) {
+	markerPath := supervisorApplyFailureMarkerPath(cfg)
+	data, err := os.ReadFile(markerPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Warn("Failed to read supervisor apply failure marker %s: %v", markerPath, err)
+		}
+		return
+	}
+
+	reason := strings.TrimSpace(string(data))
+	if reason == "" {
+		reason = "pending supervisor apply helper reported failure"
+	}
+
+	store := NewUpdateStateStore(cfg.Paths.UpdateState, log)
+	state, stateErr := store.Load()
+	if stateErr != nil {
+		log.Warn("Failed to load update state while reconciling supervisor apply failure marker: %v", stateErr)
+	}
+	targetVersion := strings.TrimSpace(state.TargetVersion)
+	if targetVersion == "" {
+		targetVersion = strings.TrimSpace(readTrimmedFile(cfg.Paths.PendingVersion))
+	}
+	if targetVersion != "" {
+		currentVersion := strings.TrimSpace(readTrimmedFile(cfg.Paths.SupervisorVersion))
+		if currentVersion == targetVersion {
+			log.Warn("Ignoring stale supervisor apply failure marker because supervisor version already matches target %s", targetVersion)
+			store.Transition(updateScopeSupervisor, updatePhaseIdle, targetVersion, state.PreviousVersion, "")
+			if err := os.Remove(markerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				log.Warn("Failed to remove stale supervisor apply failure marker %s: %v", markerPath, err)
+			}
+			return
+		}
+	}
+
+	markSupervisorApplyFailure(cfg, log, reason)
+
+	if err := os.Remove(markerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Warn("Failed to remove supervisor apply failure marker %s: %v", markerPath, err)
+	}
+}
+
+func markSupervisorApplyFailure(cfg Config, log *Logger, reason string) {
+	store := NewUpdateStateStore(cfg.Paths.UpdateState, log)
+	state, err := store.Load()
+	targetVersion := ""
+	previousVersion := ""
+	if err != nil {
+		log.Warn("Failed to load update state while marking supervisor apply failure: %v", err)
+	} else {
+		targetVersion = state.TargetVersion
+		previousVersion = state.PreviousVersion
+	}
+
+	if targetVersion == "" {
+		targetVersion = strings.TrimSpace(readTrimmedFile(cfg.Paths.PendingVersion))
+	}
+	if previousVersion == "" {
+		previousVersion = strings.TrimSpace(readTrimmedFile(cfg.Paths.SupervisorVersion))
+	}
+
+	lastError := reason
+	if !strings.Contains(lastError, supervisorRollbackAttemptedMarker) {
+		lastError = strings.TrimSpace(lastError + "; " + supervisorRollbackAttemptedMarker)
+	}
+
+	store.Transition(updateScopeSupervisor, updatePhaseRollback, targetVersion, previousVersion, lastError)
+	store.Transition(updateScopeSupervisor, updatePhaseFailed, targetVersion, previousVersion, lastError)
+}
+
 func batchQuote(path string) string {
 	return `"` + strings.ReplaceAll(path, `"`, `""`) + `"`
+}
+
+func batchEscapeForSetValue(value string) string {
+	value = strings.ReplaceAll(value, "\r", " ")
+	value = strings.ReplaceAll(value, "\n", " ")
+	value = strings.ReplaceAll(value, `%`, `%%`)
+	value = strings.ReplaceAll(value, `"`, `'`)
+	return value
 }
