@@ -29,7 +29,7 @@ if (process.argv.includes("--supervisor")) {
   } catch (e: any) {
     if (e.status != null) process.exit(e.status);
     console.error(`Failed to start supervisor: ${e.message}`);
-    console.error("Run 'npm run supervisor:install' first, or install Go and run scripts/install-supervisor.ps1");
+    console.error("Run 'npm run supervisor:install' first, or run Install-Sensorium.ps1 from the distribution root");
     process.exit(1);
   }
 } else {
