@@ -32,6 +32,24 @@ func SpawnMCPServer(cfg Config, log *Logger) (int, error) {
 
 	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Env = os.Environ()
+	for k, v := range cfg.ResolvedProfileEnv {
+		if v == "" {
+			continue
+		}
+		cmd.Env = upsertEnv(cmd.Env, k, v)
+	}
+	if cfg.MCPHttpPort > 0 {
+		cmd.Env = upsertEnv(cmd.Env, "MCP_HTTP_PORT", strconv.Itoa(cfg.MCPHttpPort))
+	}
+	if cfg.MCPHttpSecret != "" {
+		cmd.Env = upsertEnv(cmd.Env, "MCP_HTTP_SECRET", cfg.MCPHttpSecret)
+	}
+	if cfg.TelegramToken != "" {
+		cmd.Env = upsertEnv(cmd.Env, "TELEGRAM_TOKEN", cfg.TelegramToken)
+	}
+	if cfg.TelegramChatID != "" {
+		cmd.Env = upsertEnv(cmd.Env, "TELEGRAM_CHAT_ID", cfg.TelegramChatID)
+	}
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = stderrFile
@@ -59,6 +77,17 @@ func SpawnMCPServer(cfg Config, log *Logger) (int, error) {
 	}
 
 	return pid, nil
+}
+
+func upsertEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
 }
 
 // KillProcess kills a process by PID. On Windows, uses taskkill /F /T for tree kill.

@@ -30,16 +30,25 @@
 .PARAMETER Foreground
     In startup mode (non-service), run supervisor in the current console with live
     logs instead of background hidden mode.
+.PARAMETER SecureVaultProfile
+    SecureVault profile name to resolve runtime secrets from. Set empty string to
+    disable SecureVault profile resolution.
+.PARAMETER WatcherMode
+    Supervisor mode to use (`production` or `development`).
 .EXAMPLE
     .\Install-Sensorium.ps1
     .\Install-Sensorium.ps1 -ServiceUser ".\sensorium-svc"
     .\Install-Sensorium.ps1 -Foreground
+    .\Install-Sensorium.ps1 -SecureVaultProfile "SENSORIUM" -WatcherMode production
 #>
 param(
     [switch]$Update,
     [string]$ServiceUser = "",
     [System.Security.SecureString]$ServicePassword,
-    [switch]$Foreground
+    [switch]$Foreground,
+    [string]$SecureVaultProfile = "SENSORIUM",
+    [ValidateSet("production", "development")]
+    [string]$WatcherMode = "production"
 )
 
 $ErrorActionPreference = "Stop"
@@ -143,8 +152,12 @@ function Get-BinaryAsset {
 }
 
 function Install-StartupLauncher {
+    $safeProfile = $SecureVaultProfile.Replace('"', '')
+    $safeMode = $WatcherMode.Replace('"', '')
     $launcherContent = @(
         "@echo off",
+        "set `"SUPERVISOR_SECUREVAULT_PROFILE=$safeProfile`"",
+        "set `"WATCHER_MODE=$safeMode`"",
         "start `"`" /min `"$Binary`""
     ) -join [Environment]::NewLine
 
@@ -209,6 +222,8 @@ function Install-AsService {
 
 function Start-AsBackground {
     Write-Host "Starting sensorium-supervisor as a background process..."
+    $env:SUPERVISOR_SECUREVAULT_PROFILE = $SecureVaultProfile
+    $env:WATCHER_MODE = $WatcherMode
     $logOut = Join-Path $DataDir "supervisor.log"
     $logErr = Join-Path $DataDir "supervisor-error.log"
     try {
@@ -229,6 +244,8 @@ function Start-AsBackground {
 }
 
 function Start-InForeground {
+    $env:SUPERVISOR_SECUREVAULT_PROFILE = $SecureVaultProfile
+    $env:WATCHER_MODE = $WatcherMode
     Write-Host "Starting sensorium-supervisor in foreground (live logs)..." -ForegroundColor Cyan
     Write-Host "Press Ctrl+C to stop." -ForegroundColor Yellow
     & $Binary
@@ -273,6 +290,8 @@ if ($isUpdate) {
 }
 Write-Host "Admin mode : $isAdmin"
 Write-Host "Install mode: $(if ($useService) { 'service' } else { 'startup' })"
+Write-Host "SecureVault profile: $(if ([string]::IsNullOrWhiteSpace($SecureVaultProfile)) { '<disabled>' } else { $SecureVaultProfile })"
+Write-Host "Watcher mode: $WatcherMode"
 Write-Host "Binary     : $Binary"
 Write-Host ""
 

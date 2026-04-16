@@ -92,3 +92,17 @@ func TestListThreadPIDs_MissingDir(t *testing.T) {
 		t.Errorf("expected empty map for missing directory, got %d entries", len(result))
 	}
 }
+
+func TestUpsertEnv_ReplacesExistingAndAppendsMissing(t *testing.T) {
+	env := []string{"A=1", "B=2"}
+
+	env = upsertEnv(env, "B", "updated")
+	if env[1] != "B=updated" {
+		t.Fatalf("expected existing key to be replaced, got %q", env[1])
+	}
+
+	env = upsertEnv(env, "C", "3")
+	if env[len(env)-1] != "C=3" {
+		t.Fatalf("expected missing key to be appended, got %q", env[len(env)-1])
+	}
+}
