@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -450,7 +451,7 @@ func (u *Updater) checkSupervisorUpdate(ctx context.Context) {
 		return
 	}
 
-	if err := signalSelf(syscall.SIGTERM); err != nil {
+	if err := requestSupervisorRestart(u.log); err != nil {
 		markFailed(err)
 		u.log.Error("Failed to signal supervisor for restart: %v", err)
 		notifyUpdaterOperator(u.cfg, u.log, "🔴 Supervisor: update downloaded but restart signal failed.", 0)
@@ -523,6 +524,35 @@ func signalSelf(sig os.Signal) error {
 		return err
 	}
 	return proc.Signal(sig)
+}
+
+func requestSupervisorRestart(log *Logger) error {
+	if runtime.GOOS != "windows" {
+		return signalSelf(syscall.SIGTERM)
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve executable path: %w", err)
+	}
+
+	cmd := exec.Command(exePath)
+	cmd.Env = os.Environ()
+	setSysProcAttr(cmd)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start replacement supervisor: %w", err)
+	}
+
+	if log != nil {
+		log.Info("Spawned replacement supervisor process PID %d", cmd.Process.Pid)
+	}
+
+	go func() {
+		time.Sleep(250 * time.Millisecond)
+		os.Exit(0)
+	}()
+
+	return nil
 }
 
 func (u *Updater) killServer() {
