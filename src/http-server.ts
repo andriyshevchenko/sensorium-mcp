@@ -35,6 +35,8 @@ import {
 } from "./sessions.js";
 import { getThread } from "./data/memory/thread-registry.js";
 import { findAliveThread } from "./services/process.service.js";
+import { writeReconnectSnapshot } from "./services/reconnect-snapshot.service.js";
+import { getActiveThreadIds } from "./sessions.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 class BodyParseError extends Error {
@@ -454,6 +456,11 @@ export function startHttpServer(
         try { await entry.server.close(); } catch (_) { /* best-effort */ }
       }
       sessions.delete(sid);
+    }
+    // Snapshot active threads so the next server instance can lightweight-reconnect.
+    const activeThreadIds = getActiveThreadIds();
+    if (activeThreadIds.length > 0) {
+      writeReconnectSnapshot(activeThreadIds);
     }
     httpServer.close();
     closeMemoryDb();
