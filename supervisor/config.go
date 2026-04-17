@@ -106,7 +106,7 @@ func LoadConfig(runningAsService bool) Config {
 		FastExitMaxCount:          3,
 		FastExitBaseCooldown:      10 * time.Minute,
 		FastExitMaxCooldown:       4 * time.Hour,
-		StuckThreshold:            10 * time.Minute,
+		StuckThreshold:            time.Duration(envInt("KEEPER_STUCK_THRESHOLD_MIN", 30)) * time.Minute,
 
 		Paths: Paths{
 			BinaryDir:         filepath.Join(dataDir, "bin"),
