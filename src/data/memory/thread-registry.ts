@@ -175,7 +175,7 @@ export function getThread(db: Database, threadId: number): ThreadRegistryEntry |
 
 export function getThreadByName(db: Database, name: string): ThreadRegistryEntry | null {
   const row = db.prepare(
-    `SELECT * FROM thread_registry WHERE name = ? AND status = 'active' ORDER BY last_active_at DESC LIMIT 1`,
+    `SELECT * FROM thread_registry WHERE name = ? AND status IN ('active', 'dormant', 'exited') ORDER BY last_active_at DESC LIMIT 1`,
   ).get(name) as Record<string, unknown> | undefined;
   return row ? rowToEntry(row) : null;
 }

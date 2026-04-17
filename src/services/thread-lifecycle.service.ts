@@ -53,7 +53,7 @@ const VALID_TRANSITIONS: Record<ThreadState, ReadonlySet<ThreadState>> = {
   [ThreadState.Active]: new Set([ThreadState.Active, ThreadState.Dormant, ThreadState.Exited, ThreadState.Archived, ThreadState.Expired]),
   [ThreadState.Dormant]: new Set([ThreadState.Active, ThreadState.Archived, ThreadState.Expired]),
   [ThreadState.Exited]: new Set([ThreadState.Active, ThreadState.Archived, ThreadState.Expired]),
-  [ThreadState.Archived]: new Set(),
+  [ThreadState.Archived]: new Set([ThreadState.Active]),
   [ThreadState.Expired]: new Set([ThreadState.Archived]),
 };
 
