@@ -8,9 +8,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { randomUUID } from "node:crypto";
 import { log } from "./logger.js";
 import {
+  getActiveThreadIds,
   registerDashboardSession,
   markDashboardSessionDisconnected,
 } from "./sessions.js";
+import { writeReconnectSnapshot } from "./services/reconnect-snapshot.service.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 process.on("uncaughtException", (err) => {
@@ -46,6 +48,11 @@ export async function startStdioServer(
     shuttingDown = true;
     log.info(`[shutdown] Graceful stdio shutdown (${reason})…`);
 
+    // Snapshot active threads so the next server instance can lightweight-reconnect.
+    const activeThreadIds = getActiveThreadIds();
+    if (activeThreadIds.length > 0) {
+      writeReconnectSnapshot(activeThreadIds);
+    }
     // Tear down server and transport before closing resources.
     try { await server.close(); } catch (_) { /* best-effort */ }
     try { transport.close?.(); } catch (_) { /* best-effort */ }

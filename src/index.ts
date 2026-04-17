@@ -51,6 +51,7 @@ const { log } = await import("./logger.js");
 const { resolveTelegramTopicId, threadRepository } = await import("./data/memory/thread-registry.js");
 const { BackgroundJobRunner } = await import("./services/background-runner.js");
 const { ThreadLifecycleService } = await import("./services/thread-lifecycle.service.js");
+const { clearReconnectSnapshot } = await import("./services/reconnect-snapshot.service.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -134,5 +135,9 @@ const backgroundRunner = new BackgroundJobRunner({
 
 // Start background jobs after the server is listening.
 backgroundRunner.start();
+
+// Auto-clear the reconnect snapshot 10 minutes after startup so stale
+// snapshots from the previous process don't persist across multiple restarts.
+setTimeout(() => clearReconnectSnapshot(), 10 * 60 * 1000);
 
 }
