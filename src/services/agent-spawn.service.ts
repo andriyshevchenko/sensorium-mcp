@@ -115,7 +115,13 @@ const resolveCodexExe = (): string | null => {
 async function handleProcessExit(code: number | null, threadId: number, pid: number, pidFilePath: string, entry: SpawnedThread, processLabel: string, threadLifecycle: ThreadLifecycleService): Promise<void> {
   const idx = spawnedThreads.indexOf(entry);
   if (idx !== -1) spawnedThreads.splice(idx, 1);
-  try { unlinkSync(pidFilePath); } catch {}
+  // Only delete PID file if it still belongs to this process — a replacement
+  // process may have already overwritten the file with its own PID.
+  try {
+    const raw = readFileSync(pidFilePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed.pid === pid) unlinkSync(pidFilePath);
+  } catch { /* file missing or unparseable — already cleaned up */ }
   try {
     const db = initMemoryDb();
     const currentState = threadLifecycle.getThreadState(db, threadId);
