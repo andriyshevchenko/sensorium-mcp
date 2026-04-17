@@ -7,7 +7,7 @@
  * by the auto-cleanup timer or ignored (too old) by isReconnectCandidate.
  */
 
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
@@ -27,6 +27,7 @@ interface ReconnectSnapshot {
  */
 export function writeReconnectSnapshot(threadIds: number[]): void {
   try {
+    mkdirSync(DATA_DIR, { recursive: true });
     const snapshot: ReconnectSnapshot = {
       threadIds,
       timestamp: new Date().toISOString(),
