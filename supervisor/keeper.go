@@ -114,6 +114,7 @@ func (k *Keeper) run(ctx context.Context) {
 				k.log.Warn("Thread %d (worker %d) is stuck (no heartbeat for %v) — restarting", k.cfg.ThreadID, activeThreadID, k.global.StuckThreshold)
 				// Kill via MCP API, then fall through to restart
 				k.killThread(ctx, activeThreadID)
+				retryCount = 0
 				activeThreadID = k.cfg.ThreadID // reset — will get new worker ID on restart
 			} else {
 				// Healthy — reset counters
@@ -129,7 +130,31 @@ func (k *Keeper) run(ctx context.Context) {
 			}
 		}
 
-		// Thread is not running (or was stuck and killed)
+		// Thread is not running (or was stuck and killed).
+		// Detect fast-exit: if the previous successful start was recent, the thread exited too quickly.
+		if !lastStartTime.IsZero() && time.Since(lastStartTime) < k.global.FastExitThreshold {
+			fastExitCount++
+			if fastExitCount >= k.global.FastExitMaxCount {
+				cooldown := time.Duration(float64(k.global.FastExitBaseCooldown) * math.Pow(2, float64(fastExitEscalation)))
+				if cooldown > k.global.FastExitMaxCooldown {
+					cooldown = k.global.FastExitMaxCooldown
+				}
+				k.log.Warn("Thread %d: %d consecutive fast exits — backing off %v", k.cfg.ThreadID, fastExitCount, cooldown)
+				if k.onDeath != nil {
+					k.onDeath(k.cfg.ThreadID, k.cfg.SessionName+" (repeated fast exits — check credits/API key)")
+				}
+				fastExitEscalation++
+				k.sleep(ctx, cooldown)
+				fastExitCount = 0
+				retryCount = 0
+				return
+			}
+		} else if !lastStartTime.IsZero() {
+			// Previous start was long ago — not a fast exit pattern, reset counters
+			fastExitCount = 0
+			fastExitEscalation = 0
+		}
+
 		if retryCount >= k.cfg.MaxRetries {
 			cooldown := k.global.KeeperCooldown
 			if k.cfg.CooldownMs > 0 {
@@ -157,10 +182,10 @@ func (k *Keeper) run(ctx context.Context) {
 			return
 		}
 
-		lastStartTime = time.Now()
 		ok, workerID := k.callStartThread(ctx)
 
 		if ok {
+			lastStartTime = time.Now()
 			if workerID > 0 {
 				activeThreadID = workerID
 				k.log.Info("Thread %d start_thread succeeded (worker %d)", k.cfg.ThreadID, workerID)
@@ -168,31 +193,7 @@ func (k *Keeper) run(ctx context.Context) {
 				k.log.Info("Thread %d start_thread succeeded", k.cfg.ThreadID)
 			}
 			retryCount = 0
-			// Check for fast exit on next check
 		} else {
-			// Check for fast exit pattern
-			if !lastStartTime.IsZero() && time.Since(lastStartTime) < k.global.FastExitThreshold {
-				fastExitCount++
-				if fastExitCount >= k.global.FastExitMaxCount {
-					cooldown := time.Duration(float64(k.global.FastExitBaseCooldown) * math.Pow(2, float64(fastExitEscalation)))
-					if cooldown > k.global.FastExitMaxCooldown {
-						cooldown = k.global.FastExitMaxCooldown
-					}
-					k.log.Warn("Thread %d: %d consecutive fast exits — backing off %v", k.cfg.ThreadID, fastExitCount, cooldown)
-					if k.onDeath != nil {
-						k.onDeath(k.cfg.ThreadID, k.cfg.SessionName+" (repeated fast exits — check credits/API key)")
-					}
-					fastExitEscalation++
-					k.sleep(ctx, cooldown)
-					fastExitCount = 0
-					retryCount = 0
-					return
-				}
-			} else {
-				fastExitCount = 0
-				fastExitEscalation = 0
-			}
-
 			retryCount++
 			delay := k.backoff(retryCount)
 			k.log.Info("Backing off %v before next attempt", delay)
