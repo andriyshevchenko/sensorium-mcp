@@ -47,6 +47,7 @@ func AcquireLock(lockPath string, log *Logger) bool {
 	}
 	fmt.Fprintf(f, "%d", os.Getpid())
 	f.Close()
+	log.Info("Lock acquired: %s (PID %d)", lockPath, os.Getpid())
 	return true
 }
 

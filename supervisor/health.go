@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,25 +17,27 @@ type MCPClient struct {
 	Secret  string
 	Client  *http.Client
 	Log     *Logger
+	headers map[string]string
 }
 
 func NewMCPClient(port int, secret string) *MCPClient {
-	return &MCPClient{
-		BaseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
-		Secret:  secret,
-		Client:  &http.Client{Timeout: 10 * time.Second},
-	}
-}
-
-func (m *MCPClient) authHeaders() map[string]string {
 	h := map[string]string{
 		"Content-Type": "application/json",
 		"Accept":       "application/json",
 	}
-	if m.Secret != "" {
-		h["Authorization"] = "Bearer " + m.Secret
+	if secret != "" {
+		h["Authorization"] = "Bearer " + secret
 	}
-	return h
+	return &MCPClient{
+		BaseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
+		Secret:  secret,
+		Client:  &http.Client{Timeout: 10 * time.Second},
+		headers: h,
+	}
+}
+
+func (m *MCPClient) authHeaders() map[string]string {
+	return m.headers
 }
 
 func (m *MCPClient) doReq(ctx context.Context, method, path string, body any) (*http.Response, error) {
@@ -44,7 +47,7 @@ func (m *MCPClient) doReq(ctx context.Context, method, path string, body any) (*
 		if err != nil {
 			return nil, err
 		}
-		bodyReader = strings.NewReader(string(data))
+		bodyReader = bytes.NewReader(data)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, m.BaseURL+path, bodyReader)
@@ -292,7 +295,7 @@ func (m *MCPClient) OpenMCPSession(ctx context.Context) (string, error) {
 	if err != nil {
 		return sessionID, nil // session created, notification failed — non-fatal
 	}
-	notifReq.Body = io.NopCloser(strings.NewReader(string(data)))
+	notifReq.Body = io.NopCloser(bytes.NewReader(data))
 	for k, v := range m.authHeaders() {
 		notifReq.Header.Set(k, v)
 	}
@@ -357,8 +360,11 @@ func (m *MCPClient) CallStartThread(ctx context.Context, sessionID string, threa
 	if err != nil {
 		return "", err
 	}
-	data, _ := json.Marshal(payload)
-	req.Body = io.NopCloser(strings.NewReader(string(data)))
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(data))
 	for k, v := range m.authHeaders() {
 		req.Header.Set(k, v)
 	}

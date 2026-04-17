@@ -433,6 +433,9 @@ func (u *Updater) checkSupervisorUpdate(ctx context.Context) {
 	u.state.Transition(updateScopeSupervisor, updatePhaseStaged, remote, local, "")
 	notifyUpdaterOperator(u.cfg, u.log, fmt.Sprintf("⚙️ Supervisor: downloaded %s. Restarting supervisor to apply update...", remote), 0)
 
+	// Reset start time so minimum uptime is re-enforced after restart
+	u.startAt = time.Now()
+
 	isService, err := isWindowsService()
 	if err != nil {
 		markFailed(err)
@@ -499,14 +502,6 @@ func (u *Updater) downloadSupervisorBinary(ctx context.Context, downloadURL stri
 		return fmt.Errorf("downloaded empty binary")
 	}
 
-	info, err := os.Stat(tmpPath)
-	if err != nil {
-		return err
-	}
-	if info.Size() <= 0 {
-		return fmt.Errorf("downloaded binary has invalid size %d", info.Size())
-	}
-
 	if err := os.Remove(u.cfg.Paths.PendingBinary); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -514,7 +509,7 @@ func (u *Updater) downloadSupervisorBinary(ctx context.Context, downloadURL stri
 		return err
 	}
 
-	u.log.Info("Supervisor binary downloaded to %s (%d bytes)", u.cfg.Paths.PendingBinary, info.Size())
+	u.log.Info("Supervisor binary downloaded to %s (%d bytes)", u.cfg.Paths.PendingBinary, written)
 	return nil
 }
 
@@ -548,7 +543,7 @@ func requestSupervisorRestart(log *Logger) error {
 	}
 
 	go func() {
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(2 * time.Second)
 		os.Exit(0)
 	}()
 
@@ -600,7 +595,7 @@ func (u *Updater) clearNpxCache() {
 		}
 		pkgDir := filepath.Join(base, e.Name(), "node_modules", "sensorium-mcp")
 		// Validate path doesn't escape base directory
-		if !strings.HasPrefix(pkgDir, base) {
+		if !strings.HasPrefix(pkgDir, base+string(os.PathSeparator)) {
 			continue
 		}
 		if _, err := os.Stat(pkgDir); err == nil {
