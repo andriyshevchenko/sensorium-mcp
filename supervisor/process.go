@@ -242,6 +242,35 @@ func ListThreadPIDs(pidsDir string) map[string]int {
 	return result
 }
 
+// KillOrphanThreads kills any alive processes listed in PID files (leftovers from
+// a previous supervisor run) and then removes the PID files. Called on startup
+// before the MCP server is launched, so all thread PIDs are guaranteed to be stale.
+func KillOrphanThreads(pidsDir string, log *Logger) {
+	pids := ListThreadPIDs(pidsDir)
+	if len(pids) == 0 {
+		log.Debug("KillOrphanThreads: no PID files found")
+		return
+	}
+	log.Info("KillOrphanThreads: checking %d PID files for orphan processes", len(pids))
+	killed := 0
+	for threadID, pid := range pids {
+		path := filepath.Join(pidsDir, threadID+".pid")
+		if IsProcessAlive(pid) {
+			log.Info("Killing orphan thread %s (PID %d)", threadID, pid)
+			if err := KillProcess(pid, log); err != nil {
+				log.Warn("Failed to kill orphan PID %d: %v", pid, err)
+			}
+			killed++
+		}
+		_ = os.Remove(path)
+	}
+	if killed > 0 {
+		log.Info("KillOrphanThreads: killed %d orphan processes, cleaned %d PID files", killed, len(pids))
+	} else {
+		log.Info("KillOrphanThreads: no orphans found, cleaned %d stale PID files", len(pids))
+	}
+}
+
 // CleanStalePIDs removes PID files for processes that are no longer running.
 func CleanStalePIDs(pidsDir string, log *Logger) {
 	pids := ListThreadPIDs(pidsDir)

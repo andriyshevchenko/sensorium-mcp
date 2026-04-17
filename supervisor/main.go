@@ -166,10 +166,16 @@ func runSupervisor(runningAsService bool) error {
 	mcp := NewMCPClient(cfg.MCPHttpPort, cfg.MCPHttpSecret)
 	mcp.Log = log
 
-	// Clean stale PID files from previous runs
-	CleanStalePIDs(cfg.Paths.PIDsDir, log)
+	// Kill orphan thread processes from previous runs, then clean PID files
+	KillOrphanThreads(cfg.Paths.PIDsDir, log)
 
-	// Kill orphan process on our port
+	// Kill orphan MCP server from previous run
+	if oldPid, err := ReadPIDFile(cfg.Paths.ServerPID); err == nil && oldPid > 0 && IsProcessAlive(oldPid) {
+		log.Info("Killing orphan MCP server (PID %d) from previous run", oldPid)
+		_ = KillProcess(oldPid, log)
+		time.Sleep(1 * time.Second) // allow port to release
+	}
+	_ = os.Remove(cfg.Paths.ServerPID)
 	KillByPort(cfg.MCPHttpPort, log)
 
 	// Spawn MCP server
