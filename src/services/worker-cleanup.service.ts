@@ -7,6 +7,7 @@ import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { log } from "../logger.js";
 
 const DEFAULT_WORKER_TTL_MS = 60 * 60 * 1000;
+let orphanSweepDone = false;
 
 export async function cleanupExpiredWorkers(
   db: ReturnType<typeof import("../memory.js").initMemoryDb>,
@@ -28,15 +29,17 @@ export async function cleanupExpiredWorkers(
   try {
     const cutoff = new Date(now - ttlMs).toISOString();
     const staleRows = db.prepare(
-      `SELECT thread_id FROM thread_registry
+      `SELECT thread_id, telegram_topic_id FROM thread_registry
        WHERE type = 'worker' AND status IN ('active', 'exited') AND COALESCE(last_active_at, created_at) < ?`,
-    ).all(cutoff) as { thread_id: number }[];
+    ).all(cutoff) as { thread_id: number; telegram_topic_id: number | null }[];
     for (const row of staleRows) {
       if (spawnedThreads.some((t) => t.threadId === row.thread_id)) continue;
       try {
         try {
-          const topicId = getExplicitTelegramTopicId(db, row.thread_id);
-          if (topicId != null) await telegram.deleteForumTopic(chatId, topicId);
+          // For workers, thread_id IS the Telegram topic ID (created via createManagedTopic).
+          // Use explicit telegram_topic_id if set, otherwise fall back to thread_id.
+          const topicId = row.telegram_topic_id ?? row.thread_id;
+          await telegram.deleteForumTopic(chatId, topicId);
         } catch {}
         threadLifecycle.archiveThread(db, row.thread_id);
         try { archiveNotesForThread(db, row.thread_id); } catch {}
@@ -50,6 +53,28 @@ export async function cleanupExpiredWorkers(
   } catch (err) {
     log.warn(`[worker-cleanup] Failed to query stale DB workers: ${errorMessage(err)}`);
   }
+  // One-time sweep: delete orphan Telegram topics for already-archived workers
+  // (legacy bug: telegram_topic_id was not set at registration time).
+  if (!orphanSweepDone) try {
+    orphanSweepDone = true;
+    const orphanRows = db.prepare(
+      `SELECT thread_id, telegram_topic_id FROM thread_registry
+       WHERE type = 'worker' AND status = 'archived'`,
+    ).all() as { thread_id: number; telegram_topic_id: number | null }[];
+    for (const row of orphanRows) {
+      const topicId = row.telegram_topic_id ?? row.thread_id;
+      try {
+        await telegram.deleteForumTopic(chatId, topicId);
+        result.cleaned++;
+        log.info(`[worker-cleanup] Deleted orphan topic ${topicId} for archived worker ${row.thread_id}`);
+      } catch {
+        // Topic already deleted or invalid — ignore
+      }
+    }
+  } catch (err) {
+    log.warn(`[worker-cleanup] Failed to sweep orphan topics: ${errorMessage(err)}`);
+  }
+
   return result;
 }
 
@@ -65,8 +90,8 @@ async function cleanupSingleWorker(
   }
   try { process.kill(thread.pid, "SIGTERM"); } catch {}
   try {
-    const topicId = getExplicitTelegramTopicId(db, thread.threadId);
-    if (topicId != null) await telegram.deleteForumTopic(chatId, topicId);
+    const topicId = getExplicitTelegramTopicId(db, thread.threadId) ?? thread.threadId;
+    await telegram.deleteForumTopic(chatId, topicId);
   } catch {}
   try { threadLifecycle.archiveThread(db, thread.threadId); } catch {}
   try { archiveNotesForThread(db, thread.threadId); } catch {}

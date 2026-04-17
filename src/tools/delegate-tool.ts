@@ -334,6 +334,7 @@ export async function handleStartThread(
         client: agentType,
         workingDirectory,
         chatId: telegramChatId,
+        telegramTopicId: threadId,
       });
     }
   } catch { /* registration is best-effort */ }
