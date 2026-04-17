@@ -11,7 +11,8 @@ import {
     type SemanticNote,
 } from "../../memory.js";
 
-import { getAllRegisteredTopics, registerTopic, unregisterTopic } from "../../sessions.js";
+import { getAllRegisteredTopics, getActiveThreadIds, registerTopic, unregisterTopic } from "../../sessions.js";
+import { writeReconnectSnapshot } from "../../services/reconnect-snapshot.service.js";
 
 import { readBody, safeParseJSON, type RouteHandler } from "./types.js";
 import { errorMessage } from "../../utils.js";
@@ -174,5 +175,16 @@ export const handleDeleteTopicRegistry: RouteHandler = ({ req, json }) => {
             json({ error: errorMessage(err) }, 500);
         }
     })();
+    return true;
+};
+
+// ─── Prepare-shutdown ────────────────────────────────────────────────────────
+
+export const handlePrepareShutdown: RouteHandler = ({ json }) => {
+    const threadIds = getActiveThreadIds();
+    if (threadIds.length > 0) {
+        writeReconnectSnapshot(threadIds);
+    }
+    json({ ok: true, snapshotThreads: threadIds.length });
     return true;
 };

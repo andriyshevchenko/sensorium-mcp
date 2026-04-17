@@ -369,6 +369,9 @@ func runSupervisor(runningAsService bool) error {
 	<-keeperPollerDone
 	<-healthDone
 
+	// Ask MCP to write reconnect snapshot before killing it
+	mcp.PrepareShutdown(context.Background())
+
 	// Kill server process
 	pid, err := ReadPIDFile(cfg.Paths.ServerPID)
 	if err == nil && pid > 0 {

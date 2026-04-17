@@ -552,6 +552,12 @@ func requestSupervisorRestart(log *Logger) error {
 
 func (u *Updater) killServer() {
 	u.log.Info("Updater: stopping current MCP server for update")
+
+	// Ask the MCP server to write a reconnect snapshot before we kill it.
+	// On Windows, taskkill /F doesn't allow graceful shutdown, so this is
+	// the only way the snapshot gets written.
+	u.mcp.PrepareShutdown(context.Background())
+
 	pid, err := ReadPIDFile(u.cfg.Paths.ServerPID)
 	if err != nil {
 		u.log.Warn("Could not read server PID file: %v", err)
