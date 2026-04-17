@@ -44,6 +44,11 @@ export function writeReconnectSnapshot(threadIds: number[]): void {
 /**
  * Returns true if the given thread ID was active in the previous server
  * instance AND the snapshot is less than 10 minutes old.
+ *
+ * Consume-on-use: the thread ID is removed from the snapshot after a
+ * successful match so that each thread can only lightweight-reconnect
+ * **once** per MCP restart.  This prevents a fresh agent process (crash,
+ * keeper restart, compaction) from falsely matching within the 10-min window.
  */
 export function isReconnectCandidate(threadId: number): boolean {
   try {
@@ -57,7 +62,14 @@ export function isReconnectCandidate(threadId: number): boolean {
       );
       return false;
     }
-    return Array.isArray(snapshot.threadIds) && snapshot.threadIds.includes(threadId);
+    if (!Array.isArray(snapshot.threadIds) || !snapshot.threadIds.includes(threadId)) {
+      return false;
+    }
+    // Consume: remove this threadId so it can't match again
+    snapshot.threadIds = snapshot.threadIds.filter(id => id !== threadId);
+    writeFileSync(SNAPSHOT_PATH, JSON.stringify(snapshot, null, 2), "utf-8");
+    log.info(`[reconnect-snapshot] Consumed reconnect slot for thread ${threadId}.`);
+    return true;
   } catch {
     return false;
   }
