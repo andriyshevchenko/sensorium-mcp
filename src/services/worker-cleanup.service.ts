@@ -1,10 +1,29 @@
+import { execSync } from "node:child_process";
+import { unlinkSync } from "node:fs";
+import { join } from "node:path";
 import { archiveNotesForThread } from "../data/memory/semantic.js";
 import { getExplicitTelegramTopicId } from "../data/memory/thread-registry.js";
 import { synthesizeGhostMemory } from "../memory.js";
 import { errorMessage } from "../utils.js";
-import { spawnedThreads, type SpawnedThread } from "./process.service.js";
+import { spawnedThreads, type SpawnedThread, readPidFiles, PROCESS_PIDS_DIR } from "./process.service.js";
 import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { log } from "../logger.js";
+
+function killProcessTree(pid: number, threadId: number): void {
+  try {
+    if (process.platform === "win32") {
+      execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10000 });
+    } else {
+      process.kill(pid, "SIGTERM");
+    }
+    log.info(`[worker-cleanup] Killed process tree for thread ${threadId} PID=${pid}`);
+  } catch (err) {
+    // Process may already be dead — ignore
+    log.debug(`[worker-cleanup] Kill process ${pid} (thread ${threadId}): ${errorMessage(err)}`);
+  }
+  const pidFile = join(PROCESS_PIDS_DIR, `${threadId}.pid`);
+  try { unlinkSync(pidFile); } catch {}
+}
 
 const DEFAULT_WORKER_TTL_MS = 60 * 60 * 1000;
 let orphanSweepDone = false;
@@ -35,6 +54,8 @@ export async function cleanupExpiredWorkers(
     for (const row of staleRows) {
       if (spawnedThreads.some((t) => t.threadId === row.thread_id)) continue;
       try {
+        const pidEntry = readPidFiles().find((e) => e.threadId === row.thread_id);
+        if (pidEntry) killProcessTree(pidEntry.pid, row.thread_id);
         try {
           // For workers, thread_id IS the Telegram topic ID (created via createManagedTopic).
           // Use explicit telegram_topic_id if set, otherwise fall back to thread_id.
@@ -88,7 +109,7 @@ async function cleanupSingleWorker(
   if (thread.memorySourceThreadId !== undefined) {
     try { await synthesizeGhostMemory(db, thread.threadId, thread.memorySourceThreadId, thread.name); } catch {}
   }
-  try { process.kill(thread.pid, "SIGTERM"); } catch {}
+  killProcessTree(thread.pid, thread.threadId);
   try {
     const topicId = getExplicitTelegramTopicId(db, thread.threadId) ?? thread.threadId;
     await telegram.deleteForumTopic(chatId, topicId);

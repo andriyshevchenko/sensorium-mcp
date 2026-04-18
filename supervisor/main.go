@@ -166,23 +166,37 @@ func runSupervisor(runningAsService bool) error {
 	mcp := NewMCPClient(cfg.MCPHttpPort, cfg.MCPHttpSecret)
 	mcp.Log = log
 
-	// Kill orphan thread processes from previous runs, then clean PID files
-	KillOrphanThreads(cfg.Paths.PIDsDir, log)
-
-	// Kill orphan MCP server from previous run
-	if oldPid, err := ReadPIDFile(cfg.Paths.ServerPID); err == nil && oldPid > 0 && IsProcessAlive(oldPid) {
-		log.Info("Killing orphan MCP server (PID %d) from previous run", oldPid)
-		_ = KillProcess(oldPid, log)
-		time.Sleep(1 * time.Second) // allow port to release
+	// Check if MCP server is already running and healthy — inherit it instead of
+	// killing and restarting (allows transparent supervisor binary updates).
+	inherited := false
+	if oldPid, pidErr := ReadPIDFile(cfg.Paths.ServerPID); pidErr == nil && oldPid > 0 && IsProcessAlive(oldPid) {
+		if mcp.IsServerReady(context.Background()) {
+			log.Info("Inherited running MCP server (PID %d) — skipping full restart", oldPid)
+			inherited = true
+		} else {
+			log.Info("MCP server process (PID %d) did not pass health check — proceeding with full restart", oldPid)
+		}
 	}
-	_ = os.Remove(cfg.Paths.ServerPID)
-	KillByPort(cfg.MCPHttpPort, log)
 
-	// Spawn MCP server
-	_, err = SpawnMCPServer(cfg, log)
-	if err != nil {
-		log.Error("Failed to start MCP server: %v", err)
-		return fmt.Errorf("failed to start MCP server: %w", err)
+	if !inherited {
+		// Kill orphan thread processes from previous runs, then clean PID files
+		KillOrphanThreads(cfg.Paths.PIDsDir, log)
+
+		// Kill orphan MCP server from previous run
+		if oldPid, pidErr := ReadPIDFile(cfg.Paths.ServerPID); pidErr == nil && oldPid > 0 && IsProcessAlive(oldPid) {
+			log.Info("Killing orphan MCP server (PID %d) from previous run", oldPid)
+			_ = KillProcess(oldPid, log)
+			time.Sleep(1 * time.Second) // allow port to release
+		}
+		_ = os.Remove(cfg.Paths.ServerPID)
+		KillByPort(cfg.MCPHttpPort, log)
+
+		// Spawn MCP server
+		_, err = SpawnMCPServer(cfg, log)
+		if err != nil {
+			log.Error("Failed to start MCP server: %v", err)
+			return fmt.Errorf("failed to start MCP server: %w", err)
+		}
 	}
 
 	// Wait for server to be ready

@@ -7,7 +7,7 @@
  * by the auto-cleanup timer or ignored (too old) by isReconnectCandidate.
  */
 
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
@@ -15,6 +15,13 @@ import { log } from "../logger.js";
 const DATA_DIR = join(homedir(), ".remote-copilot-mcp");
 const SNAPSHOT_PATH = join(DATA_DIR, "active-sessions.json");
 const SNAPSHOT_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+
+/** Write via temp file + rename to prevent partial reads from concurrent access. */
+function atomicWriteSnapshot(data: string): void {
+  const tmp = `${SNAPSHOT_PATH}.tmp.${process.pid}`;
+  writeFileSync(tmp, data, "utf-8");
+  renameSync(tmp, SNAPSHOT_PATH);
+}
 
 interface ReconnectSnapshot {
   threadIds: number[];
@@ -32,7 +39,7 @@ export function writeReconnectSnapshot(threadIds: number[]): void {
       threadIds,
       timestamp: new Date().toISOString(),
     };
-    writeFileSync(SNAPSHOT_PATH, JSON.stringify(snapshot, null, 2), "utf-8");
+    atomicWriteSnapshot(JSON.stringify(snapshot, null, 2));
     log.info(
       `[reconnect-snapshot] Wrote snapshot with ${threadIds.length} thread(s): ${threadIds.join(", ")}`,
     );
@@ -67,7 +74,16 @@ export function isReconnectCandidate(threadId: number): boolean {
     }
     // Consume: remove this threadId so it can't match again
     snapshot.threadIds = snapshot.threadIds.filter(id => id !== threadId);
-    writeFileSync(SNAPSHOT_PATH, JSON.stringify(snapshot, null, 2), "utf-8");
+    try {
+      if (snapshot.threadIds.length === 0) {
+        unlinkSync(SNAPSHOT_PATH);
+      } else {
+        atomicWriteSnapshot(JSON.stringify(snapshot, null, 2));
+      }
+    } catch (writeErr) {
+      log.warn(`[reconnect-snapshot] Matched thread ${threadId} but failed to persist consume: ${writeErr}`);
+      // Still return true — the match was valid, and the 10-min TTL bounds the risk
+    }
     log.info(`[reconnect-snapshot] Consumed reconnect slot for thread ${threadId}.`);
     return true;
   } catch {
