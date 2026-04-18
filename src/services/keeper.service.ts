@@ -1,5 +1,5 @@
 import { log } from "../logger.js";
-import { findAliveThread, killProcessTree } from "./process.service.js";
+import { findAliveThreadViaPidFile, killProcessTree } from "./process.service.js";
 import { readThreadHeartbeat } from "../data/file-storage.js";
 import { dispatchSpawn } from "./agent-spawn.service.js";
 import { getKeepAliveThreads, getThread } from "../data/memory/thread-registry.js";
@@ -116,15 +116,15 @@ export class KeeperService {
       return;
     }
 
-    // 2. Check if thread is running — direct function call, no HTTP
-    const aliveThread = findAliveThread(entry.threadId);
+    // 2. Check if thread is running — reads PID file directly (authoritative OS evidence)
+    const alivePid = findAliveThreadViaPidFile(entry.threadId);
 
-    if (aliveThread) {
+    if (alivePid !== undefined) {
       // 3. Check if stuck via heartbeat
       const heartbeat = readThreadHeartbeat(entry.threadId);
       if (heartbeat !== null && (now - heartbeat) > STUCK_THRESHOLD_MS) {
         log.warn(`[keeper] Thread ${entry.threadId} is stuck (no heartbeat for ${Math.round((now - heartbeat) / 60000)}m) — killing`);
-        killProcessTree(aliveThread.pid, entry.threadId);
+        killProcessTree(alivePid, entry.threadId);
         entry.retryCount = 0;
         // Fall through to restart
       } else {

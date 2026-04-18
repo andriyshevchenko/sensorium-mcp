@@ -6,7 +6,7 @@ import { errorMessage } from "../../utils.js";
 import { nowISO } from "./utils.js";
 import type { Database } from "./schema.js";
 
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 
 function isDuplicateColumnError(err: unknown, columnName: string): boolean {
   const message = errorMessage(err).toLowerCase();
@@ -381,6 +381,14 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       if (!isDuplicateColumnError(err, "working_directory")) throw err;
     }
     log.info("[migration-21] Added working_directory column to thread_registry");
+  },
+  22: (db) => {
+    try {
+      db.exec(`ALTER TABLE thread_registry ADD COLUMN pid INTEGER`);
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "pid")) throw err;
+    }
+    log.info("[migration-22] Added pid column to thread_registry");
   },
 };
 

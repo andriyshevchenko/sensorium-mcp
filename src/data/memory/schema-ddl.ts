@@ -171,7 +171,8 @@ CREATE TABLE IF NOT EXISTS thread_registry (
   autonomous_mode INTEGER NOT NULL DEFAULT 0,
   telegram_topic_id INTEGER,
   identity_prompt TEXT,
-  working_directory TEXT
+  working_directory TEXT,
+  pid INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_thread_reg_type ON thread_registry(type);
 CREATE INDEX IF NOT EXISTS idx_thread_reg_root ON thread_registry(root_thread_id);
