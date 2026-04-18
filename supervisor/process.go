@@ -32,12 +32,6 @@ func SpawnMCPServer(cfg Config, log *Logger) (int, error) {
 
 	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Env = os.Environ()
-	for k, v := range cfg.ResolvedProfileEnv {
-		if v == "" {
-			continue
-		}
-		cmd.Env = upsertEnv(cmd.Env, k, v)
-	}
 	if cfg.MCPHttpPort > 0 {
 		cmd.Env = upsertEnv(cmd.Env, "MCP_HTTP_PORT", strconv.Itoa(cfg.MCPHttpPort))
 	}
