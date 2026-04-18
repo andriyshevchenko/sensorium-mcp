@@ -1,0 +1,226 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Sensorium.Supervisor.Configuration;
+using Sensorium.Supervisor.Services;
+
+namespace Sensorium.Supervisor;
+
+/// <summary>
+/// Main supervisor loop as a Generic Host BackgroundService.
+///
+/// Startup sequence:
+///   1. Acquire singleton lock
+///   2. Check for existing healthy MCP → inherit if alive + ready
+///   3. If not inherited: kill orphan, spawn fresh
+///   4. Wait for MCP ready (3s poll, 2min timeout)
+///   5. Start updater
+///   6. Run health check loop (PeriodicTimer, 30s)
+///
+/// Shutdown sequence:
+///   1. Stop updater
+///   2. Cancel health loop
+///   3. PrepareShutdown → KillProcessDirect
+///   4. Release lock
+/// </summary>
+public sealed class SupervisorWorker : BackgroundService
+{
+    private readonly SupervisorOptions _opts;
+    private readonly ISingletonLock _lock;
+    private readonly IProcessManager _proc;
+    private readonly IMcpClient _mcp;
+    private readonly ITelegramNotifier _notify;
+    private readonly IUpdater _updater;
+    private readonly ILogger<SupervisorWorker> _log;
+
+    public SupervisorWorker(
+        IOptions<SupervisorOptions> opts,
+        ISingletonLock @lock,
+        IProcessManager proc,
+        IMcpClient mcp,
+        ITelegramNotifier notify,
+        IUpdater updater,
+        ILogger<SupervisorWorker> log)
+    {
+        _opts = opts.Value;
+        _lock = @lock;
+        _proc = proc;
+        _mcp = mcp;
+        _notify = notify;
+        _updater = updater;
+        _log = log;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        // ── Validate config ─────────────────────────────────────────────────────
+        if (_opts.McpHttpPort <= 0)
+        {
+            _log.LogCritical("MCP_HTTP_PORT must be set (got {Port}). Aborting.", _opts.McpHttpPort);
+            throw new InvalidOperationException($"MCP_HTTP_PORT must be set (got {_opts.McpHttpPort})");
+        }
+
+        // ── Create data directories ──────────────────────────────────────────────
+        Directory.CreateDirectory(_opts.DataDir);
+        Directory.CreateDirectory(Path.GetDirectoryName(_opts.Paths.SupervisorLog)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(_opts.Paths.McpStderrLog)!);
+
+        // ── Singleton lock ──────────────────────────────────────────────────────
+        if (!_lock.Acquire())
+        {
+            _log.LogCritical("Another supervisor instance is already running. Exiting.");
+            throw new InvalidOperationException("Another supervisor instance is already running.");
+        }
+
+        _log.LogInformation(
+            "sensorium-supervisor starting (mode={Mode}, port={Port}, dataDir={DataDir})",
+            _opts.Mode, _opts.McpHttpPort, _opts.DataDir);
+
+        try
+        {
+            await RunAsync(stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lock.Release();
+            _log.LogInformation("Supervisor stopped cleanly");
+        }
+    }
+
+    private async Task RunAsync(CancellationToken ct)
+    {
+        // ── Check for existing healthy MCP to inherit ─────────────────────────
+        bool inherited = false;
+        var (pidOk, existingPid) = await _proc.ReadPidFileAsync(_opts.Paths.ServerPid).ConfigureAwait(false);
+        if (pidOk && existingPid > 0 && _proc.IsProcessAlive(existingPid))
+        {
+            if (await _mcp.IsServerReadyAsync(ct).ConfigureAwait(false))
+            {
+                _log.LogInformation("Inherited running MCP server (PID {Pid}) — skipping full restart", existingPid);
+                inherited = true;
+            }
+            else
+            {
+                _log.LogInformation("MCP process (PID {Pid}) did not pass health check — proceeding with full restart", existingPid);
+            }
+        }
+
+        if (!inherited)
+        {
+            // Kill any orphan from previous run
+            if (pidOk && existingPid > 0 && _proc.IsProcessAlive(existingPid))
+            {
+                _log.LogInformation("Killing orphan MCP server (PID {Pid}) from previous run", existingPid);
+                await _proc.KillProcessAsync(existingPid).ConfigureAwait(false);
+                await Task.Delay(1000, ct).ConfigureAwait(false);
+            }
+            TryDeleteFile(_opts.Paths.ServerPid);
+            await _proc.KillByPortAsync(_opts.McpHttpPort).ConfigureAwait(false);
+
+            if (ct.IsCancellationRequested) return;
+
+            // Spawn fresh MCP
+            try
+            {
+                await _proc.SpawnMcpServerAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _log.LogCritical(ex, "Failed to start MCP server — aborting");
+                throw;
+            }
+        }
+
+        // ── Wait for MCP to become ready ────────────────────────────────────────
+        bool ready = await _mcp.WaitForReadyAsync(
+            TimeSpan.FromSeconds(3), _opts.McpReadyTimeout, ct).ConfigureAwait(false);
+
+        if (ready)
+            _log.LogInformation("MCP server is ready");
+        else
+            _log.LogWarning("MCP server did not become ready in {Timeout} — proceeding anyway", _opts.McpReadyTimeout);
+
+        // ── Start updater ────────────────────────────────────────────────────────
+        _updater.Start(ct);
+
+        // ── Health check loop ────────────────────────────────────────────────────
+        _log.LogInformation("All subsystems started — supervisor is running (PID {Pid})", Environment.ProcessId);
+
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        int tickCount = 0;
+        int httpFailCount = 0;
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            {
+                tickCount++;
+
+                var (ok, pid) = await _proc.ReadPidFileAsync(_opts.Paths.ServerPid).ConfigureAwait(false);
+                if (!ok || !_proc.IsProcessAlive(pid))
+                {
+                    _log.LogError("MCP server process is dead — restarting");
+                    await _notify.NotifyAsync("⚠️ Supervisor: MCP server process died — restarting...", ct: ct)
+                        .ConfigureAwait(false);
+                    await _proc.KillByPortAsync(_opts.McpHttpPort).ConfigureAwait(false);
+                    if (!ct.IsCancellationRequested)
+                        await _proc.SpawnMcpServerAsync(ct).ConfigureAwait(false);
+                    httpFailCount = 0;
+                    continue;
+                }
+
+                // HTTP liveness every 5th tick ≈ 2.5 min
+                if (tickCount % 5 == 0)
+                {
+                    if (await _mcp.IsServerReadyAsync(ct).ConfigureAwait(false))
+                    {
+                        httpFailCount = 0;
+                    }
+                    else
+                    {
+                        httpFailCount++;
+                        _log.LogWarning("MCP server HTTP check failed ({Count}/{Thresh})",
+                            httpFailCount, _opts.HealthFailThresh);
+
+                        if (httpFailCount >= _opts.HealthFailThresh)
+                        {
+                            _log.LogError("MCP server not responding to HTTP — restarting");
+                            await _notify.NotifyAsync(
+                                "⚠️ Supervisor: MCP server hung (not responding to HTTP) — restarting...",
+                                ct: ct).ConfigureAwait(false);
+
+                            await _mcp.PrepareShutdownAsync(ct).ConfigureAwait(false);
+                            await _proc.KillProcessDirectAsync(pid).ConfigureAwait(false);
+                            await _proc.KillByPortAsync(_opts.McpHttpPort).ConfigureAwait(false);
+
+                            if (!ct.IsCancellationRequested)
+                                await _proc.SpawnMcpServerAsync(ct).ConfigureAwait(false);
+
+                            httpFailCount = 0;
+                        }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal shutdown
+        }
+
+        // ── Graceful shutdown ────────────────────────────────────────────────────
+        await _updater.StopAsync().ConfigureAwait(false);
+
+        var (shutdownOk, shutdownPid) = await _proc.ReadPidFileAsync(_opts.Paths.ServerPid).ConfigureAwait(false);
+        if (shutdownOk && shutdownPid > 0)
+        {
+            _log.LogInformation("Stopping MCP server (PID {Pid})", shutdownPid);
+            await _mcp.PrepareShutdownAsync(CancellationToken.None).ConfigureAwait(false);
+            await _proc.KillProcessDirectAsync(shutdownPid).ConfigureAwait(false);
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try { File.Delete(path); } catch { /* best-effort */ }
+    }
+}
