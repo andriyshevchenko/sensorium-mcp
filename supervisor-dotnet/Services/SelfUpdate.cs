@@ -75,7 +75,11 @@ public static class SelfUpdate
     {
         Directory.CreateDirectory(Path.GetDirectoryName(opts.Paths.SupervisorVersion)!);
 
-        var scriptPath = Path.GetTempFileName() + ".cmd";
+        // GetTempFileName creates a zero-byte file; we need a .cmd extension for cmd.exe
+        // to execute it correctly. Delete the placeholder and use a .cmd path instead.
+        string tempBase = Path.GetTempFileName();
+        File.Delete(tempBase);
+        var scriptPath = tempBase + ".cmd";
         var script = BuildApplyScript(opts, exePath);
 
         File.WriteAllText(scriptPath, script, Encoding.ASCII);
@@ -156,6 +160,17 @@ public static class SelfUpdate
             reason = reason.TrimEnd() + "; " + RollbackMarkerTag;
 
         log.LogError("Supervisor apply failure: {Reason}", reason);
+
+        // Persist to disk so RecordApplyFailureIfPresent can surface it on next startup.
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(opts.Paths.ApplyFailureMarker)!);
+            File.WriteAllText(opts.Paths.ApplyFailureMarker, reason);
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Failed to write apply failure marker to {Path}", opts.Paths.ApplyFailureMarker);
+        }
     }
 
     private static void FinalizePendingVersion(SupervisorOptions opts, ILogger log)
