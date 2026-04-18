@@ -247,7 +247,7 @@ public sealed class Updater : IUpdater
             if (fs.Length == 0)
                 throw new InvalidOperationException("Downloaded empty binary");
 
-            _log.LogInformation("Supervisor binary downloaded to {Path} ({Bytes} bytes)", _opts.Paths.PendingBinary, fs.Length);
+            _log.LogInformation("Supervisor binary downloaded ({Bytes} bytes); staging to {Path}", fs.Length, _opts.Paths.PendingBinary);
         }
         catch
         {
@@ -270,8 +270,13 @@ public sealed class Updater : IUpdater
     private void RequestRestart()
     {
         _log.LogInformation("Requesting supervisor restart for binary swap");
-        // Signal the host to shut down — the apply helper will swap the binary and relaunch
-        Task.Run(() => SupervisorShutdown.RequestShutdown());
+        // Signal the host to shut down — the apply helper will swap the binary and relaunch.
+        // Run on a separate thread so we don't block the updater loop; log any failure.
+        Task.Run(() =>
+        {
+            try { SupervisorShutdown.RequestShutdown(); }
+            catch (Exception ex) { _log.LogError(ex, "Failed to request supervisor shutdown for restart"); }
+        });
     }
 
     private string ReadLocalVersion()
