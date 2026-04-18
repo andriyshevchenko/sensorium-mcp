@@ -317,6 +317,17 @@ export async function runIntelligentConsolidation(
       if (!dryRun) {
         const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
 
+        // Phase 1: async dedup checks — collect what to write before entering transaction.
+        type NoteWrite = {
+          type: "fact" | "preference" | "pattern" | "entity" | "relationship";
+          content: string;
+          keywords: string[];
+          confidence: number;
+          priority: number;
+          embedding: Float32Array | null;
+        };
+        const noteWrites: NoteWrite[] = [];
+
         for (const note of extractedNotes) {
           if (typeof note.content !== "string" || note.content.length === 0 || note.content.length >= 2000) {
             log.warn(`[consolidation] Skipping note with invalid content (type=${typeof note.content}, len=${typeof note.content === "string" ? note.content.length : "N/A"})`);
@@ -334,60 +345,72 @@ export async function runIntelligentConsolidation(
             continue;
           }
 
-          const noteId = saveSemanticNote(db, {
+          noteWrites.push({
             type: noteType,
             content: note.content,
             keywords: Array.isArray(note.keywords) ? note.keywords : [],
             confidence: Math.max(0, Math.min(1, note.confidence ?? 0.5)),
             priority: Math.max(0, Math.min(2, note.priority ?? 0)),
-            threadId: knowledgeThreadId,
-            sourceEpisodes: episodeIds,
+            embedding: dedup.embedding,
           });
-
-          if (dedup.embedding) {
-            saveNoteEmbedding(db, noteId, dedup.embedding);
-          }
-
-          notesCreated++;
-          details.push(`[${noteType}] ${note.content}`);
         }
 
+        // Phase 2: all DB writes in a single atomic transaction.
         let supersededCount = 0;
-        for (const action of supersedeActions) {
-          if (!action.oldNoteId || !action.newContent) continue;
-          if (!hasActiveNote(db, action.oldNoteId)) {
-            details.push(`[skip-supersede] ${action.oldNoteId} not found or already superseded`);
-            continue;
-          }
-
-          try {
-            const validTypes = ["fact", "preference", "pattern", "entity", "relationship"];
-            const noteType = validTypes.includes(action.type) ? action.type : "fact";
-            const newId = supersedeNote(db, action.oldNoteId, {
-              type: noteType,
-              content: action.newContent,
-              keywords: Array.isArray(action.keywords) ? action.keywords : [],
-              confidence: Math.max(0, Math.min(1, action.confidence ?? 0.8)),
-              priority: Math.max(0, Math.min(2, action.priority ?? 0)),
+        db.transaction(() => {
+          for (const nw of noteWrites) {
+            const noteId = saveSemanticNote(db, {
+              type: nw.type,
+              content: nw.content,
+              keywords: nw.keywords,
+              confidence: nw.confidence,
+              priority: nw.priority,
+              threadId: knowledgeThreadId,
               sourceEpisodes: episodeIds,
             });
-            supersededCount++;
-            details.push(`[supersede] ${action.oldNoteId} → ${newId}: ${action.reason}`);
-          } catch (err) {
-            details.push(`[supersede-error] ${action.oldNoteId}: ${errorMessage(err)}`);
+            if (nw.embedding) {
+              saveNoteEmbedding(db, noteId, nw.embedding);
+            }
+            notesCreated++;
+            details.push(`[${nw.type}] ${nw.content}`);
           }
-        }
+
+          for (const action of supersedeActions) {
+            if (!action.oldNoteId || !action.newContent) continue;
+            if (!hasActiveNote(db, action.oldNoteId)) {
+              details.push(`[skip-supersede] ${action.oldNoteId} not found or already superseded`);
+              continue;
+            }
+
+            try {
+              const validTypes = ["fact", "preference", "pattern", "entity", "relationship"];
+              const noteType = validTypes.includes(action.type) ? action.type : "fact";
+              const newId = supersedeNote(db, action.oldNoteId, {
+                type: noteType,
+                content: action.newContent,
+                keywords: Array.isArray(action.keywords) ? action.keywords : [],
+                confidence: Math.max(0, Math.min(1, action.confidence ?? 0.8)),
+                priority: Math.max(0, Math.min(2, action.priority ?? 0)),
+                sourceEpisodes: episodeIds,
+              });
+              supersededCount++;
+              details.push(`[supersede] ${action.oldNoteId} → ${newId}: ${action.reason}`);
+            } catch (err) {
+              details.push(`[supersede-error] ${action.oldNoteId}: ${errorMessage(err)}`);
+            }
+          }
+
+          markConsolidated(db, episodeIds);
+          logConsolidation(db, {
+            episodesProcessed: episodes.length,
+            notesCreated: notesCreated + supersededCount,
+            durationMs: Date.now() - startMs,
+          });
+        })();
 
         if (supersededCount > 0) {
           log.info(`[memory] Contradiction resolution: superseded ${supersededCount} outdated note(s)`);
         }
-
-        markConsolidated(db, episodeIds);
-        logConsolidation(db, {
-          episodesProcessed: episodes.length,
-          notesCreated: notesCreated + supersededCount,
-          durationMs: Date.now() - startMs,
-        });
       } else {
         for (const note of extractedNotes) {
           details.push(`[dry-run] [${note.type}] ${note.content}`);

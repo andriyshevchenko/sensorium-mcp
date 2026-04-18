@@ -52,6 +52,7 @@ export function startHttpServer(
   createMcpServerFn: CreateMcpServerFn,
   getMemoryDb: () => Database,
   closeMemoryDb: () => void,
+  onBeforeExit?: () => void,
 ): void {
   const rawPort = Number.parseInt(process.env.MCP_HTTP_PORT ?? "", 10);
   const httpPort = Number.isFinite(rawPort) ? rawPort : 3847;
@@ -466,6 +467,7 @@ export function startHttpServer(
       sessions.delete(sid);
     }
     httpServer.close();
+    onBeforeExit?.();
     closeMemoryDb();
     process.exit(0);
   };

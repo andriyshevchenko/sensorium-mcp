@@ -265,19 +265,37 @@ public sealed class ProcessManager : IProcessManager
         {
             try
             {
-                using var proc = System.Diagnostics.Process.GetProcessById(pid);
-                // .NET Process.Kill() sends SIGKILL on Unix, not SIGTERM.
-                // We send SIGKILL, wait 2 s, then send SIGKILL to the tree if still alive.
-                proc.Kill(entireProcessTree: false);
-                await Task.Delay(2000).ConfigureAwait(false);
-                if (IsProcessAlive(pid))
+                // Send SIGTERM first to allow graceful shutdown, wait up to 5 s,
+                // then escalate to SIGKILL if the process is still alive.
+                int killResult = NativeMethods.UnixKill(pid, NativeMethods.SIGTERM);
+                if (killResult != 0)
                 {
-                    proc.Kill(entireProcessTree: true);
-                    _log.LogInformation("Force-killed PID {Pid} (tree)", pid);
+                    _log.LogWarning("SIGTERM to PID {Pid} returned {Result} — falling back to SIGKILL", pid, killResult);
+                    using var proc = System.Diagnostics.Process.GetProcessById(pid);
+                    proc.Kill(entireProcessTree: false);
                 }
                 else
                 {
-                    _log.LogInformation("Process PID {Pid} terminated", pid);
+                    _log.LogDebug("Sent SIGTERM to PID {Pid}, waiting up to 5 s for graceful exit", pid);
+                    const int maxWaitMs = 5000;
+                    const int pollMs = 200;
+                    int elapsed = 0;
+                    while (elapsed < maxWaitMs && IsProcessAlive(pid))
+                    {
+                        await Task.Delay(pollMs).ConfigureAwait(false);
+                        elapsed += pollMs;
+                    }
+
+                    if (IsProcessAlive(pid))
+                    {
+                        using var proc = System.Diagnostics.Process.GetProcessById(pid);
+                        proc.Kill(entireProcessTree: true);
+                        _log.LogInformation("Force-killed PID {Pid} (tree) after SIGTERM timeout", pid);
+                    }
+                    else
+                    {
+                        _log.LogInformation("Process PID {Pid} terminated gracefully after SIGTERM", pid);
+                    }
                 }
             }
             catch (Exception ex)
