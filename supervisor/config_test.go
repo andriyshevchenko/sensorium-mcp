@@ -56,23 +56,3 @@ func TestParseHostMode_DefaultsAndValidation(t *testing.T) {
 		})
 	}
 }
-
-func TestIsAllowedProfileEnvKey(t *testing.T) {
-	tests := []struct {
-		key  string
-		want bool
-	}{
-		{key: "TELEGRAM_TOKEN", want: true},
-		{key: "MCP_HTTP_PORT", want: true},
-		{key: "PATH", want: false},
-		{key: "NODE_OPTIONS", want: false},
-		{key: "bad-key", want: false},
-		{key: "1BAD", want: false},
-	}
-
-	for _, tc := range tests {
-		if got := isAllowedProfileEnvKey(tc.key); got != tc.want {
-			t.Fatalf("isAllowedProfileEnvKey(%q) = %v, want %v", tc.key, got, tc.want)
-		}
-	}
-}

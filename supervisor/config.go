@@ -1,39 +1,31 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	sv "github.com/andriyshevchenko/SecureVault/securevault-go"
 )
 
 // Config holds all supervisor configuration, sourced from environment variables
 // with sensible defaults matching the TypeScript watcher-service.ts CONFIG object.
 type Config struct {
 	// Watcher
-	Mode               string
-	PollAtHour         int
-	PollInterval       time.Duration
-	GracePeriod        time.Duration
-	MinUptime          time.Duration
-	MCPStartCommand    string
-	HostMode           string
-	DataDir            string
-	KeyringService     string
-	SecureVaultProfile string
-	SecureVaultBaseDir string
-	MCPHttpPort        int
-	MCPHttpSecret      string
-	TelegramToken      string
-	TelegramChatID     string
-	HealthFailThresh   int
-	ResolvedProfileEnv map[string]string
+	Mode             string
+	PollAtHour       int
+	PollInterval     time.Duration
+	GracePeriod      time.Duration
+	MinUptime        time.Duration
+	MCPStartCommand  string
+	HostMode         string
+	DataDir          string
+	MCPHttpPort      int
+	MCPHttpSecret    string
+	TelegramToken    string
+	TelegramChatID   string
+	HealthFailThresh int
 
 	// MCP readiness timeout used by WaitForReady at startup
 	MCPReadyTimeout time.Duration
@@ -71,19 +63,20 @@ func LoadConfig(runningAsService bool) Config {
 	}
 
 	c := Config{
-		Mode:               mode,
-		PollAtHour:         envInt("WATCHER_POLL_HOUR", 4),
-		PollInterval:       time.Duration(envInt("WATCHER_POLL_INTERVAL", 60)) * time.Second,
-		GracePeriod:        time.Duration(envInt("WATCHER_GRACE_PERIOD", graceDef)) * time.Second,
-		MinUptime:          600 * time.Second,
-		MCPStartCommand:    envOr("MCP_START_COMMAND", "npx -y sensorium-mcp@latest"),
-		HostMode:           parseHostMode(os.Getenv("HOST_MODE"), runningAsService),
-		DataDir:            dataDir,
-		KeyringService:     envOr("SUPERVISOR_KEYRING_SERVICE", defaultKeyringService),
-		SecureVaultProfile: os.Getenv("SUPERVISOR_SECUREVAULT_PROFILE"),
-		SecureVaultBaseDir: os.Getenv("SUPERVISOR_SECUREVAULT_BASEDIR"),
-		HealthFailThresh:   3,
+		Mode:             mode,
+		PollAtHour:       envInt("WATCHER_POLL_HOUR", 4),
+		PollInterval:     time.Duration(envInt("WATCHER_POLL_INTERVAL", 60)) * time.Second,
+		GracePeriod:      time.Duration(envInt("WATCHER_GRACE_PERIOD", graceDef)) * time.Second,
+		MinUptime:        600 * time.Second,
+		MCPStartCommand:  envOr("MCP_START_COMMAND", "npx -y sensorium-mcp@latest"),
+		HostMode:         parseHostMode(os.Getenv("HOST_MODE"), runningAsService),
+		DataDir:          dataDir,
+		HealthFailThresh: 3,
 
+		MCPHttpPort:     envInt("MCP_HTTP_PORT", 0),
+		MCPHttpSecret:   os.Getenv("MCP_HTTP_SECRET"),
+		TelegramToken:   os.Getenv("TELEGRAM_TOKEN"),
+		TelegramChatID:  os.Getenv("TELEGRAM_CHAT_ID"),
 		MCPReadyTimeout: 2 * time.Minute,
 
 		Paths: Paths{
@@ -103,22 +96,6 @@ func LoadConfig(runningAsService bool) Config {
 			PIDsDir:           filepath.Join(dataDir, "pids"),
 			HeartbeatsDir:     filepath.Join(dataDir, "heartbeats"),
 		},
-	}
-
-	// Use the full chain (env → SecureVault → keyring) when a profile is configured;
-	// otherwise fall back to the plain env → keyring path.
-	if c.SecureVaultProfile != "" {
-		c.ResolvedProfileEnv = resolveProfileEnv(c.SecureVaultProfile, c.SecureVaultBaseDir)
-		c.MCPHttpPort = resolveIntChain("MCP_HTTP_PORT", c.SecureVaultProfile, c.SecureVaultBaseDir, c.KeyringService, 0)
-		c.MCPHttpSecret = resolveStringChain("MCP_HTTP_SECRET", c.SecureVaultProfile, c.SecureVaultBaseDir, c.KeyringService)
-		c.TelegramToken = resolveStringChain("TELEGRAM_TOKEN", c.SecureVaultProfile, c.SecureVaultBaseDir, c.KeyringService)
-		c.TelegramChatID = resolveStringChain("TELEGRAM_CHAT_ID", c.SecureVaultProfile, c.SecureVaultBaseDir, c.KeyringService)
-	} else {
-		c.ResolvedProfileEnv = map[string]string{}
-		c.MCPHttpPort = resolveIntWithKeyring("MCP_HTTP_PORT", c.KeyringService, 0)
-		c.MCPHttpSecret = resolveSecretWithKeyring("MCP_HTTP_SECRET", c.KeyringService)
-		c.TelegramToken = resolveSecretWithKeyring("TELEGRAM_TOKEN", c.KeyringService)
-		c.TelegramChatID = resolveSecretWithKeyring("TELEGRAM_CHAT_ID", c.KeyringService)
 	}
 
 	return c
@@ -177,55 +154,4 @@ func parseHostMode(value string, runningAsService bool) string {
 		fmt.Fprintf(os.Stderr, "WARN: invalid HOST_MODE=%q (allowed: task|service); using default \"task\"\n", value)
 		return "task"
 	}
-}
-
-func resolveProfileEnv(profileName, baseDir string) map[string]string {
-	resolved := map[string]string{}
-	if strings.TrimSpace(profileName) == "" {
-		return resolved
-	}
-
-	store := sv.NewStore(baseDir)
-	vals, err := store.ResolveProfile(profileName)
-	if err != nil {
-		if errors.Is(err, sv.ErrNotFound) || errors.Is(err, sv.ErrUnsupportedPlatform) {
-			return resolved
-		}
-		fmt.Fprintf(os.Stderr, "WARN: failed to resolve SecureVault profile %q: %v\n", profileName, err)
-		return resolved
-	}
-
-	for k, v := range vals {
-		if !isAllowedProfileEnvKey(k) {
-			fmt.Fprintf(os.Stderr, "WARN: skipping unsafe profile env key %q\n", k)
-			continue
-		}
-		if envVal := os.Getenv(k); envVal != "" {
-			resolved[k] = envVal
-			continue
-		}
-		resolved[k] = v
-	}
-
-	return resolved
-}
-
-var profileEnvKeyPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
-
-var deniedProfileEnvKeys = map[string]struct{}{
-	"PATH":         {},
-	"PATHEXT":      {},
-	"COMSPEC":      {},
-	"SYSTEMROOT":   {},
-	"WINDIR":       {},
-	"NODE_OPTIONS": {},
-}
-
-func isAllowedProfileEnvKey(key string) bool {
-	trimmed := strings.TrimSpace(key)
-	if !profileEnvKeyPattern.MatchString(trimmed) {
-		return false
-	}
-	_, denied := deniedProfileEnvKeys[trimmed]
-	return !denied
 }
