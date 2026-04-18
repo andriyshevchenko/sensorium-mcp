@@ -11,7 +11,7 @@
 import { basename } from "node:path";
 import { saveFileToDisk } from "../../data/file-storage.js";
 import type { StoredMessage } from "../../dispatcher.js";
-import { classifyIntent, type MessageIntent } from "../../intent.js";
+import { classifyIntentRegex, type MessageIntent } from "../../intent.js";
 import { log } from "../../logger.js";
 import {
   saveEpisode,
@@ -23,7 +23,7 @@ import {
 import {
   generateEmbedding,
 } from "../../openai.js";
-import { extractSearchKeywords, getReminders, getMediumReminder } from "../../response-builders.js";
+import { extractSearchKeywords, getReminders, getMediumReminder, getDiscussionReminder } from "../../response-builders.js";
 import type { TelegramClient } from "../../telegram.js";
 import { errorMessage, IMAGE_EXTENSIONS } from "../../utils.js";
 import { resolveKnowledgeThreadId, getThreadConversationMode } from "../../config.js";
@@ -318,12 +318,22 @@ export function assembleOperatorResponse(
   ctx: Pick<MessageDeliveryContext, "effectiveThreadId" | "sessionStartedAt" | "autonomousMode">,
   intent?: MessageIntent,
 ): ToolResult {
-  const resolvedIntent = intent ?? classifyIntent(operatorText);
+  const resolvedIntent = intent ?? classifyIntentRegex(operatorText);
   log.verbose("intent", `Classified "${operatorText.substring(0, 50)}" as ${resolvedIntent}`);
 
-  const reminder = resolvedIntent === "conversational"
-    ? getMediumReminder(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode)
-    : getReminders(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode);
+  let reminder: string;
+  switch (resolvedIntent) {
+    case "CONVERSATIONAL":
+      reminder = getMediumReminder(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode);
+      break;
+    case "DISCUSSION":
+      reminder = getDiscussionReminder(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode);
+      break;
+    case "CTA":
+    default:
+      reminder = getReminders(ctx.effectiveThreadId, ctx.sessionStartedAt, ctx.autonomousMode);
+      break;
+  }
 
   let directive = "Follow the operator's instructions below."
     + "\nIMPORTANT: The operator cannot see your stdout. To reply, use `report_progress`, `send_voice`, or `send_message_to_thread` \u2014 never print a response directly.";
