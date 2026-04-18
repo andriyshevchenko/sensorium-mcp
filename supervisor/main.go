@@ -143,14 +143,7 @@ func runSupervisor(runningAsService bool) error {
 
 	log.Info("sensorium-supervisor starting (mode=%s, hostMode=%s, port=%d, dataDir=%s)", cfg.Mode, cfg.HostMode, cfg.MCPHttpPort, cfg.DataDir)
 	log.Debug("Config: MCPStartCommand=%q, PollInterval=%v, MinUptime=%v", cfg.MCPStartCommand, cfg.PollInterval, cfg.MinUptime)
-	log.Debug("Config: TelegramToken=%v, HealthFailThresh=%d, StuckThreshold=%v", cfg.TelegramToken != "", cfg.HealthFailThresh, cfg.StuckThreshold)
-
-	if err := os.MkdirAll(cfg.Paths.PIDsDir, 0755); err != nil {
-		log.Warn("Cannot create PIDs dir %s: %v", cfg.Paths.PIDsDir, err)
-	}
-	if err := os.MkdirAll(cfg.Paths.HeartbeatsDir, 0755); err != nil {
-		log.Warn("Cannot create heartbeats dir %s: %v", cfg.Paths.HeartbeatsDir, err)
-	}
+	log.Debug("Config: TelegramToken=%v, HealthFailThresh=%d", cfg.TelegramToken != "", cfg.HealthFailThresh)
 
 	if cfg.MCPHttpPort <= 0 {
 		log.Error("MCP_HTTP_PORT must be set (got %d)", cfg.MCPHttpPort)
@@ -173,9 +166,6 @@ func runSupervisor(runningAsService bool) error {
 	}
 
 	if !inherited {
-		// Kill orphan thread processes from previous runs, then clean PID files
-		KillOrphanThreads(cfg.Paths.PIDsDir, log)
-
 		// Kill orphan MCP server from previous run
 		if oldPid, pidErr := ReadPIDFile(cfg.Paths.ServerPID); pidErr == nil && oldPid > 0 && IsProcessAlive(oldPid) {
 			log.Info("Killing orphan MCP server (PID %d) from previous run", oldPid)
@@ -205,10 +195,10 @@ func runSupervisor(runningAsService bool) error {
 		globalCancelMu.Unlock()
 	}()
 
-	if mcp.WaitForReady(ctx, 3*time.Second, cfg.KeeperReadyTimeout) {
+	if mcp.WaitForReady(ctx, 3*time.Second, cfg.MCPReadyTimeout) {
 		log.Info("MCP server is ready")
 	} else {
-		log.Warn("MCP server did not become ready in %v — proceeding anyway", cfg.KeeperReadyTimeout)
+		log.Warn("MCP server did not become ready in %v — proceeding anyway", cfg.MCPReadyTimeout)
 	}
 
 	// Start updater
@@ -216,44 +206,24 @@ func runSupervisor(runningAsService bool) error {
 	updater := NewUpdater(cfg, mcp, log)
 	updater.Start()
 
-	// Health check loop for the server process itself
+	// Health check loop — PID-based, every 30s
 	healthDone := make(chan struct{})
 	go func() {
 		defer close(healthDone)
-		consecutiveFails := 0
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if mcp.IsServerReady(ctx) {
-					if consecutiveFails > 0 {
-						log.Info("Server health check recovered (was at %d fails)", consecutiveFails)
-					}
-					consecutiveFails = 0
-				} else {
-					consecutiveFails++
-					log.Warn("Server health check failed (%d/%d)", consecutiveFails, cfg.HealthFailThresh)
-					if consecutiveFails >= cfg.HealthFailThresh {
-						log.Error("Server unresponsive after %d consecutive failures — restarting", consecutiveFails)
-						NotifyOperator(cfg, log, "⚠️ Supervisor: server process not running — restarting...", 0)
-
-						// Kill and respawn
-						pid, pidErr := ReadPIDFile(cfg.Paths.ServerPID)
-						if pidErr != nil {
-							log.Warn("Could not read server PID file: %v", pidErr)
-						}
-						if pid > 0 {
-							_ = KillProcess(pid, log)
-						}
-						KillByPort(cfg.MCPHttpPort, log)
-
-						if _, err := SpawnMCPServer(cfg, log); err != nil {
-							log.Error("Failed to respawn server: %v", err)
-						}
-						consecutiveFails = 0
+				pid, pidErr := ReadPIDFile(cfg.Paths.ServerPID)
+				if pidErr != nil || !IsProcessAlive(pid) {
+					log.Error("MCP server process is dead — restarting")
+					NotifyOperator(cfg, log, "⚠️ Supervisor: MCP server process died — restarting...", 0)
+					KillByPort(cfg.MCPHttpPort, log)
+					if _, err := SpawnMCPServer(cfg, log); err != nil {
+						log.Error("Failed to respawn server: %v", err)
 					}
 				}
 			}
@@ -280,14 +250,11 @@ func runSupervisor(runningAsService bool) error {
 	// Wait for background goroutines
 	<-healthDone
 
-	// Ask MCP to write reconnect snapshot before killing it
-	mcp.PrepareShutdown(context.Background())
-
 	// Kill server process
 	pid, err := ReadPIDFile(cfg.Paths.ServerPID)
 	if err == nil && pid > 0 {
 		log.Info("Stopping MCP server (PID %d)", pid)
-		_ = KillProcess(pid, log)
+		_ = KillProcessDirect(pid, log)
 	}
 
 	log.Info("Supervisor stopped cleanly")

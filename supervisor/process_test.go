@@ -68,31 +68,6 @@ func TestAtomicWrite(t *testing.T) {
 	}
 }
 
-func TestListThreadPIDs(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "1234.pid"), []byte(`{"pid":100}`), 0644)
-	os.WriteFile(filepath.Join(dir, "5678.pid"), []byte("200"), 0644)
-	os.WriteFile(filepath.Join(dir, "not-a-pid.txt"), []byte("300"), 0644)
-
-	result := ListThreadPIDs(dir)
-	if len(result) != 2 {
-		t.Fatalf("got %d entries, want 2", len(result))
-	}
-	if result["1234"] != 100 {
-		t.Errorf("result[1234] = %d, want 100", result["1234"])
-	}
-	if result["5678"] != 200 {
-		t.Errorf("result[5678] = %d, want 200", result["5678"])
-	}
-}
-
-func TestListThreadPIDs_MissingDir(t *testing.T) {
-	result := ListThreadPIDs(filepath.Join(t.TempDir(), "no-such-dir"))
-	if len(result) != 0 {
-		t.Errorf("expected empty map for missing directory, got %d entries", len(result))
-	}
-}
-
 func TestUpsertEnv_ReplacesExistingAndAppendsMissing(t *testing.T) {
 	env := []string{"A=1", "B=2"}
 
