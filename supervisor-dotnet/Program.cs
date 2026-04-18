@@ -33,7 +33,8 @@ Log.Logger = new LoggerConfiguration()
 // ── Apply pending self-update before DI is initialised ───────────────────────
 var earlyOpts = BuildSupervisorOptions(dataDir);
 
-bool shouldExit = SelfUpdate.ApplyPendingUpdate(earlyOpts, NullLogger.Instance);
+var earlyLoggerFactory = LoggerFactory.Create(b => b.AddSerilog(Log.Logger));
+bool shouldExit = SelfUpdate.ApplyPendingUpdate(earlyOpts, earlyLoggerFactory.CreateLogger("Sensorium.Supervisor.SelfUpdate"));
 if (shouldExit)
 {
     Log.Information("Apply helper launched — exiting for binary swap");
@@ -41,7 +42,7 @@ if (shouldExit)
     return;
 }
 
-RecoverUpdateStateOnStartup(earlyOpts);
+RecoverUpdateStateOnStartup(earlyOpts, earlyLoggerFactory);
 
 // ── Build Generic Host ────────────────────────────────────────────────────────
 var builder = new HostApplicationBuilder(args);
@@ -127,9 +128,9 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
     };
 }
 
-static void RecoverUpdateStateOnStartup(SupervisorOptions opts)
+static void RecoverUpdateStateOnStartup(SupervisorOptions opts, ILoggerFactory loggerFactory)
 {
-    var store = new UpdateStateStore(opts.Paths.UpdateState, NullLogger.Instance);
+    var store = new UpdateStateStore(opts.Paths.UpdateState, loggerFactory.CreateLogger<UpdateStateStore>());
     var state = store.Load();
 
     if (state.Phase is UpdatePhase.Idle or UpdatePhase.Failed)

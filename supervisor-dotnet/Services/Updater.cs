@@ -78,10 +78,11 @@ public sealed class Updater : IUpdater
 
     private TimeSpan TimeUntilNextPoll()
     {
-        var now = DateTime.Now;
-        var next = new DateTime(now.Year, now.Month, now.Day, _opts.PollAtHour, 0, 0, DateTimeKind.Local);
-        if (next <= now) next = next.AddDays(1);
-        return next - now;
+        // Use UTC to avoid DST ambiguities around PollAtHour
+        var now = DateTimeOffset.UtcNow;
+        var todayUtc = new DateTimeOffset(now.Year, now.Month, now.Day, _opts.PollAtHour, 0, 0, TimeSpan.Zero);
+        if (todayUtc <= now) todayUtc = todayUtc.AddDays(1);
+        return todayUtc - now;
     }
 
     private async Task CheckSupervisorUpdateAsync(CancellationToken ct)
@@ -196,7 +197,10 @@ public sealed class Updater : IUpdater
         if (string.IsNullOrEmpty(version))
             throw new InvalidOperationException("Release version is empty");
 
-        foreach (var asset in root.GetProperty("assets").EnumerateArray())
+        if (!root.TryGetProperty("assets", out var assetsEl))
+            throw new InvalidOperationException("Release has no 'assets' field (draft release or API issue)");
+
+        foreach (var asset in assetsEl.EnumerateArray())
         {
             if (asset.GetProperty("name").GetString() == assetName)
             {

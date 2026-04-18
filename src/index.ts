@@ -147,6 +147,7 @@ process.on("SIGTERM", () => {
   log.info("[shutdown] SIGTERM received — writing reconnect snapshot...");
   try { writeReconnectSnapshot(getActiveThreadIds()); } catch (_) { /* best-effort */ }
   try { keeperService.stop(); } catch (_) {}
+  try { backgroundRunner.stop(); } catch (_) {}
   try { closeMemoryDb(); } catch (_) { /* best-effort */ }
   process.exit(0);
 });

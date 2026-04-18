@@ -75,11 +75,7 @@ public static class SelfUpdate
     {
         Directory.CreateDirectory(Path.GetDirectoryName(opts.Paths.SupervisorVersion)!);
 
-        // GetTempFileName creates a zero-byte file; we need a .cmd extension for cmd.exe
-        // to execute it correctly. Delete the placeholder and use a .cmd path instead.
-        string tempBase = Path.GetTempFileName();
-        File.Delete(tempBase);
-        var scriptPath = tempBase + ".cmd";
+        var scriptPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".cmd");
         var script = BuildApplyScript(opts, exePath);
 
         File.WriteAllText(scriptPath, script, Encoding.ASCII);
@@ -100,7 +96,7 @@ public static class SelfUpdate
 
     private static string BuildApplyScript(SupervisorOptions opts, string exePath)
     {
-        static string Q(string p) => "\"" + p.Replace("\"", "\"\"") + "\"";
+        static string Q(string p) => "\"" + p.Replace("%", "%%").Replace("\"", "\"\"") + "\"";
 
         string markerPath = opts.Paths.ApplyFailureMarker;
         string failReason = $"helper failed to swap pending supervisor binary after retries (pending={opts.Paths.PendingBinary} current={exePath})"

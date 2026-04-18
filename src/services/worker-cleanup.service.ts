@@ -33,7 +33,7 @@ export async function decommissionWorker(
   // 4. Archive notes
   try { archiveNotesForThread(deps.db, thread.threadId); } catch {}
   // 5. Archive thread in DB
-  try { deps.threadLifecycle.archiveThread(deps.db, thread.threadId); } catch {}
+  try { deps.threadLifecycle.archiveThread(deps.db, thread.threadId); } catch (err) { log.warn(`[decommission] archiveThread failed for thread ${thread.threadId}: ${errorMessage(err)}`); }
   // 6. Remove from spawnedThreads array
   const idx = spawnedThreads.findIndex((t) => t.threadId === thread.threadId);
   if (idx !== -1) spawnedThreads.splice(idx, 1);
