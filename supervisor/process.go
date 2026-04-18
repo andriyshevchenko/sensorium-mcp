@@ -129,6 +129,22 @@ func KillProcess(pid int, log *Logger) error {
 	return nil
 }
 
+// KillProcessDirect kills only the specific PID (no tree kill).
+func KillProcessDirect(pid int, log *Logger) error {
+	if runtime.GOOS == "windows" {
+		out, err := exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid)).CombinedOutput()
+		if err != nil {
+			log.Warn("KillProcessDirect PID=%d: %s %v", pid, string(out), err)
+		}
+		return err
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return proc.Signal(syscall.SIGTERM)
+}
+
 // KillByPort finds a process listening on the given port and kills it (Windows-only orphan cleanup).
 func KillByPort(port int, log *Logger) {
 	if runtime.GOOS != "windows" || port <= 0 || port > 65535 {
@@ -220,75 +236,3 @@ func atomicWrite(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// ListThreadPIDs returns a map of threadId → PID from the pids directory.
-func ListThreadPIDs(pidsDir string) map[string]int {
-	result := make(map[string]int)
-	entries, err := os.ReadDir(pidsDir)
-	if err != nil {
-		// directory may not exist yet
-		return result
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".pid") {
-			continue
-		}
-		threadID := strings.TrimSuffix(e.Name(), ".pid")
-		pid, err := ReadPIDFile(filepath.Join(pidsDir, e.Name()))
-		if err != nil {
-			continue
-		}
-		result[threadID] = pid
-	}
-	return result
-}
-
-// KillOrphanThreads kills any alive processes listed in PID files (leftovers from
-// a previous supervisor run) and then removes the PID files. Called on startup
-// before the MCP server is launched, so all thread PIDs are guaranteed to be stale.
-func KillOrphanThreads(pidsDir string, log *Logger) {
-	pids := ListThreadPIDs(pidsDir)
-	if len(pids) == 0 {
-		log.Debug("KillOrphanThreads: no PID files found")
-		return
-	}
-	log.Info("KillOrphanThreads: checking %d PID files for orphan processes", len(pids))
-	killed := 0
-	for threadID, pid := range pids {
-		path := filepath.Join(pidsDir, threadID+".pid")
-		if IsProcessAlive(pid) {
-			log.Info("Killing orphan thread %s (PID %d)", threadID, pid)
-			if err := KillProcess(pid, log); err != nil {
-				log.Warn("Failed to kill orphan PID %d: %v", pid, err)
-			}
-			killed++
-		}
-		_ = os.Remove(path)
-	}
-	if killed > 0 {
-		log.Info("KillOrphanThreads: killed %d orphan processes, cleaned %d PID files", killed, len(pids))
-	} else {
-		log.Info("KillOrphanThreads: no orphans found, cleaned %d stale PID files", len(pids))
-	}
-}
-
-// CleanStalePIDs removes PID files for processes that are no longer running.
-func CleanStalePIDs(pidsDir string, log *Logger) {
-	pids := ListThreadPIDs(pidsDir)
-	if len(pids) == 0 {
-		log.Debug("CleanStalePIDs: no PID files found in %s", pidsDir)
-		return
-	}
-	log.Debug("CleanStalePIDs: checking %d PID files", len(pids))
-	cleaned := 0
-	for threadID, pid := range pids {
-		if !IsProcessAlive(pid) {
-			path := filepath.Join(pidsDir, threadID+".pid")
-			log.Info("Removing stale PID file for thread %s (PID %d)", threadID, pid)
-			_ = os.Remove(path)
-			cleaned++
-		}
-	}
-	if cleaned > 0 {
-		log.Info("CleanStalePIDs: removed %d stale PID files", cleaned)
-	}
-}

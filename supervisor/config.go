@@ -35,10 +35,8 @@ type Config struct {
 	HealthFailThresh   int
 	ResolvedProfileEnv map[string]string
 
-	// Keeper defaults (used by health check and WaitForReady)
-	KeeperReadyPollInterval time.Duration
-	KeeperReadyTimeout      time.Duration
-	StuckThreshold          time.Duration
+	// MCP readiness timeout used by WaitForReady at startup
+	MCPReadyTimeout time.Duration
 
 	// Derived paths
 	Paths Paths
@@ -86,9 +84,7 @@ func LoadConfig(runningAsService bool) Config {
 		SecureVaultBaseDir: os.Getenv("SUPERVISOR_SECUREVAULT_BASEDIR"),
 		HealthFailThresh:   3,
 
-		KeeperReadyPollInterval: 3 * time.Second,
-		KeeperReadyTimeout:      2 * time.Minute,
-		StuckThreshold:          time.Duration(envInt("KEEPER_STUCK_THRESHOLD_MIN", 30)) * time.Minute,
+		MCPReadyTimeout: 2 * time.Minute,
 
 		Paths: Paths{
 			BinaryDir:         filepath.Join(dataDir, "bin"),
