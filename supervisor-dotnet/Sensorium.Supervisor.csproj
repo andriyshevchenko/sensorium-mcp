@@ -10,7 +10,7 @@
     <RootNamespace>Sensorium.Supervisor</RootNamespace>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- RID set at publish time: dotnet publish -r win-x64 -->
   </PropertyGroup>
 
   <ItemGroup>

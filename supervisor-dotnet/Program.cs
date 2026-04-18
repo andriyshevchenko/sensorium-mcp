@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -47,7 +48,7 @@ var builder = new HostApplicationBuilder(args);
 
 builder.Services.AddSerilog(Log.Logger);
 
-builder.Services.Configure<SupervisorOptions>(opts => ConfigureOptions(opts, dataDir));
+builder.Services.Configure<SupervisorOptions>(opts => ConfigureOptions(opts, dataDir, builder.Configuration));
 
 builder.Services.AddHttpClient("mcp");
 builder.Services.AddHttpClient("telegram");
@@ -72,24 +73,34 @@ await Log.CloseAndFlushAsync();
 static SupervisorOptions BuildSupervisorOptions(string dataDir)
 {
     var opts = new SupervisorOptions();
-    ConfigureOptions(opts, dataDir);
+    // Early boot: no IConfiguration yet, read env vars directly
+    ConfigureOptions(opts, dataDir, null);
     return opts;
 }
 
-static void ConfigureOptions(SupervisorOptions opts, string dataDir)
+static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfiguration? config)
 {
-    opts.Mode = Env("WATCHER_MODE", "development");
-    opts.PollAtHour = EnvInt("WATCHER_POLL_HOUR", 4);
-    opts.PollInterval = TimeSpan.FromSeconds(EnvInt("WATCHER_POLL_INTERVAL", 60));
+    // IConfiguration includes EnvironmentVariablesConfigurationProvider by default.
+    // At early boot (before host is built), config is null — fall back to env vars directly.
+    string Cfg(string key, string fallback)
+        => (config?[key] ?? Environment.GetEnvironmentVariable(key)) is { Length: > 0 } v ? v : fallback;
+    string? CfgOrNull(string key)
+        => (config?[key] ?? Environment.GetEnvironmentVariable(key)) is { Length: > 0 } v ? v : null;
+    int CfgInt(string key, int fallback)
+        => int.TryParse(config?[key] ?? Environment.GetEnvironmentVariable(key), out int v) ? v : fallback;
+
+    opts.Mode = Cfg("WATCHER_MODE", "development");
+    opts.PollAtHour = CfgInt("WATCHER_POLL_HOUR", 4);
+    opts.PollInterval = TimeSpan.FromSeconds(CfgInt("WATCHER_POLL_INTERVAL", 60));
     opts.GracePeriod = TimeSpan.FromSeconds(
-        EnvInt("WATCHER_GRACE_PERIOD", opts.Mode == "development" ? 10 : 300));
+        CfgInt("WATCHER_GRACE_PERIOD", opts.Mode == "development" ? 10 : 300));
     opts.MinUptime = TimeSpan.FromSeconds(600);
-    opts.McpStartCommand = Env("MCP_START_COMMAND", "npx -y sensorium-mcp@latest");
+    opts.McpStartCommand = Cfg("MCP_START_COMMAND", "npx -y sensorium-mcp@latest");
     opts.DataDir = dataDir;
-    opts.McpHttpPort = EnvInt("MCP_HTTP_PORT", 0);
-    opts.McpHttpSecret = EnvOrNull("MCP_HTTP_SECRET");
-    opts.TelegramToken = EnvOrNull("TELEGRAM_TOKEN");
-    opts.TelegramChatId = EnvOrNull("TELEGRAM_CHAT_ID");
+    opts.McpHttpPort = CfgInt("MCP_HTTP_PORT", 0);
+    opts.McpHttpSecret = CfgOrNull("MCP_HTTP_SECRET");
+    opts.TelegramToken = CfgOrNull("TELEGRAM_TOKEN");
+    opts.TelegramChatId = CfgOrNull("TELEGRAM_CHAT_ID");
     opts.HealthFailThresh = 3;
     opts.McpReadyTimeout = TimeSpan.FromMinutes(2);
 
@@ -146,12 +157,3 @@ static string ReadTrimmedFile(string path)
     try { return File.Exists(path) ? File.ReadAllText(path).Trim() : ""; }
     catch { return ""; }
 }
-
-static string Env(string key, string fallback)
-    => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : fallback;
-
-static string? EnvOrNull(string key)
-    => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : null;
-
-static int EnvInt(string key, int fallback)
-    => int.TryParse(Environment.GetEnvironmentVariable(key), out int v) ? v : fallback;
