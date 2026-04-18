@@ -267,12 +267,14 @@ public sealed class ProcessManager : IProcessManager
             try
             {
                 using var proc = System.Diagnostics.Process.GetProcessById(pid);
-                proc.Kill(entireProcessTree: false); // SIGTERM not directly available; use POSIX APIs via Kill
+                // .NET Process.Kill() sends SIGKILL on Unix, not SIGTERM.
+                // We send SIGKILL, wait 2 s, then send SIGKILL to the tree if still alive.
+                proc.Kill(entireProcessTree: false);
                 await Task.Delay(2000).ConfigureAwait(false);
                 if (IsProcessAlive(pid))
                 {
                     proc.Kill(entireProcessTree: true);
-                    _log.LogInformation("Force-killed PID {Pid}", pid);
+                    _log.LogInformation("Force-killed PID {Pid} (tree)", pid);
                 }
                 else
                 {
@@ -288,8 +290,17 @@ public sealed class ProcessManager : IProcessManager
 
     public async Task KillByPortAsync(int port)
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || port <= 0 || port > 65535)
+        if (port <= 0 || port > 65535)
+        {
+            _log.LogDebug("KillByPort: invalid port {Port} — skipping", port);
             return;
+        }
+
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            _log.LogDebug("KillByPort: not implemented on non-Windows — skipping (port {Port})", port);
+            return;
+        }
 
         _log.LogDebug("KillByPort: checking for processes on port {Port}", port);
 
