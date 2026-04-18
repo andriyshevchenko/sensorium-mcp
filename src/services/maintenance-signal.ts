@@ -24,8 +24,9 @@ emitter.setMaxListeners(500);
 // Watch the data directory for maintenance.flag creation / modification.
 // On Windows, fs.watch fires "rename" when files are created or deleted;
 // on Linux/macOS it fires "rename" on creation and "change" on modification.
+let watcher: ReturnType<typeof watch> | null = null;
 try {
-  watch(DATA_DIR, (_eventType, filename) => {
+  watcher = watch(DATA_DIR, (_eventType, filename) => {
     if (filename === FLAG_NAME) {
       emitter.emit("maintenance");
     }
@@ -34,6 +35,12 @@ try {
   // DATA_DIR might not exist yet at module load time.  The signal simply
   // won't fire from the watcher — emitMaintenanceSignal() still works.
   log.warn(`[maintenance-signal] Could not watch ${DATA_DIR}: ${err}`);
+}
+
+/** Close the filesystem watcher (call during shutdown). */
+export function closeMaintenanceWatcher(): void {
+  watcher?.close();
+  watcher = null;
 }
 
 /** Manually fire the maintenance signal (e.g. from tests or from code that

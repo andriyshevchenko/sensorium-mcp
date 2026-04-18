@@ -51,7 +51,7 @@ setInterval(() => {
   if (maintenanceTgSent.size > 0 && checkMaintenanceFlag() === null) {
     maintenanceTgSent.clear();
   }
-}, 30_000);
+}, 30_000).unref();
 
 // ---------------------------------------------------------------------------
 // Pending-task file helper
