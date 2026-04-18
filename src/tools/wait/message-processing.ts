@@ -28,7 +28,8 @@ import {
   buildSmartContext,
   assembleOperatorResponse,
 } from "./message-delivery.js";
-import { classifyIntent } from "../../intent.js";
+import { classifyIntent, type MessageIntent } from "../../intent.js";
+import { getRecentEpisodes } from "../../data/memory/episodes.js";
 import type { ToolResult, TextBlock, ImageBlock } from "../../types.js";
 import type { WaitToolContext, WaitToolExtra } from "./poll-loop.js";
 import { errorMessage } from "../../utils.js";
@@ -181,7 +182,33 @@ export async function processIncomingMessages(
       .join(" ")
       .slice(0, 500);
   }
-  const intent = classifyIntent(intentText);
+  // Build message buffer from recent episodes for LLM intent classification.
+  // Fetch episodes saved BEFORE the current batch (limit 4), then append current message.
+  let messageBuffer: Array<{role: "operator" | "agent", text: string}> = [];
+  try {
+    const db = getMemoryDb();
+    const recentEps = getRecentEpisodes(db, effectiveThreadId, 5);
+    messageBuffer = recentEps
+      .reverse()
+      .filter(ep => ep.type === "operator_message" || ep.type === "agent_action")
+      .map(ep => ({
+        role: (ep.type === "operator_message" ? "operator" : "agent") as "operator" | "agent",
+        text: String((ep.content as Record<string, unknown>).text ?? (ep.content as Record<string, unknown>).summary ?? "").slice(0, 300),
+      }))
+      .filter(m => m.text.length > 0);
+    // Deduplicate: if the last episode is the same as the current message, drop it
+    if (intentText && messageBuffer.length > 0) {
+      const last = messageBuffer[messageBuffer.length - 1];
+      if (last.role === "operator" && last.text === intentText.slice(0, 300)) {
+        messageBuffer.pop();
+      }
+    }
+  } catch { /* non-fatal — LLM classifier will use current message only */ }
+  // Append current message as the latest operator entry
+  if (intentText) {
+    messageBuffer.push({ role: "operator", text: intentText.slice(0, 300) });
+  }
+  const intent = await classifyIntent(intentText, messageBuffer, OPENAI_API_KEY || undefined);
 
   log.info(`[wait] Returning response with ${contentBlocks.length} blocks to agent.`);
 
