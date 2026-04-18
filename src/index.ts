@@ -44,14 +44,14 @@ const { TelegramClient } = await import("./telegram.js");
 const { startHttpServer } = await import("./http-server.js");
 const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
-const { setTopicRegistryDb, sessionRepository } = await import("./sessions.js");
+const { setTopicRegistryDb, sessionRepository, getActiveThreadIds } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
-const { cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
+const { cleanupStalePidFiles, restoreFromPidFiles } = await import("./services/process.service.js");
 const { log } = await import("./logger.js");
 const { resolveTelegramTopicId, threadRepository } = await import("./data/memory/thread-registry.js");
 const { BackgroundJobRunner } = await import("./services/background-runner.js");
 const { ThreadLifecycleService } = await import("./services/thread-lifecycle.service.js");
-const { clearReconnectSnapshot } = await import("./services/reconnect-snapshot.service.js");
+const { clearReconnectSnapshot, writeReconnectSnapshot } = await import("./services/reconnect-snapshot.service.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -94,13 +94,11 @@ const threadLifecycle = new ThreadLifecycleService(
 // Initialize video temp-file cleanup handlers (registers process exit hooks).
 initVideoTempCleanup();
 
-// Kill orphan agent processes from the previous server instance and spawn
-// fresh processes for all keepAlive threads. This replaces the old PID-file
-// restoration approach — no more PID orphans or ghost duplicates.
+// Clean up stale PID files from a previous server instance, then restore
+// already-running processes into spawnedThreads[] so KeeperService sees them.
+// KeeperService is the single authority for spawning keepAlive threads.
 cleanupStalePidFiles();
-const keepAlive = spawnKeepAliveThreads(threadLifecycle);
-if (keepAlive.spawned > 0) log.info(`[startup] Spawned ${keepAlive.spawned} keepAlive thread(s).`);
-if (keepAlive.errors.length > 0) log.warn(`[startup] keepAlive errors: ${keepAlive.errors.join("; ")}`);
+restoreFromPidFiles();
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)
@@ -145,6 +143,14 @@ const keeperService = new KeeperService({
   chatId: TELEGRAM_CHAT_ID,
 });
 keeperService.start();
+
+process.on("SIGTERM", () => {
+  log.info("[shutdown] SIGTERM received — writing reconnect snapshot...");
+  try { writeReconnectSnapshot(getActiveThreadIds()); } catch (_) { /* best-effort */ }
+  try { keeperService.stop(); } catch (_) {}
+  closeMemoryDb();
+  process.exit(0);
+});
 
 // Auto-clear the reconnect snapshot 10 minutes after startup so stale
 // snapshots from the previous process don't persist across multiple restarts.

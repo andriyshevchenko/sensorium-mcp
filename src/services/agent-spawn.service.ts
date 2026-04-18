@@ -5,14 +5,14 @@ import { join } from "node:path";
 import { getClaudeMcpConfigPath, getDefaultThreadModel, getDefaultWorkerModel, type AgentType } from "../config.js";
 import { log } from "../logger.js";
 import { synthesizeGhostMemory } from "../memory.js";
-import { getAllThreads, getExplicitTelegramTopicId } from "../data/memory/thread-registry.js";
-import { archiveNotesForThread } from "../data/memory/semantic.js";
+import { getAllThreads } from "../data/memory/thread-registry.js";
 import { initMemoryDb } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 import { COPILOT_HOME_DIR, DEFAULT_COPILOT_MODEL, ensureCopilotWorkspace, writeCopilotHomeFiles } from "../tools/shared-agent-utils.js";
 import { deleteTelegramTopicByBotApi } from "./topic.service.js";
 import { PROCESS_BASE_DIR, PROCESS_LOGS_DIR, PROCESS_PIDS_DIR, ensureDirs, findAliveThread, isProcessAlive, readPidFiles, spawnedThreads, type SpawnedThread } from "./process.service.js";
 import { ThreadState, type ThreadLifecycleService } from "./thread-lifecycle.service.js";
+import { decommissionWorker } from "./worker-cleanup.service.js";
 
 const ENV_DENYLIST = new Set(["TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "MCP_HTTP_SECRET", "DASHBOARD_TOKEN", "MCP_START_COMMAND", "WATCHER_START_COMMAND"]);
 const WATCHER_PORT = Number.parseInt(process.env.WATCHER_PORT || "3848", 10);
@@ -127,19 +127,22 @@ async function handleProcessExit(code: number | null, threadId: number, pid: num
     const currentState = threadLifecycle.getThreadState(db, threadId);
     const isTerminal = currentState === ThreadState.Archived || currentState === ThreadState.Expired;
     if (!isTerminal) {
-      threadLifecycle.markExited(db, threadId);
-      if (entry.memorySourceThreadId !== undefined) {
-        try { await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name); } catch (err) { log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`); }
-      }
       if (entry.threadType === "worker") {
-        try {
-          const token = process.env.TELEGRAM_TOKEN || "";
-          const chatId = process.env.TELEGRAM_CHAT_ID || "";
-          const topicId = token && chatId ? getExplicitTelegramTopicId(db, threadId) : null;
-          if (topicId != null) await deleteTelegramTopicByBotApi(token, chatId, topicId);
-        } catch (err) { log.warn(`[start_thread] Failed to delete Telegram topic for worker ${threadId}: ${errorMessage(err)}`); }
-        try { archiveNotesForThread(db, threadId); } catch (err) { log.warn(`[start_thread] Failed to archive notes for worker ${threadId}: ${errorMessage(err)}`); }
-        try { threadLifecycle.archiveThread(db, threadId); } catch (err) { log.warn(`[start_thread] Failed to archive worker thread ${threadId}: ${errorMessage(err)}`); }
+        // Worker: fully decommission (delete topic, archive notes & DB entry, remove from registry)
+        const token = process.env.TELEGRAM_TOKEN || "";
+        const chatId = process.env.TELEGRAM_CHAT_ID || "";
+        const telegramAdapter = {
+          deleteForumTopic: async (cId: string, topicId: number) => {
+            if (token && cId) await deleteTelegramTopicByBotApi(token, cId, topicId);
+          },
+        };
+        await decommissionWorker(entry, { db, telegram: telegramAdapter, chatId, threadLifecycle });
+      } else {
+        // Non-worker (e.g., keepAlive thread): mark exited so KeeperService can restart
+        threadLifecycle.markExited(db, threadId);
+        if (entry.memorySourceThreadId !== undefined) {
+          try { await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name); } catch (err) { log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`); }
+        }
       }
     }
   } catch (err) {

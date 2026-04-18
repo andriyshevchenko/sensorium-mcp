@@ -32,7 +32,7 @@ import { handleSessionTool, type SessionToolContext } from "../tools/session-too
 import { handleStartSession, type StartSessionContext } from "../tools/start-session-tool.js";
 import { handleWaitForInstructions, type WaitToolContext, type WaitToolExtra } from "../tools/wait/index.js";
 import { handleStartThread, handleSendMessageToThread as handleSendMessageToThreadFile, type DelegateToolContext } from "../tools/delegate-tool.js";
-import { getThreadsHealth } from "../tools/thread-lifecycle.js";
+import { getThreadsHealth } from "../services/thread-health.service.js";
 import { handleSearchSkills, handleGetSkill } from "../tools/skill-tools.js";
 import type { ThreadLifecycleService } from "../services/thread-lifecycle.service.js";
 import type { CreateMcpServerFn, ToolResult } from "../types.js";

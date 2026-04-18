@@ -6,6 +6,37 @@ import { spawnedThreads, type SpawnedThread, readPidFiles, killProcessTree } fro
 import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { log } from "../logger.js";
 
+export async function decommissionWorker(
+  thread: { threadId: number; pid?: number; memorySourceThreadId?: number; name: string },
+  deps: {
+    db: ReturnType<typeof import("../memory.js").initMemoryDb>;
+    telegram: { deleteForumTopic(chatId: string, threadId: number): Promise<void> };
+    chatId: string;
+    threadLifecycle: ThreadLifecycleService;
+  },
+): Promise<void> {
+  // 1. Memory synthesis (if ghost/worker with memory source)
+  if (thread.memorySourceThreadId !== undefined) {
+    try { await synthesizeGhostMemory(deps.db, thread.threadId, thread.memorySourceThreadId, thread.name); } catch {}
+  }
+  // 2. Kill process (no-op if already dead)
+  if (thread.pid !== undefined) {
+    killProcessTree(thread.pid, thread.threadId);
+  }
+  // 3. Delete Telegram topic
+  try {
+    const topicId = getExplicitTelegramTopicId(deps.db, thread.threadId) ?? thread.threadId;
+    await deps.telegram.deleteForumTopic(deps.chatId, topicId);
+  } catch {}
+  // 4. Archive notes
+  try { archiveNotesForThread(deps.db, thread.threadId); } catch {}
+  // 5. Archive thread in DB
+  try { deps.threadLifecycle.archiveThread(deps.db, thread.threadId); } catch {}
+  // 6. Remove from spawnedThreads array
+  const idx = spawnedThreads.findIndex((t) => t.threadId === thread.threadId);
+  if (idx !== -1) spawnedThreads.splice(idx, 1);
+}
+
 const DEFAULT_WORKER_TTL_MS = 60 * 60 * 1000;
 let orphanSweepDone = false;
 
@@ -87,16 +118,5 @@ async function cleanupSingleWorker(
   chatId: string,
   threadLifecycle: ThreadLifecycleService,
 ): Promise<void> {
-  if (thread.memorySourceThreadId !== undefined) {
-    try { await synthesizeGhostMemory(db, thread.threadId, thread.memorySourceThreadId, thread.name); } catch {}
-  }
-  killProcessTree(thread.pid, thread.threadId);
-  try {
-    const topicId = getExplicitTelegramTopicId(db, thread.threadId) ?? thread.threadId;
-    await telegram.deleteForumTopic(chatId, topicId);
-  } catch {}
-  try { threadLifecycle.archiveThread(db, thread.threadId); } catch {}
-  try { archiveNotesForThread(db, thread.threadId); } catch {}
-  const idx = spawnedThreads.indexOf(thread);
-  if (idx !== -1) spawnedThreads.splice(idx, 1);
+  await decommissionWorker(thread, { db, telegram, chatId, threadLifecycle });
 }
