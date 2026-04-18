@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "no
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
+import { errorMessage } from "../utils.js";
 
 const BASE_DIR = join(homedir(), ".remote-copilot-mcp");
 const LOGS_DIR = join(BASE_DIR, "logs");
@@ -107,3 +108,18 @@ export function cleanupStalePidFiles(): void {
 }
 
 export const pidDirExists = (): boolean => existsSync(PIDS_DIR);
+
+export function killProcessTree(pid: number, threadId: number): void {
+  try {
+    if (process.platform === "win32") {
+      execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10000 });
+    } else {
+      process.kill(pid, "SIGTERM");
+    }
+    log.info(`[process] Killed process tree for thread ${threadId} PID=${pid}`);
+  } catch (err) {
+    log.debug(`[process] Kill process ${pid} (thread ${threadId}): ${errorMessage(err)}`);
+  }
+  const pidFile = join(PROCESS_PIDS_DIR, `${threadId}.pid`);
+  try { unlinkSync(pidFile); } catch {}
+}
