@@ -6,7 +6,7 @@ import { errorMessage } from "../../utils.js";
 import { nowISO } from "./utils.js";
 import type { Database } from "./schema.js";
 
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
 function isDuplicateColumnError(err: unknown, columnName: string): boolean {
   const message = errorMessage(err).toLowerCase();
@@ -389,6 +389,50 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       if (!isDuplicateColumnError(err, "pid")) throw err;
     }
     log.info("[migration-22] Added pid column to thread_registry");
+  },
+  23: (db) => {
+    // Rebuild thread_registry to widen the status CHECK constraint to include
+    // the new explicit state machine states: created, spawning, stuck, exiting.
+    // SQLite does not support ALTER TABLE ... ADD CONSTRAINT, so a table rebuild is required.
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS thread_registry_new (
+          id                INTEGER PRIMARY KEY AUTOINCREMENT,
+          thread_id         INTEGER NOT NULL UNIQUE,
+          name              TEXT NOT NULL,
+          type              TEXT NOT NULL CHECK(type IN ('root','daily','branch','worker')),
+          root_thread_id    INTEGER,
+          badge             TEXT NOT NULL DEFAULT 'root',
+          client            TEXT DEFAULT 'claude',
+          max_retries       INTEGER DEFAULT 5,
+          cooldown_ms       INTEGER DEFAULT 300000,
+          keep_alive        INTEGER DEFAULT 0,
+          created_at        TEXT NOT NULL,
+          last_active_at    TEXT,
+          session_reset_at  TEXT,
+          status            TEXT NOT NULL DEFAULT 'active'
+                              CHECK(status IN ('created','spawning','active','stuck','exiting','exited','archived','expired')),
+          daily_rotation    INTEGER NOT NULL DEFAULT 0,
+          autonomous_mode   INTEGER NOT NULL DEFAULT 0,
+          telegram_topic_id INTEGER,
+          identity_prompt   TEXT,
+          working_directory TEXT,
+          pid               INTEGER
+        );
+        INSERT OR IGNORE INTO thread_registry_new
+          SELECT id, thread_id, name, type, root_thread_id, badge, client, max_retries,
+                 cooldown_ms, keep_alive, created_at, last_active_at, session_reset_at,
+                 status, daily_rotation, autonomous_mode, telegram_topic_id, identity_prompt,
+                 working_directory, pid
+          FROM thread_registry;
+        DROP TABLE thread_registry;
+        ALTER TABLE thread_registry_new RENAME TO thread_registry;
+        CREATE INDEX IF NOT EXISTS idx_thread_reg_type   ON thread_registry(type);
+        CREATE INDEX IF NOT EXISTS idx_thread_reg_root   ON thread_registry(root_thread_id);
+        CREATE INDEX IF NOT EXISTS idx_thread_reg_status ON thread_registry(status);
+      `);
+    })();
+    log.info("[migration-23] Widened thread_registry status CHECK to include created/spawning/stuck/exiting");
   },
 };
 

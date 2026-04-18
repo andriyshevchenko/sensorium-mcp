@@ -31,7 +31,7 @@ export interface ThreadRegistryEntry {
   createdAt: string;
   lastActiveAt: string | null;
   sessionResetAt: string | null;
-  status: 'active' | 'archived' | 'expired' | 'exited';
+  status: 'created' | 'spawning' | 'active' | 'stuck' | 'exiting' | 'exited' | 'archived' | 'expired';
 }
 
 type RegisterThreadEntry = {

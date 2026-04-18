@@ -3,7 +3,7 @@ import { findAliveThreadViaPidFile, killProcessTree } from "./process.service.js
 import { readThreadHeartbeat } from "../data/file-storage.js";
 import { dispatchSpawn } from "./agent-spawn.service.js";
 import { getKeepAliveThreads, getThread } from "../data/memory/thread-registry.js";
-import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
+import { ThreadState, type ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import type { AgentType } from "../config.js";
 import { errorMessage } from "../utils.js";
 import type { initMemoryDb } from "../memory.js";
@@ -124,6 +124,12 @@ export class KeeperService {
       const heartbeat = readThreadHeartbeat(entry.threadId);
       if (heartbeat !== null && (now - heartbeat) > STUCK_THRESHOLD_MS) {
         log.warn(`[keeper] Thread ${entry.threadId} is stuck (no heartbeat for ${Math.round((now - heartbeat) / 60000)}m) — killing`);
+        try {
+          const stuckDb = this.deps.getMemoryDb();
+          this.deps.threadLifecycle.transitionThread(stuckDb, entry.threadId, ThreadState.Stuck);
+        } catch (err) {
+          log.warn(`[keeper] Active→Stuck transition failed for ${entry.threadId}: ${errorMessage(err)}`);
+        }
         killProcessTree(alivePid, entry.threadId);
         entry.retryCount = 0;
         // Fall through to restart
