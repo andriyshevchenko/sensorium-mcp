@@ -171,22 +171,46 @@ public sealed class ProcessManager : IProcessManager
 
         var proc = new System.Diagnostics.Process { StartInfo = psi };
 
-        var stderrFile = new StreamWriter(_opts.Paths.McpStderrLog, append: true);
+        // StreamWriter is not thread-safe; guard all writes with a lock.
+        var stderrFile = new StreamWriter(
+            new FileStream(_opts.Paths.McpStderrLog, FileMode.Append, FileAccess.Write, FileShare.ReadWrite),
+            leaveOpen: false)
+        {
+            AutoFlush = true
+        };
+        var stderrLock = new object();
+
         proc.ErrorDataReceived += (_, e) =>
         {
-            if (e.Data != null) stderrFile.WriteLine(e.Data);
+            if (e.Data == null) return;
+            lock (stderrLock) { stderrFile.WriteLine(e.Data); }
         };
 
-        proc.Start();
+        try
+        {
+            proc.Start();
+        }
+        catch
+        {
+            stderrFile.Dispose();
+            proc.Dispose();
+            throw;
+        }
+
         proc.BeginErrorReadLine();
 
         // Detach — don't wait
         Task.Run(() =>
         {
-            proc.WaitForExit();
-            stderrFile.Flush();
-            stderrFile.Dispose();
-            proc.Dispose();
+            try
+            {
+                proc.WaitForExit();
+            }
+            finally
+            {
+                lock (stderrLock) { stderrFile.Dispose(); }
+                proc.Dispose();
+            }
         });
 
         return proc.Id;
@@ -360,7 +384,8 @@ public sealed class ProcessManager : IProcessManager
             RedirectStandardError = true,
             CreateNoWindow = true
         };
-        using var proc = System.Diagnostics.Process.Start(psi)!;
+        using var proc = System.Diagnostics.Process.Start(psi)
+            ?? throw new InvalidOperationException($"Failed to start process: {exe} {args}");
         string output = await proc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
         string err = await proc.StandardError.ReadToEndAsync().ConfigureAwait(false);
         await proc.WaitForExitAsync().ConfigureAwait(false);
