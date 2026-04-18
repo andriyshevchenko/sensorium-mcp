@@ -83,7 +83,7 @@ public sealed class ProcessManager : IProcessManager
 
         IntPtr hStderr = NativeMethods.CreateFile(
             _opts.Paths.McpStderrLog,
-            NativeMethods.GENERIC_WRITE,
+            NativeMethods.FILE_APPEND_DATA,
             NativeMethods.FILE_SHARE_READ | NativeMethods.FILE_SHARE_WRITE,
             ref sa,
             NativeMethods.OPEN_ALWAYS,
