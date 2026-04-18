@@ -35,20 +35,10 @@ type Config struct {
 	HealthFailThresh   int
 	ResolvedProfileEnv map[string]string
 
-	// Keeper defaults
-	KeeperBaseBackoff         time.Duration
-	KeeperMaxBackoff          time.Duration
-	KeeperHealthCheckInterval time.Duration
-	KeeperMaxRetries          int
-	KeeperCooldown            time.Duration
-	KeeperReadyPollInterval   time.Duration
-	KeeperReadyTimeout        time.Duration
-	FastExitThreshold         time.Duration
-	FastExitMaxCount          int
-	FastExitBaseCooldown      time.Duration
-	FastExitMaxCooldown       time.Duration
-	StuckThreshold            time.Duration
-	KeeperMode                string
+	// Keeper defaults (used by health check and WaitForReady)
+	KeeperReadyPollInterval time.Duration
+	KeeperReadyTimeout      time.Duration
+	StuckThreshold          time.Duration
 
 	// Derived paths
 	Paths Paths
@@ -96,19 +86,9 @@ func LoadConfig(runningAsService bool) Config {
 		SecureVaultBaseDir: os.Getenv("SUPERVISOR_SECUREVAULT_BASEDIR"),
 		HealthFailThresh:   3,
 
-		KeeperBaseBackoff:         5 * time.Second,
-		KeeperMaxBackoff:          5 * time.Minute,
-		KeeperHealthCheckInterval: 2 * time.Minute,
-		KeeperMaxRetries:          5,
-		KeeperCooldown:            5 * time.Minute,
-		KeeperReadyPollInterval:   3 * time.Second,
-		KeeperReadyTimeout:        2 * time.Minute,
-		FastExitThreshold:         60 * time.Second,
-		FastExitMaxCount:          3,
-		FastExitBaseCooldown:      10 * time.Minute,
-		FastExitMaxCooldown:       4 * time.Hour,
-		StuckThreshold:            time.Duration(envInt("KEEPER_STUCK_THRESHOLD_MIN", 30)) * time.Minute,
-		KeeperMode:                envOr("KEEPER_MODE", "supervisor"),
+		KeeperReadyPollInterval: 3 * time.Second,
+		KeeperReadyTimeout:      2 * time.Minute,
+		StuckThreshold:          time.Duration(envInt("KEEPER_STUCK_THRESHOLD_MIN", 30)) * time.Minute,
 
 		Paths: Paths{
 			BinaryDir:         filepath.Join(dataDir, "bin"),

@@ -17,12 +17,6 @@ var (
 	globalCancel   context.CancelFunc
 )
 
-// KeeperEntry tracks a running keeper and its settings.
-type KeeperEntry struct {
-	keeper   *Keeper
-	settings KeeperConfig
-}
-
 func main() {
 	isService, err := isWindowsService()
 	if err != nil {
@@ -148,7 +142,7 @@ func runSupervisor(runningAsService bool) error {
 	recoverPersistedUpdateStateOnStartup(cfg, log)
 
 	log.Info("sensorium-supervisor starting (mode=%s, hostMode=%s, port=%d, dataDir=%s)", cfg.Mode, cfg.HostMode, cfg.MCPHttpPort, cfg.DataDir)
-	log.Debug("Config: MCPStartCommand=%q, PollInterval=%v, MinUptime=%v, KeeperMaxRetries=%d", cfg.MCPStartCommand, cfg.PollInterval, cfg.MinUptime, cfg.KeeperMaxRetries)
+	log.Debug("Config: MCPStartCommand=%q, PollInterval=%v, MinUptime=%v", cfg.MCPStartCommand, cfg.PollInterval, cfg.MinUptime)
 	log.Debug("Config: TelegramToken=%v, HealthFailThresh=%d, StuckThreshold=%v", cfg.TelegramToken != "", cfg.HealthFailThresh, cfg.StuckThreshold)
 
 	if err := os.MkdirAll(cfg.Paths.PIDsDir, 0755); err != nil {
@@ -217,89 +211,6 @@ func runSupervisor(runningAsService bool) error {
 		log.Warn("MCP server did not become ready in %v — proceeding anyway", cfg.KeeperReadyTimeout)
 	}
 
-	// Start keeper management
-	var mu sync.Mutex
-	keepers := make(map[int]*KeeperEntry)
-	keeperPollerDone := make(chan struct{})
-
-	if cfg.KeeperMode == "supervisor" {
-		onDeath := func(threadID int, sessionName string) {
-			log.Warn("Thread %d ('%s') died", threadID, sessionName)
-			NotifyOperator(cfg, log, fmt.Sprintf("💀 <b>%s</b> session died — restarting…", sessionName), threadID)
-		}
-
-		syncKeepers := func() {
-			if cfg.MCPHttpPort <= 0 {
-				log.Debug("syncKeepers: skipped (no port configured)")
-				return
-			}
-
-			log.Debug("syncKeepers: fetching keeper settings...")
-			settings, err := fetchKeeperSettings(ctx, mcp, log)
-			if err != nil {
-				log.Warn("Failed to fetch keeper settings: %v", err)
-				return
-			}
-			log.Debug("syncKeepers: got %d keeper configs", len(settings))
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			// Find keepers to remove (no longer in settings)
-			wanted := make(map[int]bool)
-			for _, s := range settings {
-				wanted[s.ThreadID] = true
-			}
-			for tid, entry := range keepers {
-				if !wanted[tid] {
-					log.Info("Stopping keeper for removed thread %d", tid)
-					entry.keeper.Stop()
-					delete(keepers, tid)
-				}
-			}
-
-			// Start or update keepers
-			for _, s := range settings {
-				existing, exists := keepers[s.ThreadID]
-				if exists && settingsChanged(existing.settings, s) {
-					log.Info("Settings changed for thread %d — restarting keeper", s.ThreadID)
-					existing.keeper.Stop()
-					delete(keepers, s.ThreadID)
-					exists = false
-				}
-				if !exists {
-					k := NewKeeper(s, cfg, mcp, log, onDeath)
-					k.Start()
-					keepers[s.ThreadID] = &KeeperEntry{keeper: k, settings: s}
-					log.Info("Started keeper for thread %d ('%s')", s.ThreadID, s.SessionName)
-				}
-			}
-		}
-
-		// Initial sync
-		log.Info("Running initial keeper sync")
-		syncKeepers()
-
-		// Keeper settings poller (every 2 min)
-		go func() {
-			defer close(keeperPollerDone)
-			ticker := time.NewTicker(2 * time.Minute)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					log.Debug("Keeper settings poll triggered")
-					syncKeepers()
-				}
-			}
-		}()
-	} else {
-		close(keeperPollerDone)
-		log.Info("Keeper management delegated to MCP server (KEEPER_MODE=%s)", cfg.KeeperMode)
-	}
-
 	// Start updater
 	log.Info("Starting auto-updater")
 	updater := NewUpdater(cfg, mcp, log)
@@ -363,35 +274,10 @@ func runSupervisor(runningAsService bool) error {
 		log.Info("Shutdown requested")
 	}
 
-	// Stop keepers (with 10s timeout)
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-
-	mu.Lock()
-	var wg sync.WaitGroup
-	for _, entry := range keepers {
-		wg.Add(1)
-		go func(k *Keeper) {
-			defer wg.Done()
-			k.Stop()
-		}(entry.keeper)
-	}
-	mu.Unlock()
-
-	doneCh := make(chan struct{})
-	go func() { wg.Wait(); close(doneCh) }()
-	select {
-	case <-doneCh:
-		log.Info("All keepers stopped")
-	case <-shutdownCtx.Done():
-		log.Warn("Keeper shutdown timed out after 10s")
-	}
-
 	// Stop updater
 	updater.Stop()
 
 	// Wait for background goroutines
-	<-keeperPollerDone
 	<-healthDone
 
 	// Ask MCP to write reconnect snapshot before killing it
@@ -406,75 +292,4 @@ func runSupervisor(runningAsService bool) error {
 
 	log.Info("Supervisor stopped cleanly")
 	return nil
-}
-
-// fetchKeeperSettings reads all keepAlive threads from the MCP server
-// (root, branch, and daily — excludes worker threads).
-func fetchKeeperSettings(ctx context.Context, mcp *MCPClient, log *Logger) ([]KeeperConfig, error) {
-	roots, err := mcp.GetKeepAliveThreads(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var result []KeeperConfig
-	for _, r := range roots {
-		keepAlive, _ := r["keepAlive"].(bool)
-		if !keepAlive {
-			continue
-		}
-
-		// Skip non-active roots (archived, expired, exited)
-		if status, _ := r["status"].(string); status != "" && status != "active" {
-			continue
-		}
-
-		tidFloat, _ := r["threadId"].(float64) // JSON numbers decode as float64
-		tid := int(tidFloat)
-		if tid <= 0 {
-			continue
-		}
-
-		client := "claude"
-		if c, ok := r["client"].(string); ok && c != "" {
-			client = c
-		}
-
-		sessionName := ""
-		if n, ok := r["name"].(string); ok {
-			sessionName = n
-		}
-
-		maxRetries := 5
-		if mr, ok := r["maxRetries"].(float64); ok {
-			maxRetries = int(mr)
-		}
-
-		cooldownMs := 300_000
-		if cd, ok := r["cooldownMs"].(float64); ok {
-			cooldownMs = int(cd)
-		}
-
-		workDir := ""
-		if wd, ok := r["workingDirectory"].(string); ok {
-			workDir = wd
-		}
-
-		result = append(result, KeeperConfig{
-			ThreadID:         tid,
-			SessionName:      sessionName,
-			Client:           client,
-			WorkingDirectory: workDir,
-			MaxRetries:       maxRetries,
-			CooldownMs:       cooldownMs,
-		})
-	}
-	return result, nil
-}
-
-func settingsChanged(a, b KeeperConfig) bool {
-	return a.MaxRetries != b.MaxRetries ||
-		a.CooldownMs != b.CooldownMs ||
-		a.Client != b.Client ||
-		a.SessionName != b.SessionName ||
-		a.WorkingDirectory != b.WorkingDirectory
 }
