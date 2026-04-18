@@ -56,8 +56,8 @@ export interface ThreadLifecycleLogger {
 const VALID_TRANSITIONS: Record<ThreadState, ReadonlySet<ThreadState>> = {
   [ThreadState.Created]:  new Set([ThreadState.Spawning, ThreadState.Active, ThreadState.Archived]),
   [ThreadState.Spawning]: new Set([ThreadState.Active, ThreadState.Exited, ThreadState.Archived]),
-  [ThreadState.Active]:   new Set([ThreadState.Active, ThreadState.Dormant, ThreadState.Stuck, ThreadState.Exiting, ThreadState.Exited, ThreadState.Archived, ThreadState.Expired]),
-  [ThreadState.Dormant]:  new Set([ThreadState.Active, ThreadState.Archived, ThreadState.Expired]),
+  [ThreadState.Active]:   new Set([ThreadState.Active, ThreadState.Stuck, ThreadState.Exiting, ThreadState.Exited, ThreadState.Archived, ThreadState.Expired]),
+  [ThreadState.Dormant]:  new Set([]), // Not persisted — no transitions until persistence is added
   [ThreadState.Stuck]:    new Set([ThreadState.Exiting, ThreadState.Exited, ThreadState.Active, ThreadState.Archived]),
   [ThreadState.Exiting]:  new Set([ThreadState.Exited, ThreadState.Archived]),
   [ThreadState.Exited]:   new Set([ThreadState.Active, ThreadState.Archived, ThreadState.Expired]),
@@ -153,7 +153,9 @@ export class ThreadLifecycleService {
     });
 
     const updated = this.requireThread(db, threadId, "markExited");
-    cleanupThreadFiles(threadId);
+    // Only clean up files for non-keepAlive threads; keepAlive threads will be
+    // restarted by KeeperService which needs a clean slate, not stale files.
+    if (!current.keepAlive) cleanupThreadFiles(threadId);
     this.logger.info(`[thread-lifecycle] markExited -> ${nextState} (${threadId})`);
     return updated;
   }

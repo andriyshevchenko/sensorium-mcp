@@ -189,6 +189,7 @@ public sealed class ProcessManager : IProcessManager
         try
         {
             proc.Start();
+            proc.BeginErrorReadLine();
         }
         catch
         {
@@ -196,8 +197,6 @@ public sealed class ProcessManager : IProcessManager
             proc.Dispose();
             throw;
         }
-
-        proc.BeginErrorReadLine();
 
         // Detach — don't wait
         Task.Run(() =>
@@ -397,10 +396,12 @@ public sealed class ProcessManager : IProcessManager
         };
         using var proc = System.Diagnostics.Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start process: {exe} {args}");
-        string output = await proc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
-        string err = await proc.StandardError.ReadToEndAsync().ConfigureAwait(false);
+        // Read both streams concurrently to avoid pipe-buffer deadlock
+        var outputTask = proc.StandardOutput.ReadToEndAsync();
+        var errTask = proc.StandardError.ReadToEndAsync();
+        await Task.WhenAll(outputTask, errTask).ConfigureAwait(false);
         await proc.WaitForExitAsync().ConfigureAwait(false);
-        return (proc.ExitCode, output + err);
+        return (proc.ExitCode, outputTask.Result + errTask.Result);
     }
 
     private static List<string> ParseCommandLine(string commandLine)

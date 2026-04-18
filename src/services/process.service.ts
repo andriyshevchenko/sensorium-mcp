@@ -149,7 +149,7 @@ export function reconcileState(db: Database, threadLifecycle: ThreadLifecycleSer
   const pidEntries = readPidFiles();
   const dbThreadMap = new Map(
     getAllThreads(db)
-      .filter((t) => t.status === "active" || t.status === "exited")
+      .filter((t) => ["active", "exited", "exiting", "spawning", "stuck"].includes(t.status))
       .map((t) => [t.threadId, t]),
   );
 
@@ -180,7 +180,7 @@ export function reconcileState(db: Database, threadLifecycle: ThreadLifecycleSer
       // Dead: clean up stale PID file and mark thread exited in DB if active
       try { unlinkSync(pidEntry.filePath); } catch {}
       log.info(`[reconcileState] Cleaned stale PID file for thread ${pidEntry.threadId} (PID=${pidEntry.pid} dead)`);
-      if (dbThread.status === "active") {
+      if (["active", "exiting", "spawning", "stuck"].includes(dbThread.status)) {
         try {
           threadLifecycle.markExited(db, pidEntry.threadId);
         } catch (err) {
