@@ -206,17 +206,20 @@ func runSupervisor(runningAsService bool) error {
 	updater := NewUpdater(cfg, mcp, log)
 	updater.Start()
 
-	// Health check loop — PID-based, every 30s
+	// Health check loop — PID check every 30s, HTTP liveness every ~2.5min
 	healthDone := make(chan struct{})
 	go func() {
 		defer close(healthDone)
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
+		var httpFailCount int
+		var tickCount int
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				tickCount++
 				pid, pidErr := ReadPIDFile(cfg.Paths.ServerPID)
 				if pidErr != nil || !IsProcessAlive(pid) {
 					log.Error("MCP server process is dead — restarting")
@@ -224,6 +227,27 @@ func runSupervisor(runningAsService bool) error {
 					KillByPort(cfg.MCPHttpPort, log)
 					if _, err := SpawnMCPServer(cfg, log); err != nil {
 						log.Error("Failed to respawn server: %v", err)
+					}
+					httpFailCount = 0
+					continue
+				}
+				// Periodic HTTP liveness check (every 5th tick ≈ 2.5 min)
+				if tickCount%5 == 0 {
+					if mcp.IsServerReady(ctx) {
+						httpFailCount = 0
+					} else {
+						httpFailCount++
+						log.Warn("MCP server HTTP check failed (%d/%d)", httpFailCount, cfg.HealthFailThresh)
+						if httpFailCount >= cfg.HealthFailThresh {
+							log.Error("MCP server not responding to HTTP — restarting")
+							NotifyOperator(cfg, log, "⚠️ Supervisor: MCP server hung (not responding to HTTP) — restarting...", 0)
+							_ = KillProcessDirect(pid, log)
+							KillByPort(cfg.MCPHttpPort, log)
+							if _, err := SpawnMCPServer(cfg, log); err != nil {
+								log.Error("Failed to respawn server: %v", err)
+							}
+							httpFailCount = 0
+						}
 					}
 				}
 			}
@@ -250,10 +274,13 @@ func runSupervisor(runningAsService bool) error {
 	// Wait for background goroutines
 	<-healthDone
 
-	// Kill server process
+	// Graceful shutdown: ask MCP to write reconnect snapshot, then kill
 	pid, err := ReadPIDFile(cfg.Paths.ServerPID)
 	if err == nil && pid > 0 {
 		log.Info("Stopping MCP server (PID %d)", pid)
+		if err := mcp.PrepareShutdown(context.Background()); err != nil {
+			log.Warn("PrepareShutdown failed (will force-kill): %v", err)
+		}
 		_ = KillProcessDirect(pid, log)
 	}
 

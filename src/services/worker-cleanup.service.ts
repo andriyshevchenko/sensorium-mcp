@@ -17,7 +17,7 @@ export async function decommissionWorker(
 ): Promise<void> {
   // 1. Memory synthesis (if ghost/worker with memory source)
   if (thread.memorySourceThreadId !== undefined) {
-    try { await synthesizeGhostMemory(deps.db, thread.threadId, thread.memorySourceThreadId, thread.name); } catch {}
+    try { await synthesizeGhostMemory(deps.db, thread.threadId, thread.memorySourceThreadId, thread.name); } catch (err) { log.warn(`[decommission] synthesizeGhostMemory failed for thread ${thread.threadId}: ${errorMessage(err)}`); }
   }
   // 2. Kill process (no-op if already dead)
   if (thread.pid !== undefined) {
