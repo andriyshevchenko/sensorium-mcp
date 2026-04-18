@@ -46,7 +46,7 @@ const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
 const { setTopicRegistryDb, sessionRepository, getActiveThreadIds } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
-const { cleanupStalePidFiles, restoreFromPidFiles } = await import("./services/process.service.js");
+const { reconcileState } = await import("./services/process.service.js");
 const { log } = await import("./logger.js");
 const { resolveTelegramTopicId, threadRepository } = await import("./data/memory/thread-registry.js");
 const { BackgroundJobRunner } = await import("./services/background-runner.js");
@@ -94,11 +94,10 @@ const threadLifecycle = new ThreadLifecycleService(
 // Initialize video temp-file cleanup handlers (registers process exit hooks).
 initVideoTempCleanup();
 
-// Clean up stale PID files from a previous server instance, then restore
-// already-running processes into spawnedThreads[] so KeeperService sees them.
-// KeeperService is the single authority for spawning keepAlive threads.
-cleanupStalePidFiles();
-restoreFromPidFiles();
+// Reconcile in-memory state with SQLite (intent) and PID files (OS evidence).
+// Populates spawnedThreads[] for alive processes, cleans stale PID files,
+// and marks dead-but-active threads as exited so KeeperService can restart them.
+reconcileState(getMemoryDb(), threadLifecycle);
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)

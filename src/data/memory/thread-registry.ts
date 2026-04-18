@@ -27,6 +27,7 @@ export interface ThreadRegistryEntry {
   telegramTopicId: number | null;
   identityPrompt: string | null;
   workingDirectory: string | null;
+  pid: number | null;
   createdAt: string;
   lastActiveAt: string | null;
   sessionResetAt: string | null;
@@ -62,6 +63,7 @@ type UpdateThreadPatch = Partial<
     | "telegramTopicId"
     | "identityPrompt"
     | "workingDirectory"
+    | "pid"
   >
 >;
 
@@ -114,6 +116,7 @@ function rowToEntry(row: Record<string, unknown>): ThreadRegistryEntry {
     telegramTopicId: (row.telegram_topic_id as number | null) ?? null,
     identityPrompt: (row.identity_prompt as string | null) ?? null,
     workingDirectory: (row.working_directory as string | null) ?? null,
+    pid: (row.pid as number | null) ?? null,
     createdAt: row.created_at as string,
     lastActiveAt: (row.last_active_at as string | null) ?? null,
     sessionResetAt: (row.session_reset_at as string | null) ?? null,
@@ -236,6 +239,7 @@ export function updateThread(
   if (updates.telegramTopicId !== undefined) { setClauses.push('telegram_topic_id = ?'); params.push(updates.telegramTopicId); }
   if (updates.identityPrompt !== undefined) { setClauses.push('identity_prompt = ?'); params.push(updates.identityPrompt); }
   if (updates.workingDirectory !== undefined) { setClauses.push('working_directory = ?'); params.push(updates.workingDirectory); }
+  if (updates.pid !== undefined) { setClauses.push('pid = ?'); params.push(updates.pid); }
 
   if (setClauses.length === 0) return false;
 

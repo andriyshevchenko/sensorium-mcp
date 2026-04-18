@@ -4,6 +4,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
 import { errorMessage } from "../utils.js";
+import type { Database } from "../data/memory/schema.js";
+import { getAllThreads } from "../data/memory/thread-registry.js";
+import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 
 const BASE_DIR = join(homedir(), ".remote-copilot-mcp");
 const LOGS_DIR = join(BASE_DIR, "logs");
@@ -118,6 +121,84 @@ export function restoreFromPidFiles(): void {
 }
 
 export const pidDirExists = (): boolean => existsSync(PIDS_DIR);
+
+/**
+ * Check liveness of a thread directly via its PID file, bypassing the
+ * spawnedThreads[] in-memory cache.  Returns the live PID, or undefined
+ * if no PID file exists or the process is dead (stale file is deleted).
+ */
+export function findAliveThreadViaPidFile(threadId: number): number | undefined {
+  const entry = readPidFiles().find((e) => e.threadId === threadId);
+  if (!entry) return undefined;
+  if (!isProcessAlive(entry.pid)) {
+    try { unlinkSync(entry.filePath); } catch {}
+    return undefined;
+  }
+  return entry.pid;
+}
+
+/**
+ * Reconcile in-memory state (spawnedThreads[]) with the two authoritative
+ * sources of truth at startup:
+ *   - SQLite thread_registry (intent / configuration)
+ *   - PID files on disk (OS evidence of running processes)
+ *
+ * Replaces the old restoreFromPidFiles() + cleanupStalePidFiles() pair.
+ */
+export function reconcileState(db: Database, threadLifecycle: ThreadLifecycleService): void {
+  const pidEntries = readPidFiles();
+  const dbThreadMap = new Map(
+    getAllThreads(db)
+      .filter((t) => t.status === "active" || t.status === "exited")
+      .map((t) => [t.threadId, t]),
+  );
+
+  // 1. Process each PID file: alive → populate spawnedThreads[], dead → clean up
+  for (const pidEntry of pidEntries) {
+    const dbThread = dbThreadMap.get(pidEntry.threadId);
+    if (!dbThread) {
+      // PID file references a thread with no DB record (very old orphan) — remove it
+      log.warn(`[reconcileState] PID file for thread ${pidEntry.threadId} has no DB record — removing`);
+      try { unlinkSync(pidEntry.filePath); } catch {}
+      continue;
+    }
+
+    if (isProcessAlive(pidEntry.pid)) {
+      // Alive: populate spawnedThreads[] if not already present
+      if (!spawnedThreads.some((t) => t.threadId === pidEntry.threadId)) {
+        spawnedThreads.push({
+          pid: pidEntry.pid,
+          threadId: pidEntry.threadId,
+          name: pidEntry.name ?? dbThread.name,
+          startedAt: Date.now(),
+          createdAt: Date.now(),
+          logFile: "",
+        });
+        log.info(`[reconcileState] Restored thread ${pidEntry.threadId} PID=${pidEntry.pid} from PID file`);
+      }
+    } else {
+      // Dead: clean up stale PID file and mark thread exited in DB if active
+      try { unlinkSync(pidEntry.filePath); } catch {}
+      log.info(`[reconcileState] Cleaned stale PID file for thread ${pidEntry.threadId} (PID=${pidEntry.pid} dead)`);
+      if (dbThread.status === "active") {
+        try {
+          threadLifecycle.markExited(db, pidEntry.threadId);
+        } catch (err) {
+          log.warn(`[reconcileState] markExited failed for thread ${pidEntry.threadId}: ${errorMessage(err)}`);
+        }
+      }
+    }
+  }
+
+  // 2. Remove spawnedThreads[] entries that have no DB record
+  for (let i = spawnedThreads.length - 1; i >= 0; i--) {
+    const thread = spawnedThreads[i];
+    if (!dbThreadMap.has(thread.threadId)) {
+      log.warn(`[reconcileState] spawnedThreads has thread ${thread.threadId} with no DB record — removing`);
+      spawnedThreads.splice(i, 1);
+    }
+  }
+}
 
 export function killProcessTree(pid: number, threadId: number): void {
   try {
