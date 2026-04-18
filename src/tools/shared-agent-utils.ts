@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { isValidAgentType, type AgentType } from "../config.js";
 
