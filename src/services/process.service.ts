@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
@@ -102,25 +102,6 @@ export function ensureDirs(): void {
   mkdirSync(LOGS_DIR, { recursive: true });
   mkdirSync(PIDS_DIR, { recursive: true });
 }
-
-export function cleanupStalePidFiles(): void {
-  const entries = readPidFiles();
-  if (entries.length === 0) return;
-  const alive = new Set(entries.map((e) => e.pid).filter((pid) => isProcessAlive(pid)));
-  for (const { pid, filePath } of entries) if (!alive.has(pid)) try { unlinkSync(filePath); } catch {}
-}
-
-export function restoreFromPidFiles(): void {
-  for (const { pid, filePath, threadId, name } of readPidFiles()) {
-    if (isProcessAlive(pid)) {
-      spawnedThreads.push({ pid, threadId, name: name ?? `thread-${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "" });
-    } else {
-      try { unlinkSync(filePath); } catch {}
-    }
-  }
-}
-
-export const pidDirExists = (): boolean => existsSync(PIDS_DIR);
 
 /**
  * Check liveness of a thread directly via its PID file, bypassing the
