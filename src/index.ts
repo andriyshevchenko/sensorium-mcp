@@ -117,8 +117,18 @@ function closeMemoryDb(): void {
   }
 }
 
+// In HTTP mode, SIGTERM is handled exclusively by http-server.ts's shutdown().
+// Declare refs so the onBeforeExit hook can reach keeper/background-runner even
+// though they are created after startHttpServer() returns.
+let _keeperStop: (() => void) | undefined;
+let _backgroundStop: (() => void) | undefined;
+
 if (process.env.MCP_HTTP_PORT) {
-  startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb);
+  startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb, () => {
+    try { _keeperStop?.(); } catch (_) {}
+    try { _backgroundStop?.(); } catch (_) {}
+    try { closeMaintenanceWatcher(); } catch (_) {}
+  });
 } else {
   await startStdioServer(createMcpServer, closeMemoryDb);
 }
@@ -133,6 +143,7 @@ const backgroundRunner = new BackgroundJobRunner({
 
 // Start background jobs after the server is listening.
 backgroundRunner.start();
+_backgroundStop = () => backgroundRunner.stop();
 
 // Start in-process keeper service (replaces Go supervisor keepers).
 const { KeeperService } = await import("./services/keeper.service.js");
@@ -143,16 +154,20 @@ const keeperService = new KeeperService({
   chatId: TELEGRAM_CHAT_ID,
 });
 keeperService.start();
+_keeperStop = () => keeperService.stop();
 
-process.on("SIGTERM", () => {
-  log.info("[shutdown] SIGTERM received — writing reconnect snapshot...");
-  try { writeReconnectSnapshot(getActiveThreadIds()); } catch (_) { /* best-effort */ }
-  try { keeperService.stop(); } catch (_) {}
-  try { backgroundRunner.stop(); } catch (_) {}
-  try { closeMaintenanceWatcher(); } catch (_) {}
-  try { closeMemoryDb(); } catch (_) { /* best-effort */ }
-  process.exit(0);
-});
+// stdio mode only — HTTP mode handles SIGTERM in http-server.ts's shutdown()
+if (!process.env.MCP_HTTP_PORT) {
+  process.on("SIGTERM", () => {
+    log.info("[shutdown] SIGTERM received — writing reconnect snapshot...");
+    try { writeReconnectSnapshot(getActiveThreadIds()); } catch (_) { /* best-effort */ }
+    try { keeperService.stop(); } catch (_) {}
+    try { backgroundRunner.stop(); } catch (_) {}
+    try { closeMaintenanceWatcher(); } catch (_) {}
+    try { closeMemoryDb(); } catch (_) { /* best-effort */ }
+    process.exit(0);
+  });
+}
 
 // Auto-clear the reconnect snapshot 10 minutes after startup so stale
 // snapshots from the previous process don't persist across multiple restarts.

@@ -107,4 +107,16 @@ internal static class NativeMethods
         sb.Append('\0');
         return Encoding.Unicode.GetBytes(sb.ToString());
     }
+
+    // ── Unix signal helpers ────────────────────────────────────────────────────
+
+    public const int SIGTERM = 15;
+    public const int SIGKILL = 9;
+
+    /// <summary>
+    /// POSIX kill(2): send signal <paramref name="sig"/> to process <paramref name="pid"/>.
+    /// Returns 0 on success, -1 on error (errno set).  Used on non-Windows platforms only.
+    /// </summary>
+    [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
+    public static extern int UnixKill(int pid, int sig);
 }

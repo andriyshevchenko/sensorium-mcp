@@ -443,10 +443,12 @@ export function runMigrations(db: Database): void {
     const migration = MIGRATIONS[v];
     if (!migration) continue;
     try {
-      migration(db);
-      db.prepare(
-        "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)"
-      ).run(v, nowISO());
+      db.transaction(() => {
+        migration(db);
+        db.prepare(
+          "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)"
+        ).run(v, nowISO());
+      })();
       log.info(`[memory] Migrated schema to version ${v}`);
     } catch (err) {
       log.error(`[memory] Migration ${v} failed: ${errorMessage(err)}. Halting migrations to avoid cascading schema corruption.`);

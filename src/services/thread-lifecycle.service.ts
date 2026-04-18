@@ -68,7 +68,7 @@ const VALID_TRANSITIONS: Record<ThreadState, ReadonlySet<ThreadState>> = {
 function cleanupThreadFiles(threadId: number): void {
   const base = join(homedir(), ".remote-copilot-mcp");
   for (const filePath of [
-    join(base, "heartbeats", `${threadId}.json`),
+    join(base, "heartbeats", `${threadId}`),
     join(base, "schedules", `${threadId}.json`),
     join(base, "threads", `${threadId}.jsonl`),
   ]) {
