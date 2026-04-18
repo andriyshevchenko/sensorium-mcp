@@ -15,7 +15,10 @@ public sealed class TelegramNotifier : ITelegramNotifier
     public TelegramNotifier(IHttpClientFactory factory, IOptions<SupervisorOptions> opts, ILogger<TelegramNotifier> log)
     {
         _http = factory.CreateClient("telegram");
-        _http.Timeout = TimeSpan.FromSeconds(10);
+        // Per-request timeout is enforced via CancellationTokenSource in NotifyAsync.
+        // Setting HttpClient.Timeout to Infinite avoids a redundant double-timeout that
+        // produces an ambiguous TaskCanceledException when the transport races the CTS.
+        _http.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
         _token = opts.Value.TelegramToken;
         _chatId = opts.Value.TelegramChatId;
         _log = log;
