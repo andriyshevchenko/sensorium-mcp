@@ -24,11 +24,10 @@ jobs:
         with:
           node-version: "22.x"
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
         with:
-          go-version: "1.22"
-          cache-dependency-path: supervisor/go.mod
+          dotnet-version: "10.0.x"
 
       - name: Read package version
         id: version
@@ -37,13 +36,14 @@ jobs:
           echo "version_tag=supervisor-v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Build Windows amd64 supervisor
-        working-directory: supervisor
-        env:
-          GOOS: windows
-          GOARCH: amd64
-          CGO_ENABLED: "0"
         run: |
-          go build -ldflags="-s -w" -o "../sensorium-supervisor-windows-amd64.exe" .
+          dotnet publish supervisor-dotnet/Sensorium.Supervisor.csproj \
+            -r win-x64 \
+            -c Release \
+            --self-contained \
+            -p:PublishSingleFile=true \
+            -o publish/
+          mv publish/sensorium-supervisor.exe sensorium-supervisor-windows-amd64.exe
 
       - name: Recreate floating release
         env:
