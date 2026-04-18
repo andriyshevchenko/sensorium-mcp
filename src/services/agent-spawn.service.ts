@@ -6,7 +6,7 @@ import { getClaudeMcpConfigPath, getDefaultThreadModel, getDefaultWorkerModel, t
 import { log } from "../logger.js";
 import { synthesizeGhostMemory } from "../memory.js";
 import { getAllThreads } from "../data/memory/thread-registry.js";
-import { initMemoryDb } from "../data/memory/schema.js";
+import { initMemoryDb, type Database } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 import { COPILOT_HOME_DIR, DEFAULT_COPILOT_MODEL, ensureCopilotWorkspace, writeCopilotHomeFiles } from "../tools/shared-agent-utils.js";
 import { deleteTelegramTopicByBotApi } from "./topic.service.js";
@@ -234,6 +234,11 @@ export function spawnCodexProcess(codexPath: string, name: string, threadId: num
 /**
  * Resolve the right spawn function for `agentType` and call it.
  * Handles CLI path resolution and error reporting internally.
+ *
+ * When `db` is provided and the thread is in `Created` state, transitions
+ * Created → Spawning before the process starts, then Spawning → Active on
+ * success. This implements the explicit state machine for newly registered
+ * threads without affecting existing restart flows (Exited/Active → Active).
  */
 export function dispatchSpawn(
   agentType: AgentType,
@@ -244,21 +249,46 @@ export function dispatchSpawn(
   memorySourceThreadId?: number,
   memoryTargetThreadId?: number,
   runtimeThreadType?: "worker" | "branch",
+  db?: Database,
 ): { pid: number; logFile: string } | { error: string } {
+  // Created → Spawning when a pre-registered thread is about to start
+  if (db) {
+    const currentState = threadLifecycle.getThreadState(db, threadId);
+    if (currentState === ThreadState.Created) {
+      try { threadLifecycle.transitionThread(db, threadId, ThreadState.Spawning); }
+      catch (err) { log.warn(`[start_thread] Created→Spawning transition failed for ${threadId}: ${errorMessage(err)}`); }
+    }
+  }
+
+  let result: { pid: number; logFile: string } | { error: string };
   if (agentType === "copilot" || agentType === "copilot_claude" || agentType === "copilot_codex") {
     const cliPath = resolveCopilotPath();
-    if (!cliPath) return { error: `Thread ${threadId} (${name}): copilot CLI not found` };
-    return spawnCopilotProcess(cliPath, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, agentType, runtimeThreadType);
-  }
-  if (agentType === "codex" || agentType === "openai_codex") {
+    result = cliPath
+      ? spawnCopilotProcess(cliPath, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, agentType, runtimeThreadType)
+      : { error: `Thread ${threadId} (${name}): copilot CLI not found` };
+  } else if (agentType === "codex" || agentType === "openai_codex") {
     const cliPath = resolveCodexPath();
-    if (!cliPath) return { error: `Thread ${threadId} (${name}): codex CLI not found` };
-    return spawnCodexProcess(cliPath, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, runtimeThreadType);
+    result = cliPath
+      ? spawnCodexProcess(cliPath, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, runtimeThreadType)
+      : { error: `Thread ${threadId} (${name}): codex CLI not found` };
+  } else {
+    const cliPath = resolveClaudePath();
+    const mcpConfig = resolveMcpConfigPath();
+    result = (cliPath && mcpConfig)
+      ? spawnAgentProcess(cliPath, mcpConfig, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType)
+      : { error: `Thread ${threadId} (${name}): ${!cliPath ? "claude CLI not found" : "MCP config not found"}` };
   }
-  const cliPath = resolveClaudePath();
-  const mcpConfig = resolveMcpConfigPath();
-  if (!cliPath || !mcpConfig) return { error: `Thread ${threadId} (${name}): ${!cliPath ? "claude CLI not found" : "MCP config not found"}` };
-  return spawnAgentProcess(cliPath, mcpConfig, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType);
+
+  // Spawning → Active on successful process start
+  if (db && "pid" in result) {
+    const currentState = threadLifecycle.getThreadState(db, threadId);
+    if (currentState === ThreadState.Spawning) {
+      try { threadLifecycle.transitionThread(db, threadId, ThreadState.Active); }
+      catch (err) { log.warn(`[start_thread] Spawning→Active transition failed for ${threadId}: ${errorMessage(err)}`); }
+    }
+  }
+
+  return result;
 }
 
 export function spawnKeepAliveThreads(threadLifecycle: ThreadLifecycleService): { spawned: number; errors: string[] } {

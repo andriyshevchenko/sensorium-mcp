@@ -3,7 +3,7 @@ import { getExplicitTelegramTopicId } from "../data/memory/thread-registry.js";
 import { synthesizeGhostMemory } from "../memory.js";
 import { errorMessage } from "../utils.js";
 import { spawnedThreads, type SpawnedThread, readPidFiles, killProcessTree } from "./process.service.js";
-import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
+import { ThreadState, type ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { log } from "../logger.js";
 
 export async function decommissionWorker(
@@ -15,6 +15,8 @@ export async function decommissionWorker(
     threadLifecycle: ThreadLifecycleService;
   },
 ): Promise<void> {
+  // 0. Mark thread as Exiting so the state machine reflects teardown-in-progress
+  try { deps.threadLifecycle.transitionThread(deps.db, thread.threadId, ThreadState.Exiting); } catch {}
   // 1. Memory synthesis (if ghost/worker with memory source)
   if (thread.memorySourceThreadId !== undefined) {
     try { await synthesizeGhostMemory(deps.db, thread.threadId, thread.memorySourceThreadId, thread.name); } catch (err) { log.warn(`[decommission] synthesizeGhostMemory failed for thread ${thread.threadId}: ${errorMessage(err)}`); }

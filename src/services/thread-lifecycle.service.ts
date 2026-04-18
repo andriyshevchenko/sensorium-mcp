@@ -5,8 +5,12 @@ import type { Database } from "../data/memory/schema.js";
 import type { IThreadRepository, ISessionRepository } from "../data/interfaces.js";
 
 export enum ThreadState {
+  Created = "created",
+  Spawning = "spawning",
   Active = "active",
   Dormant = "dormant",
+  Stuck = "stuck",
+  Exiting = "exiting",
   Exited = "exited",
   Archived = "archived",
   Expired = "expired",
@@ -50,11 +54,15 @@ export interface ThreadLifecycleLogger {
 }
 
 const VALID_TRANSITIONS: Record<ThreadState, ReadonlySet<ThreadState>> = {
-  [ThreadState.Active]: new Set([ThreadState.Active, ThreadState.Dormant, ThreadState.Exited, ThreadState.Archived, ThreadState.Expired]),
-  [ThreadState.Dormant]: new Set([ThreadState.Active, ThreadState.Archived, ThreadState.Expired]),
-  [ThreadState.Exited]: new Set([ThreadState.Active, ThreadState.Archived, ThreadState.Expired]),
+  [ThreadState.Created]:  new Set([ThreadState.Spawning, ThreadState.Active, ThreadState.Archived]),
+  [ThreadState.Spawning]: new Set([ThreadState.Active, ThreadState.Exited, ThreadState.Archived]),
+  [ThreadState.Active]:   new Set([ThreadState.Active, ThreadState.Dormant, ThreadState.Stuck, ThreadState.Exiting, ThreadState.Exited, ThreadState.Archived, ThreadState.Expired]),
+  [ThreadState.Dormant]:  new Set([ThreadState.Active, ThreadState.Archived, ThreadState.Expired]),
+  [ThreadState.Stuck]:    new Set([ThreadState.Exiting, ThreadState.Exited, ThreadState.Active, ThreadState.Archived]),
+  [ThreadState.Exiting]:  new Set([ThreadState.Exited, ThreadState.Archived]),
+  [ThreadState.Exited]:   new Set([ThreadState.Active, ThreadState.Archived, ThreadState.Expired]),
   [ThreadState.Archived]: new Set([ThreadState.Active]),
-  [ThreadState.Expired]: new Set([ThreadState.Archived]),
+  [ThreadState.Expired]:  new Set([ThreadState.Archived]),
 };
 
 function cleanupThreadFiles(threadId: number): void {
@@ -199,6 +207,20 @@ export class ThreadLifecycleService {
     return thread ? this.toLifecycleState(thread.status) : null;
   }
 
+  transitionThread(db: Database, threadId: number, targetState: ThreadState): ThreadRecord {
+    const current = this.requireThread(db, threadId, "transitionThread");
+    this.assertTransition(current.status, targetState, "transitionThread");
+
+    this.threadRepository.updateThread(db, threadId, {
+      status: this.toPersistedState(targetState),
+      lastActiveAt: new Date().toISOString(),
+    });
+
+    const updated = this.requireThread(db, threadId, "transitionThread");
+    this.logger.info(`[thread-lifecycle] transitionThread -> ${targetState} (${threadId})`);
+    return updated;
+  }
+
   private requireThread(db: Database, threadId: number, action: string): ThreadRecord {
     const thread = this.threadRepository.getThread(db, threadId);
     if (!thread) {
@@ -213,8 +235,8 @@ export class ThreadLifecycleService {
     action: string,
   ): void {
     if (current === undefined) {
-      if (next !== ThreadState.Active) {
-        throw new Error(`${action}: unregistered threads can only transition to active`);
+      if (next !== ThreadState.Active && next !== ThreadState.Created) {
+        throw new Error(`${action}: unregistered threads can only transition to active or created`);
       }
       return;
     }
@@ -247,8 +269,8 @@ export class ThreadLifecycleService {
 
   private toPersistedState(state: ThreadState): PersistedThreadState {
     if (state === ThreadState.Dormant) {
-      throw new Error("dormant is defined in the lifecycle model but is not yet persisted in thread_registry");
+      throw new Error("dormant is defined in the lifecycle model but is not persisted in thread_registry");
     }
-    return state;
+    return state as PersistedThreadState;
   }
 }
