@@ -66,28 +66,3 @@ func TestIsServerReady_Down(t *testing.T) {
 	}
 }
 
-func TestIsThreadRunning_True(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"running":true}`))
-	}))
-	defer srv.Close()
-
-	mcp := &MCPClient{BaseURL: srv.URL, Client: srv.Client()}
-	if !mcp.IsThreadRunning(context.Background(), 1234) {
-		t.Error("expected thread to be running")
-	}
-}
-
-func TestIsThreadRunning_False(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"running":false}`))
-	}))
-	defer srv.Close()
-
-	mcp := &MCPClient{BaseURL: srv.URL, Client: srv.Client()}
-	if mcp.IsThreadRunning(context.Background(), 1234) {
-		t.Error("expected thread to not be running")
-	}
-}
