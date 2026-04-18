@@ -78,6 +78,23 @@ func (m *MCPClient) IsServerReady(ctx context.Context) bool {
 	return ready
 }
 
+// PrepareShutdown asks the MCP server to write a reconnect snapshot before
+// the supervisor kills it.  Best-effort: returns any error but callers should
+// proceed with the kill regardless.
+func (m *MCPClient) PrepareShutdown(ctx context.Context) error {
+	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := m.doReq(ctx2, "POST", "/api/prepare-shutdown", nil)
+	if err != nil {
+		return fmt.Errorf("prepare-shutdown request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("prepare-shutdown HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // WaitForReady polls the MCP server until it's ready, or timeout expires.
 func (m *MCPClient) WaitForReady(ctx context.Context, pollInterval, timeout time.Duration) bool {
 	ctx2, cancel := context.WithTimeout(ctx, timeout)

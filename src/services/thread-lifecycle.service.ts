@@ -133,8 +133,8 @@ export class ThreadLifecycleService {
     const current = this.requireThread(db, threadId, "markExited");
     // keepAlive threads transition back to Active so KeeperService detects them
     // as dead on its next check interval and restarts them automatically.
-    // Non-keepAlive workers transition to Exited for final cleanup.
-    const nextState = current.type === "worker" && !current.keepAlive
+    // Non-keepAlive threads (any type) transition to Exited for final cleanup.
+    const nextState = !current.keepAlive
       ? ThreadState.Exited
       : ThreadState.Active;
     this.assertTransition(current.status, nextState, "markExited");

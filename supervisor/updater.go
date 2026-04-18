@@ -360,6 +360,9 @@ func requestSupervisorRestart(cfg Config, log *Logger) error {
 
 func (u *Updater) killServer() {
 	u.log.Info("Updater: stopping current MCP server for update")
+	if err := u.mcp.PrepareShutdown(context.Background()); err != nil {
+		u.log.Warn("PrepareShutdown failed (will force-kill): %v", err)
+	}
 	pid, err := ReadPIDFile(u.cfg.Paths.ServerPID)
 	if err != nil {
 		u.log.Warn("Could not read server PID file: %v", err)

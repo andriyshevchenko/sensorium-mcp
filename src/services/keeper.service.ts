@@ -175,7 +175,10 @@ export class KeeperService {
       return;
     }
 
-    // 6. Restart: re-verify keepAlive before restarting
+    // 6. Restart: re-check stopped (may have been set by syncKeepers while in-flight)
+    if (entry.stopped) return;
+
+    // Re-verify keepAlive before restarting
     const db = this.deps.getMemoryDb();
     const thread = getThread(db, entry.threadId);
     if (!thread || !thread.keepAlive) {
