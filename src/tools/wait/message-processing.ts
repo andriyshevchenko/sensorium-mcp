@@ -28,7 +28,7 @@ import {
   buildSmartContext,
   assembleOperatorResponse,
 } from "./message-delivery.js";
-import { classifyIntent, type MessageIntent } from "../../intent.js";
+import { classifyIntent } from "../../intent.js";
 import { getRecentEpisodes } from "../../data/memory/episodes.js";
 import type { ToolResult, TextBlock, ImageBlock } from "../../types.js";
 import type { WaitToolContext, WaitToolExtra } from "./poll-loop.js";

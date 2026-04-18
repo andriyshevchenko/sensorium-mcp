@@ -11,7 +11,6 @@
 import type { Database } from "./schema.js";
 import { type Episode, rowToEpisode } from "./episodes.js";
 import { saveSemanticNote, searchByEmbedding, saveNoteEmbedding } from "./semantic.js";
-import { saveProcedure, enforceProcedureCap, getProcedureByName } from "./procedures.js";
 import { nowISO, repairAndParseJSON } from "./utils.js";
 import { log } from "../../logger.js";
 import { resolveKnowledgeThreadId } from "../../config.js";

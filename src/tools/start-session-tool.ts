@@ -12,7 +12,7 @@ import { convertMarkdown } from "../markdown.js";
 import { type initMemoryDb } from "../memory.js";
 import { assembleBootstrap } from "../services/memory-briefing.service.js";
 import { runConsolidationAllThreads } from "../services/consolidation.service.js";
-import { addSchedule, generateTaskId, listSchedules, purgeSchedules } from "../scheduler.js";
+import { addSchedule, generateTaskId, listSchedules } from "../scheduler.js";
 import {
   purgeOtherSessions,
   registerMcpSession,
