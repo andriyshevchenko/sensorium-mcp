@@ -52,6 +52,7 @@ const { resolveTelegramTopicId, threadRepository } = await import("./data/memory
 const { BackgroundJobRunner } = await import("./services/background-runner.js");
 const { ThreadLifecycleService } = await import("./services/thread-lifecycle.service.js");
 const { clearReconnectSnapshot, writeReconnectSnapshot } = await import("./services/reconnect-snapshot.service.js");
+const { closeMaintenanceWatcher } = await import("./services/maintenance-signal.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -148,6 +149,7 @@ process.on("SIGTERM", () => {
   try { writeReconnectSnapshot(getActiveThreadIds()); } catch (_) { /* best-effort */ }
   try { keeperService.stop(); } catch (_) {}
   try { backgroundRunner.stop(); } catch (_) {}
+  try { closeMaintenanceWatcher(); } catch (_) {}
   try { closeMemoryDb(); } catch (_) { /* best-effort */ }
   process.exit(0);
 });
