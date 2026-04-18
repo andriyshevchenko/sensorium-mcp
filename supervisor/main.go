@@ -220,80 +220,85 @@ func runSupervisor(runningAsService bool) error {
 	// Start keeper management
 	var mu sync.Mutex
 	keepers := make(map[int]*KeeperEntry)
-
-	onDeath := func(threadID int, sessionName string) {
-		log.Warn("Thread %d ('%s') died", threadID, sessionName)
-		NotifyOperator(cfg, log, fmt.Sprintf("💀 <b>%s</b> session died — restarting…", sessionName), threadID)
-	}
-
-	syncKeepers := func() {
-		if cfg.MCPHttpPort <= 0 {
-			log.Debug("syncKeepers: skipped (no port configured)")
-			return
-		}
-
-		log.Debug("syncKeepers: fetching keeper settings...")
-		settings, err := fetchKeeperSettings(ctx, mcp, log)
-		if err != nil {
-			log.Warn("Failed to fetch keeper settings: %v", err)
-			return
-		}
-		log.Debug("syncKeepers: got %d keeper configs", len(settings))
-
-		mu.Lock()
-		defer mu.Unlock()
-
-		// Find keepers to remove (no longer in settings)
-		wanted := make(map[int]bool)
-		for _, s := range settings {
-			wanted[s.ThreadID] = true
-		}
-		for tid, entry := range keepers {
-			if !wanted[tid] {
-				log.Info("Stopping keeper for removed thread %d", tid)
-				entry.keeper.Stop()
-				delete(keepers, tid)
-			}
-		}
-
-		// Start or update keepers
-		for _, s := range settings {
-			existing, exists := keepers[s.ThreadID]
-			if exists && settingsChanged(existing.settings, s) {
-				log.Info("Settings changed for thread %d — restarting keeper", s.ThreadID)
-				existing.keeper.Stop()
-				delete(keepers, s.ThreadID)
-				exists = false
-			}
-			if !exists {
-				k := NewKeeper(s, cfg, mcp, log, onDeath)
-				k.Start()
-				keepers[s.ThreadID] = &KeeperEntry{keeper: k, settings: s}
-				log.Info("Started keeper for thread %d ('%s')", s.ThreadID, s.SessionName)
-			}
-		}
-	}
-
-	// Initial sync
-	log.Info("Running initial keeper sync")
-	syncKeepers()
-
-	// Keeper settings poller (every 2 min)
 	keeperPollerDone := make(chan struct{})
-	go func() {
-		defer close(keeperPollerDone)
-		ticker := time.NewTicker(2 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
+
+	if cfg.KeeperMode == "supervisor" {
+		onDeath := func(threadID int, sessionName string) {
+			log.Warn("Thread %d ('%s') died", threadID, sessionName)
+			NotifyOperator(cfg, log, fmt.Sprintf("💀 <b>%s</b> session died — restarting…", sessionName), threadID)
+		}
+
+		syncKeepers := func() {
+			if cfg.MCPHttpPort <= 0 {
+				log.Debug("syncKeepers: skipped (no port configured)")
 				return
-			case <-ticker.C:
-				log.Debug("Keeper settings poll triggered")
-				syncKeepers()
+			}
+
+			log.Debug("syncKeepers: fetching keeper settings...")
+			settings, err := fetchKeeperSettings(ctx, mcp, log)
+			if err != nil {
+				log.Warn("Failed to fetch keeper settings: %v", err)
+				return
+			}
+			log.Debug("syncKeepers: got %d keeper configs", len(settings))
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			// Find keepers to remove (no longer in settings)
+			wanted := make(map[int]bool)
+			for _, s := range settings {
+				wanted[s.ThreadID] = true
+			}
+			for tid, entry := range keepers {
+				if !wanted[tid] {
+					log.Info("Stopping keeper for removed thread %d", tid)
+					entry.keeper.Stop()
+					delete(keepers, tid)
+				}
+			}
+
+			// Start or update keepers
+			for _, s := range settings {
+				existing, exists := keepers[s.ThreadID]
+				if exists && settingsChanged(existing.settings, s) {
+					log.Info("Settings changed for thread %d — restarting keeper", s.ThreadID)
+					existing.keeper.Stop()
+					delete(keepers, s.ThreadID)
+					exists = false
+				}
+				if !exists {
+					k := NewKeeper(s, cfg, mcp, log, onDeath)
+					k.Start()
+					keepers[s.ThreadID] = &KeeperEntry{keeper: k, settings: s}
+					log.Info("Started keeper for thread %d ('%s')", s.ThreadID, s.SessionName)
+				}
 			}
 		}
-	}()
+
+		// Initial sync
+		log.Info("Running initial keeper sync")
+		syncKeepers()
+
+		// Keeper settings poller (every 2 min)
+		go func() {
+			defer close(keeperPollerDone)
+			ticker := time.NewTicker(2 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					log.Debug("Keeper settings poll triggered")
+					syncKeepers()
+				}
+			}
+		}()
+	} else {
+		close(keeperPollerDone)
+		log.Info("Keeper management delegated to MCP server (KEEPER_MODE=%s)", cfg.KeeperMode)
+	}
 
 	// Start updater
 	log.Info("Starting auto-updater")

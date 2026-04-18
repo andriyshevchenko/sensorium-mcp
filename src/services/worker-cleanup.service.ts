@@ -1,29 +1,10 @@
-import { execSync } from "node:child_process";
-import { unlinkSync } from "node:fs";
-import { join } from "node:path";
 import { archiveNotesForThread } from "../data/memory/semantic.js";
 import { getExplicitTelegramTopicId } from "../data/memory/thread-registry.js";
 import { synthesizeGhostMemory } from "../memory.js";
 import { errorMessage } from "../utils.js";
-import { spawnedThreads, type SpawnedThread, readPidFiles, PROCESS_PIDS_DIR } from "./process.service.js";
+import { spawnedThreads, type SpawnedThread, readPidFiles, killProcessTree } from "./process.service.js";
 import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { log } from "../logger.js";
-
-function killProcessTree(pid: number, threadId: number): void {
-  try {
-    if (process.platform === "win32") {
-      execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10000 });
-    } else {
-      process.kill(pid, "SIGTERM");
-    }
-    log.info(`[worker-cleanup] Killed process tree for thread ${threadId} PID=${pid}`);
-  } catch (err) {
-    // Process may already be dead — ignore
-    log.debug(`[worker-cleanup] Kill process ${pid} (thread ${threadId}): ${errorMessage(err)}`);
-  }
-  const pidFile = join(PROCESS_PIDS_DIR, `${threadId}.pid`);
-  try { unlinkSync(pidFile); } catch {}
-}
 
 const DEFAULT_WORKER_TTL_MS = 60 * 60 * 1000;
 let orphanSweepDone = false;

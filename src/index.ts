@@ -136,6 +136,16 @@ const backgroundRunner = new BackgroundJobRunner({
 // Start background jobs after the server is listening.
 backgroundRunner.start();
 
+// Start in-process keeper service (replaces Go supervisor keepers).
+const { KeeperService } = await import("./services/keeper.service.js");
+const keeperService = new KeeperService({
+  getMemoryDb,
+  threadLifecycle,
+  telegram,
+  chatId: TELEGRAM_CHAT_ID,
+});
+keeperService.start();
+
 // Auto-clear the reconnect snapshot 10 minutes after startup so stale
 // snapshots from the previous process don't persist across multiple restarts.
 setTimeout(() => clearReconnectSnapshot(), 10 * 60 * 1000);
