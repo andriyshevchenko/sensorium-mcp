@@ -107,6 +107,16 @@ export function cleanupStalePidFiles(): void {
   for (const { pid, filePath } of entries) if (!alive.has(pid)) try { unlinkSync(filePath); } catch {}
 }
 
+export function restoreFromPidFiles(): void {
+  for (const { pid, filePath, threadId, name } of readPidFiles()) {
+    if (isProcessAlive(pid)) {
+      spawnedThreads.push({ pid, threadId, name: name ?? `thread-${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "" });
+    } else {
+      try { unlinkSync(filePath); } catch {}
+    }
+  }
+}
+
 export const pidDirExists = (): boolean => existsSync(PIDS_DIR);
 
 export function killProcessTree(pid: number, threadId: number): void {
