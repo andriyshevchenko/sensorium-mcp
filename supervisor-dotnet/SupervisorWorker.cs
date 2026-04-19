@@ -74,7 +74,7 @@ public sealed class SupervisorWorker : BackgroundService
 
         _log.LogInformation(
             "sensorium-supervisor starting (mode={Mode}, port={Port}, dataDir={DataDir})",
-            _opts.Mode, _opts.McpHttpPort, _opts.DataDir);
+            _opts.UpdateMode, _opts.McpHttpPort, _opts.DataDir);
 
         try
         {

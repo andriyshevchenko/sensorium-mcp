@@ -46,7 +46,7 @@ public sealed class Updater : IUpdater
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _loop = RunLoopAsync(_cts.Token);
-        _log.LogInformation("Updater started (mode={Mode})", _opts.Mode);
+        _log.LogInformation("Updater started (mode={Mode})", _opts.UpdateMode);
     }
 
     public async Task StopAsync()
@@ -63,7 +63,7 @@ public sealed class Updater : IUpdater
     {
         while (!ct.IsCancellationRequested)
         {
-            TimeSpan delay = _opts.Mode == "development"
+            TimeSpan delay = _opts.UpdateMode == "development"
                 ? _opts.PollInterval
                 : TimeUntilNextPoll();
 

@@ -2,7 +2,7 @@ namespace Sensorium.Supervisor.Configuration;
 
 public sealed class SupervisorOptions
 {
-    public string Mode { get; set; } = "development";
+    public string UpdateMode { get; set; } = "development";
     public int PollAtHour { get; set; } = 4;
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(60);
     public TimeSpan GracePeriod { get; set; } = TimeSpan.FromSeconds(10);
@@ -31,7 +31,7 @@ public sealed class SupervisorPaths
     public string LastActivity { get; set; } = "";
     public string McpStderrLog { get; set; } = "";
     public string ServerPid { get; set; } = "";
-    public string WatcherLock { get; set; } = "";
+    public string SupervisorLock { get; set; } = "";
     public string SupervisorLog { get; set; } = "";
     public string PidsDir { get; set; } = "";
     public string HeartbeatsDir { get; set; } = "";
