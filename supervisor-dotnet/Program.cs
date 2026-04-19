@@ -125,6 +125,7 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
         PidsDir = Path.Combine(dataDir, "pids"),
         HeartbeatsDir = Path.Combine(dataDir, "heartbeats"),
         ApplyFailureMarker = Path.Combine(bin, "sensorium-supervisor.new.exe.failed"),
+        PollerLock = Path.Combine(dataDir, "poller.lock"),
     };
 }
 

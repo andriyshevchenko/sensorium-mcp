@@ -70,6 +70,7 @@ import {
     refreshLock,
     removeLock,
     tryAcquireLock,
+    tryAcquireLockWithRetry,
 } from "./lock.js";
 import { registerTopic } from "../../sessions.js";
 
@@ -308,7 +309,7 @@ export async function startDispatcher(
     chatId: string,
 ): Promise<boolean> {
     ensureDirs();
-    const isPoller = tryAcquireLock();
+    const isPoller = await tryAcquireLockWithRetry();
     const CONSUMER_RETRY_MS = 10_000;
 
     // Shared cleanup + loop helpers.
