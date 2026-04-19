@@ -103,7 +103,7 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
     opts.TelegramToken = CfgOrNull("TELEGRAM_TOKEN");
     opts.TelegramChatId = CfgOrNull("TELEGRAM_CHAT_ID");
     opts.HealthFailThresh = 3;
-    opts.McpReadyTimeout = TimeSpan.FromMinutes(2);
+    opts.McpReadyTimeout = TimeSpan.FromMinutes(5);
 
     string bin = Path.Combine(dataDir, "bin");
     string logs = Path.Combine(dataDir, "logs");

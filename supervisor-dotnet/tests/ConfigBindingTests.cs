@@ -16,7 +16,7 @@ public class ConfigBindingTests
         Assert.Equal(TimeSpan.FromSeconds(600), opts.MinUptime);
         Assert.Equal("npx -y sensorium-mcp@latest", opts.McpStartCommand);
         Assert.Equal(3, opts.HealthFailThresh);
-        Assert.Equal(TimeSpan.FromMinutes(2), opts.McpReadyTimeout);
+        Assert.Equal(TimeSpan.FromMinutes(5), opts.McpReadyTimeout);
     }
 
     [Theory]
