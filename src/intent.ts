@@ -1,8 +1,8 @@
 /**
- * Intent classifier for operator messages.
- * Classifies messages as CTA (action required), DISCUSSION (explore ideas),
- * or CONVERSATIONAL (acknowledgment/chat). Uses GPT-4o-mini with a message
- * buffer when an API key is available; falls back to synchronous regex.
+ * Lightweight intent classifier for operator messages.
+ * Determines whether a message is conversational (acknowledgment, follow-up)
+ * or a task request (requiring full orchestrator context).
+ * Runs synchronously in < 0.1ms. Defaults to "task" when uncertain.
  *
  * Also provides a skill system: markdown files with YAML frontmatter that
  * can replace the default orchestrator prompt when trigger phrases match.
@@ -13,7 +13,6 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { log } from "./logger.js";
-import { chatCompletion } from "./integrations/openai/chat.js";
 
 // ── Skill types & loading ─────────────────────────────────────────────────
 
@@ -158,82 +157,20 @@ const TASK_VERB_RE = /^(fix|implement|add|create|update|remove|delete|change|bui
 // "please fix", "just run", "quickly check" etc. where the verb isn't first.
 const TASK_VERB_ANYWHERE_RE = /\b(fix|implement|add|create|update|remove|delete|change|build|deploy|refactor|debug|test|write|configure|setup|migrate|install|check|run|send|stop|start|restart|enable|disable|ship|push|publish|search|find|review|analyze|research|investigate)\b/;
 
-export type MessageIntent = "CTA" | "DISCUSSION" | "CONVERSATIONAL";
+export type MessageIntent = "conversational" | "task";
 
-export function classifyIntentRegex(message: string): MessageIntent {
+export function classifyIntent(message: string): MessageIntent {
   const trimmed = message.trim();
   const lower = trimmed.toLowerCase();
   const wordCount = lower.split(/\s+/).length;
 
   // Tier 1: Exact-match acknowledgments
-  if (ACK_EXACT.has(lower)) return "CONVERSATIONAL";
+  if (ACK_EXACT.has(lower)) return "conversational";
 
   // Tier 2: Very short messages (≤ 3 words) without any task verbs.
   // Check anywhere in the message — catches "let's test", "please fix", etc.
-  if (wordCount <= 3 && !TASK_VERB_RE.test(lower) && !TASK_VERB_ANYWHERE_RE.test(lower)) return "CONVERSATIONAL";
+  if (wordCount <= 3 && !TASK_VERB_RE.test(lower) && !TASK_VERB_ANYWHERE_RE.test(lower)) return "conversational";
 
   // Tier 3: Default to task (safe — includes full reminders)
-  return "CTA";
-}
-
-const LLM_SYSTEM_PROMPT = `You classify the operator's latest message in a chat with an AI agent. Respond with JSON: {"intent": "CTA" | "DISCUSSION" | "CONVERSATIONAL"}
-
-- CTA: Clear instruction to act — "fix the bug", "deploy it", "yes do it", "go ahead", "implement that", "run the tests". The operator wants the agent to DO something.
-- DISCUSSION: Sharing ideas, describing problems, asking questions, thinking out loud — but NO clear go-ahead. Examples: "I think we should refactor auth", "what do you think about Redis?", "the pipeline is slow", "thoughts?". The operator wants to TALK, not see code.
-- CONVERSATIONAL: Casual chat, acknowledgments, greetings, reactions. "ok", "thanks", "nice", "got it", "good morning".
-
-Important: "yes", "do it", "go ahead" after a pending question from the agent = CTA, not CONVERSATIONAL.
-When in doubt between CTA and DISCUSSION, prefer DISCUSSION.
-When in doubt between DISCUSSION and CONVERSATIONAL, prefer DISCUSSION.`;
-
-const VALID_INTENTS = new Set<string>(["CTA", "DISCUSSION", "CONVERSATIONAL"]);
-
-async function classifyIntentLLM(
-  message: string,
-  messageBuffer: Array<{role: "operator" | "agent", text: string}>,
-  apiKey: string,
-): Promise<MessageIntent> {
-  const bufferLines = messageBuffer
-    .map(m => `${m.role === "operator" ? "Operator" : "Agent"}: ${m.text}`)
-    .join("\n");
-  const userMessage = `Recent conversation:\n${bufferLines}\n\nClassify the last operator message.`;
-
-  const raw = await chatCompletion(
-    [
-      { role: "system", content: LLM_SYSTEM_PROMPT },
-      { role: "user", content: userMessage },
-    ],
-    apiKey,
-    {
-      model: "gpt-4o-mini",
-      maxTokens: 50,
-      temperature: 0,
-      responseFormat: { type: "json_object" },
-      timeoutMs: 3000,
-    },
-  );
-
-  if (!raw.trim()) return "CTA";
-  const parsed = JSON.parse(raw) as { intent?: string };
-  const intent = parsed.intent;
-  if (typeof intent === "string" && VALID_INTENTS.has(intent)) {
-    return intent as MessageIntent;
-  }
-  return "CTA";
-}
-
-export async function classifyIntent(
-  message: string,
-  messageBuffer?: Array<{role: "operator" | "agent", text: string}>,
-  apiKey?: string,
-): Promise<MessageIntent> {
-  if (!apiKey || !messageBuffer || messageBuffer.length === 0) {
-    return classifyIntentRegex(message);
-  }
-  try {
-    return await classifyIntentLLM(message, messageBuffer, apiKey);
-  } catch (err) {
-    log.warn(`[intent] LLM classification failed, falling back to regex: ${err}`);
-    return classifyIntentRegex(message);
-  }
+  return "task";
 }

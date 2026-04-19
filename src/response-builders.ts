@@ -144,36 +144,6 @@ export function getMediumReminder(
 
   return (
     `\nthreadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m | mode: ${mode} | conversation: ${convMode}`
-    + `\nWhen all work is done, call \`remote_copilot_wait_for_instructions\` immediately. Never summarize or stop.`
-  );
-}
-
-/**
- * Discussion context — lightweight reminder for DISCUSSION intent.
- * Encourages the agent to engage conversationally and hold off on
- * implementation until the operator gives an explicit go-ahead.
- *
- * @param threadId          Current Telegram thread ID (if any).
- * @param sessionStartedAt  Epoch ms when the current session started.
- * @param autonomousMode    Whether the agent is in autonomous mode.
- */
-export function getDiscussionReminder(
-  threadId: number | undefined,
-  sessionStartedAt: number,
-  autonomousMode: boolean,
-): string {
-  const now = new Date();
-  const uptimeMin = Math.round((Date.now() - sessionStartedAt) / 60000);
-  const timeStr = formatTimestamp(now);
-
-  const mode = autonomousMode ? "autonomous" : "standard";
-  const convMode = threadId !== undefined ? getThreadConversationMode(threadId) : "concise";
-
-  return (
-    `\nthreadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m | mode: ${mode} | conversation: ${convMode}`
-    + `\nThe operator is sharing ideas or discussing a problem. Continue the discussion — ask clarifying questions, offer analysis, share your perspective.`
-    + `\nDo NOT start implementing, writing code, or taking action until the operator gives a clear go-ahead (e.g., "do it", "go ahead", "implement that").`
-    + `\nWhen the discussion pauses, call \`remote_copilot_wait_for_instructions\` immediately. Never summarize or stop.`
   );
 }
 

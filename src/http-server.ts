@@ -24,7 +24,6 @@ import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
 import {
   consumeExpectedMcpSessionClose,
   expectMcpSessionClose,
-  getActiveThreadIds,
   getThreadIdForMcpSession,
   registerDashboardSession,
   unregisterMcpSession,
@@ -36,7 +35,6 @@ import {
 } from "./sessions.js";
 import { getThread } from "./data/memory/thread-registry.js";
 import { findAliveThread } from "./services/process.service.js";
-import { writeReconnectSnapshot } from "./services/reconnect-snapshot.service.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 class BodyParseError extends Error {
@@ -52,7 +50,6 @@ export function startHttpServer(
   createMcpServerFn: CreateMcpServerFn,
   getMemoryDb: () => Database,
   closeMemoryDb: () => void,
-  onBeforeExit?: () => void,
 ): void {
   const rawPort = Number.parseInt(process.env.MCP_HTTP_PORT ?? "", 10);
   const httpPort = Number.isFinite(rawPort) ? rawPort : 3847;
@@ -447,14 +444,6 @@ export function startHttpServer(
 
     clearInterval(sessionSweepInterval);
 
-    // Snapshot active threads BEFORE closing transports — transport.close()
-    // fires onclose → unregisterMcpSession(), which clears threadSessionRegistry.
-    // Capturing here ensures we get the live set, not an empty one.
-    const activeThreadIds = getActiveThreadIds();
-    if (activeThreadIds.length > 0) {
-      writeReconnectSnapshot(activeThreadIds);
-    }
-
     // Tear down transports and HTTP server.
     for (const [sid, entry] of sessions) {
       if (entry.transport) {
@@ -467,7 +456,6 @@ export function startHttpServer(
       sessions.delete(sid);
     }
     httpServer.close();
-    onBeforeExit?.();
     closeMemoryDb();
     process.exit(0);
   };

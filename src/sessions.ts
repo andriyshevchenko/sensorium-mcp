@@ -136,14 +136,6 @@ export function unregisterMcpSession(mcpSessionId: string): void {
 }
 
 /**
- * Return the list of thread IDs that currently have at least one registered
- * MCP session.  Used by the shutdown hook to populate the reconnect snapshot.
- */
-export function getActiveThreadIds(): number[] {
-  return Array.from(threadSessionRegistry.keys());
-}
-
-/**
  * Close all MCP sessions for a thread EXCEPT the current one.
  * Purges orphaned sessions from before a server restart.
  * Returns the number of sessions purged.

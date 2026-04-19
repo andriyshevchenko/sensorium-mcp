@@ -12,7 +12,7 @@ import { convertMarkdown } from "../markdown.js";
 import { type initMemoryDb } from "../memory.js";
 import { assembleBootstrap } from "../services/memory-briefing.service.js";
 import { runConsolidationAllThreads } from "../services/consolidation.service.js";
-import { addSchedule, generateTaskId, listSchedules } from "../scheduler.js";
+import { addSchedule, generateTaskId, listSchedules, purgeSchedules } from "../scheduler.js";
 import {
   purgeOtherSessions,
   registerMcpSession,
@@ -25,7 +25,7 @@ import { readThreadMessages } from "../dispatcher.js";
 import { getThread, getThreadByName } from "../data/memory/thread-registry.js";
 import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
 import type { ThreadLifecycleService } from "../services/thread-lifecycle.service.js";
-import { isReconnectCandidate } from "../services/reconnect-snapshot.service.js";
+import { checkMaintenanceFlag } from "../data/file-storage.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -149,17 +149,16 @@ export async function handleStartSession(
     }
   }
 
-  // Lightweight reconnect: activated when the thread was active in the
-  // previous server process (recorded in the reconnect snapshot written at
-  // shutdown).  Purpose: avoid interrupting threads that are deep in a work
-  // session by skipping the heavy bootstrap.  In all other cases (context
-  // compaction, first-ever start, snapshot expired) the thread receives a
-  // full memory briefing.
+  // Lightweight reconnect: only activated when a server update is in progress
+  // (maintenance.flag exists).  Purpose: avoid interrupting threads that are
+  // deep in a work session by skipping the heavy bootstrap.  In all other
+  // cases (context compaction, manual restart, server restart) the thread
+  // receives a full memory briefing.
   let isReconnect = false;
-  if (resolvedPreexisting && isReconnectCandidate(session.currentThreadId!)) {
+  if (resolvedPreexisting && checkMaintenanceFlag() !== null) {
     isReconnect = true;
     log.info(
-      `[start_session] Lightweight reconnect for thread ${session.currentThreadId} — snapshot match, skipping briefing.`,
+      `[start_session] Lightweight reconnect for thread ${session.currentThreadId} — update in progress, skipping briefing.`,
     );
   }
 

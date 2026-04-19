@@ -14,7 +14,7 @@ import { errorMessage } from "../utils.js";
 import { getThread } from "../data/memory/thread-registry.js";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { PENDING_TASKS_DIR } from "../services/process.service.js";
+import { PENDING_TASKS_DIR } from "./thread-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

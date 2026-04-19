@@ -44,15 +44,13 @@ const { TelegramClient } = await import("./telegram.js");
 const { startHttpServer } = await import("./http-server.js");
 const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
-const { setTopicRegistryDb, sessionRepository, getActiveThreadIds } = await import("./sessions.js");
+const { setTopicRegistryDb, sessionRepository } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
-const { reconcileState } = await import("./services/process.service.js");
+const { cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
 const { log } = await import("./logger.js");
 const { resolveTelegramTopicId, threadRepository } = await import("./data/memory/thread-registry.js");
 const { BackgroundJobRunner } = await import("./services/background-runner.js");
 const { ThreadLifecycleService } = await import("./services/thread-lifecycle.service.js");
-const { clearReconnectSnapshot, writeReconnectSnapshot } = await import("./services/reconnect-snapshot.service.js");
-const { closeMaintenanceWatcher } = await import("./services/maintenance-signal.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -95,10 +93,13 @@ const threadLifecycle = new ThreadLifecycleService(
 // Initialize video temp-file cleanup handlers (registers process exit hooks).
 initVideoTempCleanup();
 
-// Reconcile in-memory state with SQLite (intent) and PID files (OS evidence).
-// Populates spawnedThreads[] for alive processes, cleans stale PID files,
-// and marks dead-but-active threads as exited so KeeperService can restart them.
-reconcileState(getMemoryDb(), threadLifecycle);
+// Kill orphan agent processes from the previous server instance and spawn
+// fresh processes for all keepAlive threads. This replaces the old PID-file
+// restoration approach — no more PID orphans or ghost duplicates.
+cleanupStalePidFiles();
+const keepAlive = spawnKeepAliveThreads(threadLifecycle);
+if (keepAlive.spawned > 0) log.info(`[startup] Spawned ${keepAlive.spawned} keepAlive thread(s).`);
+if (keepAlive.errors.length > 0) log.warn(`[startup] keepAlive errors: ${keepAlive.errors.join("; ")}`);
 
 // ---------------------------------------------------------------------------
 // MCP Server factory (delegates to server/factory.ts)
@@ -117,18 +118,8 @@ function closeMemoryDb(): void {
   }
 }
 
-// In HTTP mode, SIGTERM is handled exclusively by http-server.ts's shutdown().
-// Declare refs so the onBeforeExit hook can reach keeper/background-runner even
-// though they are created after startHttpServer() returns.
-let _keeperStop: (() => void) | undefined;
-let _backgroundStop: (() => void) | undefined;
-
 if (process.env.MCP_HTTP_PORT) {
-  startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb, () => {
-    try { _keeperStop?.(); } catch (_) {}
-    try { _backgroundStop?.(); } catch (_) {}
-    try { closeMaintenanceWatcher(); } catch (_) {}
-  });
+  startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb);
 } else {
   await startStdioServer(createMcpServer, closeMemoryDb);
 }
@@ -143,34 +134,5 @@ const backgroundRunner = new BackgroundJobRunner({
 
 // Start background jobs after the server is listening.
 backgroundRunner.start();
-_backgroundStop = () => backgroundRunner.stop();
-
-// Start in-process keeper service (replaces Go supervisor keepers).
-const { KeeperService } = await import("./services/keeper.service.js");
-const keeperService = new KeeperService({
-  getMemoryDb,
-  threadLifecycle,
-  telegram,
-  chatId: TELEGRAM_CHAT_ID,
-});
-keeperService.start();
-_keeperStop = () => keeperService.stop();
-
-// stdio mode only — HTTP mode handles SIGTERM in http-server.ts's shutdown()
-if (!process.env.MCP_HTTP_PORT) {
-  process.on("SIGTERM", () => {
-    log.info("[shutdown] SIGTERM received — writing reconnect snapshot...");
-    try { writeReconnectSnapshot(getActiveThreadIds()); } catch (_) { /* best-effort */ }
-    try { keeperService.stop(); } catch (_) {}
-    try { backgroundRunner.stop(); } catch (_) {}
-    try { closeMaintenanceWatcher(); } catch (_) {}
-    try { closeMemoryDb(); } catch (_) { /* best-effort */ }
-    process.exit(0);
-  });
-}
-
-// Auto-clear the reconnect snapshot 10 minutes after startup so stale
-// snapshots from the previous process don't persist across multiple restarts.
-setTimeout(() => clearReconnectSnapshot(), 10 * 60 * 1000);
 
 }

@@ -27,11 +27,10 @@ export interface ThreadRegistryEntry {
   telegramTopicId: number | null;
   identityPrompt: string | null;
   workingDirectory: string | null;
-  pid: number | null;
   createdAt: string;
   lastActiveAt: string | null;
   sessionResetAt: string | null;
-  status: 'created' | 'spawning' | 'active' | 'stuck' | 'exiting' | 'exited' | 'archived' | 'expired';
+  status: 'active' | 'archived' | 'expired' | 'exited';
 }
 
 type RegisterThreadEntry = {
@@ -63,7 +62,6 @@ type UpdateThreadPatch = Partial<
     | "telegramTopicId"
     | "identityPrompt"
     | "workingDirectory"
-    | "pid"
   >
 >;
 
@@ -116,7 +114,6 @@ function rowToEntry(row: Record<string, unknown>): ThreadRegistryEntry {
     telegramTopicId: (row.telegram_topic_id as number | null) ?? null,
     identityPrompt: (row.identity_prompt as string | null) ?? null,
     workingDirectory: (row.working_directory as string | null) ?? null,
-    pid: (row.pid as number | null) ?? null,
     createdAt: row.created_at as string,
     lastActiveAt: (row.last_active_at as string | null) ?? null,
     sessionResetAt: (row.session_reset_at as string | null) ?? null,
@@ -178,7 +175,7 @@ export function getThread(db: Database, threadId: number): ThreadRegistryEntry |
 
 export function getThreadByName(db: Database, name: string): ThreadRegistryEntry | null {
   const row = db.prepare(
-    `SELECT * FROM thread_registry WHERE name = ? AND status IN ('active', 'dormant', 'exited') ORDER BY last_active_at DESC LIMIT 1`,
+    `SELECT * FROM thread_registry WHERE name = ? AND status = 'active' ORDER BY last_active_at DESC LIMIT 1`,
   ).get(name) as Record<string, unknown> | undefined;
   return row ? rowToEntry(row) : null;
 }
@@ -239,7 +236,6 @@ export function updateThread(
   if (updates.telegramTopicId !== undefined) { setClauses.push('telegram_topic_id = ?'); params.push(updates.telegramTopicId); }
   if (updates.identityPrompt !== undefined) { setClauses.push('identity_prompt = ?'); params.push(updates.identityPrompt); }
   if (updates.workingDirectory !== undefined) { setClauses.push('working_directory = ?'); params.push(updates.workingDirectory); }
-  if (updates.pid !== undefined) { setClauses.push('pid = ?'); params.push(updates.pid); }
 
   if (setClauses.length === 0) return false;
 

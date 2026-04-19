@@ -48,7 +48,6 @@ export function initMemoryDb(): Database {
   const db = new BetterSqlite3(dbPath);
 
   db.pragma("journal_mode = WAL");
-  db.pragma("busy_timeout = 5000");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
 

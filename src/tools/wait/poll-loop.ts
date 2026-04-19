@@ -27,7 +27,7 @@ import { log } from "../../logger.js";
 import { getShortReminder, buildMaintenanceResponse } from "../../response-builders.js";
 import type { ThreadLifecycleService } from "../../services/thread-lifecycle.service.js";
 
-import { PENDING_TASKS_DIR } from "../../services/process.service.js";
+import { PENDING_TASKS_DIR } from "../thread-lifecycle.js";
 import { handleReactionOnly } from "./reaction-handler.js";
 import { checkForDueTasks } from "./task-handler.js";
 import { processIncomingMessages, handlePollTimeout } from "./message-processing.js";
@@ -51,7 +51,7 @@ setInterval(() => {
   if (maintenanceTgSent.size > 0 && checkMaintenanceFlag() === null) {
     maintenanceTgSent.clear();
   }
-}, 30_000).unref();
+}, 30_000);
 
 // ---------------------------------------------------------------------------
 // Pending-task file helper
