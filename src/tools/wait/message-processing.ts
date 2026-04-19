@@ -208,7 +208,7 @@ export async function processIncomingMessages(
   if (intentText) {
     messageBuffer.push({ role: "operator", text: intentText.slice(0, 300) });
   }
-  const intent = await classifyIntent(intentText, messageBuffer, OPENAI_API_KEY || undefined);
+  const intent = classifyIntent(intentText);
 
   log.info(`[wait] Returning response with ${contentBlocks.length} blocks to agent.`);
 

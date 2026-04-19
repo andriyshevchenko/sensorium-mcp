@@ -11,7 +11,8 @@ import {
     type SemanticNote,
 } from "../../memory.js";
 
-import { getAllRegisteredTopics, getActiveThreadIds, registerTopic, unregisterTopic } from "../../sessions.js";
+import { getAllRegisteredTopics, registerTopic, unregisterTopic } from "../../sessions.js";
+import { getActiveThreadIds } from "../../services/process.service.js";
 import { writeReconnectSnapshot } from "../../services/reconnect-snapshot.service.js";
 
 import { readBody, safeParseJSON, type RouteHandler } from "./types.js";

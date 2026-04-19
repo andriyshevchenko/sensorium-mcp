@@ -30,7 +30,7 @@ import {
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
 import { errorMessage } from "../../utils.js";
-import { isThreadRunning } from "../../tools/thread-lifecycle.js";
+import { isThreadRunning } from "../../services/process.service.js";
 import { readThreadHeartbeat } from "../../data/file-storage.js";
 import { getExplicitTelegramTopicId, resolveTelegramTopicId } from "../../data/memory/thread-registry.js";
 import { config } from "../../config.js";
