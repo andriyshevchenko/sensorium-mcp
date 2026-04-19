@@ -1,0 +1,39 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "supervisor-dotnet", "supervisor-dotnet", "{9A45762A-2110-A353-1198-8663B583535B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sensorium.Supervisor", "supervisor-dotnet\Sensorium.Supervisor.csproj", "{47CC77B8-9E2D-3DFC-954E-98D9ED37C22B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{3EFDAD1A-3AC0-52FC-ECA7-D4855C6F80F8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sensorium.Supervisor.Tests", "supervisor-dotnet\tests\Sensorium.Supervisor.Tests.csproj", "{2C215A11-E925-F17A-3597-6CC8AFB3C978}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{47CC77B8-9E2D-3DFC-954E-98D9ED37C22B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{47CC77B8-9E2D-3DFC-954E-98D9ED37C22B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{47CC77B8-9E2D-3DFC-954E-98D9ED37C22B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{47CC77B8-9E2D-3DFC-954E-98D9ED37C22B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C215A11-E925-F17A-3597-6CC8AFB3C978}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C215A11-E925-F17A-3597-6CC8AFB3C978}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C215A11-E925-F17A-3597-6CC8AFB3C978}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C215A11-E925-F17A-3597-6CC8AFB3C978}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{47CC77B8-9E2D-3DFC-954E-98D9ED37C22B} = {9A45762A-2110-A353-1198-8663B583535B}
+		{3EFDAD1A-3AC0-52FC-ECA7-D4855C6F80F8} = {9A45762A-2110-A353-1198-8663B583535B}
+		{2C215A11-E925-F17A-3597-6CC8AFB3C978} = {3EFDAD1A-3AC0-52FC-ECA7-D4855C6F80F8}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BA4F9DE1-41D0-4CB9-BD63-637008B4CC5D}
+	EndGlobalSection
+EndGlobal

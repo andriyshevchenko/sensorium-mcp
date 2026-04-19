@@ -34,6 +34,7 @@ import {
     updateDefaultThreadModel,
     getDefaultWorkerModel,
     updateDefaultWorkerModel,
+    type AgentType,
     type KeeperClient,
     type ThreadKeepAliveSettings,
 } from "../../config.js";

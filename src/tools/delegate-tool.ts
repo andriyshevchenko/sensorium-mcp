@@ -30,14 +30,12 @@ import {
   readPidFiles,
   ensureDirs,
   PENDING_TASKS_DIR,
-} from "../services/process.service.js";
-import {
   resolveMcpConfigPath,
   resolveClaudePath,
   resolveCopilotPath,
   resolveCodexPath,
   dispatchSpawn,
-} from "../services/agent-spawn.service.js";
+} from "./thread-lifecycle.js";
 import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
 
 // ---------------------------------------------------------------------------
@@ -336,7 +334,6 @@ export async function handleStartThread(
         client: agentType,
         workingDirectory,
         chatId: telegramChatId,
-        telegramTopicId: threadId,
       });
     }
   } catch { /* registration is best-effort */ }
