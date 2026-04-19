@@ -46,7 +46,8 @@ const { startStdioServer } = await import("./stdio-server.js");
 const { buildMcpServerFactory } = await import("./server/factory.js");
 const { setTopicRegistryDb, sessionRepository } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
-const { cleanupStalePidFiles, spawnKeepAliveThreads } = await import("./tools/thread-lifecycle.js");
+const { reconcileState } = await import("./services/process.service.js");
+const { spawnKeepAliveThreads } = await import("./services/agent-spawn.service.js");
 const { log } = await import("./logger.js");
 const { resolveTelegramTopicId, threadRepository } = await import("./data/memory/thread-registry.js");
 const { BackgroundJobRunner } = await import("./services/background-runner.js");
@@ -96,7 +97,7 @@ initVideoTempCleanup();
 // Kill orphan agent processes from the previous server instance and spawn
 // fresh processes for all keepAlive threads. This replaces the old PID-file
 // restoration approach — no more PID orphans or ghost duplicates.
-cleanupStalePidFiles();
+reconcileState(getMemoryDb(), threadLifecycle);
 const keepAlive = spawnKeepAliveThreads(threadLifecycle);
 if (keepAlive.spawned > 0) log.info(`[startup] Spawned ${keepAlive.spawned} keepAlive thread(s).`);
 if (keepAlive.errors.length > 0) log.warn(`[startup] keepAlive errors: ${keepAlive.errors.join("; ")}`);

@@ -30,12 +30,14 @@ import {
   readPidFiles,
   ensureDirs,
   PENDING_TASKS_DIR,
+} from "../services/process.service.js";
+import {
   resolveMcpConfigPath,
   resolveClaudePath,
   resolveCopilotPath,
   resolveCodexPath,
   dispatchSpawn,
-} from "./thread-lifecycle.js";
+} from "../services/agent-spawn.service.js";
 import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
 
 // ---------------------------------------------------------------------------

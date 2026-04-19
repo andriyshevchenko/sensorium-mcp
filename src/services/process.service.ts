@@ -97,6 +97,10 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
 
 export const isThreadRunning = (threadId: number): boolean => findAliveThread(threadId) !== undefined;
 
+export function getActiveThreadIds(): number[] {
+  return spawnedThreads.filter(t => isProcessAlive(t.pid)).map(t => t.threadId);
+}
+
 export function ensureDirs(): void {
   mkdirSync(PENDING_TASKS_DIR, { recursive: true });
   mkdirSync(LOGS_DIR, { recursive: true });
