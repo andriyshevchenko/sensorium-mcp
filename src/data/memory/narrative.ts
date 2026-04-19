@@ -39,6 +39,23 @@ interface TemporalNarrative {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
+const NARRATIVE_FILLER_PHRASES: RegExp[] = [
+  /\bsignificant progress\b/i,
+  /\bnotable improvements?\b/i,
+  /\bvarious features\b/i,
+  /\bseveral enhancements\b/i,
+  /\bsignificant (evolution|strides|developments?)\b/i,
+  /\boverall.{0,20}(positive|good|well)\b/i,
+];
+
+function findFillerPhrase(text: string): string | null {
+  for (const pattern of NARRATIVE_FILLER_PHRASES) {
+    const match = pattern.exec(text);
+    if (match) return match[0];
+  }
+  return null;
+}
+
 /** Cooldown per resolution before regenerating */
 const COOLDOWNS: Record<NarrativeResolution, number> = {
   day: 2 * 60 * 60 * 1000,        // 2 hours
@@ -211,11 +228,11 @@ function buildPrompt(
   periodLabel: string,
 ): string {
   const instructions: Record<NarrativeResolution, string> = {
-    day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. Target ~500 tokens.`,
-    week: `Write a concise narrative of the key developments this past week (${periodLabel}). Focus on: major decisions, direction changes, breakthroughs, blockers resolved. Group by theme rather than strict chronology. Target ~300 tokens.`,
-    month: `Write a high-level narrative arc for this past month (${periodLabel}). Capture: the overall trajectory of the project, the operator's evolving priorities, major milestones, and where things stand now. Be strategic, not tactical. Target ~200 tokens.`,
-    quarter: `Write a strategic narrative arc for this quarter (${periodLabel}). Capture: the major phases of work, how priorities shifted over three months, key turning points, and the overall trajectory. Identify patterns and recurring themes. Be executive-level, not detailed. Target ~150 tokens.`,
-    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture: the broadest arcs of the project over six months — where it started, how it evolved, major pivots, and where it stands now. Focus on transformation and long-term patterns. Target ~120 tokens.`,
+    day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. For each major event, explain WHY it happened and what it caused. Don't just list what happened — explain the chain of consequences. Target ~500 tokens.`,
+    week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~300 tokens.`,
+    month: `Write a narrative arc for this past month (${periodLabel}). Structure around 2-3 major cause-effect chains: what problem or opportunity emerged, what decisions were made in response, and how those decisions played out. Name specific features, tools, or systems — not abstractions. End with what's unresolved. Target ~200 tokens.`,
+    quarter: `Write a narrative arc for this quarter (${periodLabel}). Identify 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved through concrete cause-and-effect, not vague 'themes'. Target ~150 tokens.`,
+    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture the 1-2 biggest transformations: where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision — no unsupported generalizations like 'significant progress' or 'notable improvements'. Target ~120 tokens.`,
   };
 
   return `You are a temporal memory narrator. You create coherent stories from raw interaction data.
@@ -229,6 +246,9 @@ FORMAT RULES:
 - Do NOT list facts — weave them into a narrative
 - Do NOT use bullet points — write flowing paragraphs
 - End with current status / what's next
+- NEVER use filler phrases: "significant progress", "notable improvements", "various features", "several enhancements"
+- Every claim must be grounded in a specific event, decision, or outcome from the source data
+- If you can't point to specific evidence, don't include it
 
 SOURCE DATA (${episodeCount} episodes):
 
@@ -330,6 +350,28 @@ async function generateNarrative(
 
   if (!narrative?.trim()) return null;
 
+  // ─── Quality gate: reject filler language, retry once ──────────────────
+  let finalNarrative = narrative.trim();
+  const fillerMatch = findFillerPhrase(finalNarrative);
+  if (fillerMatch) {
+    console.warn(`[narrative] filler phrase detected (${fillerMatch}) in ${resolution} narrative — retrying`);
+    const retryPrompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel)
+      + "\n\nRewrite the narrative using no filler phrases. Every claim must reference a specific event or decision from the source data.";
+    const retried = await chatCompletion(
+      [{ role: "system", content: "You are a temporal memory narrator." }, { role: "assistant", content: finalNarrative }, { role: "user", content: retryPrompt }],
+      apiKey,
+      { model: NARRATIVE_MODEL, temperature: 0.3, maxTokens: Math.ceil(TOKEN_BUDGETS[resolution] / 4), timeoutMs: 60_000 },
+    );
+    if (retried?.trim()) {
+      const retryFiller = findFillerPhrase(retried.trim());
+      if (retryFiller) {
+        console.warn(`[narrative] retry still contains filler (${retryFiller}) in ${resolution} — keeping original`);
+      } else {
+        finalNarrative = retried.trim();
+      }
+    }
+  }
+
   // Upsert (replace existing for same period)
   db.prepare(
     `INSERT INTO temporal_narratives (thread_id, resolution, period_start, period_end, narrative, source_episode_count, source_note_count, model)
@@ -341,7 +383,7 @@ async function generateNarrative(
        source_note_count = excluded.source_note_count,
        model = excluded.model,
        created_at = datetime('now')`,
-  ).run(knowledgeThreadId, resolution, start, end, narrative.trim(), episodes.length, notes.length, NARRATIVE_MODEL);
+  ).run(knowledgeThreadId, resolution, start, end, finalNarrative, episodes.length, notes.length, NARRATIVE_MODEL);
 
   return getLastNarrative(db, knowledgeThreadId, resolution);
 }

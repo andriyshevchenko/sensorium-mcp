@@ -4,7 +4,26 @@ import {
   MAX_BOOTSTRAP_CONVERSATION_CHARS,
   MAX_MESSAGE_CONTENT_CHARS,
 } from "../data/memory/bootstrap.js";
+import { parseReflectionFields } from "../data/memory/reflection.js";
 import type { Database } from "../data/memory/schema.js";
+
+function formatReflection(content: string): string {
+  // Parse structured reflection format using shared parser
+  const typeMatch = content.match(/^\[REFLECTION\]\s*(\[[\w\s]+\])\s*(\[[\w\s]+\])/);
+  const fields = parseReflectionFields(content);
+
+  if (fields) {
+    const prefix = typeMatch ? `${typeMatch[1]} ${typeMatch[2]} ` : "";
+    const decisionTrimmed = fields.decision.slice(0, 100);
+    const decisionText = fields.decision.length > 100 ? `${decisionTrimmed}...` : decisionTrimmed;
+    const lessonTruncated = fields.lesson.slice(0, 300);
+    const lessonText = fields.lesson.length > 300 ? `${lessonTruncated}...` : lessonTruncated;
+    return `${prefix}Decision: ${decisionText} **Lesson:** ${lessonText}`;
+  }
+
+  // Fallback for older reflections
+  return content.slice(0, 500);
+}
 
 export function assembleBootstrap(db: Database, threadId: number, memorySourceThreadId?: number): string {
   const context = getBootstrapContext(db, threadId, memorySourceThreadId);
@@ -143,7 +162,7 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   if (context.reflections.length > 0) {
     lines.push("## Recent Reflections");
     for (const reflection of context.reflections) {
-      lines.push(`- ${reflection.content.slice(0, 300)} _(conf: ${reflection.confidence.toFixed(2)}, ${reflection.createdAt.slice(0, 10)})_`);
+      lines.push(`- ${formatReflection(reflection.content)} _(conf: ${reflection.confidence.toFixed(2)}, ${reflection.createdAt.slice(0, 10)})_`);
     }
     lines.push("");
   }

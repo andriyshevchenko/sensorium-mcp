@@ -21,6 +21,7 @@ import {
   sweepOrphanedNotes,
 } from "../data/memory/consolidation.js";
 import { resolveKnowledgeThreadId } from "../config.js";
+import { passesStructuralGate, passesQualityGate, parseReflectionFields } from "../data/memory/reflection.js";
 import { chatCompletion, generateEmbedding, type ChatMessage } from "../integrations/openai/chat.js";
 import { log } from "../logger.js";
 import { nowISO, repairAndParseJSON } from "../data/memory/utils.js";
@@ -427,6 +428,51 @@ export async function runIntelligentConsolidation(
     }
 
     cleanupConsolidationHousekeeping(db);
+
+    // Phase: Quality gate cleanup — expire existing reflection notes that fail structural or quality checks
+    if (!dryRun) {
+      try {
+        const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+        // Only sweep reflections created after the quality gate was deployed (2026-04-19)
+        // to avoid retroactively expiring older reflections that were valid under previous rules
+        const QUALITY_GATE_CUTOFF = "2026-04-19T00:00:00.000Z";
+        const reflectionRows = db
+          .prepare(
+            `SELECT note_id, content, confidence FROM semantic_notes
+             WHERE content LIKE '[REFLECTION]%' AND valid_to IS NULL AND superseded_by IS NULL
+               AND thread_id = ? AND created_at >= ?`,
+          )
+          .all(knowledgeThreadId, QUALITY_GATE_CUTOFF) as { note_id: string; content: string; confidence: number }[];
+
+        let expiredReflections = 0;
+        const nowStr = nowISO();
+
+        for (const row of reflectionRows) {
+          const fields = parseReflectionFields(row.content);
+          if (!fields) continue;  // unparseable — skip, don't expire
+
+          const structural = passesStructuralGate(fields);
+          if (!structural.pass) {
+            expireNote(db, row.note_id, nowStr);
+            expiredReflections++;
+            continue;
+          }
+
+          const quality = passesQualityGate(row.content, row.confidence);
+          if (!quality.pass) {
+            expireNote(db, row.note_id, nowStr);
+            expiredReflections++;
+          }
+        }
+
+        if (expiredReflections > 0) {
+          log.info(`[consolidation] Quality gate cleanup: expired ${expiredReflections} low-quality reflection(s)`);
+        }
+      } catch (err) {
+        log.warn(`[consolidation] Reflection quality gate cleanup failed: ${errorMessage(err)}`);
+      }
+    }
+
     return {
       episodesProcessed: episodes.length,
       notesCreated,
