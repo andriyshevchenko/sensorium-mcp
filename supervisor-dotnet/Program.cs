@@ -90,11 +90,11 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
     int CfgInt(string key, int fallback)
         => int.TryParse(config?[key] ?? Environment.GetEnvironmentVariable(key), out int v) ? v : fallback;
 
-    opts.Mode = Cfg("WATCHER_MODE", "development");
-    opts.PollAtHour = CfgInt("WATCHER_POLL_HOUR", 4);
-    opts.PollInterval = TimeSpan.FromSeconds(CfgInt("WATCHER_POLL_INTERVAL", 60));
+    opts.UpdateMode = Cfg("SUPERVISOR_UPDATE_MODE", "development");
+    opts.PollAtHour = CfgInt("SUPERVISOR_POLL_HOUR", 4);
+    opts.PollInterval = TimeSpan.FromSeconds(CfgInt("SUPERVISOR_POLL_INTERVAL", 60));
     opts.GracePeriod = TimeSpan.FromSeconds(
-        CfgInt("WATCHER_GRACE_PERIOD", opts.Mode == "development" ? 10 : 300));
+        CfgInt("SUPERVISOR_GRACE_PERIOD", opts.UpdateMode == "development" ? 10 : 300));
     opts.MinUptime = TimeSpan.FromSeconds(600);
     opts.McpStartCommand = Cfg("MCP_START_COMMAND", "npx -y sensorium-mcp@latest");
     opts.DataDir = dataDir;
@@ -120,7 +120,7 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
         LastActivity = Path.Combine(dataDir, "last-activity.txt"),
         McpStderrLog = Path.Combine(logs, "mcp", "mcp-stderr.log"),
         ServerPid = Path.Combine(dataDir, "server.pid"),
-        WatcherLock = Path.Combine(dataDir, "watcher.lock"),
+        SupervisorLock = Path.Combine(dataDir, "supervisor.lock"),
         SupervisorLog = Path.Combine(logs, "supervisor", "supervisor-.log"),
         PidsDir = Path.Combine(dataDir, "pids"),
         HeartbeatsDir = Path.Combine(dataDir, "heartbeats"),

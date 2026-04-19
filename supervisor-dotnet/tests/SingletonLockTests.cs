@@ -21,7 +21,7 @@ public class SingletonLockTests : IDisposable
         var path = lockPath ?? Path.Combine(_tmpDir, "test.lock");
         var opts = Options.Create(new SupervisorOptions
         {
-            Paths = new SupervisorPaths { WatcherLock = path }
+            Paths = new SupervisorPaths { SupervisorLock = path }
         });
         return new SingletonLock(opts, NullLogger<SingletonLock>.Instance);
     }

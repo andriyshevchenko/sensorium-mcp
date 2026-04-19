@@ -13,7 +13,7 @@ public sealed class SingletonLock : ISingletonLock
 
     public SingletonLock(IOptions<SupervisorOptions> opts, ILogger<SingletonLock> log)
     {
-        _lockPath = opts.Value.Paths.WatcherLock;
+        _lockPath = opts.Value.Paths.SupervisorLock;
         _log = log;
     }
 

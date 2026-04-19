@@ -10,7 +10,7 @@ public class ConfigBindingTests
     {
         var opts = new SupervisorOptions();
 
-        Assert.Equal("development", opts.Mode);
+        Assert.Equal("development", opts.UpdateMode);
         Assert.Equal(4, opts.PollAtHour);
         Assert.Equal(TimeSpan.FromSeconds(60), opts.PollInterval);
         Assert.Equal(TimeSpan.FromSeconds(600), opts.MinUptime);
@@ -24,8 +24,8 @@ public class ConfigBindingTests
     [InlineData("production", 300)]
     public void GracePeriod_DefaultsByMode(string mode, int expectedSeconds)
     {
-        var opts = new SupervisorOptions { Mode = mode };
-        int graceDef = opts.Mode == "development" ? 10 : 300;
+        var opts = new SupervisorOptions { UpdateMode = mode };
+        int graceDef = opts.UpdateMode == "development" ? 10 : 300;
 
         Assert.Equal(expectedSeconds, graceDef);
     }
@@ -46,7 +46,7 @@ public class ConfigBindingTests
             McpStderrLog = Path.Combine(logs, "mcp", "mcp-stderr.log"),
             SupervisorLog = Path.Combine(logs, "supervisor", "supervisor-.log"),
             ServerPid = Path.Combine(dataDir, "server.pid"),
-            WatcherLock = Path.Combine(dataDir, "watcher.lock"),
+            SupervisorLock = Path.Combine(dataDir, "supervisor.lock"),
             UpdateState = Path.Combine(dataDir, "update-state.json"),
             UpdateApplyLock = Path.Combine(dataDir, "update-apply.lock"),
             SupervisorVersion = Path.Combine(dataDir, "supervisor-version.txt"),
@@ -55,7 +55,7 @@ public class ConfigBindingTests
         Assert.Equal(bin, paths.BinaryDir);
         Assert.EndsWith("mcp-stderr.log", paths.McpStderrLog);
         Assert.EndsWith("server.pid", paths.ServerPid);
-        Assert.EndsWith("watcher.lock", paths.WatcherLock);
+        Assert.EndsWith("supervisor.lock", paths.SupervisorLock);
         Assert.EndsWith("update-state.json", paths.UpdateState);
     }
 }
