@@ -7,17 +7,11 @@
     (tag: supervisor-latest, repo: andriyshevchenko/sensorium-mcp) and places
     it in ~/.remote-copilot-mcp/bin/ as sensorium-supervisor.exe.
 
-    Always downloads the latest binary, stops any running instance, and restarts.
-
-    When a SecureVault profile is set (default: SENSORIUM), the supervisor is
-    launched via `securevault run --detached` which injects secrets from the
-    OS keychain as environment variables.
-.PARAMETER Foreground
-    Run supervisor in the current console with live logs instead of background
-    hidden mode.
+    Always downloads the latest binary, stops any running instance, and restarts
+    via `securevault run --detached` which injects secrets from the OS keychain
+    as environment variables and launches in a separate console window.
 .PARAMETER SecureVaultProfile
-    SecureVault profile name to resolve runtime secrets from. Set empty string to
-    disable SecureVault profile resolution and fall back to plain Start-Process.
+    SecureVault profile name to resolve runtime secrets from.
 .PARAMETER UpdateMode
     Supervisor mode to use (`production` or `development`).
 .PARAMETER MCPStartCommand
@@ -25,13 +19,11 @@
     uses published npm package command `npx -y sensorium-mcp@latest`.
 .EXAMPLE
     .\Install-Sensorium.ps1
-    .\Install-Sensorium.ps1 -Foreground
     .\Install-Sensorium.ps1 -SecureVaultProfile "SENSORIUM" -UpdateMode production
-    .\Install-Sensorium.ps1 -SecureVaultProfile "" -UpdateMode development
+    .\Install-Sensorium.ps1 -UpdateMode development
     .\Install-Sensorium.ps1 -MCPStartCommand "node C:\src\remote-copilot-mcp\dist\index.js"
 #>
 param(
-    [switch]$Foreground,
     [string]$SecureVaultProfile = "SENSORIUM",
     [ValidateSet("production", "development")]
     [string]$UpdateMode = "production",
@@ -117,75 +109,31 @@ function Install-StartupLauncher {
     $safeMode = $UpdateMode.Replace('"', '')
     $safeMcpStart = $EffectiveMCPStartCommand.Replace('"', '""')
 
-    if (-not [string]::IsNullOrWhiteSpace($safeProfile)) {
-        $launcherContent = @(
-            "@echo off",
-            "set `"SUPERVISOR_UPDATE_MODE=$safeMode`"",
-            "set `"MCP_START_COMMAND=$safeMcpStart`"",
-            "securevault run `"$Binary`" --profile $safeProfile --detached"
-        ) -join [Environment]::NewLine
-    }
-    else {
-        $launcherContent = @(
-            "@echo off",
-            "set `"SUPERVISOR_UPDATE_MODE=$safeMode`"",
-            "set `"MCP_START_COMMAND=$safeMcpStart`"",
-            "start `"`" /min `"$Binary`""
-        ) -join [Environment]::NewLine
-    }
+    $launcherContent = @(
+        "@echo off",
+        "set `"SUPERVISOR_UPDATE_MODE=$safeMode`"",
+        "set `"MCP_START_COMMAND=$safeMcpStart`"",
+        "securevault run `"$Binary`" --profile $safeProfile --detached"
+    ) -join [Environment]::NewLine
 
     Set-Content -LiteralPath $StartupLauncher -Value $launcherContent -Encoding ASCII
     Write-Host "Startup launcher installed: $StartupLauncher" -ForegroundColor Green
 }
 
-function Start-AsBackground {
+function Start-Supervisor {
     $env:SUPERVISOR_UPDATE_MODE = $UpdateMode
     $env:MCP_START_COMMAND = $EffectiveMCPStartCommand
 
-    if (-not [string]::IsNullOrWhiteSpace($SecureVaultProfile)) {
-        Write-Host "Starting sensorium-supervisor via SecureVault (profile: $SecureVaultProfile)..."
-        try {
-            securevault run "`"$Binary`"" --profile $SecureVaultProfile --detached
-        }
-        catch {
-            Write-Host "[ERROR] SecureVault launch failed: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host "[HINT] Make sure SecureVault backend is running: securevault" -ForegroundColor Yellow
-            throw
-        }
+    Write-Host "Starting sensorium-supervisor via SecureVault (profile: $SecureVaultProfile)..."
+    try {
+        securevault run "`"$Binary`"" --profile $SecureVaultProfile --detached
     }
-    else {
-        Write-Host "Starting sensorium-supervisor as a background process..."
-        $logOut = Join-Path $DataDir "supervisor.log"
-        $logErr = Join-Path $DataDir "supervisor-error.log"
-        try {
-            Start-Process -FilePath $Binary `
-                -RedirectStandardOutput $logOut `
-                -RedirectStandardError  $logErr `
-                -WindowStyle Hidden `
-                -PassThru | Out-Null
-        }
-        catch {
-            Write-Host "[ERROR] Failed to start supervisor in background: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host "[HINT] If Windows Defender blocked the binary, run:" -ForegroundColor Yellow
-            Write-Host "       Unblock-File -Path \"$Binary\"" -ForegroundColor Yellow
-            throw
-        }
+    catch {
+        Write-Host "[ERROR] SecureVault launch failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[HINT] Make sure SecureVault backend is running: securevault" -ForegroundColor Yellow
+        throw
     }
     Start-Sleep -Seconds 2
-}
-
-function Start-InForeground {
-    $env:SUPERVISOR_UPDATE_MODE = $UpdateMode
-    $env:MCP_START_COMMAND = $EffectiveMCPStartCommand
-    Write-Host "Starting sensorium-supervisor in foreground (live logs)..." -ForegroundColor Cyan
-    Write-Host "Press Ctrl+C to stop." -ForegroundColor Yellow
-    if (-not [string]::IsNullOrWhiteSpace($SecureVaultProfile)) {
-        securevault run "`"$Binary`"" --profile $SecureVaultProfile
-    }
-    else {
-        & $Binary
-    }
-    exit $LASTEXITCODE
 }
 
 function Show-Status {
@@ -233,12 +181,7 @@ Get-BinaryAsset -Destination $Binary
 
 # Step 4 — install launcher and start
 Install-StartupLauncher
-if ($Foreground) {
-    Start-InForeground
-}
-else {
-    Start-AsBackground
-}
+Start-Supervisor
 
 # Step 5 — verify
 Show-Status
