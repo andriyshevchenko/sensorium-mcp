@@ -50,6 +50,7 @@ public class ConfigBindingTests
             UpdateState = Path.Combine(dataDir, "update-state.json"),
             UpdateApplyLock = Path.Combine(dataDir, "update-apply.lock"),
             SupervisorVersion = Path.Combine(dataDir, "supervisor-version.txt"),
+            PollerLock = Path.Combine(dataDir, "poller.lock"),
         };
 
         Assert.Equal(bin, paths.BinaryDir);
@@ -57,5 +58,6 @@ public class ConfigBindingTests
         Assert.EndsWith("server.pid", paths.ServerPid);
         Assert.EndsWith("supervisor.lock", paths.SupervisorLock);
         Assert.EndsWith("update-state.json", paths.UpdateState);
+        Assert.EndsWith("poller.lock", paths.PollerLock);
     }
 }
