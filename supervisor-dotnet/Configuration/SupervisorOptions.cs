@@ -36,4 +36,5 @@ public sealed class SupervisorPaths
     public string PidsDir { get; set; } = "";
     public string HeartbeatsDir { get; set; } = "";
     public string ApplyFailureMarker { get; set; } = "";
+    public string PollerLock { get; set; } = "";
 }

@@ -102,6 +102,24 @@ export function removeLock(): void {
 // Lock acquisition
 // ---------------------------------------------------------------------------
 
+/**
+ * Try to acquire the poller lock, retrying up to `maxAttempts` times with
+ * `delayMs` between attempts. Handles the Windows race where a just-killed
+ * process still appears alive briefly to process.kill(pid, 0).
+ */
+export async function tryAcquireLockWithRetry(
+    maxAttempts = 3,
+    delayMs = 2000,
+): Promise<boolean> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (tryAcquireLock()) return true;
+        if (attempt < maxAttempts) {
+            await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
+    return false;
+}
+
 export function tryAcquireLock(): boolean {
     const existing = readLock();
     if (existing) {

@@ -119,6 +119,9 @@ public sealed class SupervisorWorker : BackgroundService
 
             if (ct.IsCancellationRequested) return;
 
+            // Clean up stale poller lock so the fresh MCP can always acquire it
+            TryDeleteFile(_opts.Paths.PollerLock);
+
             // Spawn fresh MCP
             try
             {
@@ -163,6 +166,7 @@ public sealed class SupervisorWorker : BackgroundService
                     await _notify.NotifyAsync("⚠️ Supervisor: MCP server process died — restarting...", ct: ct)
                         .ConfigureAwait(false);
                     await _proc.KillByPortAsync(_opts.McpHttpPort).ConfigureAwait(false);
+                    TryDeleteFile(_opts.Paths.PollerLock);
                     if (!ct.IsCancellationRequested)
                         await _proc.SpawnMcpServerAsync(ct).ConfigureAwait(false);
                     httpFailCount = 0;
@@ -192,6 +196,7 @@ public sealed class SupervisorWorker : BackgroundService
                             await _mcp.PrepareShutdownAsync(ct).ConfigureAwait(false);
                             await _proc.KillProcessDirectAsync(pid).ConfigureAwait(false);
                             await _proc.KillByPortAsync(_opts.McpHttpPort).ConfigureAwait(false);
+                            TryDeleteFile(_opts.Paths.PollerLock);
 
                             if (!ct.IsCancellationRequested)
                                 await _proc.SpawnMcpServerAsync(ct).ConfigureAwait(false);
