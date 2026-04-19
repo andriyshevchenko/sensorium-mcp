@@ -49,12 +49,16 @@ jobs:
           NPM_VERSION=$(npm view sensorium-mcp version 2>/dev/null || echo "0.0.0")
           echo "local=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
           echo "npm=$NPM_VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$LOCAL_VERSION" = "$NPM_VERSION" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Version $LOCAL_VERSION already published — skipping."
-          else
+          IS_NEWER=$(node -e "
+            const [a,b] = ['$LOCAL_VERSION','$NPM_VERSION'].map(v=>v.split('.').map(Number));
+            process.stdout.write(a[0]>b[0]||(a[0]===b[0]&&(a[1]>b[1]||(a[1]===b[1]&&a[2]>b[2])))?'true':'false');
+          ")
+          if [ "$IS_NEWER" = "true" ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "Publishing $LOCAL_VERSION (npm has $NPM_VERSION)."
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Version $LOCAL_VERSION <= $NPM_VERSION on npm — skipping publish."
           fi
 
       - name: Publish to NPM (auto on push)
