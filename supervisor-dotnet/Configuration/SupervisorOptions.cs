@@ -14,7 +14,7 @@ public sealed class SupervisorOptions
     public string? TelegramToken { get; set; }
     public string? TelegramChatId { get; set; }
     public int HealthFailThresh { get; set; } = 3;
-    public TimeSpan McpReadyTimeout { get; set; } = TimeSpan.FromMinutes(2);
+    public TimeSpan McpReadyTimeout { get; set; } = TimeSpan.FromMinutes(5);
     public SupervisorPaths Paths { get; set; } = new();
 }
 
