@@ -217,7 +217,8 @@ public sealed class SupervisorWorker : BackgroundService
         }
 
         // ── Graceful shutdown ────────────────────────────────────────────────────
-        await _updater.StopAsync().ConfigureAwait(false);
+        try { await _updater.StopAsync().ConfigureAwait(false); }
+        catch (Exception ex) { _log.LogWarning(ex, "Updater stop failed during shutdown"); }
 
         if (SupervisorShutdown.IsRestartForUpdate)
         {
