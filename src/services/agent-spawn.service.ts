@@ -80,7 +80,22 @@ const resolveCliPath = (name: string, prefer?: RegExp): string | null => {
   } catch { return null; }
 };
 
-export const resolveClaudePath = (): string | null => resolveCliPath("claude");
+export const resolveClaudePath = (): string | null => {
+  const envCmd = process.env.CLAUDE_CLI_CMD;
+  if (envCmd) return envCmd;
+  if (process.platform !== "win32") return resolveCliPath("claude");
+  // On Windows `where claude` returns extensionless shim first, then .cmd, then .exe.
+  // The extensionless file cannot be spawned directly (ENOENT). Prefer .exe (real binary),
+  // fall back to .cmd (Volta/npm shim that needs shell:true), never use extensionless.
+  try {
+    const result = spawnSync("where", ["claude"], { timeout: 5000, encoding: "utf-8" });
+    if (result.status !== 0 || !result.stdout) return null;
+    const candidates = result.stdout.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    return candidates.find(p => /\.exe$/i.test(p))
+        ?? candidates.find(p => /\.cmd$/i.test(p))
+        ?? null;
+  } catch { return null; }
+};
 export const resolveCopilotPath = (): string | null => resolveCliPath("copilot", /\.exe$/i);
 export const resolveCodexPath = (): string | null => process.platform === "win32" ? resolveCliPath("codex", /\.cmd$/i) : resolveCliPath("codex");
 
