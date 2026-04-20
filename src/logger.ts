@@ -29,7 +29,7 @@ import { join } from "node:path";
 // Constants
 // ---------------------------------------------------------------------------
 
-const LOG_DIR = join(homedir(), ".remote-copilot-mcp");
+const LOG_DIR = join(homedir(), ".remote-copilot-mcp", "logs", "mcp");
 const LOG_FILE = join(LOG_DIR, "server.log");
 const MAX_LOG_SIZE = 5 * 1024 * 1024; // 5 MB
 const MAX_DAILY_ARCHIVES = 7;
