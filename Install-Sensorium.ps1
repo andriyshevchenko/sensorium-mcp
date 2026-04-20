@@ -41,6 +41,7 @@ $InstalledBinaryName = "sensorium-supervisor.exe"
 $DataDir = Join-Path $env:USERPROFILE ".remote-copilot-mcp"
 $BinDir = Join-Path $DataDir "bin"
 $Binary = Join-Path $BinDir $InstalledBinaryName
+$BinaryMetadata = Join-Path $BinDir "$InstalledBinaryName.release.json"
 $StartupDir = [Environment]::GetFolderPath("Startup")
 $StartupLauncher = Join-Path $StartupDir "SensoriumSupervisor.cmd"
 
@@ -63,9 +64,7 @@ function Stop-SupervisorProcess {
     }
 }
 
-function Get-BinaryAsset {
-    param([string]$Destination)
-
+function Get-ReleaseAssetInfo {
     $apiUrl = "https://api.github.com/repos/$GithubRepo/releases/tags/$ReleaseTag"
     Write-Host "Fetching release info from GitHub..."
 
@@ -82,8 +81,78 @@ function Get-BinaryAsset {
         throw "Asset '$AssetName' not found in release '$ReleaseTag'. Available assets: $(($release.assets | Select-Object -ExpandProperty name) -join ', ')"
     }
 
-    $downloadUrl = $asset.browser_download_url
-    Write-Host "Downloading $AssetName from $downloadUrl ..."
+    return [pscustomobject]@{
+        ReleaseTag     = $ReleaseTag
+        ReleaseName    = $release.name
+        AssetId        = [string]$asset.id
+        AssetName      = $asset.name
+        AssetSize      = [int64]$asset.size
+        AssetUpdatedAt = $asset.updated_at
+        DownloadUrl    = $asset.browser_download_url
+    }
+}
+
+function Test-BinaryUpToDate {
+    param(
+        [string]$Destination,
+        [string]$MetadataPath,
+        [pscustomobject]$AssetInfo
+    )
+
+    if (-not (Test-Path -LiteralPath $Destination)) {
+        return $false
+    }
+
+    if (-not (Test-Path -LiteralPath $MetadataPath)) {
+        return $false
+    }
+
+    try {
+        $metadata = Get-Content -LiteralPath $MetadataPath -Raw | ConvertFrom-Json
+        if ($null -eq $metadata) {
+            return $false
+        }
+
+        return (
+            $metadata.AssetId -eq $AssetInfo.AssetId -and
+            $metadata.AssetName -eq $AssetInfo.AssetName -and
+            [int64]$metadata.AssetSize -eq $AssetInfo.AssetSize
+        )
+    }
+    catch {
+        Write-Host "[WARN] Failed to read binary metadata at $MetadataPath - forcing refresh." -ForegroundColor Yellow
+        return $false
+    }
+}
+
+function Save-BinaryMetadata {
+    param(
+        [string]$MetadataPath,
+        [pscustomobject]$AssetInfo
+    )
+
+    $metadata = [pscustomobject]@{
+        ReleaseTag     = $AssetInfo.ReleaseTag
+        ReleaseName    = $AssetInfo.ReleaseName
+        AssetId        = $AssetInfo.AssetId
+        AssetName      = $AssetInfo.AssetName
+        AssetSize      = $AssetInfo.AssetSize
+        AssetUpdatedAt = $AssetInfo.AssetUpdatedAt
+        InstalledAt    = (Get-Date).ToString("o")
+    }
+
+    $metadata | ConvertTo-Json | Set-Content -LiteralPath $MetadataPath -Encoding ASCII
+}
+
+function Get-BinaryAsset {
+    param(
+        [string]$Destination,
+        [string]$MetadataPath,
+        [pscustomobject]$AssetInfo
+    )
+
+    $downloadUrl = $AssetInfo.DownloadUrl
+    Write-Host "Downloading $($AssetInfo.AssetName) from $downloadUrl ..."
 
     $tmpFile = "$Destination.tmp"
     try {
@@ -101,6 +170,7 @@ function Get-BinaryAsset {
     }
     Move-Item $tmpFile $Destination -Force
     Unblock-File -Path $Destination -ErrorAction SilentlyContinue
+    Save-BinaryMetadata -MetadataPath $MetadataPath -AssetInfo $AssetInfo
     Write-Host "Binary placed at: $Destination" -ForegroundColor Green
 }
 
@@ -176,8 +246,16 @@ if ($alreadyExists) {
 # Step 2 — ensure bin dir exists
 New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 
-# Step 3 — always download latest binary
-Get-BinaryAsset -Destination $Binary
+# Step 3 — fetch release metadata and download only when needed
+$assetInfo = Get-ReleaseAssetInfo
+$binaryUpToDate = Test-BinaryUpToDate -Destination $Binary -MetadataPath $BinaryMetadata -AssetInfo $assetInfo
+
+if ($binaryUpToDate) {
+    Write-Host "Installed binary already matches release asset '$($assetInfo.AssetName)' - skipping download." -ForegroundColor Green
+}
+else {
+    Get-BinaryAsset -Destination $Binary -MetadataPath $BinaryMetadata -AssetInfo $assetInfo
+}
 
 # Step 4 — install launcher and start
 Install-StartupLauncher

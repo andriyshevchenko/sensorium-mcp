@@ -16,63 +16,60 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { timingSafeEqual } from "node:crypto";
 
 // Re-export types for downstream consumers (http-server.ts → dashboard.ts → here)
-export type { DashboardContext } from "./routes/types.js";
-export type { RouteHandler, RouteArgs, JsonFn } from "./routes/types.js";
+export type { DashboardContext, JsonFn, RouteArgs, RouteHandler } from "./routes/types.js";
 
-import type { DashboardContext } from "./routes/types.js";
-import type { RouteHandler } from "./routes/types.js";
+import type { DashboardContext, RouteHandler } from "./routes/types.js";
 
 // Domain handlers — settings
 import {
-    handleGetDmnActivationHours,
-    handleGetClaudeMcpConfig,
-    handlePostClaudeMcpConfig,
     handleGetAgentType,
-    handlePostAgentType,
-    handleGetThreadAgentTypes,
-    handlePostThreadAgentType,
-    handleGetGuardrailsEnabled,
-    handlePostGuardrailsEnabled,
     handleGetBootstrapMessageCount,
-    handlePostBootstrapMessageCount,
-    handleGetWaitTimeout,
-    handlePostWaitTimeout,
-    handleGetKeepAlive,
-    handlePostKeepAlive,
-    handleGetThreadKeepAlive,
-    handlePostThreadKeepAlive,
+    handleGetClaudeMcpConfig,
     handleGetDefaultThreadModel,
-    handlePostDefaultThreadModel,
     handleGetDefaultWorkerModel,
+    handleGetDmnActivationHours,
+    handleGetGuardrailsEnabled,
+    handleGetKeepAlive,
+    handleGetThreadAgentTypes,
+    handleGetThreadKeepAlive,
+    handleGetWaitTimeout,
+    handlePostAgentType,
+    handlePostBootstrapMessageCount,
+    handlePostClaudeMcpConfig,
+    handlePostDefaultThreadModel,
     handlePostDefaultWorkerModel,
+    handlePostGuardrailsEnabled,
+    handlePostKeepAlive,
+    handlePostThreadAgentType,
+    handlePostThreadKeepAlive,
+    handlePostWaitTimeout,
 } from "./routes/settings.js";
 
 // Domain handlers — templates
 import {
-    handleGetTemplates,
-    handleGetDriveTemplate,
     handleGetDrivePresets,
+    handleGetDriveTemplate,
+    handleGetTemplates,
     handleTemplateCrud,
 } from "./routes/templates.js";
 
 // Domain handlers — data
 import {
-    handleGetStatus,
-    handleGetSessions,
-    handleGetNotes,
-    handleGetEpisodes,
-    handleGetTopics,
-    handleGetSearch,
-    handleGetTopicRegistry,
-    handlePostTopicRegistry,
     handleDeleteTopicRegistry,
-    handlePrepareShutdown,
+    handleGetEpisodes,
+    handleGetNotes,
+    handleGetSearch,
+    handleGetSessions,
+    handleGetStatus,
+    handleGetTopicRegistry,
+    handleGetTopics,
+    handlePostTopicRegistry,
 } from "./routes/data.js";
 
 // Domain handlers — skills
@@ -83,75 +80,72 @@ import {
 } from "./routes/skills.js";
 
 // Domain handlers — threads
+import { errorMessage } from "../utils.js";
 import {
-    handleGetThreads,
-    handleGetRootThreads,
-    handleGetKeepAliveThreads,
     handleCreateThread,
+    handleDeleteThread,
+    handleGetKeepAliveThreads,
+    handleGetRootThreads,
     handleGetThread,
     handleGetThreadChildren,
-    handleGetThreadRunning,
     handleGetThreadHeartbeat,
+    handleGetThreadRunning,
+    handleGetThreads,
     handleUpdateThread,
-    handleDeleteThread,
 } from "./routes/threads.js";
-import { errorMessage } from "../utils.js";
 
 // ─── Route table ────────────────────────────────────────────────────────────
 
 const routeTable: Record<string, RouteHandler> = {
     // Data
-    "GET /api/status":       handleGetStatus,
-    "GET /api/sessions":     handleGetSessions,
-    "GET /api/notes":        handleGetNotes,
-    "GET /api/episodes":     handleGetEpisodes,
-    "GET /api/topics":       handleGetTopics,
-    "GET /api/search":       handleGetSearch,
+    "GET /api/status": handleGetStatus,
+    "GET /api/sessions": handleGetSessions,
+    "GET /api/notes": handleGetNotes,
+    "GET /api/episodes": handleGetEpisodes,
+    "GET /api/topics": handleGetTopics,
+    "GET /api/search": handleGetSearch,
 
     // Templates
-    "GET /api/templates":              handleGetTemplates,
-    "GET /api/templates/drive":        handleGetDriveTemplate,
+    "GET /api/templates": handleGetTemplates,
+    "GET /api/templates/drive": handleGetDriveTemplate,
     "GET /api/templates/drive-presets": handleGetDrivePresets,
 
     // Settings
-    "GET /api/settings/dmn-activation-hours":  handleGetDmnActivationHours,
-    "GET /api/settings/claude-mcp-config":     handleGetClaudeMcpConfig,
-    "POST /api/settings/claude-mcp-config":    handlePostClaudeMcpConfig,
-    "GET /api/settings/agent-type":            handleGetAgentType,
-    "POST /api/settings/agent-type":           handlePostAgentType,
-    "GET /api/settings/thread-agent-types":    handleGetThreadAgentTypes,
-    "POST /api/settings/thread-agent-type":    handlePostThreadAgentType,
-    "GET /api/settings/guardrails":               handleGetGuardrailsEnabled,
-    "POST /api/settings/guardrails":              handlePostGuardrailsEnabled,
-    "GET /api/settings/bootstrap-message-count":  handleGetBootstrapMessageCount,
+    "GET /api/settings/dmn-activation-hours": handleGetDmnActivationHours,
+    "GET /api/settings/claude-mcp-config": handleGetClaudeMcpConfig,
+    "POST /api/settings/claude-mcp-config": handlePostClaudeMcpConfig,
+    "GET /api/settings/agent-type": handleGetAgentType,
+    "POST /api/settings/agent-type": handlePostAgentType,
+    "GET /api/settings/thread-agent-types": handleGetThreadAgentTypes,
+    "POST /api/settings/thread-agent-type": handlePostThreadAgentType,
+    "GET /api/settings/guardrails": handleGetGuardrailsEnabled,
+    "POST /api/settings/guardrails": handlePostGuardrailsEnabled,
+    "GET /api/settings/bootstrap-message-count": handleGetBootstrapMessageCount,
     "POST /api/settings/bootstrap-message-count": handlePostBootstrapMessageCount,
-    "GET /api/settings/wait-timeout":              handleGetWaitTimeout,
-    "POST /api/settings/wait-timeout":             handlePostWaitTimeout,
-    "GET /api/settings/keep-alive":               handleGetKeepAlive,
-    "POST /api/settings/keep-alive":              handlePostKeepAlive,
-    "GET /api/settings/thread-keep-alive":        handleGetThreadKeepAlive,
-    "POST /api/settings/thread-keep-alive":       handlePostThreadKeepAlive,
-    "GET /api/settings/default-thread-model":     handleGetDefaultThreadModel,
-    "POST /api/settings/default-thread-model":    handlePostDefaultThreadModel,
-    "GET /api/settings/default-worker-model":     handleGetDefaultWorkerModel,
-    "POST /api/settings/default-worker-model":    handlePostDefaultWorkerModel,
+    "GET /api/settings/wait-timeout": handleGetWaitTimeout,
+    "POST /api/settings/wait-timeout": handlePostWaitTimeout,
+    "GET /api/settings/keep-alive": handleGetKeepAlive,
+    "POST /api/settings/keep-alive": handlePostKeepAlive,
+    "GET /api/settings/thread-keep-alive": handleGetThreadKeepAlive,
+    "POST /api/settings/thread-keep-alive": handlePostThreadKeepAlive,
+    "GET /api/settings/default-thread-model": handleGetDefaultThreadModel,
+    "POST /api/settings/default-thread-model": handlePostDefaultThreadModel,
+    "GET /api/settings/default-worker-model": handleGetDefaultWorkerModel,
+    "POST /api/settings/default-worker-model": handlePostDefaultWorkerModel,
 
     // Topic registry
-    "GET /api/topic-registry":    handleGetTopicRegistry,
-    "POST /api/topic-registry":   handlePostTopicRegistry,
+    "GET /api/topic-registry": handleGetTopicRegistry,
+    "POST /api/topic-registry": handlePostTopicRegistry,
     "DELETE /api/topic-registry": handleDeleteTopicRegistry,
 
     // Skills
-    "GET /api/skills":            handleGetSkills,
-
-    // Shutdown
-    "POST /api/prepare-shutdown": handlePrepareShutdown,
+    "GET /api/skills": handleGetSkills,
 
     // Threads
-    "GET /api/threads":           handleGetThreads,
-    "GET /api/threads/roots":     handleGetRootThreads,
+    "GET /api/threads": handleGetThreads,
+    "GET /api/threads/roots": handleGetRootThreads,
     "GET /api/threads/keepalive": handleGetKeepAliveThreads,
-    "POST /api/threads":          handleCreateThread,
+    "POST /api/threads": handleCreateThread,
 };
 
 // ─── Public entry point ─────────────────────────────────────────────────────
