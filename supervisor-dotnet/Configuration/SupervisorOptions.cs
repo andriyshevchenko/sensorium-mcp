@@ -20,7 +20,7 @@ public sealed class SupervisorOptions
     /// <summary>How often WaitForReady polls during startup. Default 5s.</summary>
     public TimeSpan ReadyPollInterval { get; set; } = TimeSpan.FromSeconds(5);
     /// <summary>Fixed wait after MCP spawn before the first health check attempt. Default 30s.</summary>
-    public TimeSpan StartupDelay { get; set; } = TimeSpan.FromSeconds(30);
+    public TimeSpan StartupDelay { get; set; } = TimeSpan.FromSeconds(60);
     /// <summary>Run HTTP liveness check every N health-check ticks. Default 5 (= 5 min with 60s interval).</summary>
     public int HttpCheckEveryNTicks { get; set; } = 5;
     public SupervisorPaths Paths { get; set; } = new();
