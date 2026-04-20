@@ -219,6 +219,13 @@ public sealed class SupervisorWorker : BackgroundService
         // ── Graceful shutdown ────────────────────────────────────────────────────
         await _updater.StopAsync().ConfigureAwait(false);
 
+        if (SupervisorShutdown.IsRestartForUpdate)
+        {
+            // Binary-swap restart: leave MCP running so the new supervisor instance can inherit it.
+            _log.LogInformation("Shutting down for binary-swap restart — leaving MCP running (PID file retained)");
+            return;
+        }
+
         var (shutdownOk, shutdownPid) = await _proc.ReadPidFileAsync(_opts.Paths.ServerPid).ConfigureAwait(false);
         if (shutdownOk && shutdownPid > 0)
         {

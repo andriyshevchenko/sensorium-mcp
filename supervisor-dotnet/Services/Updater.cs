@@ -275,10 +275,16 @@ public sealed class Updater : IUpdater
     {
         _log.LogInformation("Requesting supervisor restart for binary swap");
         // Signal the host to shut down — the apply helper will swap the binary and relaunch.
+        // Set the restart flag so SupervisorWorker skips killing the MCP on its way out
+        // (the new supervisor instance will inherit the running MCP process).
         // Run on a separate thread so we don't block the updater loop; log any failure.
         Task.Run(() =>
         {
-            try { SupervisorShutdown.RequestShutdown(); }
+            try
+            {
+                SupervisorShutdown.IsRestartForUpdate = true;
+                SupervisorShutdown.RequestShutdown();
+            }
             catch (Exception ex) { _log.LogError(ex, "Failed to request supervisor shutdown for restart"); }
         });
     }
@@ -314,6 +320,10 @@ public sealed class Updater : IUpdater
 internal static class SupervisorShutdown
 {
     private static IHostApplicationLifetime? _lifetime;
+
+    /// <summary>Set to true when shutting down for a binary-swap restart.
+    /// SupervisorWorker uses this to skip killing the MCP so the new instance can inherit it.</summary>
+    public static volatile bool IsRestartForUpdate;
 
     public static void Register(IHostApplicationLifetime lifetime) => _lifetime = lifetime;
 
