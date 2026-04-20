@@ -15,10 +15,6 @@ function highlightVars(content: string): string {
 const agentType = ref('copilot')
 const agentTypeStatus = ref('')
 
-// Claude MCP config
-const claudeConfigPath = ref('')
-const claudeConfigStatus = ref('')
-
 // Bootstrap message count
 const bootstrapMsgCount = ref(50)
 const bootstrapMsgStatus = ref('')
@@ -45,7 +41,6 @@ const dmnHours = ref<string>('')
 async function loadAll() {
   await Promise.all([
     loadAgentType(),
-    loadClaudeMcpConfig(),
     loadBootstrapMsgCount(),
     loadTemplates(),
     loadDriveTemplate(),
@@ -56,13 +51,6 @@ async function loadAgentType() {
   try {
     const r = await api<{ agentType: string }>('/api/settings/agent-type')
     agentType.value = r.agentType || 'copilot'
-  } catch {}
-}
-
-async function loadClaudeMcpConfig() {
-  try {
-    const r = await api<{ path: string }>('/api/settings/claude-mcp-config')
-    claudeConfigPath.value = r.path || ''
   } catch {}
 }
 
@@ -136,21 +124,6 @@ async function saveBootstrapMsgCount() {
     setTimeout(() => { bootstrapMsgStatus.value = '' }, 3000)
   } catch (e) {
     bootstrapMsgStatus.value = 'Error: ' + (e as Error).message
-  }
-}
-
-async function saveClaudeConfig() {
-  const val = claudeConfigPath.value.trim()
-  if (!val) { claudeConfigStatus.value = 'Path is empty'; setTimeout(() => { claudeConfigStatus.value = '' }, 3000); return }
-  try {
-    await api('/api/settings/claude-mcp-config', {
-      method: 'POST',
-      body: JSON.stringify({ path: val }),
-    })
-    claudeConfigStatus.value = 'Saved ✓'
-    setTimeout(() => { claudeConfigStatus.value = '' }, 3000)
-  } catch (e: unknown) {
-    claudeConfigStatus.value = 'Error: ' + (e as Error).message
   }
 }
 
@@ -291,17 +264,6 @@ onMounted(loadAll)
         </select>
         <span v-if="agentTypeStatus" class="text-sm text-success">{{ agentTypeStatus }}</span>
         <span class="text-xs text-muted">Changes which default reminders template is used</span>
-      </div>
-      <div class="flex flex-wrap items-center gap-3">
-        <label class="text-sm font-medium text-textSecondary">Claude MCP Config Path</label>
-        <input
-          v-model="claudeConfigPath"
-          type="text"
-          placeholder="~/.claude/settings.json"
-          class="flex-1 min-w-[260px] px-3 py-2 rounded-xl bg-card border border-gray-700 text-sm text-textPrimary placeholder-muted font-mono focus:outline-none focus:border-accent transition"
-        />
-        <button @click="saveClaudeConfig" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Save</button>
-        <span v-if="claudeConfigStatus" class="text-sm text-success">{{ claudeConfigStatus }}</span>
       </div>
       <!-- Bootstrap Message Count -->
       <div class="flex flex-wrap items-center gap-3 mb-4">

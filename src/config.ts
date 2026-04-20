@@ -189,18 +189,48 @@ export function getEffectiveAutonomousMode(threadId: number | undefined): boolea
   return AUTONOMOUS_MODE;
 }
 
-// ─── Claude MCP config path setting ─────────────────────────────────────────
+// ─── MCP servers management ─────────────────────────────────────────────────
 
-/** Returns the dashboard-configured Claude MCP config path, or null if unset. */
-export function getClaudeMcpConfigPath(): string | null {
-  const p = readSettings().claudeMcpConfigPath;
-  if (typeof p === "string" && p.length > 0) return p;
-  return null;
+export type McpServerConfig =
+  | { type: "stdio"; command: string; args?: string[]; env?: Record<string, string> }
+  | { type: "http"; url: string; headers?: Record<string, string>; env?: Record<string, string> };
+
+function parseMcpServers(raw: unknown): Record<string, McpServerConfig> {
+  return (raw && typeof raw === "object" && !Array.isArray(raw))
+    ? raw as Record<string, McpServerConfig> : {};
 }
 
-/** Persists the Claude MCP config path override. */
-export function setClaudeMcpConfigPath(path: string): void {
-  updateSettings(s => { s.claudeMcpConfigPath = path; });
+/** Returns all user-configured MCP servers (excludes auto-injected sensorium). */
+export function getMcpServers(): Record<string, McpServerConfig> {
+  return parseMcpServers(readSettings().mcpServers);
+}
+
+/** Overwrites the entire MCP servers map. */
+export function setMcpServers(servers: Record<string, McpServerConfig>): void {
+  updateSettings(s => { s.mcpServers = servers; });
+}
+
+/** Add or update a single MCP server by name. */
+export function addMcpServer(name: string, config: McpServerConfig): void {
+  if (!name || name === "sensorium-mcp") throw new Error(`Invalid MCP server name: "${name}"`);
+  if (config.type === "stdio" && !config.command) throw new Error("Stdio MCP server requires a command");
+  if (config.type === "http" && !config.url) throw new Error("HTTP MCP server requires a url");
+  updateSettings(s => {
+    const existing = parseMcpServers(s.mcpServers);
+    existing[name] = config;
+    s.mcpServers = existing;
+  });
+}
+
+/** Remove an MCP server by name. Returns true if it existed. */
+export function removeMcpServer(name: string): boolean {
+  let existed = false;
+  updateSettings(s => {
+    const servers = parseMcpServers(s.mcpServers);
+    if (name in servers) { delete servers[name]; existed = true; }
+    s.mcpServers = servers;
+  });
+  return existed;
 }
 
 // ─── Bootstrap message count setting ────────────────────────────────────────

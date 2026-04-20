@@ -6,7 +6,7 @@
  *   GET /api/*           → Route table dispatch to domain handlers
  *
  * Domain handler modules:
- *   routes/settings.ts   — agent-type, dmn-activation-hours, claude-mcp-config
+ *   routes/settings.ts   — agent-type, dmn-activation-hours
  *   routes/templates.ts  — template CRUD, drive templates, drive presets
  *   routes/data.ts       — status, sessions, notes, episodes, topics, search, topic-registry
  *
@@ -30,7 +30,6 @@ import type { DashboardContext, RouteHandler } from "./routes/types.js";
 import {
     handleGetAgentType,
     handleGetBootstrapMessageCount,
-    handleGetClaudeMcpConfig,
     handleGetDefaultThreadModel,
     handleGetDefaultWorkerModel,
     handleGetDmnActivationHours,
@@ -41,7 +40,6 @@ import {
     handleGetWaitTimeout,
     handlePostAgentType,
     handlePostBootstrapMessageCount,
-    handlePostClaudeMcpConfig,
     handlePostDefaultThreadModel,
     handlePostDefaultWorkerModel,
     handlePostGuardrailsEnabled,
@@ -79,6 +77,13 @@ import {
     handleSkillPut,
 } from "./routes/skills.js";
 
+// Domain handlers — MCP servers
+import {
+    handleGetMcpServers,
+    handlePostMcpServer,
+    handleDeleteMcpServer,
+} from "./routes/mcp-servers.js";
+
 // Domain handlers — threads
 import { errorMessage } from "../utils.js";
 import {
@@ -112,8 +117,6 @@ const routeTable: Record<string, RouteHandler> = {
 
     // Settings
     "GET /api/settings/dmn-activation-hours": handleGetDmnActivationHours,
-    "GET /api/settings/claude-mcp-config": handleGetClaudeMcpConfig,
-    "POST /api/settings/claude-mcp-config": handlePostClaudeMcpConfig,
     "GET /api/settings/agent-type": handleGetAgentType,
     "POST /api/settings/agent-type": handlePostAgentType,
     "GET /api/settings/thread-agent-types": handleGetThreadAgentTypes,
@@ -140,6 +143,10 @@ const routeTable: Record<string, RouteHandler> = {
 
     // Skills
     "GET /api/skills": handleGetSkills,
+
+    // MCP servers
+    "GET /api/mcp-servers": handleGetMcpServers,
+    "POST /api/mcp-servers": handlePostMcpServer,
 
     // Threads
     "GET /api/threads": handleGetThreads,
@@ -241,6 +248,12 @@ async function dispatchApiRoute(
                 const result = await handleSkillDelete(args, skillMatch[1]);
                 if (result) return true;
             }
+        }
+
+        // 3b. Dynamic MCP server routes: DELETE /api/mcp-servers/:name
+        const mcpMatch = path.match(/^\/api\/mcp-servers\/(.+)$/);
+        if (mcpMatch && method === "DELETE") {
+            return handleDeleteMcpServer(args, mcpMatch[1]);
         }
 
         // 4. Dynamic thread routes: /api/threads/:threadId[/children|/running]

@@ -32,7 +32,7 @@ export interface RouteArgs {
     ctx: DashboardContext;
 }
 
-export type RouteHandler = (args: RouteArgs) => boolean;
+export type RouteHandler = (args: RouteArgs) => boolean | Promise<boolean>;
 
 // ─── Shared utilities ───────────────────────────────────────────────────────
 
