@@ -36,6 +36,7 @@ interface PidFileEntry {
   filePath: string;
   name?: string;
   threadType?: "worker" | "branch";
+  startedAt?: number;
 }
 
 export const spawnedThreads: SpawnedThread[] = [];
@@ -61,12 +62,13 @@ export function readPidFiles(): PidFileEntry[] {
         let pid: number;
         let name: string | undefined;
         let threadType: "worker" | "branch" | undefined;
+        let startedAt: number | undefined;
         try {
-          ({ pid, name, threadType } = JSON.parse(raw) as { pid: number; name?: string; threadType?: "worker" | "branch" });
+          ({ pid, name, threadType, startedAt } = JSON.parse(raw) as { pid: number; name?: string; threadType?: "worker" | "branch"; startedAt?: number });
         } catch {
           pid = Number(raw);
         }
-        if (Number.isFinite(threadId) && Number.isFinite(pid)) entries.push({ threadId, pid, filePath, name, threadType });
+        if (Number.isFinite(threadId) && Number.isFinite(pid)) entries.push({ threadId, pid, filePath, name, threadType, startedAt });
       } catch {}
     }
   } catch {}
@@ -92,7 +94,7 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
       }
     } catch {}
   }
-  const restored: SpawnedThread = { pid: pidEntry.pid, threadId, name: pidEntry.name ?? `Thread ${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "", ...(pidEntry.threadType ? { threadType: pidEntry.threadType } : {}) };
+  const restored: SpawnedThread = { pid: pidEntry.pid, threadId, name: pidEntry.name ?? `Thread ${threadId}`, startedAt: pidEntry.startedAt ?? Date.now(), createdAt: pidEntry.startedAt ?? Date.now(), logFile: "", ...(pidEntry.threadType ? { threadType: pidEntry.threadType } : {}) };
   spawnedThreads.push(restored);
   log.info(`[findAliveThread] Restored thread ${threadId} PID=${pidEntry.pid} from PID file`);
   return restored;
@@ -159,8 +161,8 @@ export function reconcileState(db: Database, threadLifecycle: ThreadLifecycleSer
           pid: pidEntry.pid,
           threadId: pidEntry.threadId,
           name: pidEntry.name ?? dbThread.name,
-          startedAt: Date.now(),
-          createdAt: Date.now(),
+          startedAt: pidEntry.startedAt ?? Date.now(),
+          createdAt: pidEntry.startedAt ?? Date.now(),
           logFile: "",
           ...(pidEntry.threadType ? { threadType: pidEntry.threadType } : {}),
         });
