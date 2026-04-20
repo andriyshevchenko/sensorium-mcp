@@ -108,7 +108,7 @@ public sealed class ProcessManager : IProcessManager
         uint creationFlags =
             NativeMethods.CREATE_NEW_PROCESS_GROUP |
             NativeMethods.CREATE_BREAKAWAY_FROM_JOB |
-            NativeMethods.CREATE_NO_WINDOW |
+            NativeMethods.CREATE_NEW_CONSOLE |
             NativeMethods.CREATE_UNICODE_ENVIRONMENT;
 
         var cmdLineSb = new StringBuilder(commandLine);
