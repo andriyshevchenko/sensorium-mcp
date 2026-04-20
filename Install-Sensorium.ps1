@@ -7,29 +7,11 @@
     (tag: supervisor-latest, repo: andriyshevchenko/sensorium-mcp) and places
     it in ~/.remote-copilot-mcp/bin/ as sensorium-supervisor.exe.
 
-    Configuration is stored in ~/.remote-copilot-mcp/install.config.json.
-    On first run, pass parameters to set them. Subsequent runs (including
-    shell:startup) read from the config file — no parameters needed.
-    CLI parameters override saved config when provided.
-.PARAMETER SecureVaultProfile
-    SecureVault profile name to resolve runtime secrets from.
-.PARAMETER UpdateMode
-    Supervisor mode to use (`production` or `development`).
-.PARAMETER MCPStartCommand
-    Command used by supervisor to start MCP child process. When omitted, installer
-    uses published npm package command `npx -y sensorium-mcp@latest`.
+    All configuration is read from ~/.remote-copilot-mcp/install.config.json.
+    Edit that file to change settings. Defaults are written on first run.
 .EXAMPLE
     .\Install-Sensorium.ps1
-    .\Install-Sensorium.ps1 -SecureVaultProfile "SENSORIUM" -UpdateMode production
-    .\Install-Sensorium.ps1 -UpdateMode development
-    .\Install-Sensorium.ps1 -MCPStartCommand "node C:\src\remote-copilot-mcp\dist\index.js"
 #>
-param(
-    [string]$SecureVaultProfile,
-    [ValidateSet("production", "development")]
-    [string]$UpdateMode,
-    [string]$MCPStartCommand
-)
 
 $ErrorActionPreference = "Stop"
 
@@ -77,11 +59,8 @@ function Save-Config([hashtable]$cfg) {
     [pscustomobject]$cfg | ConvertTo-Json | Set-Content -LiteralPath $ConfigFile -Encoding UTF8
 }
 
-# Load saved config, then apply any CLI overrides
+# Load config (writes defaults on first run)
 $Config = Load-Config
-if (![string]::IsNullOrWhiteSpace($SecureVaultProfile)) { $Config["SecureVaultProfile"] = $SecureVaultProfile }
-if (![string]::IsNullOrWhiteSpace($UpdateMode))         { $Config["UpdateMode"] = $UpdateMode }
-if (![string]::IsNullOrWhiteSpace($MCPStartCommand))    { $Config["MCPStartCommand"] = $MCPStartCommand }
 
 # Resolve effective values
 $SecureVaultProfile = $Config["SecureVaultProfile"]
