@@ -30,11 +30,12 @@ function formatJsonMcpEntry(cfg: McpServerConfig): Record<string, unknown> {
   }
   const entry: Record<string, unknown> = { type: "http", url: cfg.url };
   if (cfg.headers && Object.keys(cfg.headers).length > 0) entry.headers = cfg.headers;
+  if (cfg.env && Object.keys(cfg.env).length > 0) entry.env = cfg.env;
   return entry;
 }
 
 function buildSensoriumJsonEntry(transport: SensoriumTransport, extras?: Record<string, unknown>): Record<string, unknown> {
-  const entry: Record<string, unknown> = { type: "http", url: `http://127.0.0.1:${transport.httpPort}/mcp`, ...extras };
+  const entry: Record<string, unknown> = { ...extras, type: "http", url: `http://127.0.0.1:${transport.httpPort}/mcp` };
   if (transport.secret) entry.headers = { Authorization: `Bearer ${transport.secret}` };
   return entry;
 }
@@ -83,7 +84,7 @@ export function buildCopilotMcpConfig(transport: SensoriumTransport, copilotHome
 
 /** Escape a string for TOML double-quoted values. */
 function tomlEscape(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
 }
 
 /**

@@ -38,7 +38,8 @@ export const handleGetMcpServers: RouteHandler = ({ json }) => {
 
 /** POST /api/mcp-servers → { name, config } → add/update */
 export const handlePostMcpServer = (async ({ req, json }) => {
-    const raw = await readBody(req);
+    let raw: string;
+    try { raw = await readBody(req); } catch { json({ error: "Failed to read request body" }, 400); return true; }
     const body = safeParseJSON(raw);
     if (!body || typeof body !== "object") { json({ error: "Invalid JSON body" }, 400); return true; }
     const { name, config } = body as { name?: unknown; config?: unknown };
