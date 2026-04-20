@@ -42,10 +42,11 @@ function ensureCopilotWorkspace(baseDir: string): string {
 const CODEX_HOME_DIR = join(PROCESS_BASE_DIR, "codex-home");
 const DEFAULT_CODEX_MODEL = "";
 
-/** Parse MCP transport from env. Returns null if port is not set. */
+/** Parse MCP transport from env. Returns null if port is not set or invalid. */
 function parseSensoriumTransport(): SensoriumTransport | null {
-  const httpPort = parseInt(process.env.MCP_HTTP_PORT || "0", 10);
-  return httpPort ? { httpPort, secret: process.env.MCP_HTTP_SECRET || null } : null;
+  const raw = process.env.MCP_HTTP_PORT;
+  const httpPort = raw && /^\d+$/.test(raw.trim()) ? parseInt(raw.trim(), 10) : 0;
+  return httpPort > 0 ? { httpPort, secret: process.env.MCP_HTTP_SECRET || null } : null;
 }
 const MAX_CONCURRENT_THREADS = 20;
 let startupCleanupInProgress = false;
@@ -87,17 +88,27 @@ export const resolveClaudePath = (): string | null => {
   // On Windows `where claude` returns extensionless shim first, then .cmd, then .exe.
   // The extensionless file cannot be spawned directly (ENOENT). Prefer .exe (real binary),
   // fall back to .cmd (Volta/npm shim that needs shell:true), never use extensionless.
+  return resolveWindowsCliPath("claude");
+};
+
+/** On Windows: prefer .exe, fall back to .cmd, refuse extensionless shims (e.g. Volta). */
+function resolveWindowsCliPath(name: string): string | null {
+  const envCmd = process.env[`${name.toUpperCase()}_CLI_CMD`];
+  if (envCmd) return envCmd;
   try {
-    const result = spawnSync("where", ["claude"], { timeout: 5000, encoding: "utf-8" });
+    const result = spawnSync("where", [name], { timeout: 5000, encoding: "utf-8" });
     if (result.status !== 0 || !result.stdout) return null;
     const candidates = result.stdout.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     return candidates.find(p => /\.exe$/i.test(p))
         ?? candidates.find(p => /\.cmd$/i.test(p))
         ?? null;
   } catch { return null; }
-};
-export const resolveCopilotPath = (): string | null => resolveCliPath("copilot", /\.exe$/i);
-export const resolveCodexPath = (): string | null => process.platform === "win32" ? resolveCliPath("codex", /\.cmd$/i) : resolveCliPath("codex");
+}
+
+export const resolveCopilotPath = (): string | null =>
+  process.platform === "win32" ? resolveWindowsCliPath("copilot") : resolveCliPath("copilot", /\.exe$/i);
+export const resolveCodexPath = (): string | null =>
+  process.platform === "win32" ? resolveWindowsCliPath("codex") : resolveCliPath("codex");
 
 const resolveCodexNodeExe = (): { nodeExe: string; codexJs: string } | null => {
   if (process.platform !== "win32") return null;
@@ -193,7 +204,7 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
   if (startupCleanupInProgress) return { error: "Server startup cleanup in progress - try again in a few seconds" };
   if (spawnedThreads.length >= MAX_CONCURRENT_THREADS) return { error: `Concurrent thread limit reached (${MAX_CONCURRENT_THREADS}). Wait for existing threads to finish.` };
   const transport = parseSensoriumTransport();
-  if (!transport) return { error: "MCP_HTTP_PORT env var is not set or invalid. Claude threads require HTTP transport." };
+  if (!transport) return { error: `MCP_HTTP_PORT env var is not set or invalid (got: '${process.env.MCP_HTTP_PORT ?? ''}'). Claude threads require HTTP transport.` };
   workingDirectory = normalizeWorkingDirectory(workingDirectory);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
   const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
@@ -214,7 +225,7 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
 
 export function spawnCopilotProcess(copilotPath: string, name: string, threadId: number, threadLifecycle: ThreadLifecycleService, workingDirectory?: string, memorySourceThreadId?: number, agentType?: string, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
   const transport = parseSensoriumTransport();
-  if (!transport) return { error: "MCP_HTTP_PORT env var is not set or invalid. Copilot threads require HTTP transport." };
+  if (!transport) return { error: `MCP_HTTP_PORT env var is not set or invalid (got: '${process.env.MCP_HTTP_PORT ?? ''}'). Copilot threads require HTTP transport.` };
   workingDirectory = normalizeWorkingDirectory(workingDirectory) || ensureCopilotWorkspace(PROCESS_BASE_DIR);
   const copilotHomeDir = join(PROCESS_BASE_DIR, COPILOT_HOME_DIR);
   buildCopilotMcpConfig(transport, copilotHomeDir);
@@ -232,7 +243,7 @@ export function spawnCopilotProcess(copilotPath: string, name: string, threadId:
 
 export function spawnCodexProcess(codexPath: string, name: string, threadId: number, threadLifecycle: ThreadLifecycleService, workingDirectory?: string, memorySourceThreadId?: number, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
   const transport = parseSensoriumTransport();
-  if (!transport) return { error: "MCP_HTTP_PORT env var is not set or invalid. Codex threads require HTTP transport." };
+  if (!transport) return { error: `MCP_HTTP_PORT env var is not set or invalid (got: '${process.env.MCP_HTTP_PORT ?? ''}'). Codex threads require HTTP transport.` };
   workingDirectory = normalizeWorkingDirectory(workingDirectory);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
   const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.jsonl`);
