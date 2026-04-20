@@ -92,7 +92,7 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
       }
     } catch {}
   }
-  const restored = { pid: pidEntry.pid, threadId, name: pidEntry.name ?? `Thread ${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "" };
+  const restored: SpawnedThread = { pid: pidEntry.pid, threadId, name: pidEntry.name ?? `Thread ${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "", ...(pidEntry.threadType ? { threadType: pidEntry.threadType } : {}) };
   spawnedThreads.push(restored);
   log.info(`[findAliveThread] Restored thread ${threadId} PID=${pidEntry.pid} from PID file`);
   return restored;

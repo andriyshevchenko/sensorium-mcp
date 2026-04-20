@@ -317,10 +317,12 @@ export async function startDispatcher(
 
     // Shared cleanup + loop helpers.
     let cleanupRegistered = false;
+    let shuttingDown = false;
     const registerCleanup = () => {
         if (cleanupRegistered) return;
         cleanupRegistered = true;
         const cleanup = () => {
+            shuttingDown = true;
             pollerRunning = false;
             pollAbortController?.abort();
             removeLock();
@@ -330,10 +332,13 @@ export async function startDispatcher(
         process.on("SIGTERM", cleanup);
     };
 
+    let consumerRetryTimer: ReturnType<typeof setInterval> | undefined;
     const installConsumerRetry = () => {
-        const timer = setInterval(() => {
+        if (consumerRetryTimer) return;
+        consumerRetryTimer = setInterval(() => {
             if (tryAcquireLock()) {
-                clearInterval(timer);
+                clearInterval(consumerRetryTimer);
+                consumerRetryTimer = undefined;
                 log.info(
                     "[dispatcher] Promoted to poller (previous poller seems inactive).",
                 );
@@ -342,7 +347,7 @@ export async function startDispatcher(
                 registerCleanup();
             }
         }, CONSUMER_RETRY_MS);
-        timer.unref();
+        consumerRetryTimer.unref();
     };
 
     const startLoop = () => {
@@ -370,7 +375,7 @@ export async function startDispatcher(
         void loop()
             .catch((err) => log.error(`[dispatcher] Poll loop crashed: ${errorMessage(err)}`))
             .finally(() => {
-                if (!pollerRunning) {
+                if (!pollerRunning && !shuttingDown) {
                     log.warn("[dispatcher] Poll loop exited. Installing consumer retry to reclaim poller role.");
                     installConsumerRetry();
                 }
