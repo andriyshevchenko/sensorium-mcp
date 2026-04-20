@@ -228,7 +228,7 @@ async function dispatchApiRoute(
 
         // 1. Exact match in route table
         const handler = routeTable[key];
-        if (handler) return handler(args);
+        if (handler) return await handler(args);
 
         // 2. Dynamic template route: POST/DELETE /api/templates/:name
         const templateMatch = path.match(/^\/api\/templates\/([\w-]+)$/);
@@ -251,7 +251,7 @@ async function dispatchApiRoute(
         }
 
         // 3b. Dynamic MCP server routes: DELETE /api/mcp-servers/:name
-        const mcpMatch = path.match(/^\/api\/mcp-servers\/(.+)$/);
+        const mcpMatch = path.match(/^\/api\/mcp-servers\/([^/]+)$/);
         if (mcpMatch && method === "DELETE") {
             return handleDeleteMcpServer(args, mcpMatch[1]);
         }

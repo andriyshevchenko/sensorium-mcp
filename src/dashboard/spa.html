@@ -945,6 +945,7 @@
           headers: { 'Authorization': 'Bearer ' + token },
         });
         const data = await r.json();
+        if (!r.ok || data.error) { console.error('Delete MCP server error:', data.error); return; }
         mcpServersData = data.servers || {};
         renderMcpServers();
       } catch (e) { console.error('Delete MCP server error:', e); }
@@ -1373,7 +1374,7 @@
     // ─── Utilities ──────────────────────────────────────────────────────
     function escapeHtml(str) {
       if (!str) return '';
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
   </script>
 </body>
