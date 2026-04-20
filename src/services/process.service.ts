@@ -34,6 +34,7 @@ interface PidFileEntry {
   pid: number;
   filePath: string;
   name?: string;
+  threadType?: "worker" | "branch";
 }
 
 export const spawnedThreads: SpawnedThread[] = [];
@@ -58,12 +59,13 @@ export function readPidFiles(): PidFileEntry[] {
         const raw = readFileSync(filePath, "utf-8").trim();
         let pid: number;
         let name: string | undefined;
+        let threadType: "worker" | "branch" | undefined;
         try {
-          ({ pid, name } = JSON.parse(raw) as { pid: number; name?: string });
+          ({ pid, name, threadType } = JSON.parse(raw) as { pid: number; name?: string; threadType?: "worker" | "branch" });
         } catch {
           pid = Number(raw);
         }
-        if (Number.isFinite(threadId) && Number.isFinite(pid)) entries.push({ threadId, pid, filePath, name });
+        if (Number.isFinite(threadId) && Number.isFinite(pid)) entries.push({ threadId, pid, filePath, name, threadType });
       } catch {}
     }
   } catch {}

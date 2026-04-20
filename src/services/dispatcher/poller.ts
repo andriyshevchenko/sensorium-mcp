@@ -100,6 +100,7 @@ async function pollOnce(
 ): Promise<void> {
     if (!refreshLock()) {
         // We lost lock ownership — another process took over. Step down.
+        log.warn("[dispatcher] refreshLock() failed at poll start — stepping down.");
         pollerRunning = false;
         return;
     }
@@ -111,6 +112,7 @@ async function pollOnce(
     // to prevent it from going stale (STALE_LOCK_MS = 90 s).
     const lockRefresher = setInterval(() => {
         if (!refreshLock()) {
+            log.warn("[dispatcher] refreshLock() failed during long poll — stepping down.");
             pollerRunning = false;
             pollAbortController?.abort();
         }
@@ -124,6 +126,7 @@ async function pollOnce(
 
         // Refresh again after the (potentially 10-second) long poll returns.
         if (!refreshLock()) {
+            log.warn("[dispatcher] refreshLock() failed after long poll — stepping down.");
             pollerRunning = false;
             return;
         }
@@ -365,7 +368,14 @@ export async function startDispatcher(
                 await new Promise<void>((r) => setTimeout(r, INTER_POLL_DELAY_MS));
             }
         };
-        void loop().catch((err) => log.error(`[dispatcher] Poll loop crashed: ${errorMessage(err)}`));
+        void loop()
+            .catch((err) => log.error(`[dispatcher] Poll loop crashed: ${errorMessage(err)}`))
+            .finally(() => {
+                if (!pollerRunning) {
+                    log.warn("[dispatcher] Poll loop exited. Installing consumer retry to reclaim poller role.");
+                    installConsumerRetry();
+                }
+            });
     };
 
     if (isPoller) {
