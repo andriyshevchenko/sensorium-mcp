@@ -73,8 +73,7 @@ public sealed class ProcessManager : IProcessManager
         {
             cb = (uint)Marshal.SizeOf<NativeMethods.STARTUPINFO>(),
             dwFlags = NativeMethods.STARTF_USESTDHANDLES,
-            hStdInput = IntPtr.Zero,
-            hStdOutput = IntPtr.Zero
+            hStdInput = IntPtr.Zero
         };
 
         // Open stderr log file (append)
@@ -98,10 +97,12 @@ public sealed class ProcessManager : IProcessManager
         {
             int err = Marshal.GetLastWin32Error();
             _log.LogWarning("Could not open MCP stderr log (error {Error}); stderr will be discarded", err);
+            si.hStdOutput = IntPtr.Zero;
             si.hStdError = IntPtr.Zero;
         }
         else
         {
+            si.hStdOutput = hStderr;
             si.hStdError = hStderr;
         }
 
