@@ -186,7 +186,7 @@ export function spawnAgentProcess(claudePath: string, mcpConfigPath: string, nam
       ? (process.env.CLAUDE_WORKER_MODEL || getDefaultWorkerModel())
       : (process.env.CLAUDE_MODEL || getDefaultThreadModel());
     const sessionPrompt = `Start remote session with sensorium. Thread name = '${name}'. Use threadId=${threadId} when calling start_session.`;
-    const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "--model", claudeModel, "-p", sessionPrompt, "--output-format", "stream-json", "--include-partial-messages"], { stdio: ["ignore", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: true, env: spawnEnv, cwd: workingDirectory || undefined });
+    const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "--model", claudeModel, "-p", sessionPrompt, "--output-format", "stream-json", "--include-partial-messages"], { stdio: ["ignore", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
     closeSync(logFd);
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: effectiveConfigPath, agentLabel: "Claude", memorySourceThreadId, memoryTargetThreadId, threadType }, threadLifecycle);
   } catch (err) { closeSync(logFd); return { error: `Failed to spawn Claude process: ${errorMessage(err)}` }; }
@@ -203,7 +203,7 @@ export function spawnCopilotProcess(copilotPath: string, name: string, threadId:
   const logFd = openSync(logFilePath, "a");
   try {
     const sessionPrompt = `Start remote session with sensorium. Thread name = '${name}'. Use threadId=${threadId} when calling start_session.`;
-    const child = spawn(copilotPath, ["-p", sessionPrompt, "--allow-all-tools", "--model", agentType === "copilot_codex" ? "gpt-5.3-codex" : (process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL), "--autopilot"], { stdio: ["ignore", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(copilotPath), detached: true, windowsHide: true, env: sanitizeSpawnEnv({ COPILOT_HOME: copilotHomeDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}) }), cwd: workingDirectory || undefined });
+    const child = spawn(copilotPath, ["-p", sessionPrompt, "--allow-all-tools", "--model", agentType === "copilot_codex" ? "gpt-5.3-codex" : (process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL), "--autopilot"], { stdio: ["ignore", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(copilotPath), detached: true, windowsHide: false, env: sanitizeSpawnEnv({ COPILOT_HOME: copilotHomeDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}) }), cwd: workingDirectory || undefined });
     closeSync(logFd);
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: copilotHomeDir, agentLabel: "Copilot", memorySourceThreadId, threadType }, threadLifecycle);
   } catch (err) { closeSync(logFd); return { error: `Failed to spawn Copilot process: ${errorMessage(err)}` }; }
@@ -224,7 +224,7 @@ export function spawnCodexProcess(codexPath: string, name: string, threadId: num
   try {
     const nativeExe = resolveCodexExe();
     const nodeExeResult = !nativeExe && process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath) ? resolveCodexNodeExe() : null;
-    const child = nativeExe ? spawn(nativeExe, cliArgs, { stdio: ["pipe", logFd, logFd], shell: false, detached: true, windowsHide: true, env: spawnEnv, cwd: workingDirectory || undefined }) : nodeExeResult ? spawn(nodeExeResult.nodeExe, [nodeExeResult.codexJs, ...cliArgs], { stdio: ["pipe", logFd, logFd], shell: false, detached: true, windowsHide: true, env: spawnEnv, cwd: workingDirectory || undefined }) : spawn(codexPath, cliArgs, { stdio: ["pipe", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath), detached: true, windowsHide: true, env: spawnEnv, cwd: workingDirectory || undefined });
+    const child = nativeExe ? spawn(nativeExe, cliArgs, { stdio: ["pipe", logFd, logFd], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : nodeExeResult ? spawn(nodeExeResult.nodeExe, [nodeExeResult.codexJs, ...cliArgs], { stdio: ["pipe", logFd, logFd], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : spawn(codexPath, cliArgs, { stdio: ["pipe", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
     closeSync(logFd);
     try { child.stdin?.write(prompt + "\n"); child.stdin?.end(); } catch {}
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: CODEX_HOME_DIR, agentLabel: "Codex", memorySourceThreadId, threadType }, threadLifecycle);

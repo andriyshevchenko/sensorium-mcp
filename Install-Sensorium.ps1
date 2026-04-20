@@ -7,9 +7,10 @@
     (tag: supervisor-latest, repo: andriyshevchenko/sensorium-mcp) and places
     it in ~/.remote-copilot-mcp/bin/ as sensorium-supervisor.exe.
 
-    Always downloads the latest binary, stops any running instance, and restarts
-    via `securevault run --detached` which injects secrets from the OS keychain
-    as environment variables and launches in a separate console window.
+    Configuration is stored in ~/.remote-copilot-mcp/install.config.json.
+    On first run, pass parameters to set them. Subsequent runs (including
+    shell:startup) read from the config file — no parameters needed.
+    CLI parameters override saved config when provided.
 .PARAMETER SecureVaultProfile
     SecureVault profile name to resolve runtime secrets from.
 .PARAMETER UpdateMode
@@ -24,10 +25,10 @@
     .\Install-Sensorium.ps1 -MCPStartCommand "node C:\src\remote-copilot-mcp\dist\index.js"
 #>
 param(
-    [string]$SecureVaultProfile = "SENSORIUM",
-    [ValidateSet("production", "development")]
-    [string]$UpdateMode = "production",
-    [string]$MCPStartCommand = ""
+    [string]$SecureVaultProfile,
+    [ValidateSet("production", "development", "")]
+    [string]$UpdateMode,
+    [string]$MCPStartCommand
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,17 +43,53 @@ $DataDir = Join-Path $env:USERPROFILE ".remote-copilot-mcp"
 $BinDir = Join-Path $DataDir "bin"
 $Binary = Join-Path $BinDir $InstalledBinaryName
 $BinaryMetadata = Join-Path $BinDir "$InstalledBinaryName.release.json"
+$ConfigFile = Join-Path $DataDir "install.config.json"
 $StartupDir = [Environment]::GetFolderPath("Startup")
 $StartupLauncher = Join-Path $StartupDir "SensoriumSupervisor.cmd"
 
-function Resolve-MCPStartCommand {
-    if (-not [string]::IsNullOrWhiteSpace($MCPStartCommand)) {
-        return $MCPStartCommand.Trim()
-    }
-    return "npx -y sensorium-mcp@latest"
+# ── Config File ──────────────────────────────────────────────────────────────
+$Defaults = @{
+    SecureVaultProfile = "SENSORIUM"
+    UpdateMode         = "production"
+    MCPStartCommand    = "npx -y sensorium-mcp@latest"
 }
 
-$EffectiveMCPStartCommand = Resolve-MCPStartCommand
+function Load-Config {
+    if (Test-Path -LiteralPath $ConfigFile) {
+        try {
+            $saved = Get-Content -LiteralPath $ConfigFile -Raw | ConvertFrom-Json
+            $cfg = @{}
+            foreach ($key in $Defaults.Keys) {
+                $val = $saved.$key
+                $cfg[$key] = if (![string]::IsNullOrWhiteSpace($val)) { $val } else { $Defaults[$key] }
+            }
+            return $cfg
+        }
+        catch {
+            Write-Host "[WARN] Failed to read $ConfigFile — using defaults." -ForegroundColor Yellow
+        }
+    }
+    return $Defaults.Clone()
+}
+
+function Save-Config([hashtable]$cfg) {
+    New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
+    [pscustomobject]$cfg | ConvertTo-Json | Set-Content -LiteralPath $ConfigFile -Encoding UTF8
+}
+
+# Load saved config, then apply any CLI overrides
+$Config = Load-Config
+if (![string]::IsNullOrWhiteSpace($SecureVaultProfile)) { $Config["SecureVaultProfile"] = $SecureVaultProfile }
+if (![string]::IsNullOrWhiteSpace($UpdateMode))         { $Config["UpdateMode"] = $UpdateMode }
+if (![string]::IsNullOrWhiteSpace($MCPStartCommand))    { $Config["MCPStartCommand"] = $MCPStartCommand }
+
+# Resolve effective values
+$SecureVaultProfile = $Config["SecureVaultProfile"]
+$UpdateMode = $Config["UpdateMode"]
+$EffectiveMCPStartCommand = $Config["MCPStartCommand"]
+
+# Persist (so next run picks up any overrides)
+Save-Config $Config
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 function Stop-SupervisorProcess {
@@ -175,15 +212,13 @@ function Get-BinaryAsset {
 }
 
 function Install-StartupLauncher {
-    $safeProfile = $SecureVaultProfile.Replace('"', '')
-    $safeMode = $UpdateMode.Replace('"', '')
-    $safeMcpStart = $EffectiveMCPStartCommand.Replace('"', '""')
+    # Copy this script to bin/ so startup doesn't depend on repo checkout
+    $installedScript = Join-Path $BinDir "Install-Sensorium.ps1"
+    Copy-Item $PSCommandPath $installedScript -Force
 
     $launcherContent = @(
         "@echo off",
-        "set `"SUPERVISOR_UPDATE_MODE=$safeMode`"",
-        "set `"MCP_START_COMMAND=$safeMcpStart`"",
-        "securevault run `"$Binary`" --profile $safeProfile --detached"
+        "pwsh -NoProfile -File `"$installedScript`""
     ) -join [Environment]::NewLine
 
     Set-Content -LiteralPath $StartupLauncher -Value $launcherContent -Encoding ASCII
