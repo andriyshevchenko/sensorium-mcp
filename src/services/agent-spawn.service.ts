@@ -298,9 +298,9 @@ export function spawnKeepAliveThreads(threadLifecycle: ThreadLifecycleService): 
   try { db = initMemoryDb(); } catch (err) { startupCleanupInProgress = false; return { spawned: 0, errors: [`Failed to open DB: ${errorMessage(err)}`] }; }
   let threads: ReturnType<typeof getAllThreads>;
   try {
-    for (const { pid, filePath, threadId, name, threadType } of readPidFiles()) {
+    for (const { pid, filePath, threadId, name, threadType, startedAt } of readPidFiles()) {
       if (spawnedThreads.some((t) => t.threadId === threadId)) continue;
-      if (isProcessAlive(pid)) spawnedThreads.push({ pid, threadId, name: name ?? `thread-${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "", ...(threadType ? { threadType } : {}) });
+      if (isProcessAlive(pid)) spawnedThreads.push({ pid, threadId, name: name ?? `thread-${threadId}`, startedAt: startedAt ?? Date.now(), createdAt: startedAt ?? Date.now(), logFile: "", ...(threadType ? { threadType } : {}) });
       else try { unlinkSync(filePath); } catch {}
     }
     threads = getAllThreads(db).filter((thread) => thread.keepAlive && (thread.status === "active" || thread.status === "exited"));
