@@ -132,6 +132,10 @@ public sealed class SupervisorWorker : BackgroundService
                 _log.LogCritical(ex, "Failed to start MCP server — aborting");
                 throw;
             }
+
+            // Give the process time to bind its port before we start probing
+            _log.LogInformation("Waiting {Delay}s for MCP server to start up...", _opts.StartupDelay.TotalSeconds);
+            await Task.Delay(_opts.StartupDelay, ct).ConfigureAwait(false);
         }
 
         // ── Wait for MCP to become ready ────────────────────────────────────────
