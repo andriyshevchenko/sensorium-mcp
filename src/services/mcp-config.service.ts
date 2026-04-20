@@ -3,6 +3,9 @@
  *
  * Reads the canonical `mcpServers` from settings.json, injects the
  * sensorium-mcp entry, and formats for each agent's native config format.
+ *
+ * All builders take a `SensoriumTransport` param — the caller (agent-spawn)
+ * is responsible for reading env vars and gating on port availability.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -10,17 +13,30 @@ import { join } from "node:path";
 import { getMcpServers, type McpServerConfig } from "../config.js";
 import { PROCESS_PIDS_DIR } from "./process.service.js";
 
-// ── Sensorium auto-injection ────────────────────────────────────────────────
+// ── Shared types ────────────────────────────────────────────────────────────
 
-interface SensoriumTransport {
+export interface SensoriumTransport {
   httpPort: number;
   secret: string | null;
 }
 
-function detectSensoriumTransport(): SensoriumTransport {
-  const httpPort = parseInt(process.env.MCP_HTTP_PORT || "0", 10);
-  if (httpPort) return { httpPort, secret: process.env.MCP_HTTP_SECRET || null };
-  throw new Error("MCP_HTTP_PORT is not set — cannot build MCP config without HTTP transport");
+// ── Shared JSON formatter (Claude & Copilot use the same schema) ────────────
+
+function formatJsonMcpEntry(cfg: McpServerConfig): Record<string, unknown> {
+  if (cfg.type === "stdio") {
+    const entry: Record<string, unknown> = { command: cfg.command, args: cfg.args ?? [] };
+    if (cfg.env && Object.keys(cfg.env).length > 0) entry.env = cfg.env;
+    return entry;
+  }
+  const entry: Record<string, unknown> = { type: "http", url: cfg.url };
+  if (cfg.headers && Object.keys(cfg.headers).length > 0) entry.headers = cfg.headers;
+  return entry;
+}
+
+function buildSensoriumJsonEntry(transport: SensoriumTransport, extras?: Record<string, unknown>): Record<string, unknown> {
+  const entry: Record<string, unknown> = { type: "http", url: `http://127.0.0.1:${transport.httpPort}/mcp`, ...extras };
+  if (transport.secret) entry.headers = { Authorization: `Bearer ${transport.secret}` };
+  return entry;
 }
 
 // ── Claude format ───────────────────────────────────────────────────────────
@@ -30,35 +46,18 @@ function detectSensoriumTransport(): SensoriumTransport {
  *
  * Format: `{ "mcpServers": { "<name>": { "type": "http"|"stdio", ... } } }`
  */
-export function buildClaudeMcpConfig(threadId: number): string {
+export function buildClaudeMcpConfig(transport: SensoriumTransport, threadId: number): string {
   const servers: Record<string, Record<string, unknown>> = {};
-  const transport = detectSensoriumTransport();
+  servers["sensorium-mcp"] = buildSensoriumJsonEntry(transport);
 
-  // Inject sensorium-mcp
-  const sensoriumEntry: Record<string, unknown> = { type: "http", url: `http://127.0.0.1:${transport.httpPort}/mcp` };
-  if (transport.secret) sensoriumEntry.headers = { Authorization: `Bearer ${transport.secret}` };
-  servers["sensorium-mcp"] = sensoriumEntry;
-
-  // Merge user-configured MCPs
   for (const [name, cfg] of Object.entries(getMcpServers())) {
-    servers[name] = formatClaudeEntry(cfg);
+    servers[name] = formatJsonMcpEntry(cfg);
   }
 
   const outPath = join(PROCESS_PIDS_DIR, `${threadId}-mcp-config.json`);
   mkdirSync(PROCESS_PIDS_DIR, { recursive: true });
   writeFileSync(outPath, JSON.stringify({ mcpServers: servers }, null, 2), "utf-8");
   return outPath;
-}
-
-function formatClaudeEntry(cfg: McpServerConfig): Record<string, unknown> {
-  if (cfg.type === "stdio") {
-    const entry: Record<string, unknown> = { command: cfg.command, args: cfg.args ?? [] };
-    if (cfg.env && Object.keys(cfg.env).length > 0) entry.env = cfg.env;
-    return entry;
-  }
-  const entry: Record<string, unknown> = { type: "http", url: cfg.url };
-  if (cfg.headers && Object.keys(cfg.headers).length > 0) entry.headers = cfg.headers;
-  return entry;
 }
 
 // ── Copilot format ──────────────────────────────────────────────────────────
@@ -68,33 +67,16 @@ function formatClaudeEntry(cfg: McpServerConfig): Record<string, unknown> {
  *
  * Same JSON schema as Claude (both use `mcpServers` wrapper).
  */
-export function buildCopilotMcpConfig(copilotHomeDir: string): void {
+export function buildCopilotMcpConfig(transport: SensoriumTransport, copilotHomeDir: string): void {
   const servers: Record<string, Record<string, unknown>> = {};
-  const transport = detectSensoriumTransport();
+  servers["sensorium-mcp"] = buildSensoriumJsonEntry(transport, { tools: ["*"] });
 
-  // Inject sensorium-mcp
-  const sensoriumEntry: Record<string, unknown> = { type: "http", url: `http://127.0.0.1:${transport.httpPort}/mcp`, tools: ["*"] };
-  if (transport.secret) sensoriumEntry.headers = { Authorization: `Bearer ${transport.secret}` };
-  servers["sensorium-mcp"] = sensoriumEntry;
-
-  // Merge user-configured MCPs
   for (const [name, cfg] of Object.entries(getMcpServers())) {
-    servers[name] = formatCopilotEntry(cfg);
+    servers[name] = formatJsonMcpEntry(cfg);
   }
 
   mkdirSync(copilotHomeDir, { recursive: true });
   writeFileSync(join(copilotHomeDir, "mcp-config.json"), JSON.stringify({ mcpServers: servers }, null, 2), "utf-8");
-}
-
-function formatCopilotEntry(cfg: McpServerConfig): Record<string, unknown> {
-  if (cfg.type === "stdio") {
-    const entry: Record<string, unknown> = { command: cfg.command, args: cfg.args ?? [] };
-    if (cfg.env && Object.keys(cfg.env).length > 0) entry.env = cfg.env;
-    return entry;
-  }
-  const entry: Record<string, unknown> = { type: "http", url: cfg.url };
-  if (cfg.headers && Object.keys(cfg.headers).length > 0) entry.headers = cfg.headers;
-  return entry;
 }
 
 // ── Codex format ────────────────────────────────────────────────────────────
@@ -109,14 +91,12 @@ function tomlEscape(s: string): string {
  *
  * Codex supports stdio (`command`/`args`) and streamable HTTP (`url`).
  */
-export function buildCodexMcpArgs(httpPort: number, secret: string | null): string[] {
+export function buildCodexMcpArgs(transport: SensoriumTransport): string[] {
   const args: string[] = [];
 
-  // Inject sensorium-mcp
-  args.push("-c", `mcp_servers.sensorium-mcp.url="http://127.0.0.1:${httpPort}/mcp"`);
-  if (secret) args.push("-c", `mcp_servers.sensorium-mcp.bearer_token_env_var="SENSORIUM_MCP_SECRET"`);
+  args.push("-c", `mcp_servers.sensorium-mcp.url="http://127.0.0.1:${transport.httpPort}/mcp"`);
+  if (transport.secret) args.push("-c", `mcp_servers.sensorium-mcp.bearer_token_env_var="SENSORIUM_MCP_SECRET"`);
 
-  // Merge user-configured MCPs
   for (const [name, cfg] of Object.entries(getMcpServers())) {
     args.push(...formatCodexEntry(name, cfg));
   }

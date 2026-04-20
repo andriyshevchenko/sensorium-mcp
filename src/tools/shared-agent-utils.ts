@@ -1,10 +1,7 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { isValidAgentType, type AgentType } from "../config.js";
 
 // ---------------------------------------------------------------------------
-// Shared argument parsers
+// Shared argument parsers (used by delegate-tool, start-session-tool)
 // ---------------------------------------------------------------------------
 
 /** Parse an unknown value to a positive integer, or return undefined. */
@@ -22,25 +19,4 @@ export function parsePositiveInt(v: unknown): number | undefined {
 export function parseAgentType(raw: unknown, fallback?: AgentType): AgentType | undefined {
   const s = typeof raw === "string" ? raw.trim() : "";
   return isValidAgentType(s) ? s : fallback;
-}
-
-export const COPILOT_HOME_DIR = "copilot-home";
-const COPILOT_INSTRUCTIONS_FILENAME = "copilot-instructions.md";
-const COPILOT_SYSTEM_PROMPT =
-  "You are a remote Copilot agent. " +
-  "Start remote session with sensorium. Pass agentType='copilot' to start_session.";
-export const DEFAULT_COPILOT_MODEL = "claude-opus-4-6";
-
-export function writeCopilotInstructions(copilotHome: string): void {
-  mkdirSync(copilotHome, { recursive: true });
-  writeFileSync(join(copilotHome, COPILOT_INSTRUCTIONS_FILENAME), COPILOT_SYSTEM_PROMPT, "utf-8");
-}
-
-/** Create a workspace directory with .copilotignore to prevent file scanning */
-export function ensureCopilotWorkspace(baseDir: string): string {
-  const wsDir = join(baseDir, "copilot-workspace");
-  mkdirSync(wsDir, { recursive: true });
-  const ignoreFile = join(wsDir, ".copilotignore");
-  if (!existsSync(ignoreFile)) writeFileSync(ignoreFile, "*\n", "utf-8");
-  return wsDir;
 }
