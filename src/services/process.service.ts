@@ -15,6 +15,7 @@ const PIDS_DIR = join(BASE_DIR, "pids");
 export const PENDING_TASKS_DIR = join(BASE_DIR, "pending-tasks");
 export const PROCESS_BASE_DIR = BASE_DIR;
 export const PROCESS_LOGS_DIR = LOGS_DIR;
+export const THREAD_LOGS_DIR = join(LOGS_DIR, "threads");
 export const PROCESS_PIDS_DIR = PIDS_DIR;
 
 export interface SpawnedThread {
@@ -106,6 +107,7 @@ export function getActiveThreadIds(): number[] {
 export function ensureDirs(): void {
   mkdirSync(PENDING_TASKS_DIR, { recursive: true });
   mkdirSync(LOGS_DIR, { recursive: true });
+  mkdirSync(THREAD_LOGS_DIR, { recursive: true });
   mkdirSync(PIDS_DIR, { recursive: true });
 }
 
