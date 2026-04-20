@@ -30,6 +30,10 @@ public sealed class ProcessManager : IProcessManager
 
         Directory.CreateDirectory(Path.GetDirectoryName(_opts.Paths.McpStderrLog)!);
 
+        // Date-stamped stderr log: mcp-stderr.log → mcp-stderr-20260420.log
+        var stderrLogPath = GetDatedStderrPath(_opts.Paths.McpStderrLog);
+        PruneOldStderrLogs(_opts.Paths.McpStderrLog, retainDays: 7);
+
         // Build environment: inherit all parent env vars (secrets injected by securevault),
         // then override/add the specific vars the MCP server needs.
         var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -46,13 +50,13 @@ public sealed class ProcessManager : IProcessManager
             env["TELEGRAM_CHAT_ID"] = _opts.TelegramChatId;
 
         _log.LogInformation("Starting MCP server: {Command}", cmd);
-        _log.LogInformation("Capturing MCP stderr to {LogPath}", _opts.Paths.McpStderrLog);
+        _log.LogInformation("Capturing MCP stderr to {LogPath}", stderrLogPath);
 
         int pid;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            pid = SpawnWindows(cmd, env);
+            pid = SpawnWindows(cmd, env, stderrLogPath);
         else
-            pid = SpawnUnix(cmd, env);
+            pid = SpawnUnix(cmd, env, stderrLogPath);
 
         _log.LogInformation("MCP server started with PID {Pid}", pid);
         await WritePidFileAsync(_opts.Paths.ServerPid, pid).ConfigureAwait(false);
@@ -61,7 +65,7 @@ public sealed class ProcessManager : IProcessManager
 
     // ── Windows spawn ──────────────────────────────────────────────────────────
 
-    private int SpawnWindows(string commandLine, Dictionary<string, string> env)
+    private int SpawnWindows(string commandLine, Dictionary<string, string> env, string stderrLogPath)
     {
         var envBlock = NativeMethods.BuildEnvironmentBlock(env);
 
@@ -82,7 +86,7 @@ public sealed class ProcessManager : IProcessManager
         };
 
         IntPtr hStderr = NativeMethods.CreateFile(
-            _opts.Paths.McpStderrLog,
+            stderrLogPath,
             NativeMethods.FILE_APPEND_DATA,
             NativeMethods.FILE_SHARE_READ | NativeMethods.FILE_SHARE_WRITE,
             ref sa,
@@ -151,7 +155,7 @@ public sealed class ProcessManager : IProcessManager
 
     // ── Unix spawn ─────────────────────────────────────────────────────────────
 
-    private int SpawnUnix(string commandLine, Dictionary<string, string> env)
+    private int SpawnUnix(string commandLine, Dictionary<string, string> env, string stderrLogPath)
     {
         var parts = ParseCommandLine(commandLine);
         var psi = new ProcessStartInfo(parts[0])
@@ -173,7 +177,7 @@ public sealed class ProcessManager : IProcessManager
 
         // StreamWriter is not thread-safe; guard all writes with a lock.
         var stderrFile = new StreamWriter(
-            new FileStream(_opts.Paths.McpStderrLog, FileMode.Append, FileAccess.Write, FileShare.ReadWrite),
+            new FileStream(stderrLogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite),
             leaveOpen: false)
         {
             AutoFlush = true
@@ -420,6 +424,44 @@ public sealed class ProcessManager : IProcessManager
         await Task.WhenAll(outputTask, errTask).ConfigureAwait(false);
         await proc.WaitForExitAsync().ConfigureAwait(false);
         return (proc.ExitCode, outputTask.Result + errTask.Result);
+    }
+
+    /// <summary>
+    /// Converts a base path like mcp-stderr.log to mcp-stderr-20260420.log.
+    /// </summary>
+    internal static string GetDatedStderrPath(string basePath)
+    {
+        var dir = Path.GetDirectoryName(basePath) ?? ".";
+        var name = Path.GetFileNameWithoutExtension(basePath);
+        var ext = Path.GetExtension(basePath);
+        return Path.Combine(dir, $"{name}-{DateTime.UtcNow:yyyyMMdd}{ext}");
+    }
+
+    /// <summary>
+    /// Delete date-stamped stderr logs older than retainDays.
+    /// </summary>
+    private void PruneOldStderrLogs(string basePath, int retainDays)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(basePath);
+            if (dir == null || !Directory.Exists(dir)) return;
+            var name = Path.GetFileNameWithoutExtension(basePath);
+            var ext = Path.GetExtension(basePath);
+            var cutoff = DateTime.UtcNow.AddDays(-retainDays);
+            foreach (var file in Directory.GetFiles(dir, $"{name}-*{ext}"))
+            {
+                if (File.GetLastWriteTimeUtc(file) < cutoff)
+                {
+                    File.Delete(file);
+                    _log.LogDebug("Pruned old MCP stderr log: {File}", Path.GetFileName(file));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "Failed to prune old MCP stderr logs");
+        }
     }
 
     private static List<string> ParseCommandLine(string commandLine)
