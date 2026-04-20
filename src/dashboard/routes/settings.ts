@@ -1,6 +1,6 @@
 /**
  * Dashboard API — settings-related route handlers.
- * Covers: agent-type, dmn-activation-hours, claude-mcp-config, thread-agent-types.
+ * Covers: agent-type, dmn-activation-hours, thread-agent-types.
  */
 
 import {
@@ -9,8 +9,6 @@ import {
     setThreadAgentType,
     getAllThreadAgentTypes,
     isValidAgentType,
-    getClaudeMcpConfigPath,
-    setClaudeMcpConfigPath,
     getGuardrailsEnabled,
     setGuardrailsEnabled,
     getBootstrapMessageCount,
@@ -47,31 +45,6 @@ import { errorMessage } from "../../utils.js";
 export const handleGetDmnActivationHours: RouteHandler = ({ json }) => {
     const rawVal = parseFloat(process.env.DMN_ACTIVATION_HOURS ?? "");
     json({ value: Math.max(0.5, Number.isFinite(rawVal) ? rawVal : 4) });
-    return true;
-};
-
-// ─── Claude MCP config path ─────────────────────────────────────────────────
-
-export const handleGetClaudeMcpConfig: RouteHandler = ({ json }) => {
-    json({ path: getClaudeMcpConfigPath() });
-    return true;
-};
-
-export const handlePostClaudeMcpConfig: RouteHandler = ({ req, json }) => {
-    void (async () => {
-        try {
-            const body = await readBody(req);
-            const parsed = JSON.parse(body) as { path?: string };
-            if (typeof parsed.path !== "string" || !parsed.path.trim()) {
-                json({ error: "Missing or empty path" }, 400);
-                return;
-            }
-            setClaudeMcpConfigPath(parsed.path.trim());
-            json({ ok: true, path: parsed.path.trim() });
-        } catch (err) {
-            json({ error: errorMessage(err) }, 500);
-        }
-    })();
     return true;
 };
 

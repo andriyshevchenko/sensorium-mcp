@@ -1,21 +1,21 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { getClaudeMcpConfigPath, getDefaultThreadModel, getDefaultWorkerModel, type AgentType } from "../config.js";
+import { getDefaultThreadModel, getDefaultWorkerModel, type AgentType } from "../config.js";
 import { log } from "../logger.js";
 import { synthesizeGhostMemory } from "../memory.js";
 import { getAllThreads } from "../data/memory/thread-registry.js";
 import { initMemoryDb, type Database } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
-import { COPILOT_HOME_DIR, DEFAULT_COPILOT_MODEL, ensureCopilotWorkspace, writeCopilotHomeFiles } from "../tools/shared-agent-utils.js";
+import { COPILOT_HOME_DIR, DEFAULT_COPILOT_MODEL, ensureCopilotWorkspace, writeCopilotInstructions } from "../tools/shared-agent-utils.js";
 import { deleteTelegramTopicByBotApi } from "./topic.service.js";
 import { PROCESS_BASE_DIR, PROCESS_PIDS_DIR, THREAD_LOGS_DIR, ensureDirs, findAliveThread, isProcessAlive, readPidFiles, spawnedThreads, type SpawnedThread } from "./process.service.js";
 import { ThreadState, type ThreadLifecycleService } from "./thread-lifecycle.service.js";
+import { buildClaudeMcpConfig, buildCopilotMcpConfig, buildCodexMcpArgs } from "./mcp-config.service.js";
 import { decommissionWorker } from "./worker-cleanup.service.js";
 
 const ENV_DENYLIST = new Set(["TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "MCP_HTTP_SECRET", "DASHBOARD_TOKEN", "MCP_START_COMMAND", "WATCHER_START_COMMAND"]);
-const WATCHER_PORT = Number.parseInt(process.env.WATCHER_PORT || "3848", 10);
 const CODEX_HOME_DIR = join(PROCESS_BASE_DIR, "codex-home");
 const DEFAULT_CODEX_MODEL = "";
 const MAX_CONCURRENT_THREADS = 20;
@@ -39,32 +39,6 @@ const sanitizeSpawnEnv = (extra?: Record<string, string | undefined>): NodeJS.Pr
   if (extra) Object.assign(env, extra);
   return env;
 };
-
-const generateThreadMcpConfig = (baseConfigPath: string, threadId: number): string => {
-  const outPath = join(PROCESS_PIDS_DIR, `${threadId}-mcp-config.json`);
-  try {
-    const config = JSON.parse(readFileSync(baseConfigPath, "utf-8")) as Record<string, unknown>;
-    const servers = (config.mcpServers ?? {}) as Record<string, unknown>;
-    if (servers["sensorium-watcher"]) return baseConfigPath;
-    servers["sensorium-watcher"] = { type: "http", url: `http://127.0.0.1:${WATCHER_PORT}/mcp` };
-    config.mcpServers = servers;
-    mkdirSync(PROCESS_PIDS_DIR, { recursive: true });
-    writeFileSync(outPath, JSON.stringify(config, null, 2), "utf-8");
-    return outPath;
-  } catch (err) {
-    log.warn(`[start_thread] Failed to generate merged MCP config for thread ${threadId}: ${errorMessage(err)}`);
-    return baseConfigPath;
-  }
-};
-
-export function resolveMcpConfigPath(): string | null {
-  const envPath = process.env.CLAUDE_MCP_CONFIG;
-  if (envPath && existsSync(envPath)) return envPath;
-  const dashboardPath = getClaudeMcpConfigPath();
-  if (dashboardPath && existsSync(dashboardPath)) return dashboardPath;
-  for (const path of [join(homedir(), ".claude", "settings.json"), join(homedir(), ".claude", "mcp_config.json"), join(homedir(), ".claude", ".mcp.json")]) if (existsSync(path)) return path;
-  return null;
-}
 
 const resolveCliPath = (name: string, prefer?: RegExp): string | null => {
   const envCmd = process.env[`${name.toUpperCase()}_CLI_CMD`];
@@ -171,14 +145,16 @@ const normalizeWorkingDirectory = (workingDirectory?: string): string | undefine
   return fallback;
 };
 
-export function spawnAgentProcess(claudePath: string, mcpConfigPath: string, name: string, threadId: number, threadLifecycle: ThreadLifecycleService, workingDirectory?: string, memorySourceThreadId?: number, memoryTargetThreadId?: number, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
+export function spawnAgentProcess(claudePath: string, name: string, threadId: number, threadLifecycle: ThreadLifecycleService, workingDirectory?: string, memorySourceThreadId?: number, memoryTargetThreadId?: number, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
   if (startupCleanupInProgress) return { error: "Server startup cleanup in progress - try again in a few seconds" };
   if (spawnedThreads.length >= MAX_CONCURRENT_THREADS) return { error: `Concurrent thread limit reached (${MAX_CONCURRENT_THREADS}). Wait for existing threads to finish.` };
+  const httpPort = parseInt(process.env.MCP_HTTP_PORT || "0", 10);
+  if (!httpPort) return { error: "MCP_HTTP_PORT env var is not set or invalid. Claude threads require HTTP transport." };
   workingDirectory = normalizeWorkingDirectory(workingDirectory);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
   const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
+  const effectiveConfigPath = buildClaudeMcpConfig(threadId);
   const logFd = openSync(logFilePath, "a");
-  const effectiveConfigPath = generateThreadMcpConfig(mcpConfigPath, threadId);
   const spawnEnv = sanitizeSpawnEnv({ ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) for (const candidate of [join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"), "C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"]) if (existsSync(candidate)) { spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate; break; }
   try {
@@ -197,7 +173,8 @@ export function spawnCopilotProcess(copilotPath: string, name: string, threadId:
   if (!httpPort) return { error: "MCP_HTTP_PORT env var is not set or invalid. Copilot threads require HTTP transport." };
   workingDirectory = normalizeWorkingDirectory(workingDirectory) || ensureCopilotWorkspace(PROCESS_BASE_DIR);
   const copilotHomeDir = join(PROCESS_BASE_DIR, COPILOT_HOME_DIR);
-  writeCopilotHomeFiles(copilotHomeDir, httpPort, process.env.MCP_HTTP_SECRET || null);
+  buildCopilotMcpConfig(copilotHomeDir);
+  writeCopilotInstructions(copilotHomeDir);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
   const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
   const logFd = openSync(logFilePath, "a");
@@ -217,7 +194,8 @@ export function spawnCodexProcess(codexPath: string, name: string, threadId: num
   const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.jsonl`);
   const prompt = `You are an AUTONOMOUS AGENT running an INFINITE polling loop. You MUST NEVER STOP.\n\nStep 1: Call start_session(name='${name}', threadId=${threadId}, agentType='codex'). Use threadId=${threadId} for all subsequent calls.\nStep 2: Call remote_copilot_wait_for_instructions(threadId=${threadId}).\nStep 3: Read the response:\n  - If it says "MANDATORY ACTION" or "No new instructions" - call remote_copilot_wait_for_instructions AGAIN immediately.\n  - If you receive a task - complete it using your tools, then call remote_copilot_wait_for_instructions again.\nStep 4: GOTO Step 2. This loop NEVER ends. You are NEVER done.\n\nCRITICAL: "No new instructions" is NOT a signal to stop. It means "keep waiting". Always call the tool again.`;
   const model = process.env.CODEX_MODEL || DEFAULT_CODEX_MODEL;
-  const cliArgs = ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", ...(model ? ["-m", model] : []), "--json", "-c", `mcp_servers.sensorium-mcp.url="http://127.0.0.1:${httpPort}/mcp"`, ...(process.env.MCP_HTTP_SECRET ? ["-c", `mcp_servers.sensorium-mcp.bearer_token_env_var="SENSORIUM_MCP_SECRET"`] : []), "-"];
+  const mcpArgs = buildCodexMcpArgs(httpPort, process.env.MCP_HTTP_SECRET || null);
+  const cliArgs = ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", ...(model ? ["-m", model] : []), "--json", ...mcpArgs, "-"];
   if (workingDirectory) cliArgs.splice(1, 0, "-C", workingDirectory);
   const spawnEnv = sanitizeSpawnEnv({ ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(process.env.MCP_HTTP_SECRET ? { SENSORIUM_MCP_SECRET: process.env.MCP_HTTP_SECRET } : {}) });
   const logFd = openSync(logFilePath, "a");
@@ -273,10 +251,9 @@ export function dispatchSpawn(
       : { error: `Thread ${threadId} (${name}): codex CLI not found` };
   } else {
     const cliPath = resolveClaudePath();
-    const mcpConfig = resolveMcpConfigPath();
-    result = (cliPath && mcpConfig)
-      ? spawnAgentProcess(cliPath, mcpConfig, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType)
-      : { error: `Thread ${threadId} (${name}): ${!cliPath ? "claude CLI not found" : "MCP config not found"}` };
+    result = cliPath
+      ? spawnAgentProcess(cliPath, name, threadId, threadLifecycle, workingDirectory, memorySourceThreadId, memoryTargetThreadId, runtimeThreadType)
+      : { error: `Thread ${threadId} (${name}): claude CLI not found` };
   }
 
   // Spawning → Active on successful process start

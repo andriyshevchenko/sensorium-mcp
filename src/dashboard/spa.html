@@ -130,6 +130,7 @@
         <button onclick="switchTab('topics')" id="tab-topics" class="pb-3 text-sm font-medium tab-inactive transition">Topics</button>
         <button onclick="switchTab('templates')" id="tab-templates" class="pb-3 text-sm font-medium tab-inactive transition">Templates</button>
         <button onclick="switchTab('skills')" id="tab-skills" class="pb-3 text-sm font-medium tab-inactive transition">Skills</button>
+        <button onclick="switchTab('mcpservers')" id="tab-mcpservers" class="pb-3 text-sm font-medium tab-inactive transition">MCP Servers</button>
       </nav>
     </div>
 
@@ -198,14 +199,6 @@
             </select>
             <span id="agent-type-status" class="text-sm"></span>
             <span class="text-xs text-muted">Changes which default reminders template is used</span>
-          </div>
-          <div class="flex flex-wrap items-center gap-3">
-            <label for="claude-mcp-config-input" class="text-sm font-medium text-textSecondary">Claude MCP Config Path</label>
-            <input id="claude-mcp-config-input" type="text"
-              placeholder="~/.claude/settings.json"
-              class="flex-1 min-w-[260px] px-3 py-2 rounded-xl bg-card border border-gray-700 text-sm text-textPrimary placeholder-muted font-mono focus:outline-none focus:border-accent transition" />
-            <button onclick="saveClaudeMcpConfig()" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Save</button>
-            <span id="claude-mcp-config-status" class="text-sm"></span>
           </div>
         </div>
         <div class="glass rounded-xl p-6">
@@ -380,6 +373,92 @@
           <textarea id="skill-edit-content" rows="20" spellcheck="false"
             class="w-full px-4 py-3 rounded-xl bg-surface border border-gray-700 text-textPrimary font-mono text-sm leading-relaxed focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition resize-y"
             placeholder="Skill body (markdown)..."></textarea>
+        </div>
+      </div>
+
+      <!-- MCP Servers -->
+      <div id="panel-mcpservers" class="hidden animate-fade-in">
+        <div class="glass rounded-xl p-6 mb-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div>
+              <h3 class="text-lg font-semibold">MCP Servers</h3>
+              <p class="text-sm text-textSecondary mt-1">Manage MCP servers shared across all agent types (Claude, Copilot, Codex)</p>
+            </div>
+            <button onclick="showNewMcpForm()" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">+ Add MCP Server</button>
+          </div>
+
+          <!-- New MCP form (hidden by default) -->
+          <div id="mcp-new-form" class="hidden glass rounded-xl p-4 mb-4 border border-accent/30">
+            <h4 class="text-sm font-semibold mb-3">Add MCP Server</h4>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+              <div>
+                <label class="text-xs text-textSecondary block mb-1">Name</label>
+                <input id="mcp-new-name" type="text" placeholder="my-server"
+                  class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition" />
+              </div>
+              <div>
+                <label class="text-xs text-textSecondary block mb-1">Type</label>
+                <select id="mcp-new-type" onchange="toggleMcpTypeFields()"
+                  class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary focus:outline-none focus:border-accent transition">
+                  <option value="stdio">stdio</option>
+                  <option value="http">http</option>
+                </select>
+              </div>
+            </div>
+            <!-- stdio fields -->
+            <div id="mcp-stdio-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="text-xs text-textSecondary block mb-1">Command</label>
+                <input id="mcp-new-command" type="text" placeholder="npx -y @org/server"
+                  class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition" />
+              </div>
+              <div>
+                <label class="text-xs text-textSecondary block mb-1">Args (space-separated)</label>
+                <input id="mcp-new-args" type="text" placeholder="--verbose --port 3000"
+                  class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition" />
+              </div>
+            </div>
+            <!-- http fields -->
+            <div id="mcp-http-fields" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="text-xs text-textSecondary block mb-1">URL</label>
+                <input id="mcp-new-url" type="text" placeholder="https://api.example.com/mcp"
+                  class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition" />
+              </div>
+              <div>
+                <label class="text-xs text-textSecondary block mb-1">Headers (key=value, one per line)</label>
+                <textarea id="mcp-new-headers" rows="2" placeholder="Authorization=Bearer ${TOKEN}"
+                  class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition resize-y"></textarea>
+              </div>
+            </div>
+            <!-- env fields (shared) -->
+            <div class="mb-3">
+              <label class="text-xs text-textSecondary block mb-1">Environment Variables (key=value, one per line)</label>
+              <textarea id="mcp-new-env" rows="2" placeholder="API_KEY=secret&#10;DEBUG=true"
+                class="w-full px-3 py-2 rounded-lg bg-surface border border-gray-700 text-sm text-textPrimary font-mono focus:outline-none focus:border-accent transition resize-y"></textarea>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="createMcpServer()" class="px-4 py-2 rounded-xl bg-accent hover:bg-accentLight text-white text-sm font-medium transition">Add</button>
+              <button onclick="hideNewMcpForm()" class="px-4 py-2 rounded-xl bg-card hover:bg-cardHover border border-gray-700 text-sm text-textSecondary hover:text-textPrimary transition">Cancel</button>
+              <span id="mcp-new-status" class="text-sm"></span>
+            </div>
+          </div>
+
+          <!-- Built-in sensorium entry -->
+          <div class="glass rounded-xl p-4 mb-3 border border-accent/20 opacity-80">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-sm">sensorium-mcp</span>
+                <span class="type-badge" style="background:rgba(99,102,241,0.15);color:#818cf8">built-in</span>
+                <span class="type-badge" style="background:rgba(34,197,94,0.15);color:#4ade80">http</span>
+              </div>
+              <span class="text-xs text-muted font-mono">auto-injected at spawn time</span>
+            </div>
+          </div>
+
+          <!-- Server list -->
+          <div id="mcp-servers-list" class="space-y-3"></div>
+          <div id="mcp-servers-empty" class="hidden text-center py-8 text-muted text-sm">No user-configured MCP servers. Click "+ Add MCP Server" to get started.</div>
         </div>
       </div>
 
@@ -707,7 +786,7 @@
 
     // ─── Tab switching ──────────────────────────────────────────────────
     function switchTab(tab) {
-      const tabs = ['sessions', 'notes', 'episodes', 'topics', 'templates', 'skills'];
+      const tabs = ['sessions', 'notes', 'episodes', 'topics', 'templates', 'skills', 'mcpservers'];
       tabs.forEach(t => {
         document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
         document.getElementById('tab-' + t).className = 'pb-3 text-sm font-medium transition ' + (t === tab ? 'tab-active' : 'tab-inactive');
@@ -771,8 +850,9 @@
         if (currentTab === 'notes') loadNotes();
         if (currentTab === 'episodes') loadEpisodes();
         if (currentTab === 'topics') loadTopics();
-        if (currentTab === 'templates') { loadAgentType(); loadClaudeMcpConfig(); loadTemplates(); loadDriveTemplate(); }
+        if (currentTab === 'templates') { loadAgentType(); loadTemplates(); loadDriveTemplate(); }
         if (currentTab === 'skills') loadSkills();
+        if (currentTab === 'mcpservers') loadMcpServers();
       } catch (e) {
         console.error('Tab load error:', e);
       }
@@ -782,6 +862,132 @@
       refreshCurrentTab();
       if (refreshTimer) clearInterval(refreshTimer);
       refreshTimer = setInterval(refreshCurrentTab, 30000);
+    }
+
+    // ─── MCP Servers ──────────────────────────────────────────────────
+    let mcpServersData = {};
+
+    function showNewMcpForm() { document.getElementById('mcp-new-form').classList.remove('hidden'); }
+    function hideNewMcpForm() { document.getElementById('mcp-new-form').classList.add('hidden'); document.getElementById('mcp-new-status').textContent = ''; }
+
+    function toggleMcpTypeFields() {
+      const isStdio = document.getElementById('mcp-new-type').value === 'stdio';
+      document.getElementById('mcp-stdio-fields').classList.toggle('hidden', !isStdio);
+      document.getElementById('mcp-http-fields').classList.toggle('hidden', isStdio);
+    }
+
+    function parseKvLines(text) {
+      const result = {};
+      for (const line of text.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const eq = trimmed.indexOf('=');
+        if (eq > 0) result[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+      }
+      return Object.keys(result).length ? result : undefined;
+    }
+
+    async function createMcpServer() {
+      const status = document.getElementById('mcp-new-status');
+      const name = document.getElementById('mcp-new-name').value.trim();
+      const type = document.getElementById('mcp-new-type').value;
+      if (!name) { status.textContent = 'Name is required'; status.className = 'text-sm text-warn'; return; }
+
+      var config;
+      if (type === 'stdio') {
+        const cmdRaw = document.getElementById('mcp-new-command').value.trim();
+        if (!cmdRaw) { status.textContent = 'Command is required'; status.className = 'text-sm text-warn'; return; }
+        const parts = cmdRaw.match(/(?:[^\s"]+|"[^"]*")+/g) || [cmdRaw];
+        const command = parts[0].replace(/^"|"$/g, '');
+        const argsInput = document.getElementById('mcp-new-args').value.trim();
+        const args = argsInput ? argsInput.split(/\s+/) : parts.slice(1).map(function(a) { return a.replace(/^"|"$/g, ''); });
+        config = { type: 'stdio', command: command, args: args };
+        var env = parseKvLines(document.getElementById('mcp-new-env').value);
+        if (env) config.env = env;
+      } else {
+        const url = document.getElementById('mcp-new-url').value.trim();
+        if (!url) { status.textContent = 'URL is required'; status.className = 'text-sm text-warn'; return; }
+        config = { type: 'http', url: url };
+        var headers = parseKvLines(document.getElementById('mcp-new-headers').value);
+        if (headers) config.headers = headers;
+        var env2 = parseKvLines(document.getElementById('mcp-new-env').value);
+        if (env2) config.env = env2;
+      }
+
+      try {
+        const r = await fetch('/api/mcp-servers', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, config: config }),
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) { status.textContent = data.error || 'Error'; status.className = 'text-sm text-danger'; return; }
+        hideNewMcpForm();
+        document.getElementById('mcp-new-name').value = '';
+        document.getElementById('mcp-new-command').value = '';
+        document.getElementById('mcp-new-args').value = '';
+        document.getElementById('mcp-new-url').value = '';
+        document.getElementById('mcp-new-headers').value = '';
+        document.getElementById('mcp-new-env').value = '';
+        mcpServersData = data.servers || {};
+        renderMcpServers();
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.className = 'text-sm text-danger';
+      }
+    }
+
+    async function deleteMcpServer(name) {
+      if (!confirm('Delete MCP server "' + name + '"?')) return;
+      try {
+        const r = await fetch('/api/mcp-servers/' + encodeURIComponent(name), {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + token },
+        });
+        const data = await r.json();
+        mcpServersData = data.servers || {};
+        renderMcpServers();
+      } catch (e) { console.error('Delete MCP server error:', e); }
+    }
+
+    async function loadMcpServers() {
+      try {
+        const data = await api('/api/mcp-servers');
+        mcpServersData = data.servers || {};
+        renderMcpServers();
+      } catch (e) { console.error('MCP servers load error:', e); }
+    }
+
+    function renderMcpServers() {
+      const list = document.getElementById('mcp-servers-list');
+      const empty = document.getElementById('mcp-servers-empty');
+      const names = Object.keys(mcpServersData);
+      if (!names.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+      empty.classList.add('hidden');
+      list.innerHTML = names.map(function(name) {
+        const cfg = mcpServersData[name];
+        const typeBadge = cfg.type === 'stdio'
+          ? '<span class="type-badge" style="background:rgba(245,158,11,0.15);color:#fbbf24">stdio</span>'
+          : '<span class="type-badge" style="background:rgba(34,197,94,0.15);color:#4ade80">http</span>';
+        var detail = '';
+        if (cfg.type === 'stdio') {
+          detail = '<span class="font-mono text-xs text-muted">' + escapeHtml(cfg.command + (cfg.args && cfg.args.length ? ' ' + cfg.args.join(' ') : '')) + '</span>';
+        } else {
+          detail = '<span class="font-mono text-xs text-muted">' + escapeHtml(cfg.url || '') + '</span>';
+        }
+        var envBadge = '';
+        if (cfg.env && Object.keys(cfg.env).length) {
+          envBadge = '<span class="type-badge" style="background:rgba(107,114,128,0.15);color:#9ca3af">' + Object.keys(cfg.env).length + ' env</span>';
+        }
+        return '<div class="glass rounded-xl p-4 flex items-center justify-between">' +
+          '<div class="flex items-center gap-2 flex-1 min-w-0">' +
+            '<span class="font-medium text-sm">' + escapeHtml(name) + '</span>' +
+            typeBadge + envBadge +
+            '<span class="ml-2">' + detail + '</span>' +
+          '</div>' +
+          '<button onclick="deleteMcpServer(\'' + escapeHtml(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')" class="px-3 py-1 rounded-lg bg-red-900/30 hover:bg-red-800/50 text-red-400 text-xs font-medium transition">Delete</button>' +
+        '</div>';
+      }).join('');
     }
 
     // ─── Templates ────────────────────────────────────────────────────
@@ -804,33 +1010,6 @@
         const data = await api('/api/settings/agent-type');
         document.getElementById('agent-type-select').value = data.agentType || 'copilot';
       } catch (e) { console.error('Agent type load error:', e); }
-    }
-
-    async function loadClaudeMcpConfig() {
-      try {
-        const data = await api('/api/settings/claude-mcp-config');
-        document.getElementById('claude-mcp-config-input').value = data.path || '';
-      } catch (e) { console.error('Claude MCP config load error:', e); }
-    }
-
-    async function saveClaudeMcpConfig() {
-      const status = document.getElementById('claude-mcp-config-status');
-      const val = document.getElementById('claude-mcp-config-input').value.trim();
-      if (!val) { status.textContent = 'Path is empty'; status.className = 'text-sm text-warn'; setTimeout(function() { status.textContent = ''; }, 3000); return; }
-      try {
-        const r = await fetch('/api/settings/claude-mcp-config', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: val }),
-        });
-        if (!r.ok) throw new Error(r.statusText);
-        status.textContent = 'Saved \u2713';
-        status.className = 'text-sm text-success';
-        setTimeout(function() { status.textContent = ''; }, 3000);
-      } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-        status.className = 'text-sm text-danger';
-      }
     }
 
     async function changeAgentType() {
@@ -1069,7 +1248,7 @@
           return '<span class="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accentLight">' + escapeHtml(t) + '</span>';
         }).join(' ');
         const active = editingSkillName === sk.name ? ' border-accent' : ' border-transparent';
-        return '<div class="glass rounded-xl p-4 cursor-pointer hover:bg-cardHover transition border' + active + '" onclick="openSkillEditor(\'' + escapeHtml(sk.name).replace(/'/g, "\\'") + '\')">' +
+        return '<div class="glass rounded-xl p-4 cursor-pointer hover:bg-cardHover transition border' + active + '" onclick="openSkillEditor(\'' + escapeHtml(sk.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')"">' +
           '<div class="flex items-start justify-between gap-3">' +
             '<div class="flex-1 min-w-0">' +
               '<div class="flex items-center gap-2 mb-1">' +

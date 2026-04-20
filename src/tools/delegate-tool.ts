@@ -32,7 +32,6 @@ import {
   PENDING_TASKS_DIR,
 } from "../services/process.service.js";
 import {
-  resolveMcpConfigPath,
   resolveClaudePath,
   resolveCopilotPath,
   resolveCodexPath,
@@ -185,12 +184,6 @@ export async function handleStartThread(
       return errorResult(
         "Error: 'claude' CLI is not installed or not on PATH. " +
         "Install it with: npm install -g @anthropic-ai/claude-code",
-      );
-    }
-    if (!resolveMcpConfigPath()) {
-      return errorResult(
-        "Error: Could not find MCP config for Claude. " +
-        "Set CLAUDE_MCP_CONFIG env var or place config at ~/.claude/mcp_config.json",
       );
     }
   }
