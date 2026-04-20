@@ -9,6 +9,7 @@ import {
     getRootThreads,
     getKeepAliveThreads,
     getActiveThreads,
+    getDashboardThreads,
     getThreadsByRoot,
     updateThread,
     archiveThread,
@@ -115,7 +116,7 @@ function enrichThreadNames(db: Database, threads: ThreadRegistryEntry[]): Thread
 // ─── GET /api/threads — list all active threads grouped ─────────────────────
 
 export const handleGetThreads: RouteHandler = ({ json, db }) => {
-    const threads = enrichThreadNames(db, getActiveThreads(db));
+    const threads = enrichThreadNames(db, getDashboardThreads(db));
     json({ threads });
     return true;
 };
