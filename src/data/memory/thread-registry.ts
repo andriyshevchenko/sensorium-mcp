@@ -215,10 +215,10 @@ export function getActiveThreads(db: Database): ThreadRegistryEntry[] {
   return rows.map(rowToEntry);
 }
 
-/** Active + exited threads — for dashboard display (exited threads are still manageable). */
+/** All non-archived threads — for dashboard display. */
 export function getDashboardThreads(db: Database): ThreadRegistryEntry[] {
   const rows = db.prepare(
-    `SELECT * FROM thread_registry WHERE status IN ('active', 'exited') ORDER BY last_active_at DESC`,
+    `SELECT * FROM thread_registry WHERE status != 'archived' ORDER BY last_active_at DESC`,
   ).all() as Record<string, unknown>[];
   return rows.map(rowToEntry);
 }
