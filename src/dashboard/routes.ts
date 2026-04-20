@@ -72,6 +72,7 @@ import {
     handleGetTopicRegistry,
     handlePostTopicRegistry,
     handleDeleteTopicRegistry,
+    handlePrepareShutdown,
 } from "./routes/data.js";
 
 // Domain handlers — skills
@@ -142,6 +143,9 @@ const routeTable: Record<string, RouteHandler> = {
 
     // Skills
     "GET /api/skills":            handleGetSkills,
+
+    // Shutdown
+    "POST /api/prepare-shutdown": handlePrepareShutdown,
 
     // Threads
     "GET /api/threads":           handleGetThreads,
