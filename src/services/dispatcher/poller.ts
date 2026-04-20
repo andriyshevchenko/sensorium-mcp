@@ -354,7 +354,6 @@ export async function startDispatcher(
                         `[dispatcher] Lock taken by PID ${currentLock.pid}. Stepping down to consumer.`,
                     );
                     pollerRunning = false;
-                    installConsumerRetry();
                     break;
                 }
                 try {

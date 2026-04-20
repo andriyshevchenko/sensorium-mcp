@@ -160,6 +160,7 @@ export function reconcileState(db: Database, threadLifecycle: ThreadLifecycleSer
           startedAt: Date.now(),
           createdAt: Date.now(),
           logFile: "",
+          ...(pidEntry.threadType ? { threadType: pidEntry.threadType } : {}),
         });
         log.info(`[reconcileState] Restored thread ${pidEntry.threadId} PID=${pidEntry.pid} from PID file`);
       }
