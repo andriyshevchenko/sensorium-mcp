@@ -13,9 +13,9 @@ namespace Sensorium.Supervisor;
 ///   1. Acquire singleton lock
 ///   2. Check for existing healthy MCP → inherit if alive + ready
 ///   3. If not inherited: kill orphan, spawn fresh
-///   4. Wait for MCP ready (3s poll, 2min timeout)
+///   4. Wait for MCP ready (ReadyPollInterval, McpReadyTimeout)
 ///   5. Start updater
-///   6. Run health check loop (PeriodicTimer, 30s)
+///   6. Run health check loop (PeriodicTimer at HealthCheckInterval)
 ///
 /// Shutdown sequence:
 ///   1. Stop updater
@@ -136,7 +136,7 @@ public sealed class SupervisorWorker : BackgroundService
 
         // ── Wait for MCP to become ready ────────────────────────────────────────
         bool ready = await _mcp.WaitForReadyAsync(
-            TimeSpan.FromSeconds(3), _opts.McpReadyTimeout, ct).ConfigureAwait(false);
+            _opts.ReadyPollInterval, _opts.McpReadyTimeout, ct).ConfigureAwait(false);
 
         if (ready)
             _log.LogInformation("MCP server is ready");
@@ -149,7 +149,7 @@ public sealed class SupervisorWorker : BackgroundService
         // ── Health check loop ────────────────────────────────────────────────────
         _log.LogInformation("All subsystems started — supervisor is running (PID {Pid})", Environment.ProcessId);
 
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        using var timer = new PeriodicTimer(_opts.HealthCheckInterval);
         int tickCount = 0;
         int httpFailCount = 0;
 
@@ -173,8 +173,8 @@ public sealed class SupervisorWorker : BackgroundService
                     continue;
                 }
 
-                // HTTP liveness every 5th tick ≈ 2.5 min
-                if (tickCount % 5 == 0)
+                // HTTP liveness every N ticks
+                if (tickCount % _opts.HttpCheckEveryNTicks == 0)
                 {
                     if (await _mcp.IsServerReadyAsync(ct).ConfigureAwait(false))
                     {
