@@ -10,7 +10,7 @@ import { initMemoryDb, type Database } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
 import { COPILOT_HOME_DIR, DEFAULT_COPILOT_MODEL, ensureCopilotWorkspace, writeCopilotHomeFiles } from "../tools/shared-agent-utils.js";
 import { deleteTelegramTopicByBotApi } from "./topic.service.js";
-import { PROCESS_BASE_DIR, PROCESS_LOGS_DIR, PROCESS_PIDS_DIR, ensureDirs, findAliveThread, isProcessAlive, readPidFiles, spawnedThreads, type SpawnedThread } from "./process.service.js";
+import { PROCESS_BASE_DIR, PROCESS_PIDS_DIR, THREAD_LOGS_DIR, ensureDirs, findAliveThread, isProcessAlive, readPidFiles, spawnedThreads, type SpawnedThread } from "./process.service.js";
 import { ThreadState, type ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { decommissionWorker } from "./worker-cleanup.service.js";
 
@@ -176,7 +176,7 @@ export function spawnAgentProcess(claudePath: string, mcpConfigPath: string, nam
   if (spawnedThreads.length >= MAX_CONCURRENT_THREADS) return { error: `Concurrent thread limit reached (${MAX_CONCURRENT_THREADS}). Wait for existing threads to finish.` };
   workingDirectory = normalizeWorkingDirectory(workingDirectory);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const logFilePath = join(PROCESS_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
+  const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
   const logFd = openSync(logFilePath, "a");
   const effectiveConfigPath = generateThreadMcpConfig(mcpConfigPath, threadId);
   const spawnEnv = sanitizeSpawnEnv({ ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
@@ -199,7 +199,7 @@ export function spawnCopilotProcess(copilotPath: string, name: string, threadId:
   const copilotHomeDir = join(PROCESS_BASE_DIR, COPILOT_HOME_DIR);
   writeCopilotHomeFiles(copilotHomeDir, httpPort, process.env.MCP_HTTP_SECRET || null);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const logFilePath = join(PROCESS_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
+  const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
   const logFd = openSync(logFilePath, "a");
   try {
     const sessionPrompt = `Start remote session with sensorium. Thread name = '${name}'. Use threadId=${threadId} when calling start_session.`;
@@ -214,7 +214,7 @@ export function spawnCodexProcess(codexPath: string, name: string, threadId: num
   if (!httpPort) return { error: "MCP_HTTP_PORT env var is not set or invalid. Codex threads require HTTP transport." };
   workingDirectory = normalizeWorkingDirectory(workingDirectory);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const logFilePath = join(PROCESS_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.jsonl`);
+  const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.jsonl`);
   const prompt = `You are an AUTONOMOUS AGENT running an INFINITE polling loop. You MUST NEVER STOP.\n\nStep 1: Call start_session(name='${name}', threadId=${threadId}, agentType='codex'). Use threadId=${threadId} for all subsequent calls.\nStep 2: Call remote_copilot_wait_for_instructions(threadId=${threadId}).\nStep 3: Read the response:\n  - If it says "MANDATORY ACTION" or "No new instructions" - call remote_copilot_wait_for_instructions AGAIN immediately.\n  - If you receive a task - complete it using your tools, then call remote_copilot_wait_for_instructions again.\nStep 4: GOTO Step 2. This loop NEVER ends. You are NEVER done.\n\nCRITICAL: "No new instructions" is NOT a signal to stop. It means "keep waiting". Always call the tool again.`;
   const model = process.env.CODEX_MODEL || DEFAULT_CODEX_MODEL;
   const cliArgs = ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", ...(model ? ["-m", model] : []), "--json", "-c", `mcp_servers.sensorium-mcp.url="http://127.0.0.1:${httpPort}/mcp"`, ...(process.env.MCP_HTTP_SECRET ? ["-c", `mcp_servers.sensorium-mcp.bearer_token_env_var="SENSORIUM_MCP_SECRET"`] : []), "-"];
