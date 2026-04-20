@@ -299,6 +299,7 @@ export function spawnKeepAliveThreads(threadLifecycle: ThreadLifecycleService): 
   let threads: ReturnType<typeof getAllThreads>;
   try {
     for (const { pid, filePath, threadId, name, threadType } of readPidFiles()) {
+      if (spawnedThreads.some((t) => t.threadId === threadId)) continue;
       if (isProcessAlive(pid)) spawnedThreads.push({ pid, threadId, name: name ?? `thread-${threadId}`, startedAt: Date.now(), createdAt: Date.now(), logFile: "", ...(threadType ? { threadType } : {}) });
       else try { unlinkSync(filePath); } catch {}
     }

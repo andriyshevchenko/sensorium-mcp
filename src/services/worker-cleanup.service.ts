@@ -65,13 +65,14 @@ export async function cleanupExpiredWorkers(
       `SELECT thread_id, telegram_topic_id FROM thread_registry
        WHERE type = 'worker' AND status IN ('active', 'exited') AND COALESCE(last_active_at, created_at) < ?`,
     ).all(cutoff) as { thread_id: number; telegram_topic_id: number | null }[];
+    const pidEntries = readPidFiles();
     for (const row of staleRows) {
       // Skip only if this thread is already tracked as a worker in spawnedThreads
       // (the in-memory loop above already handled it). Don't skip re-registered
       // entries that are missing threadType — those are the zombie workers we need to catch.
       if (spawnedThreads.some((t) => t.threadId === row.thread_id && t.threadType === "worker")) continue;
       try {
-        const pidEntry = readPidFiles().find((e) => e.threadId === row.thread_id);
+        const pidEntry = pidEntries.find((e) => e.threadId === row.thread_id);
         const inMemEntry = spawnedThreads.find((t) => t.threadId === row.thread_id);
         const killPid = pidEntry?.pid ?? inMemEntry?.pid;
         if (killPid) killProcessTree(killPid, row.thread_id);
