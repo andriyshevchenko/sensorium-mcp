@@ -26,7 +26,7 @@
 #>
 param(
     [string]$SecureVaultProfile,
-    [ValidateSet("production", "development", "")]
+    [ValidateSet("production", "development")]
     [string]$UpdateMode,
     [string]$MCPStartCommand
 )
@@ -87,6 +87,13 @@ if (![string]::IsNullOrWhiteSpace($MCPStartCommand))    { $Config["MCPStartComma
 $SecureVaultProfile = $Config["SecureVaultProfile"]
 $UpdateMode = $Config["UpdateMode"]
 $EffectiveMCPStartCommand = $Config["MCPStartCommand"]
+
+# Validate config values
+if ($UpdateMode -notin @("production", "development")) {
+    Write-Host "[WARN] Invalid UpdateMode '$UpdateMode' in config — falling back to 'production'" -ForegroundColor Yellow
+    $UpdateMode = "production"
+    $Config["UpdateMode"] = "production"
+}
 
 # Persist (so next run picks up any overrides)
 Save-Config $Config
@@ -214,11 +221,17 @@ function Get-BinaryAsset {
 function Install-StartupLauncher {
     # Copy this script to bin/ so startup doesn't depend on repo checkout
     $installedScript = Join-Path $BinDir "Install-Sensorium.ps1"
-    Copy-Item $PSCommandPath $installedScript -Force
+    if ($PSCommandPath -ne $installedScript) {
+        Copy-Item $PSCommandPath $installedScript -Force
+    }
+
+    # Resolve the full path to pwsh at install time (we know it exists — we're running in it)
+    $pwshPath = (Get-Command pwsh -ErrorAction SilentlyContinue)?.Source
+    if (-not $pwshPath) { $pwshPath = "pwsh" }
 
     $launcherContent = @(
         "@echo off",
-        "pwsh -NoProfile -File `"$installedScript`""
+        "`"$pwshPath`" -NoProfile -File `"$installedScript`""
     ) -join [Environment]::NewLine
 
     Set-Content -LiteralPath $StartupLauncher -Value $launcherContent -Encoding ASCII
