@@ -66,10 +66,15 @@ export async function cleanupExpiredWorkers(
        WHERE type = 'worker' AND status IN ('active', 'exited') AND COALESCE(last_active_at, created_at) < ?`,
     ).all(cutoff) as { thread_id: number; telegram_topic_id: number | null }[];
     for (const row of staleRows) {
-      if (spawnedThreads.some((t) => t.threadId === row.thread_id)) continue;
+      // Skip only if this thread is already tracked as a worker in spawnedThreads
+      // (the in-memory loop above already handled it). Don't skip re-registered
+      // entries that are missing threadType — those are the zombie workers we need to catch.
+      if (spawnedThreads.some((t) => t.threadId === row.thread_id && t.threadType === "worker")) continue;
       try {
         const pidEntry = readPidFiles().find((e) => e.threadId === row.thread_id);
-        if (pidEntry) killProcessTree(pidEntry.pid, row.thread_id);
+        const inMemEntry = spawnedThreads.find((t) => t.threadId === row.thread_id);
+        const killPid = pidEntry?.pid ?? inMemEntry?.pid;
+        if (killPid) killProcessTree(killPid, row.thread_id);
         try {
           // For workers, thread_id IS the Telegram topic ID (created via createManagedTopic).
           // Use explicit telegram_topic_id if set, otherwise fall back to thread_id.
@@ -78,6 +83,9 @@ export async function cleanupExpiredWorkers(
         } catch {}
         threadLifecycle.archiveThread(db, row.thread_id);
         try { archiveNotesForThread(db, row.thread_id); } catch {}
+        // Remove from in-memory registry if present (zombie re-registered at startup)
+        const idx = spawnedThreads.findIndex((t) => t.threadId === row.thread_id);
+        if (idx !== -1) spawnedThreads.splice(idx, 1);
         result.cleaned++;
       } catch (err) {
         const msg = `Thread ${row.thread_id}: ${errorMessage(err)}`;
