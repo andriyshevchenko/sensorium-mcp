@@ -13,8 +13,14 @@ public sealed class SupervisorOptions
     public string? McpHttpSecret { get; set; }
     public string? TelegramToken { get; set; }
     public string? TelegramChatId { get; set; }
-    public int HealthFailThresh { get; set; } = 3;
+    public int HealthFailThresh { get; set; } = 5;
     public TimeSpan McpReadyTimeout { get; set; } = TimeSpan.FromMinutes(5);
+    /// <summary>How often the health check loop ticks. Default 60s.</summary>
+    public TimeSpan HealthCheckInterval { get; set; } = TimeSpan.FromSeconds(60);
+    /// <summary>How often WaitForReady polls during startup. Default 5s.</summary>
+    public TimeSpan ReadyPollInterval { get; set; } = TimeSpan.FromSeconds(5);
+    /// <summary>Run HTTP liveness check every N health-check ticks. Default 5 (= 5 min with 60s interval).</summary>
+    public int HttpCheckEveryNTicks { get; set; } = 5;
     public SupervisorPaths Paths { get; set; } = new();
 }
 
