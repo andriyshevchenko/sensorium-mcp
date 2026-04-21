@@ -4,6 +4,7 @@
 
 import type { Database } from "better-sqlite3";
 import type { IncomingMessage } from "node:http";
+import type { ThreadLifecycleService } from "../../services/thread-lifecycle.service.js";
 
 // ─── Dashboard context (re-exported from routes.ts for external consumers) ──
 
@@ -18,6 +19,7 @@ export interface DashboardContext {
         lastWaitCallAt: number | null;
     }>;
     serverStartTime: number;
+    threadLifecycle: ThreadLifecycleService;
 }
 
 // ─── Route handler types ────────────────────────────────────────────────────

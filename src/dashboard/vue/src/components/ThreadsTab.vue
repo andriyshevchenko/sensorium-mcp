@@ -33,6 +33,12 @@ const branchForm = ref({ name: '', threadId: 0, client: 'claude', workingDirecto
 const branchStatus = ref('')
 const branchCreating = ref(false)
 
+// Thread starting
+const startingThreadId = ref<number | null>(null)
+
+// Memory sync
+const syncingThreadId = ref<number | null>(null)
+
 // Agent type options
 const agentTypes = ['claude', 'copilot', 'codex', 'openai_codex', 'copilot_claude', 'copilot_codex', 'cursor'] as const
 
@@ -297,6 +303,54 @@ async function archiveThread(thread: ThreadEntry) {
   }
 }
 
+// ── Start thread ────────────────────────────────────────────────────────────
+
+async function startThread(thread: ThreadEntry) {
+  if (!confirm(`Start thread "${thread.name}" (${thread.threadId})?`)) return
+  startingThreadId.value = thread.threadId
+  try {
+    const r = await fetch(`/api/threads/${thread.threadId}/start`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    })
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: r.statusText })) as { error?: string }
+      throw new Error(err.error ?? r.statusText)
+    }
+    await load()
+  } catch (e: unknown) {
+    error.value = 'Failed to start thread: ' + (e as Error).message
+  } finally {
+    startingThreadId.value = null
+  }
+}
+
+// ── Sync to root ────────────────────────────────────────────────────────────
+
+async function syncToRoot(thread: ThreadEntry) {
+  if (!confirm(`Sync memory from "${thread.name}" to its root thread?`)) return
+  syncingThreadId.value = thread.threadId
+  try {
+    const r = await fetch(`/api/threads/${thread.threadId}/synthesize`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    })
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: r.statusText })) as { error?: string }
+      throw new Error(err.error ?? r.statusText)
+    }
+    const data = await r.json() as { synthesizedNotes?: number }
+    error.value = ''
+    createStatus.value = `Synced ${data.synthesizedNotes ?? 0} notes ✓`
+    setTimeout(() => { createStatus.value = '' }, 3000)
+    await load()
+  } catch (e: unknown) {
+    error.value = 'Failed to sync memory: ' + (e as Error).message
+  } finally {
+    syncingThreadId.value = null
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string | null): string {
@@ -455,6 +509,16 @@ onMounted(load)
               >📁 {{ t.workingDirectory ?? '—' }}</span>
 
               <div class="ml-auto flex items-center gap-3">
+                <!-- Start button -->
+                <button
+                  @click="startThread(t)"
+                  :disabled="startingThreadId === t.threadId"
+                  class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
+                  title="Start thread"
+                >
+                  {{ startingThreadId === t.threadId ? 'Starting…' : '▶ Start' }}
+                </button>
+
                 <!-- Keep-alive toggle -->
                 <div class="flex items-center gap-1.5">
                   <button
@@ -501,7 +565,7 @@ onMounted(load)
 
                 <!-- Create branch -->
                 <button
-                  @click="branchingRoot = branchingRoot === t.threadId ? null : t.threadId; branchForm = { name: '', threadId: 0, client: 'claude' }; branchStatus = ''"
+                  @click="branchingRoot = branchingRoot === t.threadId ? null : t.threadId; branchForm = { name: '', threadId: 0, client: 'claude', workingDirectory: '' }; branchStatus = ''"
                   class="px-2 py-1 rounded-lg text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 transition"
                 >
                   + Branch
@@ -584,6 +648,25 @@ onMounted(load)
               </select>
               <span class="text-xs text-muted">{{ formatDate(child.lastActiveAt) }}</span>
               <div class="ml-auto flex items-center gap-3">
+                <!-- Start button for children -->
+                <button
+                  @click="startThread(child)"
+                  :disabled="startingThreadId === child.threadId"
+                  class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
+                  title="Start thread"
+                >
+                  {{ startingThreadId === child.threadId ? 'Starting…' : '▶ Start' }}
+                </button>
+                <!-- Sync to Root button for branches/workers -->
+                <button
+                  v-if="child.rootThreadId"
+                  @click="syncToRoot(child)"
+                  :disabled="syncingThreadId === child.threadId"
+                  class="px-2 py-1 rounded-lg text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 disabled:opacity-50 transition"
+                  title="Sync memory to root thread"
+                >
+                  {{ syncingThreadId === child.threadId ? 'Syncing…' : '⟳ Sync to Root' }}
+                </button>
                 <!-- Keep-alive toggle for branches -->
                 <div v-if="child.type === 'branch'" class="flex items-center gap-1.5">
                   <button
@@ -637,12 +720,31 @@ onMounted(load)
           <span class="text-xs text-muted font-mono">ID: {{ t.threadId }}</span>
           <span class="text-xs text-textSecondary">{{ t.client }}</span>
           <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
-          <button
-            @click="archiveThread(t)"
-            class="ml-auto px-2 py-1 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
-          >
-            Archive
-          </button>
+          <div class="ml-auto flex items-center gap-2">
+            <button
+              @click="startThread(t)"
+              :disabled="startingThreadId === t.threadId"
+              class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
+              title="Start thread"
+            >
+              {{ startingThreadId === t.threadId ? 'Starting…' : '▶ Start' }}
+            </button>
+            <button
+              v-if="t.rootThreadId"
+              @click="syncToRoot(t)"
+              :disabled="syncingThreadId === t.threadId"
+              class="px-2 py-1 rounded-lg text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 disabled:opacity-50 transition"
+              title="Sync memory to root thread"
+            >
+              {{ syncingThreadId === t.threadId ? 'Syncing…' : '⟳ Sync to Root' }}
+            </button>
+            <button
+              @click="archiveThread(t)"
+              class="px-2 py-1 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
+            >
+              Archive
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -672,6 +774,23 @@ onMounted(load)
           </select>
           <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
           <div class="ml-auto flex items-center gap-3">
+            <button
+              @click="startThread(t)"
+              :disabled="startingThreadId === t.threadId"
+              class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
+              title="Start thread"
+            >
+              {{ startingThreadId === t.threadId ? 'Starting…' : '▶ Start' }}
+            </button>
+            <button
+              v-if="t.rootThreadId"
+              @click="syncToRoot(t)"
+              :disabled="syncingThreadId === t.threadId"
+              class="px-2 py-1 rounded-lg text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 disabled:opacity-50 transition"
+              title="Sync memory to root thread"
+            >
+              {{ syncingThreadId === t.threadId ? 'Syncing…' : '⟳ Sync to Root' }}
+            </button>
             <div class="flex items-center gap-1.5">
               <button
                 @click="toggleKeepAlive(t)"
@@ -727,12 +846,31 @@ onMounted(load)
             <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
           </select>
           <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
-          <button
-            @click="archiveThread(t)"
-            class="ml-auto px-2 py-1 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
-          >
-            Archive
-          </button>
+          <div class="ml-auto flex items-center gap-2">
+            <button
+              @click="startThread(t)"
+              :disabled="startingThreadId === t.threadId"
+              class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
+              title="Start thread"
+            >
+              {{ startingThreadId === t.threadId ? 'Starting…' : '▶ Start' }}
+            </button>
+            <button
+              v-if="t.rootThreadId"
+              @click="syncToRoot(t)"
+              :disabled="syncingThreadId === t.threadId"
+              class="px-2 py-1 rounded-lg text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 disabled:opacity-50 transition"
+              title="Sync memory to root thread"
+            >
+              {{ syncingThreadId === t.threadId ? 'Syncing…' : '⟳ Sync to Root' }}
+            </button>
+            <button
+              @click="archiveThread(t)"
+              class="px-2 py-1 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
+            >
+              Archive
+            </button>
+          </div>
         </div>
       </div>
     </div>

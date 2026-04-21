@@ -36,6 +36,9 @@ import { readThreadHeartbeat } from "../../data/file-storage.js";
 import { getExplicitTelegramTopicId, resolveTelegramTopicId } from "../../data/memory/thread-registry.js";
 import { config } from "../../config.js";
 import { deleteTelegramTopicByBotApi } from "../../services/topic.service.js";
+import { dispatchSpawn } from "../../services/agent-spawn.service.js";
+import { type AgentType } from "../../config.js";
+import { synthesizeGhostMemory } from "../../data/memory/synthesis.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -330,6 +333,62 @@ function deleteTelegramTopic(topicId: number | null | undefined): void {
     const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID } = config;
     if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
     void deleteTelegramTopicByBotApi(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, topicId).catch(() => { /* topic might not exist or already deleted */ });
+}
+
+// ─── POST /api/threads/:threadId/start — manually start a thread ────────────
+
+/** POST /api/threads/:threadId/start — spawn a thread process from the dashboard */
+export function handleStartThread(args: RouteArgs, threadId: number): boolean {
+    const { json, db, ctx } = args;
+    void (async () => {
+        try {
+            const thread = getThread(db, threadId);
+            if (!thread) { json({ error: `Thread ${threadId} not found` }, 404); return; }
+            if (thread.status === "archived" || thread.status === "expired") {
+                json({ error: `Thread ${threadId} is ${thread.status} and cannot be started` }, 400);
+                return;
+            }
+            if (isThreadRunning(threadId)) { json({ error: `Thread ${threadId} is already running` }, 409); return; }
+
+            const result = dispatchSpawn(
+                thread.client as AgentType,
+                thread.name,
+                threadId,
+                ctx.threadLifecycle,
+                thread.workingDirectory ?? undefined,
+                undefined, // memorySourceThreadId
+                undefined, // memoryTargetThreadId
+                thread.type === "worker" || thread.type === "branch" ? thread.type : undefined,
+                db,
+            );
+
+            if ("error" in result) { json({ error: result.error }, 500); return; }
+            json({ ok: true, threadId, pid: result.pid });
+        } catch (err) {
+            json({ error: errorMessage(err) }, 500);
+        }
+    })();
+    return true;
+}
+
+// ─── POST /api/threads/:threadId/synthesize — synthesize branch memory to root
+
+/** POST /api/threads/:threadId/synthesize — merge branch/worker memory into root */
+export function handleSynthesizeThread(args: RouteArgs, threadId: number): boolean {
+    const { json, db } = args;
+    void (async () => {
+        try {
+            const thread = getThread(db, threadId);
+            if (!thread) { json({ error: `Thread ${threadId} not found` }, 404); return; }
+            if (!thread.rootThreadId) { json({ error: `Thread ${threadId} has no root thread — only branches/workers can sync` }, 400); return; }
+
+            const result = await synthesizeGhostMemory(db, threadId, thread.rootThreadId, thread.name);
+            json({ ok: true, threadId, rootThreadId: thread.rootThreadId, ...result });
+        } catch (err) {
+            json({ error: errorMessage(err) }, 500);
+        }
+    })();
+    return true;
 }
 
 // ─── Settings.json sync for watcher backward compatibility ──────────────────

@@ -96,6 +96,8 @@ import {
     handleGetThreadHeartbeat,
     handleGetThreadRunning,
     handleGetThreads,
+    handleStartThread,
+    handleSynthesizeThread,
     handleUpdateThread,
 } from "./routes/threads.js";
 
@@ -256,7 +258,15 @@ async function dispatchApiRoute(
             return handleDeleteMcpServer(args, mcpMatch[1]);
         }
 
-        // 4. Dynamic thread routes: /api/threads/:threadId[/children|/running]
+        // 4. Dynamic thread routes: /api/threads/:threadId[/start|/synthesize|/children|/running]
+        const threadStartMatch = /^\/api\/threads\/(\d+)\/start$/.exec(path);
+        if (threadStartMatch && method === "POST") {
+            return handleStartThread(args, Number.parseInt(threadStartMatch[1], 10));
+        }
+        const threadSynthesizeMatch = /^\/api\/threads\/(\d+)\/synthesize$/.exec(path);
+        if (threadSynthesizeMatch && method === "POST") {
+            return handleSynthesizeThread(args, Number.parseInt(threadSynthesizeMatch[1], 10));
+        }
         const threadChildrenMatch = /^\/api\/threads\/(\d+)\/children$/.exec(path);
         if (threadChildrenMatch) {
             return handleGetThreadChildren(args, Number.parseInt(threadChildrenMatch[1], 10));
