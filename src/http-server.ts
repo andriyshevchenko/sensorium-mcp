@@ -21,6 +21,7 @@ import { config } from "./config.js";
 import { log } from "./logger.js";
 import { errorMessage } from "./utils.js";
 import { handleDashboardRequest, type DashboardContext } from "./dashboard.js";
+import type { ThreadLifecycleService } from "./services/thread-lifecycle.service.js";
 import {
   consumeExpectedMcpSessionClose,
   expectMcpSessionClose,
@@ -50,6 +51,7 @@ export function startHttpServer(
   createMcpServerFn: CreateMcpServerFn,
   getMemoryDb: () => Database,
   closeMemoryDb: () => void,
+  threadLifecycle: ThreadLifecycleService,
 ): void {
   const rawPort = Number.parseInt(process.env.MCP_HTTP_PORT ?? "", 10);
   const httpPort = Number.isFinite(rawPort) ? rawPort : 3847;
@@ -127,6 +129,7 @@ export function startHttpServer(
         return getDashboardSessions();
       },
       serverStartTime,
+      threadLifecycle,
     };
     // Dashboard HTML pages: no auth needed (SPA handles auth in browser)
     // Dashboard API routes: auth handled by handleDashboardRequest internally

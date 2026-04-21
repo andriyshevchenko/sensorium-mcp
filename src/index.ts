@@ -121,7 +121,7 @@ function closeMemoryDb(): void {
 }
 
 if (process.env.MCP_HTTP_PORT) {
-  startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb);
+  startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb, threadLifecycle);
 } else {
   await startStdioServer(createMcpServer, closeMemoryDb);
 }
