@@ -14,11 +14,14 @@ import {
     updateThread,
     archiveThread,
     deleteThread,
+    getExplicitTelegramTopicId,
+    resolveTelegramTopicId,
     type ThreadRegistryEntry,
 } from "../../data/memory/thread-registry.js";
 import type { Database } from "../../data/memory/schema.js";
 
 import {
+    config,
     setKeepAliveEnabled,
     setKeepAliveThreadId,
     setKeepAliveClient,
@@ -27,17 +30,15 @@ import {
     setThreadKeepAlive,
     removeThreadKeepAlive,
     isValidKeeperClient,
+    type AgentType,
 } from "../../config.js";
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
 import { errorMessage } from "../../utils.js";
 import { isThreadRunning } from "../../services/process.service.js";
 import { readThreadHeartbeat } from "../../data/file-storage.js";
-import { getExplicitTelegramTopicId, resolveTelegramTopicId } from "../../data/memory/thread-registry.js";
-import { config } from "../../config.js";
 import { deleteTelegramTopicByBotApi } from "../../services/topic.service.js";
 import { dispatchSpawn } from "../../services/agent-spawn.service.js";
-import { type AgentType } from "../../config.js";
 import { synthesizeGhostMemory } from "../../data/memory/synthesis.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
