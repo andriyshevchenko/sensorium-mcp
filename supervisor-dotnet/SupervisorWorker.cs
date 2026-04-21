@@ -111,6 +111,9 @@ public sealed class SupervisorWorker : BackgroundService
             if (pidOk && existingPid > 0 && _proc.IsProcessAlive(existingPid))
             {
                 _log.LogInformation("Killing orphan MCP server (PID {Pid}) from previous run", existingPid);
+                // Write maintenance flag before killing so active threads get graceful notice
+                WriteMaintenanceFlag();
+                await _mcp.PrepareShutdownAsync(ct).ConfigureAwait(false);
                 await _proc.KillProcessAsync(existingPid).ConfigureAwait(false);
                 await Task.Delay(1000, ct).ConfigureAwait(false);
             }
@@ -145,7 +148,12 @@ public sealed class SupervisorWorker : BackgroundService
         if (ready)
             _log.LogInformation("MCP server is ready");
         else
-            _log.LogWarning("MCP server did not become ready in {Timeout} — proceeding anyway", _opts.McpReadyTimeout);
+            _log.LogWarning("MCP server did not become ready in {Timeout} — proceeding anyway; clearing maintenance flag", _opts.McpReadyTimeout);
+
+        // Clear maintenance flag now that MCP is accepting connections (or we've given up waiting).
+        // Active threads watching the flag will stop sleeping and reconnect.
+        TryDeleteFile(_opts.Paths.MaintenanceFlag);
+        _log.LogInformation("Maintenance flag cleared — threads may reconnect");
 
         // ── Start updater ────────────────────────────────────────────────────────
         _updater.Start(ct);
@@ -197,6 +205,7 @@ public sealed class SupervisorWorker : BackgroundService
                                 "⚠️ Supervisor: MCP server hung (not responding to HTTP) — restarting...",
                                 ct: ct).ConfigureAwait(false);
 
+                            WriteMaintenanceFlag();
                             await _mcp.PrepareShutdownAsync(ct).ConfigureAwait(false);
                             await _proc.KillProcessDirectAsync(pid).ConfigureAwait(false);
                             await _proc.KillByPortAsync(_opts.McpHttpPort).ConfigureAwait(false);
@@ -204,6 +213,11 @@ public sealed class SupervisorWorker : BackgroundService
 
                             if (!ct.IsCancellationRequested)
                                 await _proc.SpawnMcpServerAsync(ct).ConfigureAwait(false);
+
+                            await _mcp.WaitForReadyAsync(_opts.ReadyPollInterval, _opts.McpReadyTimeout, ct)
+                                .ConfigureAwait(false);
+                            TryDeleteFile(_opts.Paths.MaintenanceFlag);
+                            _log.LogInformation("Maintenance flag cleared after hung-MCP restart");
 
                             httpFailCount = 0;
                         }
@@ -239,5 +253,23 @@ public sealed class SupervisorWorker : BackgroundService
     private static void TryDeleteFile(string path)
     {
         try { File.Delete(path); } catch { /* best-effort */ }
+    }
+
+    private void WriteMaintenanceFlag()
+    {
+        try
+        {
+            var payload = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                version = "orphan-restart",
+                timestamp = DateTime.UtcNow.ToString("o")
+            });
+            File.WriteAllText(_opts.Paths.MaintenanceFlag, payload, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            _log.LogInformation("Maintenance flag written");
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Failed to write maintenance flag");
+        }
     }
 }
