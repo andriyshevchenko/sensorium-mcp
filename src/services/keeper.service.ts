@@ -130,7 +130,7 @@ export class KeeperService {
         } catch (err) {
           log.warn(`[keeper] Active→Stuck transition failed for ${entry.threadId}: ${errorMessage(err)}`);
         }
-        killProcessTree(alivePid, entry.threadId);
+        await killProcessTree(alivePid, entry.threadId);
         entry.retryCount = 0;
         // Fall through to restart
       } else {

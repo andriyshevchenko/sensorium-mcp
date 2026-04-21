@@ -98,7 +98,7 @@ async function pollOnce(
     telegram: TelegramClient,
     chatId: string,
 ): Promise<void> {
-    if (!refreshLock()) {
+    if (!(await refreshLock())) {
         // We lost lock ownership — another process took over. Step down.
         log.warn("[dispatcher] refreshLock() failed at poll start — stepping down.");
         pollerRunning = false;
@@ -111,11 +111,13 @@ async function pollOnce(
     // Refresh the lock periodically during long polls / 409 retries
     // to prevent it from going stale (STALE_LOCK_MS = 90 s).
     const lockRefresher = setInterval(() => {
-        if (!refreshLock()) {
-            log.warn("[dispatcher] refreshLock() failed during long poll — stepping down.");
-            pollerRunning = false;
-            pollAbortController?.abort();
-        }
+        refreshLock().then((ok) => {
+            if (!ok) {
+                log.warn("[dispatcher] refreshLock() failed during long poll — stepping down.");
+                pollerRunning = false;
+                pollAbortController?.abort();
+            }
+        });
     }, LOCK_REFRESH_INTERVAL_MS);
 
     try {
@@ -125,7 +127,7 @@ async function pollOnce(
         );
 
         // Refresh again after the (potentially 10-second) long poll returns.
-        if (!refreshLock()) {
+        if (!(await refreshLock())) {
             log.warn("[dispatcher] refreshLock() failed after long poll — stepping down.");
             pollerRunning = false;
             return;
