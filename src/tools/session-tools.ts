@@ -243,15 +243,14 @@ async function handleReportProgress(
   }
 
   const loopReminder =
-    pendingMessages.length === 0
-      ? "\n\nWhen your current work is complete, call `remote_copilot_wait_for_instructions` to continue listening."
-      : "";
+    "\n\nWhen your current work is complete, call `remote_copilot_wait_for_instructions` to continue listening.";
 
   const responseText =
     pendingMessages.length > 0
       ? `${baseStatus}\n\n` +
       `While you were working, the operator sent additional message(s). ` +
-      `Use those messages to steer your active session: ${pendingMessages.join("\n\n")}`
+      `Use those messages to steer your active session: ${pendingMessages.join("\n\n")}` +
+      loopReminder
       : baseStatus + loopReminder;
 
   return {
