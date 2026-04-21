@@ -23,7 +23,7 @@ export async function decommissionWorker(
   }
   // 2. Kill process (no-op if already dead)
   if (thread.pid !== undefined) {
-    killProcessTree(thread.pid, thread.threadId);
+    await killProcessTree(thread.pid, thread.threadId);
   }
   // 3. Delete Telegram topic
   try {
@@ -75,7 +75,7 @@ export async function cleanupExpiredWorkers(
         const pidEntry = pidEntries.find((e) => e.threadId === row.thread_id);
         const inMemEntry = spawnedThreads.find((t) => t.threadId === row.thread_id);
         const killPid = pidEntry?.pid ?? inMemEntry?.pid;
-        if (killPid) killProcessTree(killPid, row.thread_id);
+        if (killPid) await killProcessTree(killPid, row.thread_id);
         try {
           // For workers, thread_id IS the Telegram topic ID (created via createManagedTopic).
           // Use explicit telegram_topic_id if set, otherwise fall back to thread_id.

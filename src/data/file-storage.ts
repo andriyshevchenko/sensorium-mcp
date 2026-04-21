@@ -6,6 +6,7 @@
  */
 
 import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
@@ -53,9 +54,7 @@ const HEARTBEAT_PATH = join(DATA_DIR, "last-activity.txt");
  * if a tool call happened recently, the kill is deferred.
  */
 export function writeActivityHeartbeat(): void {
-  try {
-    writeFileSync(HEARTBEAT_PATH, String(Date.now()), "utf-8");
-  } catch { /* non-fatal — watcher just won't see activity */ }
+  writeFile(HEARTBEAT_PATH, String(Date.now()), "utf-8").catch(() => { /* non-fatal */ });
 }
 
 // ── Per-thread heartbeat ────────────────────────────────────────────────
@@ -65,9 +64,7 @@ mkdirSync(HEARTBEATS_DIR, { recursive: true });
 
 /** Write epoch timestamp for a specific thread. Called on every MCP tool call. */
 export function writeThreadHeartbeat(threadId: number): void {
-  try {
-    writeFileSync(join(HEARTBEATS_DIR, `${threadId}`), String(Date.now()), "utf-8");
-  } catch { /* non-fatal */ }
+  writeFile(join(HEARTBEATS_DIR, `${threadId}`), String(Date.now()), "utf-8").catch(() => { /* non-fatal */ });
 }
 
 /** Read the last heartbeat epoch for a thread. Returns null if no heartbeat. */

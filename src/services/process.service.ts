@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execSync, execFile } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -192,17 +192,32 @@ export function reconcileState(db: Database, threadLifecycle: ThreadLifecycleSer
   }
 }
 
-export function killProcessTree(pid: number, threadId: number): void {
-  try {
+export function killProcessTree(pid: number, threadId: number): Promise<void> {
+  return new Promise((resolve) => {
+    const cleanupPidFile = () => {
+      const pidFile = join(PROCESS_PIDS_DIR, `${threadId}.pid`);
+      try { unlinkSync(pidFile); } catch {}
+    };
+
     if (process.platform === "win32") {
-      execSync(`taskkill /F /T /PID ${pid}`, { timeout: 10000 });
+      execFile("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 10000 }, (err) => {
+        if (err) {
+          log.debug(`[process] Kill process ${pid} (thread ${threadId}): ${errorMessage(err)}`);
+        } else {
+          log.info(`[process] Killed process tree for thread ${threadId} PID=${pid}`);
+        }
+        cleanupPidFile();
+        resolve();
+      });
     } else {
-      process.kill(pid, "SIGTERM");
+      try {
+        process.kill(pid, "SIGTERM");
+        log.info(`[process] Killed process tree for thread ${threadId} PID=${pid}`);
+      } catch (err) {
+        log.debug(`[process] Kill process ${pid} (thread ${threadId}): ${errorMessage(err)}`);
+      }
+      cleanupPidFile();
+      resolve();
     }
-    log.info(`[process] Killed process tree for thread ${threadId} PID=${pid}`);
-  } catch (err) {
-    log.debug(`[process] Kill process ${pid} (thread ${threadId}): ${errorMessage(err)}`);
-  }
-  const pidFile = join(PROCESS_PIDS_DIR, `${threadId}.pid`);
-  try { unlinkSync(pidFile); } catch {}
+  });
 }

@@ -14,7 +14,8 @@
  *   - Activates the Dispatcher drive after extended operator silence
  */
 
-import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { checkMaintenanceFlag, writeActivityHeartbeat, writeThreadHeartbeat } from "../../data/file-storage.js";
 import { onMaintenanceSignal } from "../../services/maintenance-signal.js";
@@ -64,15 +65,15 @@ setInterval(() => {
  * manager-worker), so we pass the content through as-is.
  * Returns null when no pending task is available.
  */
-function consumePendingTask(threadId: number): ToolResult | null {
+async function consumePendingTask(threadId: number): Promise<ToolResult | null> {
   const pendingTaskPath = join(PENDING_TASKS_DIR, `${threadId}.txt`);
   // Fast pre-check to avoid unnecessary rename attempts every 2s
   if (!existsSync(pendingTaskPath)) return null;
   try {
     const tmpPath = pendingTaskPath + '.processing';
-    renameSync(pendingTaskPath, tmpPath);
-    const taskContent = readFileSync(tmpPath, "utf-8").trim();
-    try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
+    await rename(pendingTaskPath, tmpPath);
+    const taskContent = (await readFile(tmpPath, "utf-8")).trim();
+    try { await unlink(tmpPath); } catch { /* ignore cleanup errors */ }
     log.info(`[wait] Injecting pending task for thread ${threadId} (${taskContent.length} chars)`);
     return {
       content: [
@@ -169,7 +170,7 @@ export async function handleWaitForInstructions(
   // ── Pending task injection (pre-loop check) ────────────────────────────
   // If start_thread or send_message_to_thread wrote a task file for this
   // thread, deliver it immediately.
-  const preLoopTask = consumePendingTask(effectiveThreadId);
+  const preLoopTask = await consumePendingTask(effectiveThreadId);
   if (preLoopTask) return preLoopTask;
 
   // Poll the dispatcher's per-thread file instead of calling getUpdates
@@ -249,7 +250,7 @@ export async function handleWaitForInstructions(
     // polling.  Without this, messages arrive only on the NEXT
     // wait_for_instructions call, causing a "no instructions" gap.
     if (!extra.signal.aborted) {
-      const inLoopTask = consumePendingTask(effectiveThreadId);
+      const inLoopTask = await consumePendingTask(effectiveThreadId);
       if (inLoopTask) return inLoopTask;
     }
 

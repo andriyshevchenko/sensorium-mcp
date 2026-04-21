@@ -9,10 +9,10 @@
 import {
     existsSync,
     readFileSync,
-    renameSync,
     unlinkSync,
     writeFileSync,
 } from "node:fs";
+import { readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -71,19 +71,19 @@ export function readLock(): { pid: number; ts: number } | null {
  *
  * Returns true if the lock was refreshed, false if we lost ownership.
  */
-export function refreshLock(): boolean {
+export async function refreshLock(): Promise<boolean> {
     const current = readLock();
     if (!current || current.pid !== process.pid) {
         return false; // Lock missing or owned by someone else.
     }
     try {
         const tmp = LOCK_FILE + ".tmp." + process.pid;
-        writeFileSync(
+        await writeFile(
             tmp,
             JSON.stringify({ pid: process.pid, ts: Date.now() }),
             "utf8",
         );
-        renameSync(tmp, LOCK_FILE);
+        await rename(tmp, LOCK_FILE);
         return true;
     } catch {
         return false;
