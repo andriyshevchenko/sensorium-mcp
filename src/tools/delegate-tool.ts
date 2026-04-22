@@ -330,7 +330,7 @@ export async function handleStartThread(
         threadId,
         name: resolvedThreadName,
         type: threadRegistryType,
-        rootThreadId: memorySourceThreadId ?? rootThreadId ?? parentThreadId ?? undefined,
+        rootThreadId: mode === "root" ? undefined : (memorySourceThreadId ?? rootThreadId ?? parentThreadId ?? undefined),
         badge: mode || threadRegistryType,
         client: agentType,
         keepAlive: threadRegistryType === "root" ? true : undefined,
