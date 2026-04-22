@@ -337,8 +337,8 @@ export async function startDispatcher(
     let consumerRetryTimer: ReturnType<typeof setInterval> | undefined;
     const installConsumerRetry = () => {
         if (consumerRetryTimer) return;
-        consumerRetryTimer = setInterval(() => {
-            if (tryAcquireLock()) {
+        consumerRetryTimer = setInterval(async () => {
+            if (await tryAcquireLock()) {
                 clearInterval(consumerRetryTimer);
                 consumerRetryTimer = undefined;
                 log.info(
@@ -355,7 +355,7 @@ export async function startDispatcher(
     const startLoop = () => {
         const loop = async () => {
             while (pollerRunning) {
-                const currentLock = readLock();
+                const currentLock = await readLock();
                 if (currentLock && currentLock.pid !== process.pid) {
                     log.info(
                         `[dispatcher] Lock taken by PID ${currentLock.pid}. Stepping down to consumer.`,
