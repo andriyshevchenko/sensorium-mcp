@@ -96,7 +96,7 @@ export async function handleStartThread(
   // ── Mode-specific validation & memory resolution ────────────────────
   let memorySourceThreadId: number | undefined;
   let memoryTargetThreadId: number | undefined;
-  let threadRegistryType: "daily" | "worker" | "branch" = "worker";
+  let threadRegistryType: "daily" | "worker" | "branch" | "root" = "worker";
   let runtimeThreadType: "worker" | "branch" | undefined = "worker";
 
   switch (mode) {
@@ -122,6 +122,12 @@ export async function handleStartThread(
       // Memory is forked AFTER thread creation (needs threadId first)
       threadRegistryType = "branch";
       runtimeThreadType = "branch";
+      break;
+
+    case "root":
+      if (!name) return errorResult("Error: 'name' is required for root mode.");
+      threadRegistryType = "root";
+      runtimeThreadType = undefined;
       break;
 
     case "resume":
@@ -327,6 +333,7 @@ export async function handleStartThread(
         rootThreadId: memorySourceThreadId ?? rootThreadId ?? parentThreadId ?? undefined,
         badge: mode || threadRegistryType,
         client: agentType,
+        keepAlive: threadRegistryType === "root" ? true : undefined,
         workingDirectory,
         chatId: telegramChatId,
       });

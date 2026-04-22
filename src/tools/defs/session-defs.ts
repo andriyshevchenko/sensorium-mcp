@@ -221,9 +221,10 @@ export const sessionToolDefs: ToolDefinition[] = [
       properties: {
         mode: {
           type: "string",
-          enum: ["worker", "daily", "branch", "resume"],
+          enum: ["root", "worker", "daily", "branch", "resume"],
           description:
             "Thread purpose. " +
+            "'root': create a standalone root thread — no parent or root required, only a name. Registered with keepAlive=true. " +
             "'worker': temporary task executor — reads parent's memory, writes to own (discarded later). Requires parentThreadId. " +
             "'daily': daily session for a root thread — reads AND writes to the root's memory. Requires rootThreadId. " +
             "'branch': fork for independent work — copies root memory at fork time, then reads/writes own copy. Requires rootThreadId. " +
@@ -231,7 +232,7 @@ export const sessionToolDefs: ToolDefinition[] = [
         },
         name: {
           type: "string",
-          description: "Thread name. Required for worker, daily, branch. Ignored for resume.",
+          description: "Thread name. Required for root, worker, daily, branch. Ignored for resume.",
         },
         targetThreadId: {
           type: "number",
