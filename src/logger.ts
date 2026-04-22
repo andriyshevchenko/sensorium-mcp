@@ -14,13 +14,14 @@
  */
 
 import {
-  appendFileSync,
+  createWriteStream,
   existsSync,
   mkdirSync,
   readdirSync,
   renameSync,
   statSync,
   unlinkSync,
+  type WriteStream,
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -93,17 +94,26 @@ function pruneOldArchives(): void {
  */
 function rotateTo(stamp: string): void {
   try {
+    if (logStream) { logStream.end(); logStream = null; }
     renameSync(LOG_FILE, archivePath(stamp));
     trackedFileSize = 0;
+    openLogStream();
     pruneOldArchives();
   } catch {
     // Non-fatal — keep appending if rotation fails.
+    if (!logStream) openLogStream();
   }
 }
 
 /** Track current log file size in memory to avoid stat calls on every write. */
 let trackedFileSize = 0;
 let logDirEnsured = false;
+let logStream: WriteStream | null = null;
+
+function openLogStream(): void {
+  logStream = createWriteStream(LOG_FILE, { flags: "a", encoding: "utf8" });
+  logStream.on("error", () => { /* non-fatal — stderr still works */ });
+}
 
 function ensureLogDir(): void {
   if (logDirEnsured) return;
@@ -123,6 +133,7 @@ function ensureLogDir(): void {
     }
   } catch { /* non-fatal */ }
 
+  if (!logStream) openLogStream();
   logDirEnsured = true;
 }
 
@@ -152,11 +163,13 @@ function write(level: LogLevel, message: string): void {
   if (level !== "DEBUG" || process.env.DEBUG) {
     process.stderr.write(line);
   }
-  // Always write to log file.
+  // Always write to log file (non-blocking via write stream).
   try {
     rotateIfNeeded();
-    appendFileSync(LOG_FILE, line, "utf8");
-    trackedFileSize += Buffer.byteLength(line, "utf8");
+    if (logStream) {
+      logStream.write(line);
+      trackedFileSize += Buffer.byteLength(line, "utf8");
+    }
   } catch {
     // If file write fails we still wrote to stderr — don't crash.
   }

@@ -49,6 +49,15 @@ export interface DrivePreset {
   content: string
 }
 
+export interface McpServerConfig {
+  type: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
+}
+
 export interface ThreadEntry {
   id: number
   threadId: number
