@@ -8,9 +8,7 @@
 
 import {
     existsSync,
-    readFileSync,
     unlinkSync,
-    writeFileSync,
 } from "node:fs";
 import { readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -50,9 +48,9 @@ export function isPidAlive(pid: number): boolean {
 // Lock read / write / remove
 // ---------------------------------------------------------------------------
 
-export function readLock(): { pid: number; ts: number } | null {
+export async function readLock(): Promise<{ pid: number; ts: number } | null> {
     try {
-        const raw = readFileSync(LOCK_FILE, "utf8");
+        const raw = await readFile(LOCK_FILE, "utf8");
         const parsed = JSON.parse(raw) as { pid: number; ts: number };
         if (typeof parsed.pid === "number" && typeof parsed.ts === "number") {
             return parsed;
@@ -72,7 +70,7 @@ export function readLock(): { pid: number; ts: number } | null {
  * Returns true if the lock was refreshed, false if we lost ownership.
  */
 export async function refreshLock(): Promise<boolean> {
-    const current = readLock();
+    const current = await readLock();
     if (!current || current.pid !== process.pid) {
         return false; // Lock missing or owned by someone else.
     }
@@ -112,7 +110,7 @@ export async function tryAcquireLockWithRetry(
     delayMs = 2000,
 ): Promise<boolean> {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        if (tryAcquireLock()) return true;
+        if (await tryAcquireLock()) return true;
         if (attempt < maxAttempts) {
             await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
         }
@@ -120,8 +118,8 @@ export async function tryAcquireLockWithRetry(
     return false;
 }
 
-export function tryAcquireLock(): boolean {
-    const existing = readLock();
+export async function tryAcquireLock(): Promise<boolean> {
+    const existing = await readLock();
     if (existing) {
         const alive = isPidAlive(existing.pid);
         const stale = Date.now() - existing.ts > STALE_LOCK_MS;
@@ -137,7 +135,7 @@ export function tryAcquireLock(): boolean {
     }
     // Atomic exclusive create: fails if another process created first.
     try {
-        writeFileSync(
+        await writeFile(
             LOCK_FILE,
             JSON.stringify({ pid: process.pid, ts: Date.now() }),
             { encoding: "utf8", flag: "wx" },

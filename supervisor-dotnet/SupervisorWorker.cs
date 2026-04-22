@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Sensorium.Supervisor.Configuration;
+using Sensorium.Supervisor.Infrastructure;
 using Sensorium.Supervisor.Services;
 
 namespace Sensorium.Supervisor;
@@ -112,7 +113,7 @@ public sealed class SupervisorWorker : BackgroundService
             {
                 _log.LogInformation("Killing orphan MCP server (PID {Pid}) from previous run", existingPid);
                 // Write maintenance flag before killing so active threads get graceful notice
-                WriteMaintenanceFlag();
+                MaintenanceFlagWriter.Write(_opts.Paths.MaintenanceFlag, "orphan-restart", _log);
                 await _mcp.PrepareShutdownAsync(ct).ConfigureAwait(false);
                 await _proc.KillProcessAsync(existingPid).ConfigureAwait(false);
                 await Task.Delay(1000, ct).ConfigureAwait(false);
@@ -205,7 +206,7 @@ public sealed class SupervisorWorker : BackgroundService
                                 "⚠️ Supervisor: MCP server hung (not responding to HTTP) — restarting...",
                                 ct: ct).ConfigureAwait(false);
 
-                            WriteMaintenanceFlag();
+                            MaintenanceFlagWriter.Write(_opts.Paths.MaintenanceFlag, "hung-mcp-restart", _log);
                             await _mcp.PrepareShutdownAsync(ct).ConfigureAwait(false);
                             await _proc.KillProcessDirectAsync(pid).ConfigureAwait(false);
                             await _proc.KillByPortAsync(_opts.McpHttpPort).ConfigureAwait(false);
@@ -214,8 +215,10 @@ public sealed class SupervisorWorker : BackgroundService
                             if (!ct.IsCancellationRequested)
                                 await _proc.SpawnMcpServerAsync(ct).ConfigureAwait(false);
 
-                            await _mcp.WaitForReadyAsync(_opts.ReadyPollInterval, _opts.McpReadyTimeout, ct)
+                            bool hungReady = await _mcp.WaitForReadyAsync(_opts.ReadyPollInterval, _opts.McpReadyTimeout, ct)
                                 .ConfigureAwait(false);
+                            if (!hungReady)
+                                _log.LogWarning("MCP server did not become ready after hung-MCP restart within {Timeout} — proceeding anyway", _opts.McpReadyTimeout);
                             TryDeleteFile(_opts.Paths.MaintenanceFlag);
                             _log.LogInformation("Maintenance flag cleared after hung-MCP restart");
 
@@ -255,21 +258,4 @@ public sealed class SupervisorWorker : BackgroundService
         try { File.Delete(path); } catch { /* best-effort */ }
     }
 
-    private void WriteMaintenanceFlag()
-    {
-        try
-        {
-            var payload = System.Text.Json.JsonSerializer.Serialize(new
-            {
-                version = "orphan-restart",
-                timestamp = DateTime.UtcNow.ToString("o")
-            });
-            File.WriteAllText(_opts.Paths.MaintenanceFlag, payload, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            _log.LogInformation("Maintenance flag written");
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "Failed to write maintenance flag");
-        }
-    }
 }

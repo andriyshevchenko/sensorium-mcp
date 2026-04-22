@@ -173,7 +173,7 @@ public sealed class Updater : IUpdater
 
         // Write maintenance flag so active threads know an update is in progress
         // and fall back to await_server_ready / external sleep instead of calling MCP tools.
-        WriteMaintenanceFlag(remoteVersion);
+        MaintenanceFlagWriter.Write(_opts.Paths.MaintenanceFlag, remoteVersion, _log);
 
         // Ask MCP to snapshot its active sessions before we restart.
         await _mcp.PrepareShutdownAsync(ct).ConfigureAwait(false);
@@ -182,23 +182,6 @@ public sealed class Updater : IUpdater
         RequestRestart();
     }
 
-    private void WriteMaintenanceFlag(string version)
-    {
-        try
-        {
-            var payload = System.Text.Json.JsonSerializer.Serialize(new
-            {
-                version,
-                timestamp = DateTime.UtcNow.ToString("o")
-            });
-            File.WriteAllText(_opts.Paths.MaintenanceFlag, payload, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            _log.LogInformation("Maintenance flag written (version={Version})", version);
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "Failed to write maintenance flag — threads will not receive graceful update notice");
-        }
-    }
 
     private async Task<(string Version, string DownloadUrl)> GetLatestReleaseAsync(CancellationToken ct)
     {
