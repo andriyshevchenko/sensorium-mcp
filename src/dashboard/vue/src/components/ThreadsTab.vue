@@ -109,7 +109,7 @@ async function createThread() {
         name: createForm.value.name.trim(),
         type: 'root',
         client: createForm.value.client,
-        keepAlive: false,
+        keepAlive: true,
         ...(createForm.value.workingDirectory.trim() ? { workingDirectory: createForm.value.workingDirectory.trim() } : {}),
       }),
     })
