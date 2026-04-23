@@ -39,7 +39,6 @@ import { isThreadRunning } from "../../services/process.service.js";
 import { readThreadHeartbeat } from "../../data/file-storage.js";
 import { deleteTelegramTopicByBotApi } from "../../services/topic.service.js";
 import { dispatchSpawn } from "../../services/agent-spawn.service.js";
-import { synthesizeGhostMemory } from "../../data/memory/synthesis.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -372,26 +371,6 @@ export function handleStartThread(args: RouteArgs, threadId: number): boolean {
     return true;
 }
 
-// ─── POST /api/threads/:threadId/synthesize — synthesize branch memory to root
-
-/** POST /api/threads/:threadId/synthesize — merge branch/worker memory into root */
-export function handleSynthesizeThread(args: RouteArgs, threadId: number): boolean {
-    const { json, db } = args;
-    void (async () => {
-        try {
-            const thread = getThread(db, threadId);
-            if (!thread) { json({ error: `Thread ${threadId} not found` }, 404); return; }
-            if (!thread.rootThreadId) { json({ error: `Thread ${threadId} has no root thread — only branches/workers can sync` }, 400); return; }
-
-            const result = await synthesizeGhostMemory(db, threadId, thread.rootThreadId, thread.name);
-            json({ ok: true, threadId, rootThreadId: thread.rootThreadId, ...result });
-        } catch (err) {
-            json({ error: errorMessage(err) }, 500);
-        }
-    })();
-    return true;
-}
-
 // ─── POST /api/threads/:threadId/convert-to-root — promote branch to root ───
 
 /** POST /api/threads/:threadId/convert-to-root — convert a branch thread to a root thread */
@@ -405,14 +384,6 @@ export function handleConvertToRoot(args: RouteArgs, threadId: number): boolean 
             if (thread.type === "worker") { json({ error: `Worker threads cannot be converted to root — use branch or daily threads` }, 400); return; }
             if (isThreadRunning(threadId)) { json({ error: `Thread ${threadId} has an active session — stop it before converting` }, 409); return; }
 
-            // Sync memory to old root before detaching (best-effort)
-            let synthesisResult: { synthesizedNotes?: number } | null = null;
-            if (thread.rootThreadId) {
-                try {
-                    synthesisResult = await synthesizeGhostMemory(db, threadId, thread.rootThreadId, thread.name);
-                } catch { /* non-fatal — proceed with conversion */ }
-            }
-
             // Atomic: set type, clear root_thread_id, enable dailyRotation in one statement
             db.prepare(
                 `UPDATE thread_registry SET type = 'root', root_thread_id = NULL, daily_rotation = 1 WHERE thread_id = ?`
@@ -425,7 +396,7 @@ export function handleConvertToRoot(args: RouteArgs, threadId: number): boolean 
                 threadId,
                 thread: updated,
                 inheritedChildren: children.length,
-                memorySynced: synthesisResult?.synthesizedNotes ?? 0,
+                memorySynced: 0,
             });
         } catch (err) {
             json({ error: errorMessage(err) }, 500);

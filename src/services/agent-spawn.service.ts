@@ -4,7 +4,6 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDefaultThreadModel, getDefaultWorkerModel, type AgentType } from "../config.js";
 import { log } from "../logger.js";
-import { synthesizeGhostMemory } from "../memory.js";
 import { getAllThreads } from "../data/memory/thread-registry.js";
 import { initMemoryDb, type Database } from "../data/memory/schema.js";
 import { errorMessage } from "../utils.js";
@@ -169,9 +168,6 @@ async function handleProcessExit(code: number | null, threadId: number, pid: num
       } else {
         // Non-worker (e.g., keepAlive thread): mark exited so KeeperService can restart
         threadLifecycle.markExited(db, threadId);
-        if (entry.memorySourceThreadId !== undefined) {
-          try { await synthesizeGhostMemory(db, threadId, entry.memorySourceThreadId, entry.name); } catch (err) { log.warn(`[synthesis] Failed for ghost ${threadId}: ${errorMessage(err)}`); }
-        }
       }
     }
   } catch (err) {

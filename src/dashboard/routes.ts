@@ -84,6 +84,13 @@ import {
     handleDeleteMcpServer,
 } from "./routes/mcp-servers.js";
 
+// Domain handlers — snapshots
+import {
+    handleGetSnapshots,
+    handlePostSnapshot,
+    handleDeleteSnapshot,
+} from "./routes/snapshots.js";
+
 // Domain handlers — threads
 import { errorMessage } from "../utils.js";
 import {
@@ -98,7 +105,6 @@ import {
     handleGetThreadRunning,
     handleGetThreads,
     handleStartThread,
-    handleSynthesizeThread,
     handleUpdateThread,
 } from "./routes/threads.js";
 
@@ -146,6 +152,10 @@ const routeTable: Record<string, RouteHandler> = {
 
     // Skills
     "GET /api/skills": handleGetSkills,
+
+    // Snapshots
+    "GET /api/snapshots": handleGetSnapshots,
+    "POST /api/snapshots": handlePostSnapshot,
 
     // MCP servers
     "GET /api/mcp-servers": handleGetMcpServers,
@@ -259,14 +269,16 @@ async function dispatchApiRoute(
             return handleDeleteMcpServer(args, mcpMatch[1]);
         }
 
+        // 3c. Dynamic snapshot routes: DELETE /api/snapshots/:name
+        const snapshotMatch = path.match(/^\/api\/snapshots\/([^/]+)$/);
+        if (snapshotMatch && method === "DELETE") {
+            return handleDeleteSnapshot(args, snapshotMatch[1]);
+        }
+
         // 4. Dynamic thread routes: /api/threads/:threadId[/start|/synthesize|/children|/running]
         const threadStartMatch = /^\/api\/threads\/(\d+)\/start$/.exec(path);
         if (threadStartMatch && method === "POST") {
             return handleStartThread(args, Number.parseInt(threadStartMatch[1], 10));
-        }
-        const threadSynthesizeMatch = /^\/api\/threads\/(\d+)\/synthesize$/.exec(path);
-        if (threadSynthesizeMatch && method === "POST") {
-            return handleSynthesizeThread(args, Number.parseInt(threadSynthesizeMatch[1], 10));
         }
         const threadConvertMatch = /^\/api\/threads\/(\d+)\/convert-to-root$/.exec(path);
         if (threadConvertMatch && method === "POST") {
