@@ -183,7 +183,7 @@ export function getEffectiveAutonomousMode(threadId: number | undefined): boolea
   if (threadId !== undefined && _threadDbGetter) {
     try {
       const threadEntry = getThread(_threadDbGetter(), threadId);
-      if (threadEntry != null) return threadEntry.autonomousMode || AUTONOMOUS_MODE;
+      if (threadEntry != null) return threadEntry.autonomousMode ?? AUTONOMOUS_MODE;
     } catch { /* fallback */ }
   }
   return AUTONOMOUS_MODE;
