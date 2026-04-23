@@ -14,6 +14,7 @@
  */
 
 import {
+  closeSync,
   createWriteStream,
   existsSync,
   mkdirSync,
@@ -94,7 +95,13 @@ function pruneOldArchives(): void {
  */
 function rotateTo(stamp: string): void {
   try {
-    if (logStream) { logStream.end(); logStream = null; }
+    if (logStream) {
+      const fd = (logStream as unknown as { fd?: number }).fd;
+      logStream.destroy();
+      logStream = null;
+      // Synchronously release the FD so renameSync succeeds on Windows.
+      if (typeof fd === "number") { try { closeSync(fd); } catch { /* already closed */ } }
+    }
     renameSync(LOG_FILE, archivePath(stamp));
     trackedFileSize = 0;
     openLogStream();
@@ -139,6 +146,9 @@ function ensureLogDir(): void {
 
 // Ensure log directory exists and perform startup daily rotation.
 ensureLogDir();
+
+// Best-effort flush on clean exit so tail-of-session lines aren't lost.
+process.on("exit", () => { if (logStream) { try { logStream.end(); } catch { /* ignore */ } } });
 
 /** Rotate log file if it exceeds MAX_LOG_SIZE. */
 function rotateIfNeeded(): void {
