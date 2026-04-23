@@ -27,7 +27,7 @@ import { log } from "../logger.js";
 import { nowISO, repairAndParseJSON } from "../data/memory/utils.js";
 import { errorMessage } from "../utils.js";
 
-const CONSOLIDATION_DEDUP_THRESHOLD = 0.85;
+const CONSOLIDATION_DEDUP_THRESHOLD = 0.88;
 let consolidationInProgress = false;
 
 function extractEpisodeText(episodes: ReturnType<typeof getUnconsolidatedEpisodes>): string {
@@ -124,6 +124,8 @@ Rules:
 - Only extract information that would be useful in future sessions
 - Preferences are stronger signals than facts (confidence: 0.9)
 - Do not extract trivial/transient information
+- Do NOT extract notes about the memory system itself, consolidation process, reflection quality, or memory management — these are implementation internals, not durable knowledge
+- Do NOT extract notes about your own behavioral tendencies, self-assessments, or meta-observations about how you operate — only extract knowledge about the external world (the project, operator, codebase, tools, decisions). EXCEPTION: if the operator explicitly corrected the agent's behavior, extract that correction as a preference
 - If the operator corrected the agent, extract the correction as a preference
 - Focus on: operator name, preferences, communication style, technical choices, project context
 - CRITICAL: Check existing notes for CONTRADICTIONS. If a new episode contradicts or updates an existing note, add a "supersede" entry. The new episodes represent MORE RECENT information.
