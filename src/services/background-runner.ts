@@ -4,6 +4,8 @@ import { rotateAllDailySessions } from "../daily-session.js";
 import { cleanupExpiredWorkers } from "./worker-cleanup.service.js";
 import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { errorMessage } from "../utils.js";
+import { getAllThreads } from "../data/memory/thread-registry.js";
+import { isThreadRunning } from "./process.service.js";
 
 const DAILY_ROTATION_INTERVAL_MS = 5 * 60_000;
 const DAILY_ROTATION_HOUR = 4;
@@ -32,6 +34,7 @@ export class BackgroundJobRunner {
 
     void this.runWorkerCleanup();
     void this.runDailyRotationCheck();
+    void this.runDeadWorkerSweep();
 
     this.intervals.push(setInterval(() => {
       void this.runWorkerCleanup();
@@ -40,6 +43,10 @@ export class BackgroundJobRunner {
     this.intervals.push(setInterval(() => {
       void this.runDailyRotationCheck();
     }, DAILY_ROTATION_INTERVAL_MS));
+
+    this.intervals.push(setInterval(() => {
+      void this.runDeadWorkerSweep();
+    }, WORKER_CLEANUP_INTERVAL_MS));
   }
 
   stop(): void {
@@ -65,6 +72,27 @@ export class BackgroundJobRunner {
       }
     } catch (err) {
       this.deps.log.error(`Expired worker cleanup error: ${errorMessage(err)}`);
+    }
+  }
+
+  private runDeadWorkerSweep(): void {
+    try {
+      const db = this.deps.getMemoryDb();
+      const workers = getAllThreads(db).filter(
+        (t) => t.type === "worker" && (t.status === "active" || t.status === "exited"),
+      );
+      for (const w of workers) {
+        if (!isThreadRunning(w.threadId)) {
+          try {
+            this.deps.threadLifecycle.archiveThread(db, w.threadId);
+            this.deps.log.info(`[dead-worker-sweep] Archived dead worker ${w.threadId} (${w.name})`);
+          } catch (err) {
+            this.deps.log.warn(`[dead-worker-sweep] Failed to archive ${w.threadId}: ${errorMessage(err)}`);
+          }
+        }
+      }
+    } catch (err) {
+      this.deps.log.error(`Dead worker sweep error: ${errorMessage(err)}`);
     }
   }
 
