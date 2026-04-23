@@ -92,6 +92,7 @@ import {
     handleGetKeepAliveThreads,
     handleGetRootThreads,
     handleGetThread,
+    handleConvertToRoot,
     handleGetThreadChildren,
     handleGetThreadHeartbeat,
     handleGetThreadRunning,
@@ -266,6 +267,10 @@ async function dispatchApiRoute(
         const threadSynthesizeMatch = /^\/api\/threads\/(\d+)\/synthesize$/.exec(path);
         if (threadSynthesizeMatch && method === "POST") {
             return handleSynthesizeThread(args, Number.parseInt(threadSynthesizeMatch[1], 10));
+        }
+        const threadConvertMatch = /^\/api\/threads\/(\d+)\/convert-to-root$/.exec(path);
+        if (threadConvertMatch && method === "POST") {
+            return handleConvertToRoot(args, Number.parseInt(threadConvertMatch[1], 10));
         }
         const threadChildrenMatch = /^\/api\/threads\/(\d+)\/children$/.exec(path);
         if (threadChildrenMatch) {

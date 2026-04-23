@@ -39,6 +39,9 @@ const startingThreadId = ref<number | null>(null)
 // Memory sync
 const syncingThreadId = ref<number | null>(null)
 
+// Convert to root
+const convertingThreadId = ref<number | null>(null)
+
 // Agent type options
 const agentTypes = ['claude', 'copilot', 'codex', 'openai_codex', 'copilot_claude', 'copilot_codex', 'cursor'] as const
 
@@ -348,6 +351,31 @@ async function syncToRoot(thread: ThreadEntry) {
     error.value = 'Failed to sync memory: ' + (e as Error).message
   } finally {
     syncingThreadId.value = null
+  }
+}
+
+// ── Convert to root ──────────────────────────────────────────────────────────
+
+async function convertToRoot(thread: ThreadEntry) {
+  if (!confirm(`Convert "${thread.name}" to a root thread? This will detach it from its parent.`)) return
+  convertingThreadId.value = thread.threadId
+  try {
+    const r = await fetch(`/api/threads/${thread.threadId}/convert-to-root`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    })
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: r.statusText })) as { error?: string }
+      throw new Error(err.error ?? r.statusText)
+    }
+    error.value = ''
+    createStatus.value = `Converted "${thread.name}" to root ✓`
+    setTimeout(() => { createStatus.value = '' }, 3000)
+    await load()
+  } catch (e: unknown) {
+    error.value = 'Failed to convert: ' + (e as Error).message
+  } finally {
+    convertingThreadId.value = null
   }
 }
 
@@ -666,6 +694,16 @@ onMounted(load)
                   title="Sync memory to root thread"
                 >
                   {{ syncingThreadId === child.threadId ? 'Syncing…' : '⟳ Sync to Root' }}
+                </button>
+                <!-- Convert to Root button for branches -->
+                <button
+                  v-if="child.type === 'branch' || child.type === 'daily'"
+                  @click="convertToRoot(child)"
+                  :disabled="convertingThreadId === child.threadId"
+                  class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
+                  title="Convert to independent root thread"
+                >
+                  {{ convertingThreadId === child.threadId ? 'Converting…' : '↑ To Root' }}
                 </button>
                 <!-- Keep-alive toggle for branches -->
                 <div v-if="child.type === 'branch'" class="flex items-center gap-1.5">

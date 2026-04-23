@@ -392,6 +392,48 @@ export function handleSynthesizeThread(args: RouteArgs, threadId: number): boole
     return true;
 }
 
+// ─── POST /api/threads/:threadId/convert-to-root — promote branch to root ───
+
+/** POST /api/threads/:threadId/convert-to-root — convert a branch thread to a root thread */
+export function handleConvertToRoot(args: RouteArgs, threadId: number): boolean {
+    const { json, db } = args;
+    void (async () => {
+        try {
+            const thread = getThread(db, threadId);
+            if (!thread) { json({ error: `Thread ${threadId} not found` }, 404); return; }
+            if (thread.type === "root") { json({ error: `Thread ${threadId} is already a root thread` }, 400); return; }
+            if (thread.type === "worker") { json({ error: `Worker threads cannot be converted to root — use branch or daily threads` }, 400); return; }
+            if (isThreadRunning(threadId)) { json({ error: `Thread ${threadId} has an active session — stop it before converting` }, 409); return; }
+
+            // Sync memory to old root before detaching (best-effort)
+            let synthesisResult: { synthesizedNotes?: number } | null = null;
+            if (thread.rootThreadId) {
+                try {
+                    synthesisResult = await synthesizeGhostMemory(db, threadId, thread.rootThreadId, thread.name);
+                } catch { /* non-fatal — proceed with conversion */ }
+            }
+
+            // Atomic: set type, clear root_thread_id, enable dailyRotation in one statement
+            db.prepare(
+                `UPDATE thread_registry SET type = 'root', root_thread_id = NULL, daily_rotation = 1 WHERE thread_id = ?`
+            ).run(threadId);
+
+            const updated = getThread(db, threadId);
+            const children = getThreadsByRoot(db, threadId);
+            json({
+                ok: true,
+                threadId,
+                thread: updated,
+                inheritedChildren: children.length,
+                memorySynced: synthesisResult?.synthesizedNotes ?? 0,
+            });
+        } catch (err) {
+            json({ error: errorMessage(err) }, 500);
+        }
+    })();
+    return true;
+}
+
 // ─── Settings.json sync for watcher backward compatibility ──────────────────
 
 /**
