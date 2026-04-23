@@ -134,6 +134,8 @@ Rules:
   - priority 2 (high importance): operator says "important", "crucial", "I really need", "don't forget", shows strong emotional investment, repeated emphasis
   - priority 1 (notable): operator says "would be nice", "I'd like", "should", mentions something multiple times across conversations
   - priority 0 (normal): default for routine facts, observations, patterns
+- When extracting facts about completed work, name the specific components, features, or decisions — not just "a bug fix sprint was completed". E.g. "Switched auth from JWT to session cookies because of mobile token refresh latency." Only apply this to sessions involving substantive work, not Q&A or exploration
+- Note content should capture WHY (motivation/context), not just WHAT (action taken). Include outcome if determinable from the episode. If neither WHY nor outcome is available, consider whether the note is worth extracting at all
 - Return {"notes": [], "supersede": []} if nothing notable`;
 }
 
