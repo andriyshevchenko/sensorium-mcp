@@ -35,7 +35,7 @@ import {
   WAIT_LIVENESS_MS,
 } from "./sessions.js";
 import { getThread } from "./data/memory/thread-registry.js";
-import { findAliveThread } from "./services/process.service.js";
+import { findAliveThread, killProcessTree } from "./services/process.service.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 class BodyParseError extends Error {
@@ -247,7 +247,7 @@ export function startHttpServer(
                 const alive = findAliveThread(threadId);
                 if (alive) {
                   log.warn(`[session] Session closed for thread ${threadId} - killing process ${alive.pid} to force reconnect`);
-                  try { process.kill(alive.pid, "SIGTERM"); } catch (_) { /* best-effort */ }
+                  void killProcessTree(alive.pid, threadId);
                 }
               }
             }
