@@ -18,6 +18,8 @@ public sealed class SupervisorOptions
     public TimeSpan StartupDelay { get; set; } = TimeSpan.FromSeconds(60);
     /// <summary>Run HTTP liveness check every N health-check ticks. Default 5 (= 5 min with 60s interval).</summary>
     public int HttpCheckEveryNTicks { get; set; } = 5;
+    /// <summary>Telegram long-poll timeout in seconds for the command handler. Default 30.</summary>
+    public int CommandPollTimeoutSeconds { get; set; } = 30;
     public SupervisorPaths Paths { get; set; } = new();
 }
 
@@ -31,4 +33,5 @@ public sealed class SupervisorPaths
     public string PidsDir { get; set; } = "";
     public string HeartbeatsDir { get; set; } = "";
     public string PollerLock { get; set; } = "";
+    public string SnapshotsDir { get; set; } = "";
 }
