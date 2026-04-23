@@ -5,7 +5,8 @@ import { cleanupExpiredWorkers } from "./worker-cleanup.service.js";
 import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { errorMessage } from "../utils.js";
 import { getAllThreads } from "../data/memory/thread-registry.js";
-import { isThreadRunning } from "./process.service.js";
+import { isThreadRunning, spawnedThreads } from "./process.service.js";
+import { decommissionWorker } from "./worker-cleanup.service.js";
 
 const DAILY_ROTATION_INTERVAL_MS = 5 * 60_000;
 const DAILY_ROTATION_HOUR = 4;
@@ -75,7 +76,7 @@ export class BackgroundJobRunner {
     }
   }
 
-  private runDeadWorkerSweep(): void {
+  private async runDeadWorkerSweep(): Promise<void> {
     try {
       const db = this.deps.getMemoryDb();
       const workers = getAllThreads(db).filter(
@@ -83,8 +84,20 @@ export class BackgroundJobRunner {
       );
       for (const w of workers) {
         if (!isThreadRunning(w.threadId)) {
+          const inMemory = spawnedThreads.some((t) => t.threadId === w.threadId);
           try {
-            this.deps.threadLifecycle.archiveThread(db, w.threadId);
+            if (inMemory) {
+              // Still tracked in spawnedThreads: archive DB record now for dashboard accuracy.
+              // Full decommission (topic deletion, memory synthesis) happens via TTL cleanup.
+              this.deps.threadLifecycle.archiveThread(db, w.threadId);
+            } else {
+              // Not in spawnedThreads: the TTL cleanup's SQL path won't reach an already-archived
+              // thread, so the Telegram topic would leak. Do a full decommission now.
+              await decommissionWorker(
+                { threadId: w.threadId, name: w.name },
+                { db, telegram: this.deps.telegram, chatId: this.deps.chatId, threadLifecycle: this.deps.threadLifecycle },
+              );
+            }
             this.deps.log.info(`[dead-worker-sweep] Archived dead worker ${w.threadId} (${w.name})`);
           } catch (err) {
             this.deps.log.warn(`[dead-worker-sweep] Failed to archive ${w.threadId}: ${errorMessage(err)}`);
