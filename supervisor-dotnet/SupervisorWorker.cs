@@ -15,14 +15,12 @@ namespace Sensorium.Supervisor;
 ///   2. Check for existing healthy MCP → inherit if alive + ready
 ///   3. If not inherited: kill orphan, spawn fresh
 ///   4. Wait for MCP ready (ReadyPollInterval, McpReadyTimeout)
-///   5. Start updater
-///   6. Run health check loop (PeriodicTimer at HealthCheckInterval)
+///   5. Run health check loop (PeriodicTimer at HealthCheckInterval)
 ///
 /// Shutdown sequence:
-///   1. Stop updater
-///   2. Cancel health loop
-///   3. PrepareShutdown → KillProcessDirect
-///   4. Release lock
+///   1. Cancel health loop
+///   2. PrepareShutdown → KillProcessDirect
+///   3. Release lock
 /// </summary>
 public sealed class SupervisorWorker : BackgroundService
 {
@@ -31,7 +29,6 @@ public sealed class SupervisorWorker : BackgroundService
     private readonly IProcessManager _proc;
     private readonly IMcpClient _mcp;
     private readonly ITelegramNotifier _notify;
-    private readonly IUpdater _updater;
     private readonly ILogger<SupervisorWorker> _log;
 
     public SupervisorWorker(
@@ -40,7 +37,6 @@ public sealed class SupervisorWorker : BackgroundService
         IProcessManager proc,
         IMcpClient mcp,
         ITelegramNotifier notify,
-        IUpdater updater,
         ILogger<SupervisorWorker> log)
     {
         _opts = opts.Value;
@@ -48,7 +44,6 @@ public sealed class SupervisorWorker : BackgroundService
         _proc = proc;
         _mcp = mcp;
         _notify = notify;
-        _updater = updater;
         _log = log;
     }
 
@@ -74,8 +69,8 @@ public sealed class SupervisorWorker : BackgroundService
         }
 
         _log.LogInformation(
-            "sensorium-supervisor starting (mode={Mode}, port={Port}, dataDir={DataDir})",
-            _opts.UpdateMode, _opts.McpHttpPort, _opts.DataDir);
+            "sensorium-supervisor starting (port={Port}, dataDir={DataDir})",
+            _opts.McpHttpPort, _opts.DataDir);
 
         try
         {
@@ -156,9 +151,6 @@ public sealed class SupervisorWorker : BackgroundService
         TryDeleteFile(_opts.Paths.MaintenanceFlag);
         _log.LogInformation("Maintenance flag cleared — threads may reconnect");
 
-        // ── Start updater ────────────────────────────────────────────────────────
-        _updater.Start(ct);
-
         // ── Health check loop ────────────────────────────────────────────────────
         _log.LogInformation("All subsystems started — supervisor is running (PID {Pid})", Environment.ProcessId);
 
@@ -234,16 +226,6 @@ public sealed class SupervisorWorker : BackgroundService
         }
 
         // ── Graceful shutdown ────────────────────────────────────────────────────
-        try { await _updater.StopAsync().ConfigureAwait(false); }
-        catch (Exception ex) { _log.LogWarning(ex, "Updater stop failed during shutdown"); }
-
-        if (SupervisorShutdown.IsRestartForUpdate)
-        {
-            // Binary-swap restart: leave MCP running so the new supervisor instance can inherit it.
-            _log.LogInformation("Shutting down for binary-swap restart — leaving MCP running (PID file retained)");
-            return;
-        }
-
         var (shutdownOk, shutdownPid) = await _proc.ReadPidFileAsync(_opts.Paths.ServerPid).ConfigureAwait(false);
         if (shutdownOk && shutdownPid > 0)
         {
