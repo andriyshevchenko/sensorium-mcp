@@ -330,28 +330,9 @@ async function startThread(thread: ThreadEntry) {
 
 // ── Sync to root ────────────────────────────────────────────────────────────
 
-async function syncToRoot(thread: ThreadEntry) {
-  if (!confirm(`Sync memory from "${thread.name}" to its root thread?`)) return
-  syncingThreadId.value = thread.threadId
-  try {
-    const r = await fetch(`/api/threads/${thread.threadId}/synthesize`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${getToken()}` },
-    })
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({ error: r.statusText })) as { error?: string }
-      throw new Error(err.error ?? r.statusText)
-    }
-    const data = await r.json() as { synthesizedNotes?: number }
-    error.value = ''
-    createStatus.value = `Synced ${data.synthesizedNotes ?? 0} notes ✓`
-    setTimeout(() => { createStatus.value = '' }, 3000)
-    await load()
-  } catch (e: unknown) {
-    error.value = 'Failed to sync memory: ' + (e as Error).message
-  } finally {
-    syncingThreadId.value = null
-  }
+function syncToRoot(_thread: ThreadEntry) {
+  createStatus.value = 'Sync to Root — not yet implemented'
+  setTimeout(() => { createStatus.value = '' }, 3000)
 }
 
 // ── Convert to root ──────────────────────────────────────────────────────────

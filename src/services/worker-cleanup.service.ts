@@ -1,6 +1,5 @@
 import { archiveNotesForThread } from "../data/memory/semantic.js";
 import { getExplicitTelegramTopicId } from "../data/memory/thread-registry.js";
-import { synthesizeGhostMemory } from "../memory.js";
 import { errorMessage } from "../utils.js";
 import { spawnedThreads, type SpawnedThread, readPidFiles, killProcessTree } from "./process.service.js";
 import { ThreadState, type ThreadLifecycleService } from "./thread-lifecycle.service.js";
@@ -17,24 +16,20 @@ export async function decommissionWorker(
 ): Promise<void> {
   // 0. Mark thread as Exiting so the state machine reflects teardown-in-progress
   try { deps.threadLifecycle.transitionThread(deps.db, thread.threadId, ThreadState.Exiting); } catch {}
-  // 1. Memory synthesis (if ghost/worker with memory source)
-  if (thread.memorySourceThreadId !== undefined) {
-    try { await synthesizeGhostMemory(deps.db, thread.threadId, thread.memorySourceThreadId, thread.name); } catch (err) { log.warn(`[decommission] synthesizeGhostMemory failed for thread ${thread.threadId}: ${errorMessage(err)}`); }
-  }
-  // 2. Kill process (no-op if already dead)
+  // 1. Kill process (no-op if already dead)
   if (thread.pid !== undefined) {
     await killProcessTree(thread.pid, thread.threadId);
   }
-  // 3. Delete Telegram topic
+  // 2. Delete Telegram topic
   try {
     const topicId = getExplicitTelegramTopicId(deps.db, thread.threadId) ?? thread.threadId;
     await deps.telegram.deleteForumTopic(deps.chatId, topicId);
   } catch {}
-  // 4. Archive notes
+  // 3. Archive notes
   try { archiveNotesForThread(deps.db, thread.threadId); } catch {}
-  // 5. Archive thread in DB
+  // 4. Archive thread in DB
   try { deps.threadLifecycle.archiveThread(deps.db, thread.threadId); } catch (err) { log.warn(`[decommission] archiveThread failed for thread ${thread.threadId}: ${errorMessage(err)}`); }
-  // 6. Remove from spawnedThreads array
+  // 5. Remove from spawnedThreads array
   const idx = spawnedThreads.findIndex((t) => t.threadId === thread.threadId);
   if (idx !== -1) spawnedThreads.splice(idx, 1);
 }

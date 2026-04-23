@@ -9,6 +9,7 @@ import SkillsTab from './components/SkillsTab.vue'
 import ThreadsTab from './components/ThreadsTab.vue'
 import McpServersTab from './components/McpServersTab.vue'
 import SettingsTab from './components/SettingsTab.vue'
+import SnapshotsTab from './components/SnapshotsTab.vue'
 
 const TOKEN_KEY = 'sensorium_token'
 
@@ -29,6 +30,7 @@ const tabs = [
   { id: 'skills', label: 'Skills' },
   { id: 'threads', label: 'Threads' },
   { id: 'mcp', label: 'MCP Servers' },
+  { id: 'snapshots', label: 'Snapshots' },
   { id: 'settings', label: 'Settings' },
 ]
 
@@ -39,6 +41,7 @@ const tabComponents = {
   skills: SkillsTab,
   threads: ThreadsTab,
   mcp: McpServersTab,
+  snapshots: SnapshotsTab,
   settings: SettingsTab,
 }
 
