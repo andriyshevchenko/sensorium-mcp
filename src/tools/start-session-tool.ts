@@ -198,24 +198,29 @@ export async function handleStartSession(
       }
     }
 
-    if (!isReconnect) {
-      // Drain any stale messages from the thread file so they aren't
-      // re-delivered in the next wait_for_instructions call.
+    // Always drain stale messages from the thread file — even during
+    // lightweight reconnects.  Without this, messages queued before the
+    // restart survive in the JSONL file and get re-delivered as if new.
+    {
       const stale = readThreadMessages(session.currentThreadId);
       if (stale.length > 0) {
         log.info(
           `[start_session] Drained ${stale.length} stale message(s) from thread ${session.currentThreadId}.`,
         );
-        // Notify the operator that stale messages were discarded.
-        try {
-          const notice = convertMarkdown(
-            `\u26A0\uFE0F **${stale.length} message(s) from before the session resumed were discarded.** ` +
-            `If you sent instructions while the agent was offline, please resend them.`,
-          );
-          await telegram.sendMessage(TELEGRAM_CHAT_ID, notice, "MarkdownV2", session.currentThreadId);
-        } catch { /* non-fatal */ }
+        // During maintenance reconnects the messages are likely only
+        // seconds old (queued between flag write and server restart),
+        // so skip the Telegram notification to avoid noise.
+        if (!isReconnect) {
+          try {
+            const notice = convertMarkdown(
+              `\u26A0\uFE0F **${stale.length} message(s) from before the session resumed were discarded.** ` +
+              `If you sent instructions while the agent was offline, please resend them.`,
+            );
+            await telegram.sendMessage(TELEGRAM_CHAT_ID, notice, "MarkdownV2", session.currentThreadId);
+          } catch { /* non-fatal */ }
+        }
       }
-    } // end if (!isReconnect)
+    }
   }
 
   if (!resolvedPreexisting) {
