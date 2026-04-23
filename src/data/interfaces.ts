@@ -15,6 +15,7 @@ export interface IThreadRepository {
       maxRetries?: number;
       cooldownMs?: number;
       keepAlive?: boolean;
+      dailyRotation?: boolean;
       workingDirectory?: string;
     },
   ): ThreadRegistryEntry;

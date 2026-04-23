@@ -43,6 +43,7 @@ type RegisterThreadEntry = {
   maxRetries?: number;
   cooldownMs?: number;
   keepAlive?: boolean;
+  dailyRotation?: boolean;
   workingDirectory?: string;
 };
 
@@ -128,10 +129,11 @@ export function registerThread(
   entry: RegisterThreadEntry,
 ): ThreadRegistryEntry {
   const now = nowISO();
+  const dailyRotation = entry.dailyRotation ?? (entry.type === "root");
   db.prepare(
     `INSERT INTO thread_registry
-       (thread_id, name, type, root_thread_id, badge, client, max_retries, cooldown_ms, keep_alive, working_directory, created_at, last_active_at, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+       (thread_id, name, type, root_thread_id, badge, client, max_retries, cooldown_ms, keep_alive, daily_rotation, working_directory, created_at, last_active_at, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
      ON CONFLICT(thread_id) DO UPDATE SET
        name = excluded.name,
        type = CASE WHEN thread_registry.keep_alive = 1 THEN thread_registry.type ELSE excluded.type END,
@@ -141,6 +143,7 @@ export function registerThread(
        max_retries = excluded.max_retries,
        cooldown_ms = excluded.cooldown_ms,
        keep_alive = CASE WHEN thread_registry.keep_alive = 1 THEN 1 ELSE excluded.keep_alive END,
+       daily_rotation = CASE WHEN thread_registry.keep_alive = 1 THEN thread_registry.daily_rotation ELSE excluded.daily_rotation END,
        working_directory = COALESCE(excluded.working_directory, thread_registry.working_directory),
        last_active_at = excluded.last_active_at,
        status = 'active'`,
@@ -154,6 +157,7 @@ export function registerThread(
     entry.maxRetries ?? 5,
     entry.cooldownMs ?? 300000,
     entry.keepAlive ? 1 : 0,
+    dailyRotation ? 1 : 0,
     entry.workingDirectory ?? null,
     now,
     now,
