@@ -28,6 +28,7 @@ import {
   isThreadRunning,
   isProcessAlive,
   readPidFiles,
+  killProcessTree,
   ensureDirs,
   PENDING_TASKS_DIR,
 } from "../services/process.service.js";
@@ -281,7 +282,7 @@ export async function handleStartThread(
     for (const pe of pidEntries) {
       if (isProcessAlive(pe.pid)) {
         log.warn(`[start_thread] Killing orphan PID ${pe.pid} for thread ${threadId} before spawning new process`);
-        try { process.kill(pe.pid, "SIGTERM"); } catch { /* already dead */ }
+        await killProcessTree(pe.pid, threadId);
       }
     }
   } catch { /* best-effort orphan cleanup */ }
