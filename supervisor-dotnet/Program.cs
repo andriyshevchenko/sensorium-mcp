@@ -41,6 +41,10 @@ builder.Services.AddSingleton<ISingletonLock, SingletonLock>();
 builder.Services.AddSingleton<IProcessManager, ProcessManager>();
 builder.Services.AddSingleton<IMcpClient, McpClient>();
 builder.Services.AddSingleton<ITelegramNotifier, TelegramNotifier>();
+builder.Services.AddSingleton<ISnapshotManager, SnapshotManager>();
+builder.Services.AddSingleton<TelegramCommandHandler>();
+builder.Services.AddSingleton<ITelegramCommandHandler>(sp => sp.GetRequiredService<TelegramCommandHandler>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TelegramCommandHandler>());
 builder.Services.AddHostedService<SupervisorWorker>();
 
 var host = builder.Build();
@@ -80,5 +84,6 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
         PidsDir = Path.Combine(dataDir, "pids"),
         HeartbeatsDir = Path.Combine(dataDir, "heartbeats"),
         PollerLock = Path.Combine(dataDir, "poller.lock"),
+        SnapshotsDir = Path.Combine(dataDir, "snapshots"),
     };
 }
