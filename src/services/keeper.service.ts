@@ -57,6 +57,10 @@ export class KeeperService {
   }
 
   private syncKeepers(): void {
+    // Log memory usage every sync cycle (~2 min) to detect leaks
+    const mem = process.memoryUsage();
+    log.telemetry(`rss=${Math.round(mem.rss / 1048576)}MB heap=${Math.round(mem.heapUsed / 1048576)}/${Math.round(mem.heapTotal / 1048576)}MB external=${Math.round(mem.external / 1048576)}MB`);
+
     let threads: ReturnType<typeof getKeepAliveThreads>;
     try {
       const db = this.deps.getMemoryDb();

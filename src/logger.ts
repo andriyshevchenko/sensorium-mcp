@@ -148,7 +148,24 @@ function ensureLogDir(): void {
 ensureLogDir();
 
 // Best-effort flush on clean exit so tail-of-session lines aren't lost.
-process.on("exit", () => { if (logStream) { try { logStream.end(); } catch { /* ignore */ } } });
+process.on("exit", () => {
+  if (logStream) { try { logStream.end(); } catch { /* ignore */ } }
+  if (telemetryStream) { try { telemetryStream.end(); } catch { /* ignore */ } }
+});
+
+// ---------------------------------------------------------------------------
+// Telemetry — lightweight append-only file for memory/perf diagnostics
+// ---------------------------------------------------------------------------
+
+const TELEMETRY_FILE = join(LOG_DIR, "telemetry.log");
+let telemetryStream: WriteStream | null = null;
+
+function openTelemetryStream(): void {
+  telemetryStream = createWriteStream(TELEMETRY_FILE, { flags: "a", encoding: "utf8" });
+  telemetryStream.on("error", () => { /* non-fatal */ });
+}
+
+openTelemetryStream();
 
 /** Rotate log file if it exceeds MAX_LOG_SIZE. */
 function rotateIfNeeded(): void {
@@ -209,5 +226,11 @@ export const log = {
    */
   verbose(category: string, msg: string): void {
     write("DEBUG", `[${category}] ${msg}`);
+  },
+  /** Write to telemetry.log only (no stderr, no server.log). */
+  telemetry(msg: string): void {
+    if (telemetryStream) {
+      telemetryStream.write(`[${new Date().toISOString()}] ${msg}\n`);
+    }
   },
 };
