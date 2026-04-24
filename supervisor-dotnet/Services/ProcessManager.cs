@@ -14,8 +14,6 @@ public sealed class ProcessManager : IProcessManager
     private readonly SupervisorOptions _opts;
     private readonly ILogger<ProcessManager> _log;
 
-    private static readonly JsonSerializerOptions _jsonOpts = new() { PropertyNameCaseInsensitive = true };
-
     public ProcessManager(IOptions<SupervisorOptions> opts, ILogger<ProcessManager> log)
     {
         _opts = opts.Value;

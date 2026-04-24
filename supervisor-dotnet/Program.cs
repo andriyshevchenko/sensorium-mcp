@@ -73,7 +73,6 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
     opts.TelegramToken = CfgOrNull("TELEGRAM_TOKEN");
     opts.TelegramChatId = CfgOrNull("TELEGRAM_CHAT_ID");
     opts.TelegramOperatorId = CfgLong("TELEGRAM_OPERATOR_ID");
-    opts.HealthFailThresh = 5;
     opts.McpReadyTimeout = TimeSpan.FromMinutes(5);
 
     string logs = Path.Combine(dataDir, "logs");
@@ -84,8 +83,6 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
         ServerPid = Path.Combine(dataDir, "server.pid"),
         SupervisorLock = Path.Combine(dataDir, "supervisor.lock"),
         SupervisorLog = Path.Combine(logs, "supervisor", "supervisor-.log"),
-        PidsDir = Path.Combine(dataDir, "pids"),
-        HeartbeatsDir = Path.Combine(dataDir, "heartbeats"),
         PollerLock = Path.Combine(dataDir, "poller.lock"),
         SnapshotsDir = Path.Combine(dataDir, "snapshots"),
     };
