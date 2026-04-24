@@ -31,8 +31,6 @@ public sealed class SupervisorPaths
     public string ServerPid { get; set; } = "";
     public string SupervisorLock { get; set; } = "";
     public string SupervisorLog { get; set; } = "";
-    public string PidsDir { get; set; } = "";
-    public string HeartbeatsDir { get; set; } = "";
     public string PollerLock { get; set; } = "";
     public string SnapshotsDir { get; set; } = "";
 }
