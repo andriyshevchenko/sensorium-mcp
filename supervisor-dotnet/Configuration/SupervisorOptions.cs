@@ -8,6 +8,7 @@ public sealed class SupervisorOptions
     public string? McpHttpSecret { get; set; }
     public string? TelegramToken { get; set; }
     public string? TelegramChatId { get; set; }
+    public long? TelegramOperatorId { get; set; }
     public int HealthFailThresh { get; set; } = 5;
     public TimeSpan McpReadyTimeout { get; set; } = TimeSpan.FromMinutes(5);
     /// <summary>How often the health check loop ticks. Default 60s.</summary>

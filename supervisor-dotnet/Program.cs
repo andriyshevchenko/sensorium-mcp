@@ -63,6 +63,8 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
         => (config?[key] ?? Environment.GetEnvironmentVariable(key)) is { Length: > 0 } v ? v : null;
     int CfgInt(string key, int fallback)
         => int.TryParse(config?[key] ?? Environment.GetEnvironmentVariable(key), out int v) ? v : fallback;
+    long? CfgLong(string key)
+        => long.TryParse(config?[key] ?? Environment.GetEnvironmentVariable(key), out long v) ? v : null;
 
     opts.McpStartCommand = Cfg("MCP_START_COMMAND", "npx -y sensorium-mcp@latest");
     opts.DataDir = dataDir;
@@ -70,6 +72,7 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
     opts.McpHttpSecret = CfgOrNull("MCP_HTTP_SECRET");
     opts.TelegramToken = CfgOrNull("TELEGRAM_TOKEN");
     opts.TelegramChatId = CfgOrNull("TELEGRAM_CHAT_ID");
+    opts.TelegramOperatorId = CfgLong("TELEGRAM_OPERATOR_ID");
     opts.HealthFailThresh = 5;
     opts.McpReadyTimeout = TimeSpan.FromMinutes(5);
 
