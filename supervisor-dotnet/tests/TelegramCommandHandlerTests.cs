@@ -30,10 +30,10 @@ public class TelegramCommandHandlerTests : IDisposable
 
         var opts = Options.Create(new SupervisorOptions
         {
-            TelegramToken  = "test-token",
-            TelegramChatId = "12345",
-            McpHttpPort    = 9999,
-            DataDir        = _tmpDir,
+            TelegramToken      = "test-token",
+            TelegramOperatorId = 99001,
+            McpHttpPort        = 9999,
+            DataDir            = _tmpDir,
             Paths = new SupervisorPaths
             {
                 ServerPid       = Path.Combine(_tmpDir, "server.pid"),
@@ -52,10 +52,10 @@ public class TelegramCommandHandlerTests : IDisposable
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private Task InvokeHandleCommand(string text) =>
+    private Task InvokeHandleCommand(string text, string replyChatId = "12345") =>
         (Task)typeof(TelegramCommandHandler)
             .GetMethod("HandleCommandAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(_handler, [text, CancellationToken.None])!;
+            .Invoke(_handler, [text, replyChatId, CancellationToken.None])!;
 
     private Task<long> InvokePollOnce(string responseJson, long offset = 0)
     {
@@ -157,23 +157,152 @@ public class TelegramCommandHandlerTests : IDisposable
     // ── Auth filtering ────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AuthFiltering_MessageFromWrongChatId_NoReplySent()
+    public async Task AuthFiltering_NonPrivateMessage_NoReplySent()
     {
-        // Update from chat 99999, but handler is configured for chat "12345"
+        // Group/supergroup message — not a private chat, must be ignored
         await InvokePollOnce("""
             {
                 "ok": true,
                 "result": [{
                     "update_id": 42,
                     "message": {
-                        "text": "/sv status",
-                        "chat": { "id": 99999 }
+                        "text": "/status",
+                        "chat": { "id": 99001, "type": "supergroup" },
+                        "from": { "id": 99001 }
                     }
                 }]
             }
             """);
 
         // Only the GET getUpdates request — no POST sendMessage
+        Assert.All(_httpHandler.Requests, r => Assert.Equal(HttpMethod.Get, r.Method));
+    }
+
+    [Fact]
+    public async Task DmCommand_FromAuthorizedOperator_ExecutesCommand()
+    {
+        // Private chat from the configured operator ID, bare "status" command
+        await InvokePollOnce("""
+            {
+                "ok": true,
+                "result": [{
+                    "update_id": 43,
+                    "message": {
+                        "text": "/status",
+                        "chat": { "id": 99001, "type": "private" },
+                        "from": { "id": 99001 }
+                    }
+                }]
+            }
+            """);
+
+        Assert.Contains(_httpHandler.SentBodies, b => b.Contains("Supervisor Status"));
+    }
+
+    [Fact]
+    public async Task DmCommand_WithSvPrefix_ReturnsHelpNotStatus()
+    {
+        // "/sv status" in DM is not a recognised simple command — falls through to help
+        await InvokePollOnce("""
+            {
+                "ok": true,
+                "result": [{
+                    "update_id": 45,
+                    "message": {
+                        "text": "/sv status",
+                        "chat": { "id": 99001, "type": "private" },
+                        "from": { "id": 99001 }
+                    }
+                }]
+            }
+            """);
+
+        Assert.Contains(_httpHandler.SentBodies, b => b.Contains("Supervisor Commands"));
+    }
+
+    [Fact]
+    public async Task DmCommand_WithNoFromField_NoReplySent()
+    {
+        // Channel post forwarded to DM — no "from" field; must be silently ignored
+        await InvokePollOnce("""
+            {
+                "ok": true,
+                "result": [{
+                    "update_id": 46,
+                    "message": {
+                        "text": "/status",
+                        "chat": { "id": 99001, "type": "private" }
+                    }
+                }]
+            }
+            """);
+
+        Assert.All(_httpHandler.Requests, r => Assert.Equal(HttpMethod.Get, r.Method));
+    }
+
+    [Fact]
+    public async Task DmCommand_WhenOperatorIdNotConfigured_NoReplySent()
+    {
+        // Handler with no TelegramOperatorId set — DMs must be silently ignored
+        var opts = Options.Create(new SupervisorOptions
+        {
+            TelegramToken  = "test-token",
+            TelegramChatId = "12345",
+            // TelegramOperatorId deliberately omitted
+            McpHttpPort    = 9999,
+            DataDir        = _tmpDir,
+            Paths = new SupervisorPaths
+            {
+                ServerPid       = Path.Combine(_tmpDir, "server.pid"),
+                MaintenanceFlag = Path.Combine(_tmpDir, "maintenance.flag"),
+                PollerLock      = Path.Combine(_tmpDir, "poller.lock"),
+            }
+        });
+        var fakeHttp = new FakeHttpHandler();
+        using var handler = new TelegramCommandHandler(
+            opts, new FakeHttpClientFactory(new HttpClient(fakeHttp) { Timeout = System.Threading.Timeout.InfiniteTimeSpan }),
+            _proc, _mcp, _snapshots,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TelegramCommandHandler>.Instance);
+
+        fakeHttp.ResponseJson = """
+            {
+                "ok": true,
+                "result": [{
+                    "update_id": 47,
+                    "message": {
+                        "text": "/status",
+                        "chat": { "id": 99001, "type": "private" },
+                        "from": { "id": 99001 }
+                    }
+                }]
+            }
+            """;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await (Task<long>)typeof(TelegramCommandHandler)
+            .GetMethod("PollOnceAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(handler, [0L, cts.Token])!;
+
+        Assert.All(fakeHttp.Requests, r => Assert.Equal(HttpMethod.Get, r.Method));
+    }
+
+    [Fact]
+    public async Task DmCommand_FromUnauthorizedUser_NoReplySent()
+    {
+        // Private chat from a different user — should be silently ignored
+        await InvokePollOnce("""
+            {
+                "ok": true,
+                "result": [{
+                    "update_id": 44,
+                    "message": {
+                        "text": "/status",
+                        "chat": { "id": 77777, "type": "private" },
+                        "from": { "id": 77777 }
+                    }
+                }]
+            }
+            """);
+
         Assert.All(_httpHandler.Requests, r => Assert.Equal(HttpMethod.Get, r.Method));
     }
 
@@ -188,10 +317,10 @@ public class TelegramCommandHandlerTests : IDisposable
 
         var opts = Options.Create(new SupervisorOptions
         {
-            TelegramToken  = "test-token",
-            TelegramChatId = "12345",
-            McpHttpPort    = 9999,
-            DataDir        = _tmpDir,
+            TelegramToken      = "test-token",
+            TelegramOperatorId = 99001,
+            McpHttpPort        = 9999,
+            DataDir            = _tmpDir,
             Paths = new SupervisorPaths
             {
                 ServerPid       = Path.Combine(_tmpDir, "s2.pid"),
@@ -207,7 +336,7 @@ public class TelegramCommandHandlerTests : IDisposable
 
         await (Task)typeof(TelegramCommandHandler)
             .GetMethod("HandleCommandAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(handler, ["/sv restart", CancellationToken.None])!;
+            .Invoke(handler, ["/sv restart", "12345", CancellationToken.None])!;
 
         Assert.Single(fakeHttp.SentBodies);
         Assert.Contains("Error", fakeHttp.SentBodies[0]);

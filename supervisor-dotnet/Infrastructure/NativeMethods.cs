@@ -12,7 +12,6 @@ internal static class NativeMethods
     // Creation flags
     public const uint CREATE_NEW_PROCESS_GROUP = 0x00000200;
     public const uint CREATE_BREAKAWAY_FROM_JOB = 0x01000000;
-    public const uint CREATE_NO_WINDOW = 0x08000000;
     public const uint CREATE_NEW_CONSOLE = 0x00000010;
     public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
 
@@ -86,7 +85,6 @@ internal static class NativeMethods
         uint dwFlagsAndAttributes,
         IntPtr hTemplateFile);
 
-    public const uint GENERIC_WRITE = 0x40000000;
     public const uint FILE_APPEND_DATA = 0x00000004;
     public const uint FILE_SHARE_READ = 0x00000001;
     public const uint FILE_SHARE_WRITE = 0x00000002;
@@ -112,7 +110,6 @@ internal static class NativeMethods
     // ── Unix signal helpers ────────────────────────────────────────────────────
 
     public const int SIGTERM = 15;
-    public const int SIGKILL = 9;
 
     /// <summary>
     /// POSIX kill(2): send signal <paramref name="sig"/> to process <paramref name="pid"/>.

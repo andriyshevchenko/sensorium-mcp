@@ -42,13 +42,14 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (string.IsNullOrEmpty(_opts.TelegramToken) || string.IsNullOrEmpty(_opts.TelegramChatId))
+        if (string.IsNullOrEmpty(_opts.TelegramToken) || !_opts.TelegramOperatorId.HasValue)
         {
-            _log.LogInformation("TelegramCommandHandler: no Telegram credentials — disabled");
+            _log.LogInformation("TelegramCommandHandler: TELEGRAM_TOKEN or TELEGRAM_OPERATOR_ID not set — disabled");
             return;
         }
 
-        _log.LogInformation("TelegramCommandHandler started, polling for /sv commands");
+        _log.LogInformation("TelegramCommandHandler started, listening for DM commands from operator {OperatorId}",
+            _opts.TelegramOperatorId.Value);
 
         long offset = await LoadOffsetAsync().ConfigureAwait(false);
 
@@ -101,17 +102,24 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
 
             string text   = textProp.GetString() ?? "";
             string chatId = "";
-            if (msg.TryGetProperty("chat", out var chat) && chat.TryGetProperty("id", out var chatIdProp))
-                chatId = chatIdProp.ToString();
+            if (msg.TryGetProperty("chat", out var chat)
+                && chat.TryGetProperty("id", out var chatIdProp))
+                chatId = chatIdProp.GetInt64().ToString();
 
-            // Only respond to the configured chat
-            if (chatId != _opts.TelegramChatId) continue;
+            // Only accept /commands from the authorized operator in a private chat
+            if (!chat.TryGetProperty("type", out var typeProp)
+                || typeProp.GetString() != "private") continue;
+            if (!text.StartsWith("/", StringComparison.Ordinal)) continue;
+            if (!_opts.TelegramOperatorId.HasValue) continue;
+            if (!msg.TryGetProperty("from", out var from)
+                || !from.TryGetProperty("id", out var fromId)
+                || fromId.GetInt64() != _opts.TelegramOperatorId.Value) continue;
 
-            // Only handle /sv commands
-            if (!text.StartsWith("/sv", StringComparison.OrdinalIgnoreCase)) continue;
+            // Map /command to /sv command for internal dispatch
+            string commandText = "/sv " + text.Trim().TrimStart('/');
 
             _log.LogInformation("TelegramCommandHandler: received: {Text}", text);
-            await HandleCommandAsync(text.Trim(), ct).ConfigureAwait(false);
+            await HandleCommandAsync(commandText, chatId, ct).ConfigureAwait(false);
         }
 
         if (newOffset != offset)
@@ -122,7 +130,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
 
     // ── Command dispatch ──────────────────────────────────────────────────────
 
-    private async Task HandleCommandAsync(string text, CancellationToken ct)
+    private async Task HandleCommandAsync(string text, string replyChatId, CancellationToken ct)
     {
         string[] parts  = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         string command  = parts.Length >= 2 ? parts[1].ToLowerInvariant() : "help";
@@ -136,7 +144,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
                 "restart"   => await RestartMcpAsync(ct).ConfigureAwait(false),
                 "snapshots" => GetSnapshotsList(),
                 "restore" when parts.Length >= 3 => await RestoreSnapshotAsync(parts[2], ct).ConfigureAwait(false),
-                "restore"   => "Usage: /sv restore &lt;name&gt;",
+                "restore"   => "Usage: /restore &lt;name&gt;",
                 "nuke"      => await NukeMcpAsync(ct).ConfigureAwait(false),
                 _           => GetHelpText()
             };
@@ -147,7 +155,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
             reply = $"❌ Error: {Encode(ex.Message)}";
         }
 
-        await SendReplyAsync(reply, ct).ConfigureAwait(false);
+        await SendReplyAsync(reply, replyChatId, ct).ConfigureAwait(false);
     }
 
     // ── /sv status ────────────────────────────────────────────────────────────
@@ -339,15 +347,15 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
 
     private static string GetHelpText() =>
         "<b>Supervisor Commands</b>\n" +
-        "/sv status — uptime, PID, health, version\n" +
-        "/sv restart — graceful MCP restart\n" +
-        "/sv snapshots — list available snapshots\n" +
-        "/sv restore &lt;name&gt; — restore a snapshot\n" +
-        "/sv nuke — kill all node processes and respawn";
+        "/status — uptime, PID, health, version\n" +
+        "/restart — graceful MCP restart\n" +
+        "/snapshots — list available snapshots\n" +
+        "/restore &lt;name&gt; — restore a snapshot\n" +
+        "/nuke — kill all node processes and respawn";
 
     // ── Telegram send ─────────────────────────────────────────────────────────
 
-    private async Task SendReplyAsync(string text, CancellationToken ct)
+    private async Task SendReplyAsync(string text, string chatId, CancellationToken ct)
     {
         try
         {
@@ -357,7 +365,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
             var url     = $"https://api.telegram.org/bot{_opts.TelegramToken}/sendMessage";
             var payload = new Dictionary<string, object>
             {
-                ["chat_id"]    = _opts.TelegramChatId!,
+                ["chat_id"]    = chatId,
                 ["text"]       = text,
                 ["parse_mode"] = "HTML"
             };
