@@ -32,7 +32,7 @@ const DATA_DIR = join(homedir(), ".remote-copilot-mcp");
 const SNAPSHOTS_DIR = join(DATA_DIR, "snapshots");
 
 /** Items to include (relative to DATA_DIR). Directories included recursively. */
-const SNAPSHOT_ITEMS = ["memory.db", "settings.json", "templates", "schedules", "pending-tasks", "threads", "files"];
+const SNAPSHOT_ITEMS = ["memory.db", "settings.json", "install.config.json", "templates", "schedules", "pending-tasks", "threads", "files"];
 
 interface SnapshotManifest {
     mcpVersion: string;
