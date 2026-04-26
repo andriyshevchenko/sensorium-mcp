@@ -54,6 +54,8 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
         _log.LogInformation("TelegramCommandHandler started, listening for DM commands from operator {OperatorId} (token: {TokenType})",
             _opts.TelegramOperatorId.Value, usingSupervisorToken ? "supervisor-specific" : "shared");
 
+        await SendReplyAsync("🟢 Supervisor online", _opts.TelegramOperatorId.Value.ToString(), stoppingToken).ConfigureAwait(false);
+
         long offset = await LoadOffsetAsync().ConfigureAwait(false);
 
         while (!stoppingToken.IsCancellationRequested)
