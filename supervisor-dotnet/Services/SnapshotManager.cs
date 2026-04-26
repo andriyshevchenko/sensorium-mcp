@@ -16,8 +16,8 @@ public sealed class SnapshotManager : ISnapshotManager
     private readonly ILogger<SnapshotManager> _log;
 
     // Files and directories within the data dir that are backed up / restored
-    private static readonly string[] DataFiles = ["memory.db", "settings.json", "topic_registry.json"];
-    private static readonly string[] DataDirs  = ["sessions", "thread_registry"];
+    private static readonly string[] DataFiles = ["memory.db", "settings.json"];
+    private static readonly string[] DataDirs  = ["templates", "schedules", "pending-tasks", "threads", "files"];
 
     public SnapshotManager(IOptions<SupervisorOptions> opts, ILogger<SnapshotManager> log)
     {

@@ -32,7 +32,7 @@ const DATA_DIR = join(homedir(), ".remote-copilot-mcp");
 const SNAPSHOTS_DIR = join(DATA_DIR, "snapshots");
 
 /** Items to include (relative to DATA_DIR). Directories included recursively. */
-const SNAPSHOT_ITEMS = ["memory.db", "settings.json", "sessions", "topic_registry.json"];
+const SNAPSHOT_ITEMS = ["memory.db", "settings.json", "templates", "schedules", "pending-tasks", "threads", "files"];
 
 interface SnapshotManifest {
     mcpVersion: string;
@@ -92,8 +92,9 @@ export const handleGetSnapshots: RouteHandler = ({ json }) => {
 };
 
 /** POST /api/snapshots → { description? } → create snapshot zip + manifest */
-export const handlePostSnapshot: RouteHandler = ({ req, json }) => {
+export const handlePostSnapshot: RouteHandler = ({ req, json, db }) => {
     void (async () => {
+        let tempDbPath: string | null = null;
         try {
             ensureSnapshotsDir();
             const raw = await readBody(req);
@@ -107,9 +108,21 @@ export const handlePostSnapshot: RouteHandler = ({ req, json }) => {
             const zipPath = join(SNAPSHOTS_DIR, `${name}.zip`);
             const manifestPath = join(SNAPSHOTS_DIR, `${name}.json`);
 
-            // Collect items that actually exist
+            // Back up memory.db via better-sqlite3's backup API to avoid WAL lock.
+            // The copy is placed in SNAPSHOTS_DIR so its filename stays "memory.db"
+            // and the zip entry name is correct for restore.
+            const liveDbPath = join(DATA_DIR, "memory.db");
+            if (existsSync(liveDbPath)) {
+                tempDbPath = join(SNAPSHOTS_DIR, "memory.db");
+                await db.backup(tempDbPath);
+            }
+
+            // Collect items that actually exist (use temp db copy instead of live memory.db)
             const items = SNAPSHOT_ITEMS
-                .map((item) => join(DATA_DIR, item))
+                .map((item) => {
+                    if (item === "memory.db") return tempDbPath ?? join(DATA_DIR, item);
+                    return join(DATA_DIR, item);
+                })
                 .filter((p) => existsSync(p));
 
             if (items.length === 0) {
@@ -137,6 +150,10 @@ export const handlePostSnapshot: RouteHandler = ({ req, json }) => {
             json({ ok: true, snapshot: { name, sizeBytes, ...manifest } });
         } catch (err) {
             json({ error: errorMessage(err) }, 500);
+        } finally {
+            if (tempDbPath !== null && existsSync(tempDbPath)) {
+                unlinkSync(tempDbPath);
+            }
         }
     })();
     return true;
