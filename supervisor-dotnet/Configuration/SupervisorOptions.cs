@@ -7,6 +7,7 @@ public sealed class SupervisorOptions
     public int McpHttpPort { get; set; }
     public string? McpHttpSecret { get; set; }
     public string? TelegramToken { get; set; }
+    public string? TelegramSupervisorToken { get; set; }
     public string? TelegramChatId { get; set; }
     public long? TelegramOperatorId { get; set; }
     public int HealthFailThresh { get; set; } = 5;
