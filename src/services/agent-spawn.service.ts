@@ -13,6 +13,7 @@ import { PROCESS_BASE_DIR, PROCESS_PIDS_DIR, THREAD_LOGS_DIR, ensureDirs, findAl
 import { ThreadState, type ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { buildClaudeMcpConfig, buildCopilotMcpConfig, buildCodexMcpArgs, type SensoriumTransport } from "./mcp-config.service.js";
 import { decommissionWorker } from "./worker-cleanup.service.js";
+import { writeThreadHeartbeat } from "../data/file-storage.js";
 
 const ENV_DENYLIST = new Set(["TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "MCP_HTTP_SECRET", "DASHBOARD_TOKEN", "MCP_START_COMMAND", "WATCHER_START_COMMAND"]);
 
@@ -181,6 +182,8 @@ function registerSpawnedProcess(opts: RegisterSpawnOpts, threadLifecycle: Thread
   if (pid === undefined) return { error: `${opts.agentLabel} process spawned but PID is undefined - spawn may have failed.` };
   const pidFilePath = join(PROCESS_PIDS_DIR, `${opts.threadId}.pid`);
   try { writeFileSync(pidFilePath, JSON.stringify({ pid, name: opts.name, configPath: opts.configPath, startedAt: Date.now(), ...(opts.threadType ? { threadType: opts.threadType } : {}) }), "utf-8"); } catch (err) { log.debug(`[start_thread] Failed to write PID file: ${errorMessage(err)}`); }
+  // Reset heartbeat so keeper doesn't treat a freshly spawned thread as stuck
+  writeThreadHeartbeat(opts.threadId);
   const entry: SpawnedThread = { pid, threadId: opts.threadId, name: opts.name, startedAt: Date.now(), createdAt: Date.now(), logFile: opts.logFilePath, ...(opts.memorySourceThreadId !== undefined ? { memorySourceThreadId: opts.memorySourceThreadId } : {}), ...(opts.memoryTargetThreadId !== undefined ? { memoryTargetThreadId: opts.memoryTargetThreadId } : {}), ...(opts.threadType ? { threadType: opts.threadType } : {}) };
   spawnedThreads.push(entry);
   opts.child.on("exit", (code) => { handleProcessExit(code, opts.threadId, pid, pidFilePath, entry, opts.agentLabel, threadLifecycle).catch((err) => log.warn(`[exit] cleanup failed: ${err}`)); });

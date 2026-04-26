@@ -5,6 +5,7 @@ using Serilog;
 using Serilog.Events;
 using Sensorium.Supervisor;
 using Sensorium.Supervisor.Configuration;
+using Sensorium.Supervisor.Infrastructure;
 using Sensorium.Supervisor.Services;
 
 // ── Paths derived from env ────────────────────────────────────────────────────
@@ -19,12 +20,16 @@ Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
     .Enrich.FromLogContext()
-    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .WriteTo.Console(new RedactingFormatter(
+        new Serilog.Formatting.Display.MessageTemplateTextFormatter(
+            "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")))
     .WriteTo.File(
+        new RedactingFormatter(
+            new Serilog.Formatting.Display.MessageTemplateTextFormatter(
+                "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")),
         logPath,
         rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 7,
-        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+        retainedFileCountLimit: 7)
     .CreateLogger();
 
 // ── Build Generic Host ────────────────────────────────────────────────────────
