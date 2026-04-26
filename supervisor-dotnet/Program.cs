@@ -71,6 +71,7 @@ static void ConfigureOptions(SupervisorOptions opts, string dataDir, IConfigurat
     opts.McpHttpPort = CfgInt("MCP_HTTP_PORT", 0);
     opts.McpHttpSecret = CfgOrNull("MCP_HTTP_SECRET");
     opts.TelegramToken = CfgOrNull("TELEGRAM_TOKEN");
+    opts.TelegramSupervisorToken = CfgOrNull("TELEGRAM_SUPERVISOR_TOKEN");
     opts.TelegramChatId = CfgOrNull("TELEGRAM_CHAT_ID");
     opts.TelegramOperatorId = CfgLong("TELEGRAM_OPERATOR_ID");
     opts.McpReadyTimeout = TimeSpan.FromMinutes(5);

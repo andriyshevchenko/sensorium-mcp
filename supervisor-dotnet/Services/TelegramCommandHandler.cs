@@ -22,6 +22,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
     private readonly ISnapshotManager _snapshots;
     private readonly ILogger<TelegramCommandHandler> _log;
     private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
+    private readonly string? _token;
 
     public TelegramCommandHandler(
         IOptions<SupervisorOptions> opts,
@@ -38,18 +39,20 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
         _mcp       = mcp;
         _snapshots = snapshots;
         _log       = log;
+        _token     = _opts.TelegramSupervisorToken ?? _opts.TelegramToken;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (string.IsNullOrEmpty(_opts.TelegramToken) || !_opts.TelegramOperatorId.HasValue)
+        if (string.IsNullOrEmpty(_token) || !_opts.TelegramOperatorId.HasValue)
         {
-            _log.LogInformation("TelegramCommandHandler: TELEGRAM_TOKEN or TELEGRAM_OPERATOR_ID not set — disabled");
+            _log.LogInformation("TelegramCommandHandler: TELEGRAM_TOKEN/TELEGRAM_SUPERVISOR_TOKEN or TELEGRAM_OPERATOR_ID not set — disabled");
             return;
         }
 
-        _log.LogInformation("TelegramCommandHandler started, listening for DM commands from operator {OperatorId}",
-            _opts.TelegramOperatorId.Value);
+        var usingSupervisorToken = !string.IsNullOrEmpty(_opts.TelegramSupervisorToken);
+        _log.LogInformation("TelegramCommandHandler started, listening for DM commands from operator {OperatorId} (token: {TokenType})",
+            _opts.TelegramOperatorId.Value, usingSupervisorToken ? "supervisor-specific" : "shared");
 
         long offset = await LoadOffsetAsync().ConfigureAwait(false);
 
@@ -76,7 +79,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
     private async Task<long> PollOnceAsync(long offset, CancellationToken ct)
     {
         int timeoutSec = _opts.CommandPollTimeoutSeconds;
-        var url = $"https://api.telegram.org/bot{_opts.TelegramToken}/getUpdates"
+        var url = $"https://api.telegram.org/bot{_token}/getUpdates"
                 + $"?offset={offset}&timeout={timeoutSec}&allowed_updates=[\"message\"]";
 
         // Give a generous per-request timeout beyond the Telegram long-poll window
@@ -362,7 +365,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(10));
 
-            var url     = $"https://api.telegram.org/bot{_opts.TelegramToken}/sendMessage";
+            var url     = $"https://api.telegram.org/bot{_token}/sendMessage";
             var payload = new Dictionary<string, object>
             {
                 ["chat_id"]    = chatId,

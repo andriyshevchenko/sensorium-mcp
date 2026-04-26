@@ -130,6 +130,7 @@ When disabled, the memory system will still store episodes locally but will not 
 |----------|----------|---------|-------------|
 | `TELEGRAM_TOKEN` | Yes | — | Telegram Bot API token |
 | `TELEGRAM_CHAT_ID` | Yes | — | Forum supergroup chat ID |
+| `TELEGRAM_SUPERVISOR_TOKEN` | No | — | Separate bot token for supervisor DM commands (avoids 409 conflict with MCP poller) |
 | `OPENAI_API_KEY` | No | — | For voice transcription (Whisper), TTS, and memory consolidation |
 | `VOICE_ANALYSIS_URL` | No | — | Voice emotion analysis microservice URL |
 | `CONSOLIDATION_ENABLED` | No | `true` | Set to `false` or `0` to disable sending episodes to OpenAI for consolidation |
