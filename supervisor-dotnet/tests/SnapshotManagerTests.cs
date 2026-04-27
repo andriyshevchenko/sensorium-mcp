@@ -183,6 +183,25 @@ public class SnapshotManagerTests : IDisposable
         Assert.Equal("new-content", File.ReadAllText(Path.Combine(_dataDir, "memory.db")));
     }
 
+    [Fact]
+    public void Restore_CorruptSnapshot_RollsBackDataDirFromPreRestoreBackup()
+    {
+        // Pre-populate data dir with a known file
+        File.WriteAllText(Path.Combine(_dataDir, "memory.db"), "original");
+
+        // Create a corrupt (not a valid zip) snapshot
+        string zipPath = Path.Combine(_snapshotsDir, "corrupt.zip");
+        File.WriteAllBytes(zipPath, [0x00, 0x01, 0x02]);
+
+        var result = _mgr.Restore("corrupt");
+
+        // Restore must report failure
+        Assert.False(result.Success);
+        // Rollback must have restored memory.db from the pre-restore backup
+        Assert.True(File.Exists(Path.Combine(_dataDir, "memory.db")));
+        Assert.Equal("original", File.ReadAllText(Path.Combine(_dataDir, "memory.db")));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void CreateSnapshot(string name, DateTimeOffset createdAt, string mcpVersion)
