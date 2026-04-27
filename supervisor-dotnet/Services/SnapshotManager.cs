@@ -89,7 +89,10 @@ public sealed class SnapshotManager : ISnapshotManager
             CreateDataBackup(backupPath);
             _log.LogInformation("SnapshotManager: pre-restore backup created");
 
-            // Step 2 — extract snapshot over data dir (overwrites existing files)
+            // Step 2 — wipe known data files/dirs for a clean slate
+            CleanDataDir();
+
+            // Step 3 — extract snapshot zip
             _log.LogInformation("SnapshotManager: restoring '{Name}' → {DataDir}", snapshotName, _opts.DataDir);
             ZipFile.ExtractToDirectory(zipPath, _opts.DataDir, overwriteFiles: true);
             _log.LogInformation("SnapshotManager: restore complete");
@@ -104,6 +107,29 @@ public sealed class SnapshotManager : ISnapshotManager
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
+
+    private void CleanDataDir()
+    {
+        foreach (var fileName in DataFiles)
+        {
+            var filePath = Path.Combine(_opts.DataDir, fileName);
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+                _log.LogInformation("SnapshotManager: wiped file {File}", fileName);
+            }
+        }
+
+        foreach (var dirName in DataDirs)
+        {
+            var dirPath = Path.Combine(_opts.DataDir, dirName);
+            if (Directory.Exists(dirPath))
+            {
+                Directory.Delete(dirPath, recursive: true);
+                _log.LogInformation("SnapshotManager: wiped dir {Dir}", dirName);
+            }
+        }
+    }
 
     private void CreateDataBackup(string backupZipPath)
     {
