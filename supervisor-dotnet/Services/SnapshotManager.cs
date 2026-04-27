@@ -80,10 +80,12 @@ public sealed class SnapshotManager : ISnapshotManager
         if (!File.Exists(zipPath))
             return new SnapshotRestoreResult(false, $"Snapshot '{snapshotName}' not found");
 
+        string backupPath = Path.Combine(dir, "_pre-restore-backup.zip");
+        bool   wiped      = false;
+
         try
         {
             // Step 1 — create pre-restore backup of current data dir
-            string backupPath = Path.Combine(dir, "_pre-restore-backup.zip");
             _log.LogInformation("SnapshotManager: creating pre-restore backup → {Path}", backupPath);
             TryDeleteFile(backupPath);
             CreateDataBackup(backupPath);
@@ -91,6 +93,7 @@ public sealed class SnapshotManager : ISnapshotManager
 
             // Step 2 — wipe known data files/dirs for a clean slate
             CleanDataDir();
+            wiped = true;
 
             // Step 3 — extract snapshot zip
             _log.LogInformation("SnapshotManager: restoring '{Name}' → {DataDir}", snapshotName, _opts.DataDir);
@@ -102,6 +105,19 @@ public sealed class SnapshotManager : ISnapshotManager
         catch (Exception ex)
         {
             _log.LogError(ex, "SnapshotManager: restore failed for '{Name}'", snapshotName);
+            if (wiped && File.Exists(backupPath))
+            {
+                _log.LogWarning("SnapshotManager: data dir was wiped — attempting rollback from pre-restore backup");
+                try
+                {
+                    ZipFile.ExtractToDirectory(backupPath, _opts.DataDir, overwriteFiles: true);
+                    _log.LogInformation("SnapshotManager: rollback complete");
+                }
+                catch (Exception rollbackEx)
+                {
+                    _log.LogError(rollbackEx, "SnapshotManager: rollback failed — data dir may be inconsistent");
+                }
+            }
             return new SnapshotRestoreResult(false, ex.Message);
         }
     }
@@ -113,20 +129,30 @@ public sealed class SnapshotManager : ISnapshotManager
         foreach (var fileName in DataFiles)
         {
             var filePath = Path.Combine(_opts.DataDir, fileName);
-            if (File.Exists(filePath))
+            if (!File.Exists(filePath)) continue;
+            try
             {
                 File.Delete(filePath);
                 _log.LogInformation("SnapshotManager: wiped file {File}", fileName);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "SnapshotManager: could not wipe file {File} — proceeding anyway", fileName);
             }
         }
 
         foreach (var dirName in DataDirs)
         {
             var dirPath = Path.Combine(_opts.DataDir, dirName);
-            if (Directory.Exists(dirPath))
+            if (!Directory.Exists(dirPath)) continue;
+            try
             {
                 Directory.Delete(dirPath, recursive: true);
                 _log.LogInformation("SnapshotManager: wiped dir {Dir}", dirName);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "SnapshotManager: could not wipe dir {Dir} — proceeding anyway", dirName);
             }
         }
     }
