@@ -40,7 +40,11 @@ function migrateExistingRootThreads(db: Database): void {
   log.info(`Migrated ${rows.length} existing threads as roots`);
 }
 
+let _singletonDb: Database | null = null;
+
 export function initMemoryDb(): Database {
+  if (_singletonDb) return _singletonDb;
+
   const dbDir = join(homedir(), ".remote-copilot-mcp");
   mkdirSync(dbDir, { recursive: true });
 
@@ -73,5 +77,6 @@ export function initMemoryDb(): Database {
     ).run();
   } catch {}
 
+  _singletonDb = db;
   return db;
 }
