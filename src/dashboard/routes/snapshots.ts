@@ -17,6 +17,7 @@ import {
     readdirSync,
     readFileSync,
     statSync,
+    rmSync,
     unlinkSync,
     writeFileSync,
 } from "node:fs";
@@ -94,6 +95,7 @@ export const handleGetSnapshots: RouteHandler = ({ json }) => {
 /** POST /api/snapshots → { description? } → create snapshot zip + manifest */
 export const handlePostSnapshot: RouteHandler = ({ req, json, db }) => {
     void (async () => {
+        let tempDir: string | null = null;
         let tempDbPath: string | null = null;
         try {
             ensureSnapshotsDir();
@@ -109,11 +111,13 @@ export const handlePostSnapshot: RouteHandler = ({ req, json, db }) => {
             const manifestPath = join(SNAPSHOTS_DIR, `${name}.json`);
 
             // Back up memory.db via better-sqlite3's backup API to avoid WAL lock.
-            // The copy is placed in SNAPSHOTS_DIR so its filename stays "memory.db"
-            // and the zip entry name is correct for restore.
+            // Place in a unique temp dir so filename stays "memory.db" for correct
+            // zip entry naming, and concurrent snapshots don't collide.
             const liveDbPath = join(DATA_DIR, "memory.db");
             if (existsSync(liveDbPath)) {
-                tempDbPath = join(SNAPSHOTS_DIR, "memory.db");
+                tempDir = join(SNAPSHOTS_DIR, `_tmp_${name}`);
+                mkdirSync(tempDir, { recursive: true });
+                tempDbPath = join(tempDir, "memory.db");
                 await db.backup(tempDbPath);
             }
 
@@ -151,8 +155,8 @@ export const handlePostSnapshot: RouteHandler = ({ req, json, db }) => {
         } catch (err) {
             json({ error: errorMessage(err) }, 500);
         } finally {
-            if (tempDbPath !== null && existsSync(tempDbPath)) {
-                unlinkSync(tempDbPath);
+            if (tempDir !== null) {
+                try { rmSync(tempDir, { recursive: true, force: true }); } catch { /* best-effort */ }
             }
         }
     })();
