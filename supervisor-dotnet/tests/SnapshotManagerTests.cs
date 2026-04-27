@@ -158,6 +158,31 @@ public class SnapshotManagerTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_dataDir, "restored-marker.txt")));
     }
 
+    [Fact]
+    public void Restore_ValidSnapshot_WipesExistingDataBeforeExtract()
+    {
+        // Pre-populate data dir with known DataFiles and DataDirs
+        File.WriteAllText(Path.Combine(_dataDir, "memory.db"), "old");
+        Directory.CreateDirectory(Path.Combine(_dataDir, "threads"));
+        File.WriteAllText(Path.Combine(_dataDir, "threads", "old.json"), "stale");
+
+        // Create snapshot that only puts a new memory.db (no threads/)
+        string zipPath = Path.Combine(_snapshotsDir, "cleanwipe.zip");
+        using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+        {
+            var entry = archive.CreateEntry("memory.db");
+            using var w = new StreamWriter(entry.Open());
+            w.Write("new-content");
+        }
+
+        _mgr.Restore("cleanwipe");
+
+        // threads/ must be gone — wiped before extract, not in snapshot
+        Assert.False(Directory.Exists(Path.Combine(_dataDir, "threads")));
+        // memory.db should contain the snapshot's version
+        Assert.Equal("new-content", File.ReadAllText(Path.Combine(_dataDir, "memory.db")));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void CreateSnapshot(string name, DateTimeOffset createdAt, string mcpVersion)
