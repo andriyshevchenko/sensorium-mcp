@@ -10,7 +10,7 @@ namespace Sensorium.Supervisor.Infrastructure;
 /// </summary>
 public sealed partial class RedactingFormatter(ITextFormatter inner) : ITextFormatter
 {
-	[GeneratedRegex(@"bot\d+:[A-Za-z0-9_-]+", RegexOptions.Compiled)]
+	[GeneratedRegex(@"bot\d+:[A-Za-z0-9_-]+")]
 	private static partial Regex TokenPattern();
 
 	public void Format(LogEvent logEvent, TextWriter output)
