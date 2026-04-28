@@ -656,6 +656,22 @@ onMounted(load)
                 <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
               </select>
               <span class="text-xs text-muted">{{ formatDate(child.lastActiveAt) }}</span>
+              <input
+                v-if="child.type === 'branch' && editingCwdId === child.threadId"
+                v-model="editingCwdValue"
+                @blur="submitCwdEdit(child.threadId)"
+                @keyup.enter="submitCwdEdit(child.threadId)"
+                @keyup.escape="editingCwdId = null"
+                type="text"
+                placeholder="Set working directory…"
+                class="text-xs font-mono bg-card border border-accent rounded px-1 py-0 text-textPrimary focus:outline-none w-48"
+              />
+              <span
+                v-else-if="child.type === 'branch'"
+                class="text-xs text-muted font-mono truncate max-w-[200px] cursor-pointer hover:text-accent transition"
+                :title="(child.workingDirectory ?? 'Click to set CWD') + ' (dblclick to edit)'"
+                @dblclick="startCwdEdit(child)"
+              >📁 {{ child.workingDirectory ?? '—' }}</span>
               <div class="ml-auto flex items-center gap-3">
                 <!-- Start button for children -->
                 <button
@@ -696,6 +712,17 @@ onMounted(load)
                     <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', child.keepAlive ? 'translate-x-4' : 'translate-x-0.5']" />
                   </button>
                   <span class="text-xs text-muted">Keep-alive</span>
+                </div>
+                <!-- Daily Rotation toggle for branches -->
+                <div v-if="child.type === 'branch'" class="flex items-center gap-1.5">
+                  <button
+                    @click="toggleDailyRotation(child)"
+                    :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', child.dailyRotation ? 'bg-blue-500' : 'bg-gray-700']"
+                    title="Toggle daily rotation"
+                  >
+                    <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', child.dailyRotation ? 'translate-x-4' : 'translate-x-0.5']" />
+                  </button>
+                  <span class="text-xs text-muted">Daily</span>
                 </div>
                 <!-- Autonomous Mode toggle for branches -->
                 <div v-if="child.type === 'branch'" class="flex items-center gap-1.5">
@@ -792,6 +819,22 @@ onMounted(load)
             <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
           </select>
           <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
+          <input
+            v-if="editingCwdId === t.threadId"
+            v-model="editingCwdValue"
+            @blur="submitCwdEdit(t.threadId)"
+            @keyup.enter="submitCwdEdit(t.threadId)"
+            @keyup.escape="editingCwdId = null"
+            type="text"
+            placeholder="Set working directory…"
+            class="text-xs font-mono bg-card border border-accent rounded px-1 py-0 text-textPrimary focus:outline-none w-48"
+          />
+          <span
+            v-else
+            class="text-xs text-muted font-mono truncate max-w-[200px] cursor-pointer hover:text-accent transition"
+            :title="(t.workingDirectory ?? 'Click to set CWD') + ' (dblclick to edit)'"
+            @dblclick="startCwdEdit(t)"
+          >📁 {{ t.workingDirectory ?? '—' }}</span>
           <div class="ml-auto flex items-center gap-3">
             <button
               @click="startThread(t)"
@@ -819,6 +862,16 @@ onMounted(load)
                 <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', t.keepAlive ? 'translate-x-4' : 'translate-x-0.5']" />
               </button>
               <span class="text-xs text-muted">Keep-alive</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button
+                @click="toggleDailyRotation(t)"
+                :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', t.dailyRotation ? 'bg-blue-500' : 'bg-gray-700']"
+                title="Toggle daily rotation"
+              >
+                <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform', t.dailyRotation ? 'translate-x-4' : 'translate-x-0.5']" />
+              </button>
+              <span class="text-xs text-muted">Daily</span>
             </div>
             <div class="flex items-center gap-1.5">
               <button
