@@ -162,6 +162,7 @@ export class ThreadLifecycleService {
 
   archiveThread(db: Database, threadId: number): ThreadRecord {
     const current = this.requireThread(db, threadId, "archiveThread");
+    if (current.status === ThreadState.Archived) return current;
     this.assertTransition(current.status, ThreadState.Archived, "archiveThread");
 
     this.threadRepository.updateThread(db, threadId, {

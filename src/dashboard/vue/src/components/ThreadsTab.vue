@@ -521,7 +521,7 @@ onMounted(load)
                 <!-- Start button -->
                 <button
                   @click="startThread(t)"
-                  :disabled="startingThreadId === t.threadId"
+                  :disabled="startingThreadId === t.threadId || t.status === 'active'"
                   class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
                   title="Start thread"
                 >
@@ -676,7 +676,7 @@ onMounted(load)
                 <!-- Start button for children -->
                 <button
                   @click="startThread(child)"
-                  :disabled="startingThreadId === child.threadId"
+                  :disabled="startingThreadId === child.threadId || child.status === 'active'"
                   class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
                   title="Start thread"
                 >
@@ -769,7 +769,7 @@ onMounted(load)
           <div class="ml-auto flex items-center gap-2">
             <button
               @click="startThread(t)"
-              :disabled="startingThreadId === t.threadId"
+              :disabled="startingThreadId === t.threadId || t.status === 'active'"
               class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
               title="Start thread"
             >
@@ -838,7 +838,7 @@ onMounted(load)
           <div class="ml-auto flex items-center gap-3">
             <button
               @click="startThread(t)"
-              :disabled="startingThreadId === t.threadId"
+              :disabled="startingThreadId === t.threadId || t.status === 'active'"
               class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
               title="Start thread"
             >
@@ -918,31 +918,7 @@ onMounted(load)
             <option v-for="at in agentTypes" :key="at" :value="at">{{ at }}</option>
           </select>
           <span class="text-xs text-muted">{{ formatDate(t.lastActiveAt) }}</span>
-          <div class="ml-auto flex items-center gap-2">
-            <button
-              @click="startThread(t)"
-              :disabled="startingThreadId === t.threadId"
-              class="px-2 py-1 rounded-lg text-xs bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50 transition"
-              title="Start thread"
-            >
-              {{ startingThreadId === t.threadId ? 'Starting…' : '▶ Start' }}
-            </button>
-            <button
-              v-if="t.rootThreadId"
-              @click="syncToRoot(t)"
-              :disabled="syncingThreadId === t.threadId"
-              class="px-2 py-1 rounded-lg text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 disabled:opacity-50 transition"
-              title="Sync memory to root thread"
-            >
-              {{ syncingThreadId === t.threadId ? 'Syncing…' : '⟳ Sync to Root' }}
-            </button>
-            <button
-              @click="archiveThread(t)"
-              class="px-2 py-1 rounded-lg text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
-            >
-              Archive
-            </button>
-          </div>
+          <span class="ml-auto text-xs text-muted italic">auto-managed</span>
         </div>
       </div>
     </div>
