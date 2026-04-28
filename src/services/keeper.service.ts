@@ -126,8 +126,23 @@ export class KeeperService {
     if (alivePid !== undefined) {
       // 3. Check if stuck via heartbeat
       const heartbeat = readThreadHeartbeat(entry.threadId);
-      if (heartbeat !== null && (now - heartbeat) > STUCK_THRESHOLD_MS) {
-        log.warn(`[keeper] Thread ${entry.threadId} is stuck (no heartbeat for ${Math.round((now - heartbeat) / 60000)}m) — killing`);
+      const isStuck = heartbeat !== null
+        ? (now - heartbeat) > STUCK_THRESHOLD_MS
+        // No parseable heartbeat but process is alive — treat as stuck unless
+        // freshly spawned by THIS keeper instance (lastStartTime within threshold).
+        // Covers zombie processes with empty/corrupt heartbeat files that survived
+        // a server restart.
+        : entry.lastStartTime > 0
+          ? (now - entry.lastStartTime) > STUCK_THRESHOLD_MS
+          // Restored from PID file (lastStartTime=0): no heartbeat data at all
+          // means the process never wrote one — definitely stuck.
+          : true;
+
+      if (isStuck) {
+        const reason = heartbeat !== null
+          ? `no heartbeat for ${Math.round((now - heartbeat) / 60000)}m`
+          : `no valid heartbeat (zombie process)`;
+        log.warn(`[keeper] Thread ${entry.threadId} is stuck (${reason}) — killing`);
         try {
           const stuckDb = this.deps.getMemoryDb();
           this.deps.threadLifecycle.transitionThread(stuckDb, entry.threadId, ThreadState.Stuck);
