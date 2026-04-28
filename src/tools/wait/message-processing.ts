@@ -16,6 +16,7 @@ import { getReminders } from "../../response-builders.js";
 import { getEffectiveAgentType, getEffectiveAutonomousMode } from "../../config.js";
 import { listSchedules } from "../../scheduler.js";
 import { assembleCompactRefresh } from "../../services/memory-briefing.service.js";
+import { isSessionSuperseded } from "../../sessions.js";
 
 import { processVoice, processAnimation, processVideoNote, type MediaContext } from "./media-processor.js";
 import { handleReactionWithMessages } from "./reaction-handler.js";
@@ -67,6 +68,18 @@ export async function processIncomingMessages(
       content: [{
         type: "text",
         text: "The connection was interrupted. Messages are preserved for the next call.",
+      }],
+    };
+  }
+
+  // Prevent zombie sessions from consuming messages meant for the active session.
+  const currentSid = ctx.getMcpSessionId?.();
+  if (isSessionSuperseded(currentSid)) {
+    log.warn(`[wait] Session ${currentSid?.slice(0, 8)}… superseded before consuming ${peekedCount} messages — leaving in queue.`);
+    return {
+      content: [{
+        type: "text",
+        text: "This session has been superseded by a newer session for the same thread. Exiting.",
       }],
     };
   }

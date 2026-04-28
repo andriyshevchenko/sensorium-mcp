@@ -221,6 +221,7 @@ export function startHttpServer(
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (sid) => {
             capturedSid = sid;
+            log.info(`[http] New MCP session created: ${sid.slice(0, 8)}…`);
             sessions.set(sid, { transport, server: null, lastActivity: Date.now(), status: "active" });
             registerDashboardSession(sid, "http");
           },

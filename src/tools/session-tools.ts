@@ -9,6 +9,7 @@ import type { TelegramClient } from "../telegram.js";
 import type { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
 import { log } from "../logger.js";
 import { saveAgentEpisodeSafe, type Database } from "../memory.js";
+import { isSessionSuperseded } from "../sessions.js";
 import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
 import { getThread } from "../data/memory/thread-registry.js";
@@ -43,6 +44,7 @@ export interface SessionToolContext {
   addPreviewedId: (id: number) => void;
   getMemoryDb: () => Database;
   sessionStartedAt: number;
+  getMcpSessionId?: () => string | undefined;
 }
 
 interface Extra {
@@ -194,7 +196,7 @@ async function handleReportProgress(
     // runs.  Messages with media (photo, voice, document, video_note,
     // animation, sticker) are re-queued so wait_for_instructions can
     // still download / transcribe / vision-analyze them.
-    if (hasNewPreviews) {
+    if (hasNewPreviews && !isSessionSuperseded(ctx.getMcpSessionId?.())) {
       const consumed = readThreadMessages(effectiveThreadId);
       for (const msg of consumed) {
         const hasMedia = hasMediaContent(msg.message as Record<string, unknown>);
