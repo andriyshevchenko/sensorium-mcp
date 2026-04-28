@@ -186,6 +186,7 @@ function createMcpServer(
       addPreviewedId,
       getMemoryDb,
       sessionStartedAt,
+      getMcpSessionId,
     };
   }
 
@@ -279,6 +280,7 @@ function createMcpServer(
         getMemoryDb,
         config,
         threadLifecycle,
+        getMcpSessionId,
         errorResult,
       };
       return handleWaitForInstructions(typedArgs, waitCtx, extra as unknown as WaitToolExtra);
@@ -356,9 +358,10 @@ function createMcpServer(
   srv.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;
 
-    // Verbose logging: tool call dispatch
+    // Verbose logging: tool call dispatch (include session ID for dual-session diagnostics)
     const argsSummary = args ? JSON.stringify(args).slice(0, 200) : "{}";
-    log.verbose("dispatch", `Tool call: ${name} args=${argsSummary}`);
+    const sid = getMcpSessionId?.();
+    log.verbose("dispatch", `Tool call${sid ? ` [${sid.slice(0, 8)}]` : ""}: ${name} args=${argsSummary}`);
 
     lastToolCallAt = Date.now();
     writeActivityHeartbeat();

@@ -94,6 +94,19 @@ const threadSessionRegistry = new Map<number, SessionRegistryEntry[]>();
 const sessionThreadRegistry = new Map<string, number>();
 const expectedSessionCloses = new Set<string>();
 
+/**
+ * Sessions that have been superseded by a newer session for the same thread.
+ * Any poll loop running under a superseded session should exit immediately
+ * rather than consuming messages meant for the replacement session.
+ * Cleared on process restart. Grows at most a few entries per day.
+ */
+const supersededSessions = new Set<string>();
+
+/** Check if a session has been superseded by a newer session for its thread. */
+export function isSessionSuperseded(mcpSessionId: string | undefined): boolean {
+  return mcpSessionId !== undefined && supersededSessions.has(mcpSessionId);
+}
+
 export function registerMcpSession(
   threadId: number,
   mcpSessionId: string,
@@ -148,6 +161,7 @@ export function purgeOtherSessions(threadId: number, keepMcpSessionId?: string):
     if (entry.mcpSessionId === keepMcpSessionId) {
       kept.push(entry);
     } else {
+      supersededSessions.add(entry.mcpSessionId);
       expectMcpSessionClose(entry.mcpSessionId);
       try { entry.closeTransport(); } catch (_) { /* best-effort */ }
       unregisterMcpSession(entry.mcpSessionId);

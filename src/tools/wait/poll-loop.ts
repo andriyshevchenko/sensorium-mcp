@@ -29,6 +29,7 @@ import { getShortReminder, buildMaintenanceResponse } from "../../response-build
 import type { ThreadLifecycleService } from "../../services/thread-lifecycle.service.js";
 
 import { PENDING_TASKS_DIR } from "../../services/process.service.js";
+import { isSessionSuperseded } from "../../sessions.js";
 import { handleReactionOnly } from "./reaction-handler.js";
 import { checkForDueTasks } from "./task-handler.js";
 import { processIncomingMessages, handlePollTimeout } from "./message-processing.js";
@@ -120,6 +121,7 @@ export interface WaitToolContext {
   getMemoryDb: () => ReturnType<typeof initMemoryDb>;
   config: AppConfig;
   threadLifecycle: ThreadLifecycleService;
+  getMcpSessionId?: () => string | undefined;
 
   // Response builders
   errorResult: (msg: string) => ToolResult & { isError: true };
@@ -169,9 +171,12 @@ export async function handleWaitForInstructions(
 
   // ── Pending task injection (pre-loop check) ────────────────────────────
   // If start_thread or send_message_to_thread wrote a task file for this
-  // thread, deliver it immediately.
-  const preLoopTask = await consumePendingTask(effectiveThreadId);
-  if (preLoopTask) return preLoopTask;
+  // thread, deliver it immediately — but only if this session is still active.
+  const preSid = ctx.getMcpSessionId?.();
+  if (!isSessionSuperseded(preSid)) {
+    const preLoopTask = await consumePendingTask(effectiveThreadId);
+    if (preLoopTask) return preLoopTask;
+  }
 
   // Poll the dispatcher's per-thread file instead of calling getUpdates
   // directly. This avoids 409 conflicts between concurrent instances.
@@ -185,9 +190,21 @@ export async function handleWaitForInstructions(
 
   while (Date.now() < deadline) {
     try {
-    // Bail out immediately if the MCP transport signalled abort (client disconnected).
+    // Bail out if this session has been superseded by a newer session for the
+    // same thread. Without this, a zombie session races the active one for
+    // messages — consuming them but responding with degraded/stale context.
+    const currentSid = ctx.getMcpSessionId?.();
+    if (isSessionSuperseded(currentSid)) {
+      log.warn(`[wait] Session ${currentSid?.slice(0, 8)}… superseded for thread ${effectiveThreadId} — terminating poll loop.`);
+      state.lastToolCallAt = Date.now();
+      return {
+        content: [{ type: "text", text: "Session terminated — a newer session is now active for this thread. Do not call wait_for_instructions again." }],
+      };
+    }
+
+    // Bail out if the MCP transport signalled abort (client disconnected).
     if (extra.signal.aborted) {
-      log.info(`[wait] Signal aborted — client disconnected, exiting poll loop.`);
+      log.info(`[wait] Signal aborted for session ${currentSid?.slice(0, 8)}… thread ${effectiveThreadId} — client disconnected.`);
       state.lastToolCallAt = Date.now();
       return {
         content: [{ type: "text", text: "Client disconnected. Call wait_for_instructions again to resume." }],
@@ -234,7 +251,7 @@ export async function handleWaitForInstructions(
     // Guard: don't consume the reaction file if the SSE connection is
     // already dead — readPendingReaction() is destructive (read + delete).
     // Without this check the reaction is eaten but never delivered.
-    if (!extra.signal.aborted) {
+    if (!extra.signal.aborted && !isSessionSuperseded(ctx.getMcpSessionId?.())) {
       const reactionResult = await handleReactionOnly({
         telegram,
         getMemoryDb,
@@ -249,7 +266,7 @@ export async function handleWaitForInstructions(
     // Check for tasks sent via send_message_to_thread while we're already
     // polling.  Without this, messages arrive only on the NEXT
     // wait_for_instructions call, causing a "no instructions" gap.
-    if (!extra.signal.aborted) {
+    if (!extra.signal.aborted && !isSessionSuperseded(ctx.getMcpSessionId?.())) {
       const inLoopTask = await consumePendingTask(effectiveThreadId);
       if (inLoopTask) return inLoopTask;
     }
