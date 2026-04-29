@@ -48,6 +48,7 @@ const { setTopicRegistryDb, sessionRepository } = await import("./sessions.js");
 const { initVideoTempCleanup } = await import("./integrations/openai/video.js");
 const { reconcileState } = await import("./services/process.service.js");
 const { spawnKeepAliveThreads } = await import("./services/agent-spawn.service.js");
+const { clearReconnectSnapshot } = await import("./services/reconnect-snapshot.service.js");
 const { KeeperService } = await import("./services/keeper.service.js");
 const { log } = await import("./logger.js");
 const { resolveTelegramTopicId, threadRepository } = await import("./data/memory/thread-registry.js");
@@ -136,6 +137,10 @@ const backgroundRunner = new BackgroundJobRunner({
 
 // Start background jobs after the server is listening.
 backgroundRunner.start();
+
+// Clear any stale reconnect snapshot after 10 minutes — threads that haven't
+// reconnected by then should get a full briefing.
+setTimeout(clearReconnectSnapshot, 10 * 60 * 1000);
 
 // Start keeper service to monitor and restart keepAlive threads that die.
 const keeper = new KeeperService({
