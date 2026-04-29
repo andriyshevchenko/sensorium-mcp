@@ -7,6 +7,7 @@ import { errorMessage } from "../utils.js";
 import type { Database } from "../data/memory/schema.js";
 import { getAllThreads } from "../data/memory/thread-registry.js";
 import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
+import { getDashboardSessions } from "../sessions.js";
 
 const BASE_DIR = join(homedir(), ".remote-copilot-mcp");
 const LOGS_DIR = join(BASE_DIR, "logs");
@@ -103,7 +104,13 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
 export const isThreadRunning = (threadId: number): boolean => findAliveThread(threadId) !== undefined;
 
 export function getActiveThreadIds(): number[] {
-  return spawnedThreads.filter(t => isProcessAlive(t.pid)).map(t => t.threadId);
+  const spawned = spawnedThreads.filter(t => isProcessAlive(t.pid)).map(t => t.threadId);
+  // Also include threads from active MCP sessions (root threads that aren't
+  // in spawnedThreads because they connected externally, not spawned by us).
+  const sessionThreadIds = getDashboardSessions()
+    .filter(s => s.status === "active" && s.threadId != null)
+    .map(s => s.threadId!);
+  return [...new Set([...spawned, ...sessionThreadIds])];
 }
 
 export function ensureDirs(): void {

@@ -26,6 +26,7 @@ import { getThread, getThreadByName } from "../data/memory/thread-registry.js";
 import { createManagedTopic, probeOrRemapTopic } from "../services/topic.service.js";
 import type { ThreadLifecycleService } from "../services/thread-lifecycle.service.js";
 import { checkMaintenanceFlag } from "../data/file-storage.js";
+import { isReconnectCandidate } from "../services/reconnect-snapshot.service.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -149,17 +150,24 @@ export async function handleStartSession(
     }
   }
 
-  // Lightweight reconnect: only activated when a server update is in progress
-  // (maintenance.flag exists).  Purpose: avoid interrupting threads that are
-  // deep in a work session by skipping the heavy bootstrap.  In all other
-  // cases (context compaction, manual restart, server restart) the thread
-  // receives a full memory briefing.
+  // Lightweight reconnect: activated when the thread was active in the
+  // previous server instance (reconnect snapshot) OR a server update is in
+  // progress (maintenance flag).  Skips the heavy bootstrap so threads
+  // resume quickly after a rolling update.
   let isReconnect = false;
-  if (resolvedPreexisting && checkMaintenanceFlag() !== null) {
-    isReconnect = true;
-    log.info(
-      `[start_session] Lightweight reconnect for thread ${session.currentThreadId} — update in progress, skipping briefing.`,
-    );
+  if (resolvedPreexisting) {
+    const maintenanceActive = checkMaintenanceFlag() !== null;
+    const snapshotMatch = isReconnectCandidate(session.currentThreadId!);
+    if (maintenanceActive || snapshotMatch) {
+      isReconnect = true;
+      log.info(
+        `[start_session] Lightweight reconnect for thread ${session.currentThreadId} (maintenance=${maintenanceActive}, snapshot=${snapshotMatch}) — skipping briefing.`,
+      );
+    } else {
+      log.debug(
+        `[start_session] Thread ${session.currentThreadId} is preexisting but no reconnect signal (maintenance=${maintenanceActive}, snapshot=${snapshotMatch}) — full briefing.`,
+      );
+    }
   }
 
   if (resolvedPreexisting) {

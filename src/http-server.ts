@@ -35,7 +35,8 @@ import {
   WAIT_LIVENESS_MS,
 } from "./sessions.js";
 import { getThread } from "./data/memory/thread-registry.js";
-import { findAliveThread, killProcessTree } from "./services/process.service.js";
+import { findAliveThread, getActiveThreadIds, killProcessTree } from "./services/process.service.js";
+import { writeReconnectSnapshot } from "./services/reconnect-snapshot.service.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 class BodyParseError extends Error {
@@ -445,6 +446,20 @@ export function startHttpServer(
     if (shuttingDown) return;
     shuttingDown = true;
     log.info(`[shutdown] Graceful shutdown initiated (${reason})…`);
+
+    // Persist active thread IDs so the next server instance can offer
+    // lightweight reconnect instead of a full cold-start briefing.
+    try {
+      const threadIds = getActiveThreadIds();
+      if (threadIds.length > 0) {
+        writeReconnectSnapshot(threadIds);
+        log.info(`[shutdown] Reconnect snapshot written for ${threadIds.length} thread(s): [${threadIds.join(", ")}]`);
+      } else {
+        log.info(`[shutdown] No active threads — skipping reconnect snapshot.`);
+      }
+    } catch (err) {
+      log.warn(`[shutdown] Failed to write reconnect snapshot: ${err instanceof Error ? err.message : err}`);
+    }
 
     clearInterval(sessionSweepInterval);
 
