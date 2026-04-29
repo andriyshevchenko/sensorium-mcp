@@ -233,7 +233,7 @@ export async function handleWaitForInstructions(
           `\u26A0\uFE0F Server update: v${version} deploying. Agent sessions will reconnect after update.`,
           undefined,
           effectiveThreadId,
-        ).catch(() => {});
+        ).catch((err) => { log.warn(`[poll] Maintenance notification failed for thread ${effectiveThreadId}: ${err instanceof Error ? err.message : err}`); });
       }
 
       return buildMaintenanceResponse(effectiveThreadId, getShortReminder(effectiveThreadId, state.sessionStartedAt));
@@ -346,7 +346,7 @@ export async function handleWaitForInstructions(
         lastRegistryUpdate = Date.now();
         try {
           ctx.threadLifecycle.touchThread(getMemoryDb(), effectiveThreadId, { lastActiveAt: new Date().toISOString() });
-        } catch { /* non-critical */ }
+        } catch (err) { log.debug(`[poll] Heartbeat update failed for thread ${effectiveThreadId}: ${err instanceof Error ? err.message : err}`); }
       }
     }
     } catch (loopErr) {

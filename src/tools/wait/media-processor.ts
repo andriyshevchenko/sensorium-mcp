@@ -135,7 +135,9 @@ export async function processVoice(
         });
         saveVoiceAnalysis(db, epId, analysis, voice.duration);
         episodeSaved = true;
-      } catch (_) { /* non-fatal */ }
+      } catch (err) {
+        log.warn(`[media] Voice episode save failed for thread ${ctx.effectiveThreadId}: ${err instanceof Error ? err.message : err}`);
+      }
     }
 
     return { blocks, episodeSaved };
@@ -301,7 +303,9 @@ export async function processVideoNote(
         });
         saveVoiceAnalysis(db, epId, analysis, vn.duration);
         episodeSaved = true;
-      } catch (_) { /* non-fatal */ }
+      } catch (err) {
+        log.warn(`[media] Video note episode save failed for thread ${ctx.effectiveThreadId}: ${err instanceof Error ? err.message : err}`);
+      }
     }
 
     return { blocks, episodeSaved };

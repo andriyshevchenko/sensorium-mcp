@@ -65,7 +65,9 @@ function resolveKnownTopic(getMemoryDb: () => ReturnType<typeof initMemoryDb>, n
     const db = getMemoryDb();
     const registryEntry = getThreadByName(db, name);
     if (registryEntry) return registryEntry.threadId;
-  } catch {}
+  } catch (err) {
+    log.warn(`[delegate] resolveKnownTopic("${name}") failed: ${err instanceof Error ? err.message : err}`);
+  }
   return undefined;
 }
 
