@@ -74,7 +74,7 @@ const resolveCliPath = (name: string, prefer?: RegExp): string | null => {
   const envCmd = process.env[`${name.toUpperCase()}_CLI_CMD`];
   if (envCmd) return envCmd;
   try {
-    const result = spawnSync(process.platform === "win32" ? "where" : "which", [name], { timeout: 5000, encoding: "utf-8" });
+    const result = spawnSync(process.platform === "win32" ? "where" : "which", [name], { timeout: 5000, encoding: "utf-8", windowsHide: true });
     if (result.status !== 0 || !result.stdout) return null;
     const candidates = result.stdout.trim().split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     return prefer ? candidates.find((p) => prefer.test(p)) ?? candidates[0] : candidates[0];
@@ -96,7 +96,7 @@ function resolveWindowsCliPath(name: string): string | null {
   const envCmd = process.env[`${name.toUpperCase()}_CLI_CMD`];
   if (envCmd) return envCmd;
   try {
-    const result = spawnSync("where", [name], { timeout: 5000, encoding: "utf-8" });
+    const result = spawnSync("where", [name], { timeout: 5000, encoding: "utf-8", windowsHide: true });
     if (result.status !== 0 || !result.stdout) return null;
     const candidates = result.stdout.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     return candidates.find(p => /\.exe$/i.test(p))
@@ -118,7 +118,7 @@ const resolveCodexNodeExe = (): { nodeExe: string; codexJs: string } | null => {
     const codexJs = join(voltaImage, "packages", "@openai", "codex", "node_modules", "@openai", "codex", "bin", "codex.js");
     if (!existsSync(codexJs)) return null;
     const voltaCmd = join(localAppData, "Volta", "bin", "volta.exe");
-    const nodePathResult = spawnSync(voltaCmd, ["run", "node", "-e", "process.stdout.write(process.execPath)"], { encoding: "utf-8", timeout: 5000 });
+    const nodePathResult = spawnSync(voltaCmd, ["run", "node", "-e", "process.stdout.write(process.execPath)"], { encoding: "utf-8", timeout: 5000, windowsHide: true });
     if (nodePathResult.status === 0 && nodePathResult.stdout?.trim()) return { nodeExe: nodePathResult.stdout.trim(), codexJs };
     const nodeDir = join(voltaImage, "node");
     if (!existsSync(nodeDir)) return null;
