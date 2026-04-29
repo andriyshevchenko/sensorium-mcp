@@ -88,7 +88,7 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
   if (!pidEntry) return undefined;
   if (process.platform === "win32") {
     try {
-      const out = execSync(`tasklist /FI "PID eq ${pidEntry.pid}" /NH`, { encoding: "utf-8", timeout: 5000 });
+      const out = execSync(`tasklist /FI "PID eq ${pidEntry.pid}" /NH`, { encoding: "utf-8", timeout: 5000, windowsHide: true });
       if (!out.includes(String(pidEntry.pid))) {
         try { unlinkSync(pidEntry.filePath); } catch {}
         return undefined;
@@ -207,7 +207,7 @@ export function killProcessTree(pid: number, threadId: number): Promise<void> {
     };
 
     if (process.platform === "win32") {
-      execFile("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 10000 }, (err) => {
+      execFile("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 10000, windowsHide: true }, (err) => {
         if (err) {
           log.debug(`[process] Kill process ${pid} (thread ${threadId}): ${errorMessage(err)}`);
         } else {
