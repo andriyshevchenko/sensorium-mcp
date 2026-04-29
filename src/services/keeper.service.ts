@@ -11,7 +11,7 @@ import type { initMemoryDb } from "../memory.js";
 const KEEPER_CHECK_INTERVAL_MS = 120_000;     // 2 min
 const KEEPER_MAX_RETRIES = 5;
 const KEEPER_COOLDOWN_MS = 300_000;            // 5 min
-const FAST_EXIT_THRESHOLD_MS = 60_000;         // 60s
+const FAST_EXIT_THRESHOLD_MS = 300_000;         // 5 min (covers Claude's internal API retry cycle)
 const FAST_EXIT_MAX_COUNT = 3;
 const FAST_EXIT_BASE_COOLDOWN_MS = 600_000;    // 10 min
 const FAST_EXIT_MAX_COOLDOWN_MS = 14_400_000;  // 4 hours

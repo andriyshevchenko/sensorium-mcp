@@ -280,8 +280,9 @@ export const sessionToolDefs: ToolDefinition[] = [
   {
     name: "send_message_to_thread",
     description:
-      "Send a task or message to another thread's agent. " +
-      "The agent receives it on their next poll. " +
+      "Send a task or message to ANOTHER thread's agent (thread-to-thread communication only). " +
+      "Do NOT use this to reply to the operator — use report_progress or send_voice instead. " +
+      "The target agent receives it on their next poll. " +
       "Use mode='reply' when sending results BACK to a parent/orchestrator thread (no task wrapper added). " +
       "If the thread is dormant, the message is queued but not processed until start_thread is called. " +
       "Use 'mode' to control how the receiving thread should behave: " +
