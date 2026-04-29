@@ -296,7 +296,10 @@ export function handlePollTimeout(
   }
 
   // ── 3-Phase Probabilistic Autonomous Drive ──────────────────────────────
-  const driveActivationResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, apiKey: OPENAI_API_KEY || undefined, config, memoryRefresh, scheduleHint });
+  let driveActivationResult: ReturnType<typeof checkDriveActivation> = null;
+  if (effectiveThreadId !== undefined && getEffectiveAutonomousMode(effectiveThreadId)) {
+    driveActivationResult = checkDriveActivation({ state, effectiveThreadId, getMemoryDb, apiKey: OPENAI_API_KEY || undefined, config, memoryRefresh, scheduleHint });
+  }
   if (driveActivationResult) return driveActivationResult;
 
   // Codex exits after any tool response unless the message is very explicit.
