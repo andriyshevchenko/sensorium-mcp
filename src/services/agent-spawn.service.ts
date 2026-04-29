@@ -78,7 +78,7 @@ const resolveCliPath = (name: string, prefer?: RegExp): string | null => {
     if (result.status !== 0 || !result.stdout) return null;
     const candidates = result.stdout.trim().split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     return prefer ? candidates.find((p) => prefer.test(p)) ?? candidates[0] : candidates[0];
-  } catch { return null; }
+  } catch (err) { log.debug(`[spawn] CLI resolution for ${name} failed: ${err instanceof Error ? err.message : err}`); return null; }
 };
 
 export const resolveClaudePath = (): string | null => {
@@ -102,7 +102,7 @@ function resolveWindowsCliPath(name: string): string | null {
     return candidates.find(p => /\.exe$/i.test(p))
         ?? candidates.find(p => /\.cmd$/i.test(p))
         ?? null;
-  } catch { return null; }
+  } catch (err) { log.debug(`[spawn] Windows CLI resolution for ${name} failed: ${err instanceof Error ? err.message : err}`); return null; }
 }
 
 export const resolveCopilotPath = (): string | null =>
@@ -127,7 +127,7 @@ const resolveCodexNodeExe = (): { nodeExe: string; codexJs: string } | null => {
       const nodeExe = join(nodeDir, version, "node.exe");
       if (existsSync(nodeExe)) return { nodeExe, codexJs };
     }
-  } catch {}
+  } catch (err) { log.debug(`[spawn] Codex Node.exe resolution failed: ${err instanceof Error ? err.message : err}`); }
   return null;
 };
 
@@ -138,7 +138,7 @@ const resolveCodexExe = (): string | null => {
     const localAppData = process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local");
     const nativeExe = join(localAppData, "Volta", "tools", "image", "packages", "@openai", "codex", "node_modules", "@openai", "codex", "node_modules", "@openai", "codex-win32-x64", "vendor", "x86_64-pc-windows-msvc", "codex", "codex.exe");
     return existsSync(nativeExe) ? nativeExe : null;
-  } catch { return null; }
+  } catch (err) { log.debug(`[spawn] Codex native exe resolution failed: ${err instanceof Error ? err.message : err}`); return null; }
 };
 
 async function handleProcessExit(code: number | null, threadId: number, pid: number, pidFilePath: string, entry: SpawnedThread, processLabel: string, threadLifecycle: ThreadLifecycleService): Promise<void> {

@@ -250,7 +250,9 @@ export async function handleStartSession(
           chatId: TELEGRAM_CHAT_ID,
           telegramTopicId: session.currentThreadId,
         });
-      } catch { /* best-effort — DB may not be ready */ }
+      } catch (regErr) {
+        log.warn(`[start_session] Thread registration failed for ${session.currentThreadId}: ${regErr instanceof Error ? regErr.message : regErr}`);
+      }
     } catch (err) {
       // Forum topics not available (e.g. plain group or DM) — cannot proceed
       // without thread isolation. Return an error so the agent knows.
@@ -405,7 +407,9 @@ export async function handleStartSession(
           ? {}
           : { client: agentType });
       }
-    } catch { /* best-effort */ }
+    } catch (err) {
+      log.warn(`[start_session] Thread activate/register failed for ${threadId}: ${err instanceof Error ? err.message : err}`);
+    }
   }
   const reminders = ctx.getReminders(threadId, session.sessionStartedAt, getEffectiveAutonomousMode(threadId));
   // Mark session as fully initialized — subsequent start_session calls with
