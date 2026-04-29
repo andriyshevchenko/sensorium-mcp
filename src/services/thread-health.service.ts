@@ -1,6 +1,6 @@
 import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "../sessions.js";
 import { getAllThreads, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
-import { initMemoryDb } from "../data/memory/schema.js";
+import type { initMemoryDb } from "../data/memory/schema.js";
 import { isProcessAlive, readPidFiles, spawnedThreads, type SpawnedThread } from "./process.service.js";
 
 type ThreadStatus = "running" | "dormant" | "dead" | "unknown";
@@ -29,14 +29,14 @@ const formatUptime = (startedAt: number) => {
   return hours < 24 ? `${hours}h ${minutes % 60}m` : `${Math.floor(hours / 24)}d ${hours % 24}h`;
 };
 
-function collectThreadData(): CollectedThread[] {
+function collectThreadData(getMemoryDb: () => ReturnType<typeof initMemoryDb>): CollectedThread[] {
   const topicsByChat = getAllRegisteredTopics();
   const sessions = getDashboardSessions();
   const pidFiles = readPidFiles();
   const now = Date.now();
   const registryByThread = new Map<number, ThreadRegistryEntry>();
   try {
-    for (const entry of getAllThreads(initMemoryDb())) registryByThread.set(entry.threadId, entry);
+    for (const entry of getAllThreads(getMemoryDb())) registryByThread.set(entry.threadId, entry);
   } catch {}
   const spawnedByThread = new Map<number, SpawnedThread>(spawnedThreads.map((s) => [s.threadId, s]));
   const pidByThread = new Map<number, number>(pidFiles.map((p) => [p.threadId, p.pid]));
@@ -94,8 +94,8 @@ export function classifyThreadHealth(t: CollectedThread): ThreadStatus {
   return "unknown";
 }
 
-export function getThreadsHealth(): string {
-  const threads = collectThreadData();
+export function getThreadsHealth(getMemoryDb: () => ReturnType<typeof initMemoryDb>): string {
+  const threads = collectThreadData(getMemoryDb);
   if (threads.length === 0) return "No threads found. No topics registered, no active sessions, no PID files.";
   const now = Date.now();
   const rows = threads.map((t) => ({
