@@ -273,6 +273,35 @@ export function deleteThread(db: Database, threadId: number): boolean {
 }
 
 /**
+ * Purge archived threads older than `maxAgeMs` (default 60 days).
+ * Deletes the thread's semantic notes, episodes, and registry entry.
+ * Returns the number of threads purged.
+ */
+export function purgeOldArchivedThreads(db: Database, maxAgeMs = 60 * 24 * 60 * 60 * 1000): number {
+  const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
+  const rows = db.prepare(
+    `SELECT thread_id FROM thread_registry
+     WHERE status = 'archived' AND last_active_at < ?`,
+  ).all(cutoff) as { thread_id: number }[];
+
+  if (rows.length === 0) return 0;
+
+  const deleteNotes = db.prepare(`DELETE FROM semantic_notes WHERE thread_id = ?`);
+  const deleteEpisodes = db.prepare(`DELETE FROM episodes WHERE thread_id = ?`);
+  const deleteRegistry = db.prepare(`DELETE FROM thread_registry WHERE thread_id = ?`);
+
+  db.transaction(() => {
+    for (const { thread_id } of rows) {
+      deleteNotes.run(thread_id);
+      deleteEpisodes.run(thread_id);
+      deleteRegistry.run(thread_id);
+    }
+  })();
+
+  return rows.length;
+}
+
+/**
  * Reset the daily session timestamp for a thread.
  * Sets session_reset_at = now, used by bootstrap to filter the message buffer.
  */

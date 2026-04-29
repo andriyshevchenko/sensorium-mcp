@@ -151,8 +151,9 @@ async function handleProcessExit(code: number | null, threadId: number, pid: num
     const parsed = JSON.parse(raw);
     if (parsed.pid === pid) unlinkSync(pidFilePath);
   } catch { /* file missing or unparseable — already cleaned up */ }
+  let db: ReturnType<typeof initMemoryDb> | undefined;
   try {
-    const db = initMemoryDb();
+    db = initMemoryDb();
     const currentState = threadLifecycle.getThreadState(db, threadId);
     const isTerminal = currentState === ThreadState.Archived || currentState === ThreadState.Expired;
     if (!isTerminal) {
@@ -173,6 +174,8 @@ async function handleProcessExit(code: number | null, threadId: number, pid: num
     }
   } catch (err) {
     log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
+  } finally {
+    try { db?.close(); } catch { /* best-effort */ }
   }
   log.info(`[start_thread] ${processLabel} process PID=${pid} for thread ${threadId} exited with code ${code}`);
 }

@@ -325,7 +325,7 @@ function createMcpServer(
 
     get_threads_health: () => {
       try {
-        const markdown = getThreadsHealth();
+        const markdown = getThreadsHealth(getMemoryDb);
         return { content: [{ type: "text", text: markdown }] };
       } catch (err) {
         return errorResult(`Failed to get thread health: ${errorMessage(err)}`);

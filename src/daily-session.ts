@@ -13,6 +13,7 @@ import { log } from "./logger.js";
 import {
   getRootThreads,
   getThread,
+  purgeOldArchivedThreads,
   resetDailySession,
   resolveTelegramTopicId,
 } from "./data/memory/thread-registry.js";
@@ -176,12 +177,24 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
       results.push(result);
     }
 
+    // Purge archived threads older than 2 months
+    let purged = 0;
+    try {
+      purged = purgeOldArchivedThreads(db);
+      if (purged > 0) {
+        log.info(`[daily-rotation] Purged ${purged} archived thread(s) older than 60 days`);
+      }
+    } catch (err) {
+      log.error(`[daily-rotation] Archived thread purge failed: ${errorMessage(err)}`);
+    }
+
     // Send summary
-    if (results.length > 0) {
+    if (results.length > 0 || purged > 0) {
       const lines = results.map(r => {
         if (r.error) return `❌ ${r.rootThreadId}: ${r.error}`;
         return `✅ ${r.rootThreadId}: consolidated=${r.consolidated}`;
       });
+      if (purged > 0) lines.push(`🗑 Purged ${purged} archived thread(s) older than 60 days`);
       await notifyTelegram(db, `🔄 <b>Daily rotation complete</b>\n${lines.join("\n")}`);
     }
 
