@@ -214,6 +214,7 @@ Rules:
 // ─── De-duplication ──────────────────────────────────────────────────────────
 
 const DEDUP_SIMILARITY_THRESHOLD = 0.90;
+const LESSON_DEDUP_THRESHOLD = 0.82;
 
 async function checkDuplicate(
   db: Database,
@@ -236,6 +237,37 @@ async function checkDuplicate(
   } catch {
     // Embedding lookup failed — allow the insight through to avoid data loss
     return { isDuplicate: false, embedding: null };
+  }
+}
+
+/**
+ * Lesson-level dedup: checks if a semantically similar lesson already exists
+ * among reflection notes using a lower similarity threshold (0.82).
+ * Catches generic lessons like "Always do comprehensive code reviews" that are
+ * worded differently but carry the same meaning.
+ */
+async function checkLessonDuplicate(
+  db: Database,
+  lesson: string,
+  apiKey: string,
+  knowledgeThreadId: number,
+): Promise<boolean> {
+  try {
+    const embedding = await generateEmbedding(lesson, apiKey);
+    const matches = searchByEmbedding(db, embedding, {
+      maxResults: 3,
+      minSimilarity: LESSON_DEDUP_THRESHOLD,
+      skipAccessTracking: true,
+      threadId: knowledgeThreadId,
+    });
+    if (matches.some((m) => m.similarity >= LESSON_DEDUP_THRESHOLD && m.content.startsWith("[REFLECTION]"))) {
+      log.warn(`[reflection] Lesson-level duplicate detected (>=${LESSON_DEDUP_THRESHOLD}): "${lesson.slice(0, 60)}…"`);
+      return true;
+    }
+    return false;
+  } catch {
+    // Embedding lookup failed — allow through to avoid data loss
+    return false;
   }
 }
 
@@ -554,6 +586,13 @@ async function runReflectionInner(
     const { isDuplicate: duplicate, embedding: cachedEmbedding } = await checkDuplicate(db, prefixedContent, apiKey, knowledgeThreadId);
     if (duplicate) {
       log.info(`[reflection] Skipped duplicate insight: ${content.slice(0, 60)}…`);
+      continue;
+    }
+
+    // Lesson-level dedup — catches semantically similar lessons at a lower threshold
+    const lessonDuplicate = await checkLessonDuplicate(db, ins.lesson, apiKey, knowledgeThreadId);
+    if (lessonDuplicate) {
+      log.info(`[reflection] Skipped lesson-level duplicate: "${ins.lesson.slice(0, 60)}…"`);
       continue;
     }
 
