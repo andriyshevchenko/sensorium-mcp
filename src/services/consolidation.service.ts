@@ -103,7 +103,9 @@ Output a JSON object with:
       "keywords": ["keyword1", "keyword2", "keyword3"],
       "confidence": 0.0-1.0,
       "priority": 0 | 1 | 2,
-      "quality_score": 1-5
+      "quality_score": 1-5,
+      "linked_notes": ["sn_xxx"],
+      "link_reasons": ["brief causal relationship explanation"]
     }
   ],
   "supersede": [
@@ -161,7 +163,16 @@ CONTENT QUALITY:
 - Name specific components, features, versions, or decisions — never "a bug fix was completed"
 - Capture WHY (motivation/context), not just WHAT. Include outcome if known
 - If neither WHY nor outcome is available, the note is probably not worth extracting
-- Return {"notes": [], "supersede": []} if nothing actionable`;
+- Include dates when known. Write "On April 15, operator requested X" not just "operator requested X." If the episode contains timestamps or date references, include them in the note content.
+- Return {"notes": [], "supersede": []} if nothing actionable
+
+SPECIFICITY GATE — apply to every note before including it:
+- Every note MUST contain at least one specific anchor: a file name, commit hash, person name, date, or concrete number. If you cannot name something specific, do not create the note.
+- Do NOT create notes that merely say "X was completed" or "Y was done." If something was completed, state WHAT specifically was done — which files changed, what bug was fixed, what the outcome was. Headlines without substance are useless.
+
+CAUSAL LINKING:
+- For each note, if it is causally related to any of the existing notes shown above (one caused the other, one is a consequence of the other, or they are part of the same chain of events), populate \`linked_notes\` with the existing note IDs and \`link_reasons\` with a brief explanation of the causal relationship.
+- If there are no causal relationships, omit \`linked_notes\` and \`link_reasons\` or set them to empty arrays.`;
 }
 
 async function checkConsolidationDuplicate(
@@ -330,6 +341,8 @@ export async function runIntelligentConsolidation(
           confidence: number;
           priority?: number;
           quality_score?: number;
+          linked_notes?: string[];
+          link_reasons?: string[];
         }>;
         supersede?: Array<{
           oldNoteId: string;
