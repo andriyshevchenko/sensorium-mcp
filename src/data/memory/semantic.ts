@@ -160,6 +160,11 @@ export function saveSemanticNote(
     sourceEpisodes?: string[];
   }
 ): string {
+  const validTypes = new Set(["fact", "preference", "pattern", "entity"]);
+  if (!validTypes.has(note.type)) {
+    log.warn(`[semantic] Saving note with non-standard type "${note.type}" — consider using fact/preference/pattern/entity`);
+  }
+
   const id = generateId("sn");
   const now = nowISO();
 
