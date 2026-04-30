@@ -261,7 +261,6 @@ async function checkLessonDuplicate(
       threadId: knowledgeThreadId,
     });
     if (matches.some((m) => m.similarity >= LESSON_DEDUP_THRESHOLD && m.content.startsWith("[REFLECTION]"))) {
-      log.warn(`[reflection] Lesson-level duplicate detected (>=${LESSON_DEDUP_THRESHOLD}): "${lesson.slice(0, 60)}…"`);
       return true;
     }
     return false;
