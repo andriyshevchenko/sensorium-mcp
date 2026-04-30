@@ -171,7 +171,8 @@ SPECIFICITY GATE — apply to every note before including it:
 - Do NOT create notes that merely say "X was completed" or "Y was done." If something was completed, state WHAT specifically was done — which files changed, what bug was fixed, what the outcome was. Headlines without substance are useless.
 
 CAUSAL LINKING:
-- For each note, if it is causally related to any of the existing notes shown above (one caused the other, one is a consequence of the other, or they are part of the same chain of events), populate \`linked_notes\` with the existing note IDs and \`link_reasons\` with a brief explanation of the causal relationship.
+- For each note, if it is causally related to any of the existing notes shown above (one caused the other, one is a consequence of the other, or they are part of the same chain of events), populate \`linked_notes\` with the existing note IDs and \`link_reasons\` with a parallel array of brief explanations — one explanation string per linked note ID, in the same order.
+- Example: if linked_notes is ["sn_a", "sn_b"], then link_reasons must be ["why sn_a is related", "why sn_b is related"].
 - If there are no causal relationships, omit \`linked_notes\` and \`link_reasons\` or set them to empty arrays.`;
 }
 
