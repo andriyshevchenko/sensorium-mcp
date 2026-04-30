@@ -19,6 +19,7 @@ import { type SemanticNote } from "./semantic.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
 import { parseJsonArray, parseJsonObject } from "./utils.js";
 import { errorMessage } from "../../utils.js";
+import { log } from "../../logger.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -370,7 +371,7 @@ async function generateNarrative(
   let finalNarrative = narrative.trim();
   const fillerMatch = findFillerPhrase(finalNarrative);
   if (fillerMatch) {
-    console.warn(`[narrative] filler phrase detected (${fillerMatch}) in ${resolution} narrative — retrying`);
+    log.warn(`[narrative] filler phrase detected (${fillerMatch}) in ${resolution} narrative — retrying`);
     const retryPrompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel)
       + "\n\nRewrite the narrative using no filler phrases. Every claim must reference a specific event or decision from the source data.";
     const retried = await chatCompletion(
@@ -381,7 +382,7 @@ async function generateNarrative(
     if (retried?.trim()) {
       const retryFiller = findFillerPhrase(retried.trim());
       if (retryFiller) {
-        console.warn(`[narrative] retry still contains filler (${retryFiller}) in ${resolution} — keeping original`);
+        log.warn(`[narrative] retry still contains filler (${retryFiller}) in ${resolution} — keeping original`);
       } else {
         finalNarrative = retried.trim();
       }
