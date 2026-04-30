@@ -46,6 +46,15 @@ const NARRATIVE_FILLER_PHRASES: RegExp[] = [
   /\bseveral enhancements\b/i,
   /\bsignificant (evolution|strides|developments?)\b/i,
   /\boverall.{0,20}(positive|good|well)\b/i,
+  /\bpivotal moments?\b/i,
+  /\bcrucial (step|milestone|decision)\b/i,
+  /\bnotable (milestone|achievement|development)\b/i,
+  /\bsubstantial (progress|improvement)\b/i,
+  /\bremarkable (progress|growth|improvement)\b/i,
+  /\bmeaningful (progress|improvement|change)\b/i,
+  /\bas I (navigated|reflected|observed|witnessed)\b/i,
+  /\bthis (prompted|led) me to reflect\b/i,
+  /\bI (noticed|observed|witnessed) a (critical|pivotal|key)\b/i,
 ];
 
 function findFillerPhrase(text: string): string | null {
