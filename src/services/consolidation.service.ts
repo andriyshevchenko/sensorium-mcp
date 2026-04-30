@@ -28,6 +28,8 @@ import { nowISO, repairAndParseJSON } from "../data/memory/utils.js";
 import { errorMessage } from "../utils.js";
 
 const CONSOLIDATION_DEDUP_THRESHOLD = 0.88;
+const VALID_NOTE_TYPES = ["fact", "preference", "pattern", "entity", "relationship"] as const;
+type ValidNoteType = (typeof VALID_NOTE_TYPES)[number];
 let consolidationInProgress = false;
 
 function extractEpisodeText(episodes: ReturnType<typeof getUnconsolidatedEpisodes>): string {
@@ -72,6 +74,7 @@ ${related.map((note) => `[${note.noteId}] (${note.type}, conf: ${note.confidence
         maxResults: 15,
         skipAccessTracking: true,
         minMatchRatio: 0.2,
+        threadId,
       });
       if (ranked.length === 0) return "";
       return `\n\nExisting memory notes (check for contradictions — supersede any that are outdated):
@@ -351,10 +354,7 @@ export async function runIntelligentConsolidation(
             continue;
           }
 
-          const validTypes = ["fact", "preference", "pattern", "entity", "relationship"];
-          const noteType = validTypes.includes(note.type)
-            ? (note.type as "fact" | "preference" | "pattern" | "entity" | "relationship")
-            : "fact";
+          const noteType = (VALID_NOTE_TYPES.includes(note.type as ValidNoteType) ? note.type : "fact") as ValidNoteType;
 
           const dedup = await checkConsolidationDuplicate(db, note.content, apiKey, knowledgeThreadId);
           if (dedup.isDuplicate) {
@@ -370,6 +370,24 @@ export async function runIntelligentConsolidation(
             priority: Math.max(0, Math.min(2, note.priority ?? 0)),
             embedding: dedup.embedding,
           });
+        }
+
+        // Phase 1b: pre-generate embeddings for supersede replacement notes (async, must be outside transaction).
+        const supersedeWrites: Array<{
+          action: (typeof supersedeActions)[number];
+          noteType: ValidNoteType;
+          embedding: Float32Array | null;
+        }> = [];
+        for (const action of supersedeActions) {
+          if (!action.oldNoteId || !action.newContent) continue;
+          const noteType = (VALID_NOTE_TYPES.includes(action.type as ValidNoteType) ? action.type : "fact") as ValidNoteType;
+          let embedding: Float32Array | null = null;
+          try {
+            embedding = await generateEmbedding(action.newContent, apiKey);
+          } catch {
+            // non-fatal — supersede note will be saved without embedding
+          }
+          supersedeWrites.push({ action, embedding, noteType });
         }
 
         // Phase 2: all DB writes in a single atomic transaction.
@@ -392,16 +410,13 @@ export async function runIntelligentConsolidation(
             details.push(`[${nw.type}] ${nw.content}`);
           }
 
-          for (const action of supersedeActions) {
-            if (!action.oldNoteId || !action.newContent) continue;
+          for (const { action, noteType, embedding } of supersedeWrites) {
             if (!hasActiveNote(db, action.oldNoteId)) {
               details.push(`[skip-supersede] ${action.oldNoteId} not found or already superseded`);
               continue;
             }
 
             try {
-              const validTypes = ["fact", "preference", "pattern", "entity", "relationship"];
-              const noteType = validTypes.includes(action.type) ? action.type : "fact";
               const newId = supersedeNote(db, action.oldNoteId, {
                 type: noteType,
                 content: action.newContent,
@@ -410,6 +425,9 @@ export async function runIntelligentConsolidation(
                 priority: Math.max(0, Math.min(2, action.priority ?? 0)),
                 sourceEpisodes: episodeIds,
               });
+              if (embedding) {
+                saveNoteEmbedding(db, newId, embedding);
+              }
               supersededCount++;
               details.push(`[supersede] ${action.oldNoteId} → ${newId}: ${action.reason}`);
             } catch (err) {
