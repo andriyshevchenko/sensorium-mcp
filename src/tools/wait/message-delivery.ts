@@ -259,7 +259,7 @@ export async function buildSmartContext(
         const topCandidates = candidates.slice(0, MAX_INJECTED_NOTES);
         const lines = topCandidates.map(c => {
           const simLabel = c.similarity !== undefined ? `, sim: ${c.similarity.toFixed(2)}` : "";
-          const dateLabel = c.createdAt ? `[${c.createdAt.slice(0, 10)}] ` : "";
+          const dateLabel = c.createdAt && !/^\[\d{4}-\d{2}-\d{2}\]/.test(c.content) ? `[${c.createdAt.slice(0, 10)}] ` : "";
           return `- **[${c.type}]** ${dateLabel}${c.content} _(conf: ${c.confidence}${simLabel})_`;
         });
         if (lines.length > 0) {
@@ -273,9 +273,10 @@ export async function buildSmartContext(
       if (searchQuery.trim().length > 0) {
         const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 3, skipAccessTracking: true, threadId: resolveKnowledgeThreadId(ctx.effectiveThreadId) });
         if (kwResults.length > 0) {
-          const lines = kwResults.map(n =>
-            `- **[${n.type}]** [${n.createdAt.slice(0, 10)}] ${n.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${n.confidence})_`
-          );
+          const lines = kwResults.map(n => {
+            const datePrefix = /^\[\d{4}-\d{2}-\d{2}\]/.test(n.content) ? "" : `[${n.createdAt.slice(0, 10)}] `;
+            return `- **[${n.type}]** ${datePrefix}${n.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${n.confidence})_`;
+          });
           autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
         }
       }
@@ -293,9 +294,10 @@ export async function buildSmartContext(
     const db = ctx.getMemoryDb();
     const pinned = getPinnedNotes(db, resolveKnowledgeThreadId(ctx.effectiveThreadId ?? 0));
     if (pinned.length > 0) {
-      const pinnedLines = pinned.map(p =>
-        `- **[pinned/${p.type}]** [${p.createdAt.slice(0, 10)}] ${p.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${p.confidence.toFixed(2)})_`
-      );
+      const pinnedLines = pinned.map(p => {
+        const datePrefix = /^\[\d{4}-\d{2}-\d{2}\]/.test(p.content) ? "" : `[${p.createdAt.slice(0, 10)}] `;
+        return `- **[pinned/${p.type}]** ${datePrefix}${p.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${p.confidence.toFixed(2)})_`;
+      });
       autoMemoryContext += `\n\n## Persistent Context (always active)\n${pinnedLines.join("\n")}`;
     }
   } catch { /* non-critical */ }

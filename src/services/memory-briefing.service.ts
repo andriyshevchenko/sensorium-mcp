@@ -124,7 +124,8 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   if (context.pinnedNotes.length > 0) {
     lines.push("## Pinned (Long-Term Context)");
     for (const note of context.pinnedNotes) {
-      lines.push(`- **[${note.type}]** [${note.createdAt.slice(0, 10)}] ${note.content} _(conf: ${note.confidence.toFixed(2)})_`);
+      const datePrefix = /^\[\d{4}-\d{2}-\d{2}\]/.test(note.content) ? "" : `[${note.createdAt.slice(0, 10)}] `;
+      lines.push(`- **[${note.type}]** ${datePrefix}${note.content} _(conf: ${note.confidence.toFixed(2)})_`);
     }
     lines.push("");
   }
@@ -132,7 +133,8 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
   if (context.keyKnowledge.length > 0) {
     lines.push("## Key Knowledge");
     for (const note of context.keyKnowledge) {
-      lines.push(`- **[${note.type}]** [${note.createdAt.slice(0, 10)}] ${note.content} (conf: ${note.confidence.toFixed(2)}, accessed: ${note.accessCount}x)`);
+      const datePrefix = /^\[\d{4}-\d{2}-\d{2}\]/.test(note.content) ? "" : `[${note.createdAt.slice(0, 10)}] `;
+      lines.push(`- **[${note.type}]** ${datePrefix}${note.content} (conf: ${note.confidence.toFixed(2)}, accessed: ${note.accessCount}x)`);
     }
     lines.push("");
   }
