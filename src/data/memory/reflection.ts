@@ -172,19 +172,28 @@ Respond in JSON format:
 
 ## Anti-patterns (your output WILL BE REJECTED if it contains these):
 
-- "The agent tends to..." — vague observation, not actionable
+- "The agent tends to..." / "I tend to..." — vague observation, not actionable
 - "Should consider..." — wishy-washy, not a concrete instruction
-- "In general..." / "Overall..." — too abstract
+- "In general..." / "Overall..." / "significant progress" / "notable improvements" — too abstract
+- "various features" / "several enhancements" / "multiple improvements" — unspecific
 - Restating the outcome as the root cause
 - Lesson that doesn't start with a verb
 - Any field shorter than 10 characters
 
+## BANNED topics — do NOT generate insights about:
+
+- The memory system, consolidation, audits, cleanup, deduplication, or memory quality
+- The agent's own internal operations or meta-processes
+- How the agent manages its own notes, reflections, or knowledge base
+- These are implementation internals. Only reflect on EXTERNAL work: the project, codebase, operator interactions, technical decisions.
+
 Rules:
-- Minimum 3, maximum 10 insights
+- Minimum 1, maximum 5 insights — prefer fewer, deeper insights
 - Each insight must reference specific episodes by their ID
 - Confidence should reflect how well-supported the insight is by evidence
 - Causal insights are most valuable — prioritize cause-and-effect
-- Quality over quantity: 3 deep insights beat 10 shallow ones`;
+- Quality over quantity: 2 deep insights beat 5 shallow ones
+- Return {"insights": []} if no episodes warrant deep reflection`;
 
 // ─── De-duplication ──────────────────────────────────────────────────────────
 
