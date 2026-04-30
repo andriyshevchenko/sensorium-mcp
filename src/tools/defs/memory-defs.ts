@@ -10,7 +10,7 @@ export const memoryToolDefs: ToolDefinition[] = [
     name: "memory_search",
     description:
       "Search across all memory layers for relevant information. " +
-      "Use BEFORE starting any task to recall facts, preferences, past events, or procedures. " +
+      "Use BEFORE starting any task to recall facts, preferences, or past events. " +
       "Returns ranked results with source layer. Do NOT use for info already in your bootstrap briefing.",
     inputSchema: {
       type: "object",
@@ -22,7 +22,7 @@ export const memoryToolDefs: ToolDefinition[] = [
         layers: {
           type: "array",
           items: { type: "string" },
-          description: 'Filter layers: ["episodic", "semantic", "procedural"]. Default: all.',
+          description: 'Filter layers: ["episodic", "semantic"]. Default: all.',
         },
         types: {
           type: "array",
@@ -32,12 +32,12 @@ export const memoryToolDefs: ToolDefinition[] = [
         startTime: {
           type: "string",
           description:
-            "Filter results after this time. ISO-8601 (e.g., '2026-03-27T00:00:00Z') or relative (e.g., 'last 24h', 'yesterday', 'last week'). Semantic notes and procedures filter on creation time; episodes filter on event time (when the event occurred). Optional.",
+            "Filter results after this time. ISO-8601 (e.g., '2026-03-27T00:00:00Z') or relative (e.g., 'last 24h', 'yesterday', 'last week'). Semantic notes filter on creation time; episodes filter on event time (when the event occurred). Optional.",
         },
         endTime: {
           type: "string",
           description:
-            "Filter results before this time. ISO-8601 or relative. Semantic notes and procedures filter on creation time; episodes filter on event time (when the event occurred). Optional.",
+            "Filter results before this time. ISO-8601 or relative. Semantic notes filter on creation time; episodes filter on event time (when the event occurred). Optional.",
         },
         threadId: {
           type: "number",
@@ -97,14 +97,14 @@ export const memoryToolDefs: ToolDefinition[] = [
   {
     name: "memory_update",
     description:
-      "Update or supersede an existing semantic note or procedure. " +
+      "Update or supersede an existing semantic note. " +
       "Use when operator corrects stored information or when facts have changed.",
     inputSchema: {
       type: "object",
       properties: {
         memoryId: {
           type: "string",
-          description: "note_id or procedure_id to update.",
+          description: "note_id to update.",
         },
         action: {
           type: "string",
@@ -175,7 +175,7 @@ export const memoryToolDefs: ToolDefinition[] = [
       properties: {
         memoryId: {
           type: "string",
-          description: "note_id, procedure_id, or episode_id to forget.",
+          description: "note_id or episode_id to forget.",
         },
         reason: {
           type: "string",

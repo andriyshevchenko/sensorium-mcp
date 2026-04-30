@@ -10,7 +10,7 @@ import {
   decrementTopicIndexForKeywords,
   type SemanticNote,
 } from "./semantic.js";
-import { rowToProcedure, type Procedure } from "./procedures.js";
+
 import { getVoiceBaseline } from "./voice-sig.js";
 import { parseJsonArray } from "./utils.js";
 import { getNarrativesForBootstrap } from "./narrative.js";
@@ -35,7 +35,6 @@ export interface MemoryStatus {
   totalEpisodes: number;
   unconsolidatedEpisodes: number;
   totalSemanticNotes: number;
-  totalProcedures: number;
   totalVoiceSignatures: number;
   lastConsolidation: string | null;
   topTopics: TopicEntry[];
@@ -65,7 +64,6 @@ export interface BootstrapContext {
   guardrails: SemanticNote[];
   pinnedNotes: SemanticNote[];
   keyKnowledge: SemanticNote[];
-  procedures: Procedure[];
   baseline: ReturnType<typeof getVoiceBaseline>;
   narratives: BootstrapNarratives | null;
   reflections: BootstrapReflection[];
@@ -94,7 +92,6 @@ export function getMemoryStatus(db: Database, threadId: number): MemoryStatus {
   const totalSemanticNotes = (
     db.prepare(`SELECT COUNT(*) as cnt FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL AND thread_id = ?`).get(threadId) as { cnt: number }
   ).cnt;
-  const totalProcedures = (db.prepare(`SELECT COUNT(*) as cnt FROM procedures`).get() as { cnt: number }).cnt;
   const totalVoiceSignatures = (db.prepare(`SELECT COUNT(*) as cnt FROM voice_signatures`).get() as { cnt: number }).cnt;
   const lastConsolidationRow = db
     .prepare(`SELECT run_at FROM meta_consolidation_log ORDER BY run_at DESC LIMIT 1`)
@@ -112,7 +109,6 @@ export function getMemoryStatus(db: Database, threadId: number): MemoryStatus {
     totalEpisodes,
     unconsolidatedEpisodes,
     totalSemanticNotes,
-    totalProcedures,
     totalVoiceSignatures,
     lastConsolidation: lastConsolidationRow?.run_at ?? null,
     topTopics: getTopicIndex(db).slice(0, 5),
@@ -149,10 +145,6 @@ export function getBootstrapContext(
   const otherNotes = topNotes.filter((note) => note.type !== "preference");
   const pinnedNotes = getPinnedNotes(db, knowledgeThreadId);
   const pinnedIds = new Set(pinnedNotes.map((note) => note.noteId));
-
-  const procedures = db
-    .prepare(`SELECT * FROM procedures ORDER BY times_executed DESC, confidence DESC LIMIT 5`)
-    .all() as Record<string, unknown>[];
 
   let narratives: BootstrapNarratives | null = null;
   try {
@@ -200,7 +192,6 @@ export function getBootstrapContext(
     guardrails: getGuardrailsEnabled() ? getGuardrailNotes(db) : [],
     pinnedNotes,
     keyKnowledge: [...preferences, ...otherNotes].slice(0, 20).filter((note) => !pinnedIds.has(note.noteId)),
-    procedures: procedures.map(rowToProcedure),
     baseline: getVoiceBaseline(db),
     narratives,
     reflections,
@@ -242,17 +233,6 @@ export function forgetMemory(
     return { layer: "semantic", deleted: true };
   }
 
-  if (memoryId.startsWith("pr_")) {
-    const existing = db.prepare(`SELECT procedure_id, name FROM procedures WHERE procedure_id = ?`).get(memoryId) as { procedure_id: string; name: string } | undefined;
-    if (!existing) return { layer: "procedural", deleted: false };
-    const keywords = existing.name.toLowerCase().split(/\s+/).filter((word) => word.length > 2);
-    db.transaction(() => {
-      db.prepare(`DELETE FROM procedures WHERE procedure_id = ?`).run(memoryId);
-      decrementTopicIndexForKeywords(db, keywords, "procedural");
-    })();
-    return { layer: "procedural", deleted: true };
-  }
-
   const episodeRow = db.prepare(`SELECT episode_id FROM episodes WHERE episode_id = ?`).get(memoryId) as { episode_id: string } | undefined;
   if (episodeRow) {
     db.transaction(() => {
@@ -271,16 +251,6 @@ export function forgetMemory(
       decrementTopicIndexForKeywords(db, keywords, "semantic");
     })();
     return { layer: "semantic", deleted: true };
-  }
-
-  const procRow = db.prepare(`SELECT procedure_id, name FROM procedures WHERE procedure_id = ?`).get(memoryId) as { procedure_id: string; name: string } | undefined;
-  if (procRow) {
-    const keywords = procRow.name.toLowerCase().split(/\s+/).filter((word: string) => word.length > 2);
-    db.transaction(() => {
-      db.prepare(`DELETE FROM procedures WHERE procedure_id = ?`).run(memoryId);
-      decrementTopicIndexForKeywords(db, keywords, "procedural");
-    })();
-    return { layer: "procedural", deleted: true };
   }
 
   return { layer: "unknown", deleted: false };

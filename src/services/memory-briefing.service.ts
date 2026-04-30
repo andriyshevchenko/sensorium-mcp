@@ -41,7 +41,6 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
       context.recentEpisodes.length === 0
       && context.pinnedNotes.length === 0
       && context.keyKnowledge.length === 0
-      && context.procedures.length === 0
     ) {
       lines.push(`> ⚠️ No memory found for source thread ${memorySourceThreadId}. The ghost thread will start without parent context.`);
     }
@@ -134,17 +133,6 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
     lines.push("## Key Knowledge");
     for (const note of context.keyKnowledge) {
       lines.push(`- **[${note.type}]** ${note.content} (conf: ${note.confidence.toFixed(2)}, accessed: ${note.accessCount}x)`);
-    }
-    lines.push("");
-  }
-
-  if (context.procedures.length > 0) {
-    lines.push("## Active Procedures");
-    for (const procedure of context.procedures) {
-      lines.push(`- **${procedure.name}** (${procedure.type}) — success: ${(procedure.successRate * 100).toFixed(0)}%, used ${procedure.timesExecuted}x`);
-      if (procedure.steps.length > 0) {
-        lines.push(`  Steps: ${procedure.steps.join(" → ")}`);
-      }
     }
     lines.push("");
   }

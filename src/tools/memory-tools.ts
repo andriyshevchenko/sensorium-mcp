@@ -16,10 +16,8 @@ import {
   saveNoteEmbedding,
   saveSemanticNote,
   searchByEmbedding,
-  searchProcedures,
   searchSemanticNotes,
   supersedeNote,
-  updateProcedure,
   updateSemanticNote,
   parseRelativeTime,
 } from "../memory.js";
@@ -91,7 +89,7 @@ async function handleMemorySearch(
     return errorResult("Error: query is required." + reminder);
   }
   try {
-    const layers = Array.isArray(args.layers) ? args.layers.map(String) : typeof args.layers === 'string' ? [args.layers] : ["episodic", "semantic", "procedural"];
+    const layers = Array.isArray(args.layers) ? args.layers.map(String) : typeof args.layers === 'string' ? [args.layers] : ["episodic", "semantic"];
     const types = Array.isArray(args.types) ? args.types.map(String) : typeof args.types === 'string' ? [args.types] : undefined;
 
     // Parse optional temporal bounds
@@ -134,16 +132,6 @@ async function handleMemorySearch(
           for (const n of notes) {
             results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}, id: ${n.noteId})_`);
           }
-        }
-      }
-    }
-
-    if (layers.includes("procedural")) {
-      const procs = searchProcedures(db, query, 5, { startTime, endTime });
-      if (procs.length > 0) {
-        results.push("### Procedural Memory");
-        for (const p of procs) {
-          results.push(`- **${p.name}** (${p.type}): ${p.description} _(success: ${Math.round(p.successRate * 100)}%, id: ${p.procedureId})_`);
         }
       }
     }
@@ -273,16 +261,6 @@ function handleMemoryUpdate(
       };
     }
 
-    if (memId.startsWith("pr_")) {
-      const updates: Record<string, unknown> = {};
-      if (args.newContent) updates.description = String(args.newContent);
-      if (typeof args.newConfidence === "number") updates.confidence = args.newConfidence;
-      updateProcedure(db, memId, updates as Parameters<typeof updateProcedure>[2]);
-      return {
-        content: [{ type: "text", text: `Updated procedure ${memId} (reason: ${reason})` + reminder }],
-      };
-    }
-
     return errorResult(`Unknown memory ID format: ${memId}` + reminder);
   } catch (err) {
     return errorResult(`Memory update error: ${errorMessage(err)}` + reminder);
@@ -338,7 +316,6 @@ function handleMemoryStatus(
       "## Memory Status",
       `- Episodes: ${status.totalEpisodes} (${status.unconsolidatedEpisodes} unconsolidated)`,
       `- Semantic notes: ${status.totalSemanticNotes}`,
-      `- Procedures: ${status.totalProcedures}`,
       `- Voice signatures: ${status.totalVoiceSignatures}`,
       `- Last consolidation: ${status.lastConsolidation ?? "never"}`,
       `- DB size: ${(status.dbSizeBytes / 1024).toFixed(1)} KB`,

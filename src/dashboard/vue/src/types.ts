@@ -25,7 +25,6 @@ export interface MemoryStats {
   totalSemanticNotes: number
   totalEpisodes: number
   unconsolidatedEpisodes: number
-  totalProcedures: number
 }
 
 export interface StatusResponse {

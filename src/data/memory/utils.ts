@@ -3,7 +3,7 @@
  *
  * Centralises helpers that were previously copy-pasted across
  * schema.ts, episodes.ts, semantic.ts, consolidation.ts,
- * voice-sig.ts, procedures.ts and bootstrap.ts.
+ * voice-sig.ts and bootstrap.ts.
  */
 
 import { randomUUID } from "node:crypto";

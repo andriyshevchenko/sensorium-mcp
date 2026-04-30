@@ -44,7 +44,6 @@ export const handleGetStatus: RouteHandler = ({ json, db, ctx }) => {
     const totalEpisodes = (db.prepare(`SELECT COUNT(*) as cnt FROM episodes`).get() as { cnt: number }).cnt;
     const unconsolidatedEpisodes = (db.prepare(`SELECT COUNT(*) as cnt FROM episodes WHERE consolidated = 0`).get() as { cnt: number }).cnt;
     const totalSemanticNotes = (db.prepare(`SELECT COUNT(*) as cnt FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL`).get() as { cnt: number }).cnt;
-    const totalProcedures = (db.prepare(`SELECT COUNT(*) as cnt FROM procedures`).get() as { cnt: number }).cnt;
     const totalVoiceSignatures = (db.prepare(`SELECT COUNT(*) as cnt FROM voice_signatures`).get() as { cnt: number }).cnt;
     const lastConso = db.prepare(`SELECT run_at FROM meta_consolidation_log ORDER BY run_at DESC LIMIT 1`).get() as { run_at: string } | undefined;
     const topTopics = getTopicIndex(db).slice(0, 10);
@@ -53,7 +52,7 @@ export const handleGetStatus: RouteHandler = ({ json, db, ctx }) => {
     json({
         memory: {
             totalEpisodes, unconsolidatedEpisodes, totalSemanticNotes,
-            totalProcedures, totalVoiceSignatures,
+            totalVoiceSignatures,
             lastConsolidation: lastConso?.run_at ?? null,
             topTopics, dbSizeBytes: dbSizeRow?.size ?? 0,
         },
