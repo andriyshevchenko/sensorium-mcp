@@ -74,13 +74,13 @@ const COOLDOWNS: Record<NarrativeResolution, number> = {
   half_year: 14 * 24 * 60 * 60 * 1000, // 14 days
 };
 
-/** Max tokens (approximate via chars) for each resolution */
-const TOKEN_BUDGETS: Record<NarrativeResolution, number> = {
-  day: 2000,       // ~500 tokens
-  week: 1200,      // ~300 tokens
-  month: 800,      // ~200 tokens
-  quarter: 600,    // ~150 tokens
-  half_year: 500,  // ~120 tokens
+/** Target output token count per resolution */
+const OUTPUT_TOKEN_TARGETS: Record<NarrativeResolution, number> = {
+  day: 500,
+  week: 300,
+  month: 200,
+  quarter: 150,
+  half_year: 120,
 };
 
 const NARRATIVE_MODEL =
@@ -255,7 +255,7 @@ FORMAT RULES:
 - Do NOT list facts — weave them into a narrative
 - Do NOT use bullet points — write flowing paragraphs
 - End with current status / what's next
-- NEVER use filler phrases: "significant progress", "notable improvements", "various features", "several enhancements"
+- NEVER use filler phrases like: "significant progress/evolution/strides", "notable improvement/milestone/achievement", "various features", "several enhancements", "pivotal moments", "crucial step/milestone/decision", "substantial/remarkable/meaningful progress", "overall good/positive", "as I navigated/reflected/observed", "this prompted me to reflect", "I noticed a critical/key ..."
 - Every claim must be grounded in a specific event, decision, or outcome from the source data
 - If you can't point to specific evidence, don't include it
 
@@ -330,7 +330,7 @@ async function generateNarrative(
   if (episodes.length < minEpisodes) return null;
 
   const notes = getNotesInPeriod(db, knowledgeThreadId, start);
-  const maxChars = TOKEN_BUDGETS[resolution] * 4; // ~4 chars per token
+  const maxChars = OUTPUT_TOKEN_TARGETS[resolution] * 16; // ~4 chars/token × 4 for source data headroom
 
   const episodesText = formatEpisodesForLLM(episodes, maxChars * 2);
 
@@ -358,7 +358,7 @@ async function generateNarrative(
     {
       model: NARRATIVE_MODEL,
       temperature: 0.3,
-      maxTokens: Math.ceil(TOKEN_BUDGETS[resolution] / 4), // rough token limit
+      maxTokens: OUTPUT_TOKEN_TARGETS[resolution],
       timeoutMs: 60_000,
     },
   );
@@ -375,7 +375,7 @@ async function generateNarrative(
     const retried = await chatCompletion(
       [{ role: "system", content: "You are a temporal memory narrator." }, { role: "assistant", content: finalNarrative }, { role: "user", content: retryPrompt }],
       apiKey,
-      { model: NARRATIVE_MODEL, temperature: 0.3, maxTokens: Math.ceil(TOKEN_BUDGETS[resolution] / 4), timeoutMs: 60_000 },
+      { model: NARRATIVE_MODEL, temperature: 0.3, maxTokens: OUTPUT_TOKEN_TARGETS[resolution], timeoutMs: 60_000 },
     );
     if (retried?.trim()) {
       const retryFiller = findFillerPhrase(retried.trim());
