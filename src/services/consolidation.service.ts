@@ -91,7 +91,7 @@ function buildConsolidationPrompt(db: Database, episodes: ReturnType<typeof getU
   const episodesText = extractEpisodeText(episodes);
   const existingNotesSection = buildExistingNotesSection(db, episodesText);
 
-  return `You are a memory consolidation agent. Analyze these conversation episodes and extract knowledge that should be remembered across sessions.
+  return `You are a memory consolidation agent. Extract ONLY actionable, durable knowledge from these episodes. Quality over quantity — fewer, better notes.
 
 Episodes:
 ${episodesText}${existingNotesSection}
@@ -100,8 +100,8 @@ Output a JSON object with:
 {
   "notes": [
     {
-      "type": "fact" | "preference" | "pattern" | "entity" | "relationship",
-      "content": "One clear sentence describing the knowledge",
+      "type": "fact" | "preference" | "pattern" | "entity",
+      "content": "One clear, actionable sentence",
       "keywords": ["keyword1", "keyword2", "keyword3"],
       "confidence": 0.0-1.0,
       "priority": 0 | 1 | 2
@@ -120,23 +120,41 @@ Output a JSON object with:
   ]
 }
 
-Rules:
-- Only extract information that would be useful in future sessions
-- Preferences are stronger signals than facts (confidence: 0.9)
-- Do not extract trivial/transient information
-- Do NOT extract notes about the memory system itself, consolidation process, reflection quality, or memory management — these are implementation internals, not durable knowledge
-- Do NOT extract notes about your own behavioral tendencies, self-assessments, or meta-observations about how you operate — only extract knowledge about the external world (the project, operator, codebase, tools, decisions). EXCEPTION: if the operator explicitly corrected the agent's behavior, extract that correction as a preference
-- If the operator corrected the agent, extract the correction as a preference
-- Focus on: operator name, preferences, communication style, technical choices, project context
-- CRITICAL: Check existing notes for CONTRADICTIONS. If a new episode contradicts or updates an existing note, add a "supersede" entry. The new episodes represent MORE RECENT information.
-- Common contradictions: decisions changed, projects completed/abandoned, preferences updated, tools/tech switched
-- PRIORITY DETECTION: Infer priority from the operator's language and emotional investment:
-  - priority 2 (high importance): operator says "important", "crucial", "I really need", "don't forget", shows strong emotional investment, repeated emphasis
-  - priority 1 (notable): operator says "would be nice", "I'd like", "should", mentions something multiple times across conversations
-  - priority 0 (normal): default for routine facts, observations, patterns
-- When extracting facts about completed work, name the specific components, features, or decisions — not just "a bug fix sprint was completed". E.g. "Switched auth from JWT to session cookies because of mobile token refresh latency." Only apply this to sessions involving substantive work, not Q&A or exploration
-- Note content should capture WHY (motivation/context), not just WHAT (action taken). Include outcome if determinable from the episode. If neither WHY nor outcome is available, consider whether the note is worth extracting at all
-- Return {"notes": [], "supersede": []} if nothing notable`;
+ACTIONABILITY TEST — apply to every note before including it:
+- Facts must answer: "What should the agent DO with this information?" If a fact is just "X was discussed" or "Y happened" with no implication for future behavior, do NOT extract it.
+- Preferences must be testable: "Given situation X, the operator wants Y." Vague preferences like "prefers quality" are useless — specify the concrete behavior.
+- If a note doesn't change how the agent acts in a future session, it's not worth saving. Prefer zero notes over low-quality notes.
+
+BANNED content — do NOT extract:
+- Notes about the memory system, consolidation, audits, reflection quality, or memory management
+- Self-assessments or meta-observations about the agent's own behavior ("I tend to...", "I regularly...")
+- Passive observations that don't inform decisions ("a discussion occurred", "code was reviewed")
+- Transient status ("currently working on X", "PR is open", "tests passing")
+- Duplicate information already captured in an existing note (check the existing notes section carefully)
+
+EXCEPTION: If the operator explicitly corrected the agent's behavior, extract that correction as a preference.
+
+SUPERSEDE — check existing notes for contradictions:
+- CRITICAL: If a new episode contradicts or updates an existing note, add a "supersede" entry
+- Common triggers: decisions changed, projects completed/abandoned, preferences updated, tools/tech switched, version numbers changed
+- The new episodes represent MORE RECENT information
+
+TYPE RULES:
+- fact: Durable knowledge about the project, codebase, architecture, people, or external world
+- preference: Operator's explicit or strongly implied preference for how things should be done
+- pattern: Recurring behavior or decision pattern that predicts future situations
+- entity: Named entity (person, project, service) with identifying attributes
+
+PRIORITY DETECTION:
+- priority 2: operator says "important", "crucial", "don't forget", shows strong emotional investment
+- priority 1: operator says "would be nice", "should", mentions something repeatedly
+- priority 0: default for routine facts
+
+CONTENT QUALITY:
+- Name specific components, features, versions, or decisions — never "a bug fix was completed"
+- Capture WHY (motivation/context), not just WHAT. Include outcome if known
+- If neither WHY nor outcome is available, the note is probably not worth extracting
+- Return {"notes": [], "supersede": []} if nothing actionable`;
 }
 
 async function checkConsolidationDuplicate(
