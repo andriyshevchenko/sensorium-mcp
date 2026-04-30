@@ -183,6 +183,7 @@ function getNotesInPeriod(db: Database, threadId: number, start: string): Semant
     threadId: r.thread_id as number,
     isGuardrail: (r.is_guardrail as number) === 1,
     pinned: (r.pinned as number) === 1,
+    qualityScore: (r.quality_score as number | null) ?? null,
   }));
 }
 

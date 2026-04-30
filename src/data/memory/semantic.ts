@@ -29,6 +29,7 @@ export interface SemanticNote {
   lastAccessed: string | null;
   isGuardrail: boolean;
   pinned: boolean;
+  qualityScore: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,6 +80,7 @@ function rowToSemanticNote(row: Record<string, unknown>): SemanticNote {
     lastAccessed: (row.last_accessed as string) ?? null,
     isGuardrail: (row.is_guardrail as number) === 1,
     pinned: (row.pinned as number) === 1,
+    qualityScore: (row.quality_score as number | null) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -158,6 +160,7 @@ export function saveSemanticNote(
     isGuardrail?: boolean;
     pinned?: boolean;
     sourceEpisodes?: string[];
+    qualityScore?: number | null;
   }
 ): string {
   const validTypes = new Set(["fact", "preference", "pattern", "entity", "relationship"]);
@@ -168,10 +171,15 @@ export function saveSemanticNote(
   const id = generateId("sn");
   const now = nowISO();
 
+  const qualityScore = note.qualityScore != null ? Math.max(1, Math.min(5, Math.round(note.qualityScore))) : null;
+  if (qualityScore !== null && qualityScore < 3) {
+    log.warn(`[semantic] Low-quality note (score ${qualityScore}/5): ${note.content.slice(0, 120)}`);
+  }
+
   db.prepare(
     `INSERT INTO semantic_notes
-       (note_id, type, content, keywords, confidence, priority, thread_id, is_guardrail, pinned, source_episodes, linked_notes, link_reasons, valid_from, access_count, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+       (note_id, type, content, keywords, confidence, priority, thread_id, is_guardrail, pinned, source_episodes, linked_notes, link_reasons, valid_from, access_count, quality_score, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
   ).run(
     id,
     note.type,
@@ -186,6 +194,7 @@ export function saveSemanticNote(
     null,
     null,
     now,
+    qualityScore,
     now,
     now
   );
