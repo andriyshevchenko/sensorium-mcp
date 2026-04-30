@@ -75,7 +75,7 @@ const TOKEN_BUDGETS: Record<NarrativeResolution, number> = {
 };
 
 const NARRATIVE_MODEL =
-  process.env.NARRATIVE_MODEL || process.env.CONSOLIDATION_MODEL || "gpt-4o-mini";
+  process.env.NARRATIVE_MODEL || process.env.CONSOLIDATION_MODEL || "gpt-4o";
 
 // ─── Period Calculation ──────────────────────────────────────────────────────
 

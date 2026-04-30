@@ -440,7 +440,7 @@ async function runReflectionInner(
   let raw: string;
   try {
     raw = await chatCompletion(messages, apiKey, {
-      model: process.env.REFLECTION_MODEL ?? process.env.CONSOLIDATION_MODEL ?? "gpt-4o-mini",
+      model: process.env.REFLECTION_MODEL ?? process.env.CONSOLIDATION_MODEL ?? "gpt-4o",
       maxTokens: 4096,
       temperature: 0.4, // slightly creative for deeper reasoning
       responseFormat: { type: "json_object" },
