@@ -102,7 +102,8 @@ Output a JSON object with:
       "content": "One clear, actionable sentence",
       "keywords": ["keyword1", "keyword2", "keyword3"],
       "confidence": 0.0-1.0,
-      "priority": 0 | 1 | 2
+      "priority": 0 | 1 | 2,
+      "quality_score": 1-5
     }
   ],
   "supersede": [
@@ -147,6 +148,14 @@ PRIORITY DETECTION:
 - priority 2: operator says "important", "crucial", "don't forget", shows strong emotional investment
 - priority 1: operator says "would be nice", "should", mentions something repeatedly
 - priority 0: default for routine facts
+
+QUALITY SCORE (quality_score):
+- 1: Vague or useless — generic statement with no actionable implication
+- 2: Weak — some value but missing context or specificity
+- 3: Acceptable — actionable but not particularly memorable
+- 4: Good — specific, actionable, with context or motivation
+- 5: Highly actionable — captures a decision, constraint, or pattern with full context and clear behavioral implication
+Assign honestly. A score below 3 flags the note for monitoring — do NOT use this to suppress extraction; assign a low score and let the system decide.
 
 CONTENT QUALITY:
 - Name specific components, features, versions, or decisions — never "a bug fix was completed"
@@ -320,6 +329,7 @@ export async function runIntelligentConsolidation(
           keywords: string[];
           confidence: number;
           priority?: number;
+          quality_score?: number;
         }>;
         supersede?: Array<{
           oldNoteId: string;
@@ -344,6 +354,7 @@ export async function runIntelligentConsolidation(
           keywords: string[];
           confidence: number;
           priority: number;
+          qualityScore: number | null;
           embedding: Float32Array | null;
         };
         const noteWrites: NoteWrite[] = [];
@@ -368,6 +379,7 @@ export async function runIntelligentConsolidation(
             keywords: Array.isArray(note.keywords) ? note.keywords : [],
             confidence: Math.max(0, Math.min(1, note.confidence ?? 0.5)),
             priority: Math.max(0, Math.min(2, note.priority ?? 0)),
+            qualityScore: typeof note.quality_score === "number" ? note.quality_score : null,
             embedding: dedup.embedding,
           });
         }
@@ -400,6 +412,7 @@ export async function runIntelligentConsolidation(
               keywords: nw.keywords,
               confidence: nw.confidence,
               priority: nw.priority,
+              qualityScore: nw.qualityScore,
               threadId: knowledgeThreadId,
               sourceEpisodes: episodeIds,
             });
