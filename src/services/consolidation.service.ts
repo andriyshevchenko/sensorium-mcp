@@ -291,7 +291,7 @@ export async function runIntelligentConsolidation(
       ];
 
       const raw = await chatCompletion(messages, apiKey, {
-        model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o-mini",
+        model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o",
         maxTokens: 4096,
         responseFormat: { type: "json_object" },
         timeoutMs: 60_000,
@@ -572,7 +572,7 @@ Return {"expire": [], "merge": []} if nothing needs pruning.`;
     ];
 
     const raw = await chatCompletion(messages, apiKey, {
-      model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o-mini",
+      model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o",
       maxTokens: 4096,
       responseFormat: { type: "json_object" },
       timeoutMs: 60_000,
