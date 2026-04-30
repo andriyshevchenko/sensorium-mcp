@@ -449,6 +449,8 @@ async function runReflectionInner(
     return { insights: [], processedEpisodeCount: 0, duration: Date.now() - startMs };
   }
 
+  const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+
   // ── Step 0: Buffer maintenance — expire stale, enforce cap ─────────────
   enforceReflectionCap(db, threadId);
 
@@ -506,13 +508,16 @@ async function runReflectionInner(
       continue;
     }
 
-    // Compile structured fields into a single rich content string
+    // Compile structured fields into a single rich content string.
+    // Strip trailing punctuation from each field so the ". " separator doesn't
+    // produce double periods when the LLM ends a field with its own period.
+    const stripTrailing = (s: string) => s.trim().replace(/[.!?]+$/, "");
     const content = [
-      `Decision: ${ins.decision.trim()}`,
-      `Context: ${ins.context.trim()}`,
-      `Outcome: ${ins.outcome.trim()}`,
-      `Root cause: ${ins.root_cause.trim()}`,
-      `Lesson: ${ins.lesson.trim()}`,
+      `Decision: ${stripTrailing(ins.decision)}`,
+      `Context: ${stripTrailing(ins.context)}`,
+      `Outcome: ${stripTrailing(ins.outcome)}`,
+      `Root cause: ${stripTrailing(ins.root_cause)}`,
+      `Lesson: ${stripTrailing(ins.lesson)}`,
     ].join(". ");
 
     const insightType = validTypes.has(ins.type) ? ins.type : "pattern";
@@ -546,7 +551,7 @@ async function runReflectionInner(
 
     // De-duplicate against existing reflections (embedding is cached for reuse)
     const prefixedContent = `[REFLECTION] [${insightType.toUpperCase()}] [${domain}] ${content}`;
-    const { isDuplicate: duplicate, embedding: cachedEmbedding } = await checkDuplicate(db, prefixedContent, apiKey, threadId);
+    const { isDuplicate: duplicate, embedding: cachedEmbedding } = await checkDuplicate(db, prefixedContent, apiKey, knowledgeThreadId);
     if (duplicate) {
       log.info(`[reflection] Skipped duplicate insight: ${content.slice(0, 60)}…`);
       continue;
@@ -562,7 +567,7 @@ async function runReflectionInner(
       keywords: ["reflection", insightType, domain, ...keywords],
       confidence,
       priority: confidence >= 0.8 ? 1 : 0,
-      threadId: resolveKnowledgeThreadId(threadId),
+      threadId: knowledgeThreadId,
       sourceEpisodes: refs,
     });
 
