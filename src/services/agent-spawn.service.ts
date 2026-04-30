@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDefaultThreadModel, getDefaultWorkerModel, type AgentType } from "../config.js";
@@ -175,7 +175,25 @@ async function handleProcessExit(code: number | null, threadId: number, pid: num
   } catch (err) {
     log.warn(`[start_thread] Failed to update DB on exit for thread ${threadId}: ${errorMessage(err)}`);
   }
-  log.info(`[start_thread] ${processLabel} process PID=${pid} for thread ${threadId} exited with code ${code}`);
+  const uptimeSec = Math.round((Date.now() - entry.startedAt) / 1000);
+  const exitDesc = code === 3221226505 ? "ACCESS_VIOLATION (0xC0000005)" : code === 1 ? "error (1)" : `code ${code}`;
+  log.info(`[start_thread] ${processLabel} PID=${pid} thread ${threadId} exited: ${exitDesc} — uptime ${uptimeSec}s`);
+  if (code === 3221226505) {
+    // Detect batch crashes — count how many other threads died in the last 30s
+    const recentCrashes = spawnedThreads.length === 0 ? "all threads down" : `${spawnedThreads.length} still alive`;
+    log.warn(`[start_thread] SEGFAULT thread ${threadId} — ${recentCrashes}, uptime was ${uptimeSec}s (${Math.round(uptimeSec / 3600)}h)`);
+    // Tail the thread log to see what the agent was doing when it crashed
+    try {
+      const fd = openSync(entry.logFile, "r");
+      const stat = fstatSync(fd);
+      const readSize = Math.min(2048, stat.size);
+      const buf = Buffer.alloc(readSize);
+      readSync(fd, buf, 0, readSize, stat.size - readSize);
+      closeSync(fd);
+      const tail = buf.toString("utf-8").split("\n").filter(Boolean).slice(-3).join(" | ");
+      log.warn(`[start_thread] SEGFAULT context (last log): ${tail.substring(0, 300)}`);
+    } catch { /* log file may be gone */ }
+  }
 }
 
 function registerSpawnedProcess(opts: RegisterSpawnOpts, threadLifecycle: ThreadLifecycleService): { pid: number; logFile: string } | { error: string } {
