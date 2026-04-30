@@ -315,21 +315,27 @@ async function generateNarrative(
   const { start, end } = getPeriodBounds(resolution);
   const episodes = getEpisodesInPeriod(db, knowledgeThreadId, start, end);
 
-  // Skip if too few episodes
-  if (episodes.length < 3) return null;
+  // Sparse-thread guard: require minimum episode count to prevent fabricated narratives.
+  // Day narratives need fewer episodes; longer resolutions need more signal to be useful.
+  const minEpisodes = resolution === "day" ? 3 : 5;
+  if (episodes.length < minEpisodes) return null;
 
   const notes = getNotesInPeriod(db, knowledgeThreadId, start);
   const maxChars = TOKEN_BUDGETS[resolution] * 4; // ~4 chars per token
 
   const episodesText = formatEpisodesForLLM(episodes, maxChars * 2);
+
+  // Content density check: if episode text is too thin, skip generation to avoid fabrication
+  if (episodesText.length < 200 && notes.length === 0) return null;
+
   const notesText = formatNotesForLLM(notes, maxChars);
 
-  const fmtShort = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const fmtShort = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const fmtRange = `${fmtShort(start)} – ${fmtShort(end)}`;
   const periodLabels: Record<NarrativeResolution, string> = {
     day: fmtShort(start),
     week: fmtRange,
-    month: `Month of ${new Date(end).toLocaleDateString("en-US", { month: "long", year: "numeric" })}`,
+    month: `Month of ${new Date(start).toLocaleDateString("en-US", { month: "long", year: "numeric" })}`,
     quarter: `Quarter: ${fmtRange}`,
     half_year: `Half-year: ${fmtRange}`,
   };
@@ -406,10 +412,11 @@ export async function runNarrativeGeneration(
   };
 
   const resolutions: NarrativeResolution[] = ["day", "week", "month", "quarter", "half_year"];
+  const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
 
   for (const res of resolutions) {
     try {
-      if (!options?.force && isCooldownActive(db, threadId, res)) {
+      if (!options?.force && isCooldownActive(db, knowledgeThreadId, res)) {
         result.cached.push(res);
         continue;
       }
