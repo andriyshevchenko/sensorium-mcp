@@ -45,51 +45,46 @@ function extractEpisodeText(episodes: ReturnType<typeof getUnconsolidatedEpisode
     .join("\n");
 }
 
-function buildExistingNotesSection(db: Database, episodesText: string): string {
-  const episodeWords = episodesText
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((word) => word.length > 3);
-  const wordFreq = new Map<string, number>();
-  const stopWords = new Set([
-    "this", "that", "with", "from", "have", "been", "will", "would", "could", "should",
-    "about", "there", "their", "which", "when", "what", "were", "they", "than", "then",
-    "also", "just", "more", "some", "into", "over", "after", "before", "other", "very",
-    "your", "here",
-  ]);
-
-  for (const word of episodeWords) {
-    if (!stopWords.has(word)) {
-      wordFreq.set(word, (wordFreq.get(word) ?? 0) + 1);
-    }
-  }
-
-  const topKeywords = [...wordFreq.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([word]) => word);
-  if (topKeywords.length === 0) return "";
-
+async function buildExistingNotesSection(db: Database, episodesText: string, apiKey: string, threadId: number): Promise<string> {
   try {
-    const related = searchSemanticNotesRanked(db, topKeywords.join(" "), {
-      maxResults: 15,
+    // Use embedding search to find semantically related notes (not just keyword match)
+    const embedding = await generateEmbedding(episodesText.slice(0, 8000), apiKey);
+    const related = searchByEmbedding(db, embedding, {
+      maxResults: 30,
+      minSimilarity: 0.3,
       skipAccessTracking: true,
-      minMatchRatio: 0.2,
+      threadId,
     });
     if (related.length === 0) return "";
 
-    return `\n\nExisting memory notes (potentially related):
+    return `\n\nExisting memory notes (check for contradictions — supersede any that are outdated):
 ${related.map((note) => `[${note.noteId}] (${note.type}, conf: ${note.confidence}) ${note.content}`).join("\n")}`;
   } catch (err) {
-    log.warn(`[consolidation] searchSemanticNotesRanked failed during contradiction scan: ${errorMessage(err)}`);
-    return "";
+    log.warn(`[consolidation] Embedding search for existing notes failed: ${errorMessage(err)}`);
+    // Fallback to keyword search
+    try {
+      const topKeywords = episodesText
+        .toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
+        .filter((w) => w.length > 3)
+        .slice(0, 12);
+      if (topKeywords.length === 0) return "";
+      const ranked = searchSemanticNotesRanked(db, topKeywords.join(" "), {
+        maxResults: 15,
+        skipAccessTracking: true,
+        minMatchRatio: 0.2,
+      });
+      if (ranked.length === 0) return "";
+      return `\n\nExisting memory notes (check for contradictions — supersede any that are outdated):
+${ranked.map((note) => `[${note.noteId}] (${note.type}, conf: ${note.confidence}) ${note.content}`).join("\n")}`;
+    } catch {
+      return "";
+    }
   }
 }
 
-function buildConsolidationPrompt(db: Database, episodes: ReturnType<typeof getUnconsolidatedEpisodes>): string {
+async function buildConsolidationPrompt(db: Database, episodes: ReturnType<typeof getUnconsolidatedEpisodes>, apiKey: string, threadId: number): Promise<string> {
   const episodesText = extractEpisodeText(episodes);
-  const existingNotesSection = buildExistingNotesSection(db, episodesText);
+  const existingNotesSection = await buildExistingNotesSection(db, episodesText, apiKey, threadId);
 
   return `You are a memory consolidation agent. Extract ONLY actionable, durable knowledge from these episodes. Quality over quantity — fewer, better notes.
 
@@ -298,13 +293,13 @@ export async function runIntelligentConsolidation(
 
     const details: string[] = [];
     let notesCreated = 0;
+    const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
 
     try {
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) throw new Error("OPENAI_API_KEY not set");
-
       const messages: ChatMessage[] = [
-        { role: "system", content: buildConsolidationPrompt(db, episodes) },
+        { role: "system", content: await buildConsolidationPrompt(db, episodes, apiKey, knowledgeThreadId) },
         { role: "user", content: "Extract knowledge from the episodes above." },
       ];
 
@@ -339,8 +334,6 @@ export async function runIntelligentConsolidation(
       const episodeIds = episodes.map((episode) => episode.episodeId);
 
       if (!dryRun) {
-        const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
-
         // Phase 1: async dedup checks — collect what to write before entering transaction.
         type NoteWrite = {
           type: "fact" | "preference" | "pattern" | "entity" | "relationship";
@@ -455,7 +448,6 @@ export async function runIntelligentConsolidation(
     // Phase: Quality gate cleanup — expire existing reflection notes that fail structural or quality checks
     if (!dryRun) {
       try {
-        const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
         // Only sweep reflections created after the quality gate was deployed (2026-04-19)
         // to avoid retroactively expiring older reflections that were valid under previous rules
         const QUALITY_GATE_CUTOFF = "2026-04-19T00:00:00.000Z";
@@ -535,7 +527,7 @@ export async function runMemoryPruning(
 
   const startMs = Date.now();
   const envSampleSize = parseInt(process.env.PRUNING_SAMPLE_SIZE ?? "", 10);
-  const maxNotes = options?.maxNotes ?? (Number.isFinite(envSampleSize) && envSampleSize > 0 ? envSampleSize : 30);
+  const maxNotes = options?.maxNotes ?? (Number.isFinite(envSampleSize) && envSampleSize > 0 ? envSampleSize : 60);
   const dryRun = options?.dryRun ?? false;
   const details: string[] = [];
   const candidates = getCandidateNotesForPruning(db, maxNotes);
