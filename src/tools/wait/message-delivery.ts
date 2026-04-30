@@ -18,6 +18,7 @@ import {
   searchByEmbedding,
   searchSemanticNotesRanked,
   getPinnedNotes,
+  getSemanticNotesByIds,
   type initMemoryDb,
 } from "../../memory.js";
 import {
@@ -239,10 +240,13 @@ export async function buildSmartContext(
     if (operatorText.length > MIN_CONTEXT_TEXT_LENGTH && apiKey) {
       // Phase 1: Broad retrieval — get 10 candidates via embedding search
       let candidates: { type: string; content: string; confidence: number; similarity?: number; createdAt?: string }[] = [];
+      let linkedNoteIds: string[] = [];
       try {
         const queryEmb = await generateEmbedding(operatorText, apiKey);
         const embResults = searchByEmbedding(db, queryEmb, { maxResults: SMART_CONTEXT_MAX_RESULTS, minSimilarity: MIN_SIMILARITY, skipAccessTracking: true, threadId: resolveKnowledgeThreadId(ctx.effectiveThreadId) });
         candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence, similarity: n.similarity, createdAt: n.createdAt }));
+        const primaryIds = new Set(embResults.map(n => n.noteId));
+        linkedNoteIds = [...new Set(embResults.flatMap(n => n.linkedNotes).filter(id => !primaryIds.has(id)))].slice(0, 10);
       } catch (err) {
         // Fallback to keyword search
         log.warn(`Embedding generation failed, falling back to keyword search: ${errorMessage(err)}`);
@@ -266,6 +270,18 @@ export async function buildSmartContext(
           autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
         }
         log.verbose("memory", `Smart context: ${candidates.length} candidates → ${topCandidates.length} injected`);
+      }
+
+      // 1-hop causal link expansion
+      if (linkedNoteIds.length > 0) {
+        const linkedNotes = getSemanticNotesByIds(db, linkedNoteIds);
+        if (linkedNotes.length > 0) {
+          const linkedLines = linkedNotes.map(n => {
+            const dateLabel = n.createdAt && !/^\[\d{4}-\d{2}-\d{2}\]/.test(n.content) ? `[${n.createdAt.slice(0, 10)}] ` : "";
+            return `- **[${n.type}]** ${dateLabel}${n.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${n.confidence})_`;
+          });
+          autoMemoryContext += `\n\n## Related Context (causal links)\n${linkedLines.join("\n")}`;
+        }
       }
     } else if (operatorText.length > MIN_CONTEXT_TEXT_LENGTH) {
       // No API key — keyword search, raw top-3

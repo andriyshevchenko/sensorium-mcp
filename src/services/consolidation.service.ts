@@ -369,6 +369,8 @@ export async function runIntelligentConsolidation(
           priority: number;
           qualityScore: number | null;
           embedding: Float32Array | null;
+          linkedNotes: string[];
+          linkReasons: Record<string, string>;
         };
         const noteWrites: NoteWrite[] = [];
 
@@ -386,6 +388,13 @@ export async function runIntelligentConsolidation(
             continue;
           }
 
+          const rawLinked = Array.isArray(note.linked_notes) ? note.linked_notes.filter((id): id is string => typeof id === "string") : [];
+          const rawReasons: Record<string, string> = {};
+          if (Array.isArray(note.link_reasons)) {
+            rawLinked.forEach((id, i) => {
+              if (typeof note.link_reasons![i] === "string") rawReasons[id] = note.link_reasons![i];
+            });
+          }
           noteWrites.push({
             type: noteType,
             content: note.content,
@@ -394,6 +403,8 @@ export async function runIntelligentConsolidation(
             priority: Math.max(0, Math.min(2, note.priority ?? 0)),
             qualityScore: typeof note.quality_score === "number" ? note.quality_score : null,
             embedding: dedup.embedding,
+            linkedNotes: rawLinked,
+            linkReasons: rawReasons,
           });
         }
 
@@ -428,6 +439,8 @@ export async function runIntelligentConsolidation(
               qualityScore: nw.qualityScore,
               threadId: knowledgeThreadId,
               sourceEpisodes: episodeIds,
+              linkedNotes: nw.linkedNotes.length > 0 ? nw.linkedNotes : undefined,
+              linkReasons: Object.keys(nw.linkReasons).length > 0 ? nw.linkReasons : undefined,
             });
             if (nw.embedding) {
               saveNoteEmbedding(db, noteId, nw.embedding);

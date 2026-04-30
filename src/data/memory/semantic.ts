@@ -148,6 +148,15 @@ export function getSemanticNoteById(
   return { type: row.type, keywords: parseJsonArray(row.keywords) };
 }
 
+export function getSemanticNotesByIds(db: Database, noteIds: string[]): SemanticNote[] {
+  if (noteIds.length === 0) return [];
+  const placeholders = noteIds.map(() => "?").join(",");
+  const rows = db.prepare(
+    `SELECT * FROM semantic_notes WHERE note_id IN (${placeholders}) AND valid_to IS NULL AND superseded_by IS NULL`
+  ).all(...noteIds) as Record<string, unknown>[];
+  return rows.map(rowToSemanticNote);
+}
+
 export function saveSemanticNote(
   db: Database,
   note: {
@@ -161,6 +170,8 @@ export function saveSemanticNote(
     pinned?: boolean;
     sourceEpisodes?: string[];
     qualityScore?: number | null;
+    linkedNotes?: string[];
+    linkReasons?: Record<string, string>;
   }
 ): string {
   const validTypes = new Set(["fact", "preference", "pattern", "entity", "relationship"]);
@@ -191,8 +202,8 @@ export function saveSemanticNote(
     note.isGuardrail ? 1 : 0,
     note.pinned ? 1 : 0,
     jsonOrNull(note.sourceEpisodes),
-    null,
-    null,
+    jsonOrNull(note.linkedNotes),
+    note.linkReasons ? JSON.stringify(note.linkReasons) : null,
     now,
     qualityScore,
     now,
