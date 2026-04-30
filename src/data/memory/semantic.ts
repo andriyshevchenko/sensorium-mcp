@@ -160,9 +160,9 @@ export function saveSemanticNote(
     sourceEpisodes?: string[];
   }
 ): string {
-  const validTypes = new Set(["fact", "preference", "pattern", "entity"]);
+  const validTypes = new Set(["fact", "preference", "pattern", "entity", "relationship"]);
   if (!validTypes.has(note.type)) {
-    log.warn(`[semantic] Saving note with non-standard type "${note.type}" — consider using fact/preference/pattern/entity`);
+    log.warn(`[semantic] Saving note with non-standard type "${note.type}" — consider using fact/preference/pattern/entity/relationship`);
   }
 
   const id = generateId("sn");
