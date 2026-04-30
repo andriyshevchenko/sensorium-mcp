@@ -238,18 +238,18 @@ export async function buildSmartContext(
 
     if (operatorText.length > MIN_CONTEXT_TEXT_LENGTH && apiKey) {
       // Phase 1: Broad retrieval — get 10 candidates via embedding search
-      let candidates: { type: string; content: string; confidence: number; similarity?: number }[] = [];
+      let candidates: { type: string; content: string; confidence: number; similarity?: number; createdAt?: string }[] = [];
       try {
         const queryEmb = await generateEmbedding(operatorText, apiKey);
         const embResults = searchByEmbedding(db, queryEmb, { maxResults: SMART_CONTEXT_MAX_RESULTS, minSimilarity: MIN_SIMILARITY, skipAccessTracking: true, threadId: resolveKnowledgeThreadId(ctx.effectiveThreadId) });
-        candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence, similarity: n.similarity }));
+        candidates = embResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence, similarity: n.similarity, createdAt: n.createdAt }));
       } catch (err) {
         // Fallback to keyword search
         log.warn(`Embedding generation failed, falling back to keyword search: ${errorMessage(err)}`);
         const searchQuery = extractSearchKeywords(operatorText);
         if (searchQuery.trim().length > 0) {
           const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: SMART_CONTEXT_MAX_RESULTS, skipAccessTracking: true, threadId: resolveKnowledgeThreadId(ctx.effectiveThreadId) });
-          candidates = kwResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence }));
+          candidates = kwResults.map(n => ({ type: n.type, content: n.content.slice(0, NOTE_CONTENT_MAX_CHARS), confidence: n.confidence, createdAt: n.createdAt }));
         }
       }
 
@@ -259,7 +259,8 @@ export async function buildSmartContext(
         const topCandidates = candidates.slice(0, MAX_INJECTED_NOTES);
         const lines = topCandidates.map(c => {
           const simLabel = c.similarity !== undefined ? `, sim: ${c.similarity.toFixed(2)}` : "";
-          return `- **[${c.type}]** ${c.content} _(conf: ${c.confidence}${simLabel})_`;
+          const dateLabel = c.createdAt ? `[${c.createdAt.slice(0, 10)}] ` : "";
+          return `- **[${c.type}]** ${dateLabel}${c.content} _(conf: ${c.confidence}${simLabel})_`;
         });
         if (lines.length > 0) {
           autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
@@ -273,7 +274,7 @@ export async function buildSmartContext(
         const kwResults = searchSemanticNotesRanked(db, searchQuery, { maxResults: 3, skipAccessTracking: true, threadId: resolveKnowledgeThreadId(ctx.effectiveThreadId) });
         if (kwResults.length > 0) {
           const lines = kwResults.map(n =>
-            `- **[${n.type}]** ${n.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${n.confidence})_`
+            `- **[${n.type}]** [${n.createdAt.slice(0, 10)}] ${n.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${n.confidence})_`
           );
           autoMemoryContext = `\n\n## Relevant Memory (auto-injected)\n${lines.join("\n")}`;
         }
@@ -293,7 +294,7 @@ export async function buildSmartContext(
     const pinned = getPinnedNotes(db, resolveKnowledgeThreadId(ctx.effectiveThreadId ?? 0));
     if (pinned.length > 0) {
       const pinnedLines = pinned.map(p =>
-        `- **[pinned/${p.type}]** ${p.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${p.confidence.toFixed(2)})_`
+        `- **[pinned/${p.type}]** [${p.createdAt.slice(0, 10)}] ${p.content.slice(0, NOTE_CONTENT_MAX_CHARS)} _(conf: ${p.confidence.toFixed(2)})_`
       );
       autoMemoryContext += `\n\n## Persistent Context (always active)\n${pinnedLines.join("\n")}`;
     }
