@@ -117,7 +117,8 @@ async function handleMemorySearch(
           if (embNotes.length > 0) {
             results.push("### Semantic Memory (embedding search)");
             for (const n of embNotes) {
-              results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}, sim: ${n.similarity.toFixed(2)}, id: ${n.noteId})_`);
+              const qTag = n.qualityScore !== null ? `, q:${n.qualityScore}/5` : "";
+            results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}${qTag}, sim: ${n.similarity.toFixed(2)}, id: ${n.noteId})_`);
             }
             embeddingSearchDone = true;
           }
@@ -130,7 +131,8 @@ async function handleMemorySearch(
         if (notes.length > 0) {
           results.push("### Semantic Memory");
           for (const n of notes) {
-            results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}, id: ${n.noteId})_`);
+            const qTag = n.qualityScore !== null ? `, q:${n.qualityScore}/5` : "";
+            results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}${qTag}, id: ${n.noteId})_`);
           }
         }
       }
