@@ -53,31 +53,9 @@ CREATE INDEX IF NOT EXISTS idx_sem_thread ON semantic_notes(thread_id) WHERE val
 CREATE INDEX IF NOT EXISTS idx_sem_guardrail ON semantic_notes(is_guardrail) WHERE is_guardrail = 1 AND valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS idx_sem_pinned ON semantic_notes(pinned) WHERE pinned = 1 AND valid_to IS NULL;
 
-CREATE TABLE IF NOT EXISTS procedures (
-  procedure_id       TEXT PRIMARY KEY,
-  name               TEXT NOT NULL,
-  type               TEXT NOT NULL CHECK(type IN ('workflow','habit','tool_pattern','template')),
-  description        TEXT NOT NULL,
-  steps              TEXT,
-  trigger_conditions TEXT,
-  success_rate       REAL DEFAULT 0.5,
-  times_executed     INTEGER DEFAULT 0,
-  last_executed_at   TEXT,
-  learned_from       TEXT,
-  corrections        TEXT,
-  related_procedures TEXT,
-  confidence         REAL DEFAULT 0.5,
-  created_at         TEXT NOT NULL,
-  updated_at         TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_proc_name ON procedures(name);
-CREATE INDEX IF NOT EXISTS idx_proc_type ON procedures(type);
-
 CREATE TABLE IF NOT EXISTS meta_topic_index (
   topic            TEXT PRIMARY KEY,
   semantic_count   INTEGER DEFAULT 0,
-  procedural_count INTEGER DEFAULT 0,
   last_updated     TEXT,
   avg_confidence   REAL DEFAULT 0.5,
   total_accesses   INTEGER DEFAULT 0
