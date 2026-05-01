@@ -124,6 +124,11 @@ export class ThreadLifecycleService {
 
   touchThread(db: Database, threadId: number, updates: TouchThreadInput = {}): ThreadRecord {
     const current = this.requireThread(db, threadId, "touchThread");
+    // A stale poll-loop heartbeat can fire after a thread has been archived/exited.
+    // Silently no-op rather than resurrecting terminal threads back to active.
+    if (current.status === ThreadState.Archived || current.status === ThreadState.Exited) {
+      return current;
+    }
     this.assertTransition(current.status, ThreadState.Active, "touchThread");
 
     this.threadRepository.updateThread(db, threadId, {
