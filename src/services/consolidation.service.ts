@@ -19,6 +19,7 @@ import {
   mergeDuplicateNote,
   type PruningReport,
   sweepOrphanedNotes,
+  sweepOrphanedEmbeddings,
 } from "../data/memory/consolidation.js";
 import { resolveKnowledgeThreadId } from "../config.js";
 import { getThread } from "../data/memory/thread-registry.js";
@@ -262,6 +263,12 @@ export async function runConsolidationAllThreads(
       }
     } catch (err) {
       log.warn(`[memory] Orphan notes sweep failed: ${errorMessage(err)}`);
+    }
+
+    try {
+      sweepOrphanedEmbeddings(db);
+    } catch (err) {
+      log.warn(`[memory] Orphan embeddings sweep failed: ${errorMessage(err)}`);
     }
 
     return {
