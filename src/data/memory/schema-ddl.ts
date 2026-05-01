@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS semantic_notes (
   thread_id       INTEGER,
   is_guardrail    INTEGER NOT NULL DEFAULT 0,
   pinned          INTEGER NOT NULL DEFAULT 0,
+  quality_score   INTEGER,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
