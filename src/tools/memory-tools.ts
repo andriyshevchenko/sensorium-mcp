@@ -323,6 +323,22 @@ function handleMemoryStatus(
       `- DB size: ${(status.dbSizeBytes / 1024).toFixed(1)} KB`,
     ];
 
+    // Quality score distribution (only when some notes are scored)
+    try {
+      const qRows = db.prepare(
+        `SELECT quality_score, COUNT(*) as cnt FROM semantic_notes
+         WHERE valid_to IS NULL AND superseded_by IS NULL AND thread_id = ?
+         GROUP BY quality_score ORDER BY quality_score`
+      ).all(threadId) as { quality_score: number | null; cnt: number }[];
+      const scored = qRows.filter(r => r.quality_score !== null);
+      if (scored.length > 0) {
+        const dist = scored.map(r => `${r.quality_score}★:${r.cnt}`).join("  ");
+        const lowCount = scored.filter(r => r.quality_score !== null && r.quality_score < 3).reduce((s, r) => s + r.cnt, 0);
+        const lowPart = lowCount > 0 ? `  ⚠️ ${lowCount} low-quality (<3)` : "";
+        lines.push(`- Quality scores: ${dist}${lowPart}`);
+      }
+    } catch { /* non-fatal */ }
+
     if (topics.length > 0) {
       lines.push("", "**Topics:**");
       for (const t of topics.slice(0, 15)) {
