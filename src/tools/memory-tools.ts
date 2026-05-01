@@ -118,7 +118,8 @@ async function handleMemorySearch(
             results.push("### Semantic Memory (embedding search)");
             for (const n of embNotes) {
               const qTag = n.qualityScore !== null ? `, q:${n.qualityScore}/5` : "";
-            results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}${qTag}, sim: ${n.similarity.toFixed(2)}, id: ${n.noteId})_`);
+              const datePrefix = n.createdAt && !/^\[\d{4}-\d{2}-\d{2}\]/.test(n.content) ? `[${n.createdAt.slice(0, 10)}] ` : "";
+              results.push(`- **[${n.type}]** ${datePrefix}${n.content} _(conf: ${n.confidence}${qTag}, sim: ${n.similarity.toFixed(2)}, id: ${n.noteId})_`);
             }
             embeddingSearchDone = true;
           }
@@ -132,7 +133,8 @@ async function handleMemorySearch(
           results.push("### Semantic Memory");
           for (const n of notes) {
             const qTag = n.qualityScore !== null ? `, q:${n.qualityScore}/5` : "";
-            results.push(`- **[${n.type}]** ${n.content} _(conf: ${n.confidence}${qTag}, id: ${n.noteId})_`);
+            const datePrefix = n.createdAt && !/^\[\d{4}-\d{2}-\d{2}\]/.test(n.content) ? `[${n.createdAt.slice(0, 10)}] ` : "";
+            results.push(`- **[${n.type}]** ${datePrefix}${n.content} _(conf: ${n.confidence}${qTag}, id: ${n.noteId})_`);
           }
         }
       }
