@@ -311,7 +311,8 @@ function handleMemoryStatus(
   errorResult: ToolContext["errorResult"],
 ): ToolResult {
   try {
-    const status = getMemoryStatus(db, threadId);
+    const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+    const status = getMemoryStatus(db, knowledgeThreadId);
     const topics = getTopicIndex(db);
 
     const lines = [
@@ -329,7 +330,7 @@ function handleMemoryStatus(
         `SELECT quality_score, COUNT(*) as cnt FROM semantic_notes
          WHERE valid_to IS NULL AND superseded_by IS NULL AND thread_id = ?
          GROUP BY quality_score ORDER BY quality_score`
-      ).all(threadId) as { quality_score: number | null; cnt: number }[];
+      ).all(knowledgeThreadId) as { quality_score: number | null; cnt: number }[];
       const scored = qRows.filter(r => r.quality_score !== null);
       if (scored.length > 0) {
         const dist = scored.map(r => `${r.quality_score}★:${r.cnt}`).join("  ");
