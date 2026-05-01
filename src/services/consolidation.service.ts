@@ -21,6 +21,7 @@ import {
   sweepOrphanedNotes,
 } from "../data/memory/consolidation.js";
 import { resolveKnowledgeThreadId } from "../config.js";
+import { getThread } from "../data/memory/thread-registry.js";
 import { passesStructuralGate, passesQualityGate, parseReflectionFields } from "../data/memory/reflection.js";
 import { chatCompletion, generateEmbedding, type ChatMessage } from "../integrations/openai/chat.js";
 import { log } from "../logger.js";
@@ -317,7 +318,11 @@ export async function runIntelligentConsolidation(
 
     const details: string[] = [];
     let notesCreated = 0;
-    const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+    // Resolve where consolidated notes should be written:
+    // If this thread has a rootThreadId in the registry (ghost/worker/branch),
+    // write to the root thread to avoid duplicate notes across parent and child.
+    const registryEntry = getThread(db, threadId);
+    const knowledgeThreadId = registryEntry?.rootThreadId ?? resolveKnowledgeThreadId(threadId);
 
     try {
       const apiKey = process.env.OPENAI_API_KEY;

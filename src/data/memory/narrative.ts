@@ -17,6 +17,7 @@ import { chatCompletion } from "../../integrations/openai/chat.js";
 import { type Episode } from "./episodes.js";
 import { type SemanticNote } from "./semantic.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
+import { getThread } from "./thread-registry.js";
 import { parseJsonArray, parseJsonObject } from "./utils.js";
 import { errorMessage } from "../../utils.js";
 import { log } from "../../logger.js";
@@ -326,7 +327,8 @@ async function generateNarrative(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
-  const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+  const registryEntry = getThread(db, threadId);
+  const knowledgeThreadId = registryEntry?.rootThreadId ?? resolveKnowledgeThreadId(threadId);
 
   const { start, end } = getPeriodBounds(resolution);
   const episodes = getEpisodesInPeriod(db, knowledgeThreadId, start, end);
@@ -428,7 +430,8 @@ export async function runNarrativeGeneration(
   };
 
   const resolutions: NarrativeResolution[] = ["day", "week", "month", "quarter", "half_year"];
-  const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+  const registryEntry = getThread(db, threadId);
+  const knowledgeThreadId = registryEntry?.rootThreadId ?? resolveKnowledgeThreadId(threadId);
 
   for (const res of resolutions) {
     try {

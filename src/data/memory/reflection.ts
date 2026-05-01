@@ -15,6 +15,7 @@ import { saveSemanticNote, searchByEmbedding, saveNoteEmbedding } from "./semant
 import { nowISO, repairAndParseJSON } from "./utils.js";
 import { log } from "../../logger.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
+import { getThread } from "./thread-registry.js";
 import {
   chatCompletion,
   generateEmbedding,
@@ -357,7 +358,8 @@ export function passesStructuralGate(insight: {
 
 /** Expire stale reflections (>30 days old, never accessed) and enforce buffer cap. */
 function enforceReflectionCap(db: Database, threadId: number): { expired: number } {
-  const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+  const registryEntry = getThread(db, threadId);
+  const knowledgeThreadId = registryEntry?.rootThreadId ?? resolveKnowledgeThreadId(threadId);
   let expired = 0;
 
   // Phase 1: Expire stale never-accessed reflections
@@ -480,7 +482,8 @@ async function runReflectionInner(
     return { insights: [], processedEpisodeCount: 0, duration: Date.now() - startMs };
   }
 
-  const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+  const registryEntry = getThread(db, threadId);
+  const knowledgeThreadId = registryEntry?.rootThreadId ?? resolveKnowledgeThreadId(threadId);
 
   // ── Step 0: Buffer maintenance — expire stale, enforce cap ─────────────
   enforceReflectionCap(db, threadId);
