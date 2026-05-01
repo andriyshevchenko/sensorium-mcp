@@ -645,8 +645,6 @@ async function runReflectionInner(
     `[reflection] Completed: ${episodes.length} episodes → ${savedInsights.length} insights (${Date.now() - startMs}ms)`,
   );
 
-  // TODO: Step 6 — procedural generation from reflections (not yet implemented)
-
   return {
     insights: savedInsights,
     processedEpisodeCount: episodes.length,
