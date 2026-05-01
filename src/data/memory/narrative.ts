@@ -237,7 +237,10 @@ function buildPrompt(
   notesText: string,
   episodeCount: number,
   periodLabel: string,
+  periodStart: string,
 ): string {
+  const startYear = new Date(periodStart).getFullYear();
+  const endYear = new Date().getFullYear();
   const instructions: Record<NarrativeResolution, string> = {
     day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. For each major event, explain WHY it happened and what it caused. Don't just list what happened — explain the chain of consequences. Target ~500 tokens.`,
     week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~300 tokens.`,
@@ -260,6 +263,8 @@ FORMAT RULES:
 - NEVER use filler phrases like: "significant progress/evolution/strides", "notable improvement/milestone/achievement", "various features", "several enhancements", "pivotal moments", "crucial step/milestone/decision", "substantial/remarkable/meaningful progress", "overall good/positive", "as I navigated/reflected/observed", "this prompted me to reflect", "I noticed a critical/key ..."
 - Every claim must be grounded in a specific event, decision, or outcome from the source data
 - If you can't point to specific evidence, don't include it
+- NEVER open with a date-setting sentence like "In [Month Year]..." or "During [Month Year]..." — start with what actually happened
+- Only use years that appear in the period range (${startYear}${startYear !== endYear ? `–${endYear}` : ""}) — never substitute today's year for an earlier period
 
 SOURCE DATA (${episodeCount} episodes):
 
@@ -352,7 +357,7 @@ async function generateNarrative(
   };
   const periodLabel = periodLabels[resolution];
 
-  const prompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel);
+  const prompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel, start);
 
   const narrative = await chatCompletion(
     [{ role: "user", content: prompt }],
@@ -372,7 +377,7 @@ async function generateNarrative(
   const fillerMatch = findFillerPhrase(finalNarrative);
   if (fillerMatch) {
     log.warn(`[narrative] filler phrase detected (${fillerMatch}) in ${resolution} narrative — retrying`);
-    const retryPrompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel)
+    const retryPrompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel, start)
       + "\n\nRewrite the narrative using no filler phrases. Every claim must reference a specific event or decision from the source data.";
     const retried = await chatCompletion(
       [{ role: "system", content: "You are a temporal memory narrator." }, { role: "assistant", content: finalNarrative }, { role: "user", content: retryPrompt }],
