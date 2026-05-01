@@ -123,6 +123,24 @@ export function mergeDuplicateNote(
   ).run(now, keepId, now, expireId);
 }
 
+/**
+ * Delete note_embeddings rows whose semantic_notes have been expired or superseded.
+ * These embeddings are already invisible to embedding search (loadAllEmbeddings filters
+ * them out) but they accumulate on disk over time. Safe to delete at any point.
+ * Returns the number of rows deleted.
+ */
+export function sweepOrphanedEmbeddings(db: Database): number {
+  const result = db.prepare(
+    `DELETE FROM note_embeddings WHERE note_id NOT IN (
+       SELECT note_id FROM semantic_notes WHERE valid_to IS NULL AND superseded_by IS NULL
+     )`
+  ).run();
+  if (result.changes > 0) {
+    log.info(`[memory] Embedding sweep: removed ${result.changes} orphaned embedding(s)`);
+  }
+  return result.changes;
+}
+
 export function sweepOrphanedNotes(db: Database): number {
   const threadIdsWithNotes = getThreadIdsWithActiveNotes(db);
   if (threadIdsWithNotes.length === 0) return 0;
