@@ -324,7 +324,7 @@ function handleMemoryStatus(
     if (topics.length > 0) {
       lines.push("", "**Topics:**");
       for (const t of topics.slice(0, 15)) {
-        lines.push(`- ${t.topic} (${t.semanticCount} notes, ${t.proceduralCount} procs, conf: ${t.avgConfidence.toFixed(2)})`);
+        lines.push(`- ${t.topic} (${t.semanticCount} notes, conf: ${t.avgConfidence.toFixed(2)})`);
       }
     }
 

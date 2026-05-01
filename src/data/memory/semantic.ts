@@ -88,15 +88,14 @@ function rowToSemanticNote(row: Record<string, unknown>): SemanticNote {
 
 // ─── Topic Index ─────────────────────────────────────────────────────────────
 
-export function updateTopicIndexForKeywords(db: Database, keywords: string[], layer: "semantic" | "procedural"): void {
+export function updateTopicIndexForKeywords(db: Database, keywords: string[]): void {
   const now = nowISO();
-  const col = layer === "semantic" ? "semantic_count" : "procedural_count";
 
   const upsertStmt = db.prepare(
-    `INSERT INTO meta_topic_index (topic, ${col}, last_updated)
+    `INSERT INTO meta_topic_index (topic, semantic_count, last_updated)
      VALUES (?, 1, ?)
      ON CONFLICT(topic) DO UPDATE SET
-       ${col} = ${col} + 1,
+       semantic_count = semantic_count + 1,
        last_updated = ?,
        total_accesses = total_accesses + 1`
   );
@@ -112,14 +111,12 @@ export function updateTopicIndexForKeywords(db: Database, keywords: string[], la
   txn();
 }
 
-export function decrementTopicIndexForKeywords(db: Database, keywords: string[], layer: "semantic" | "procedural"): void {
-  const col = layer === "semantic" ? "semantic_count" : "procedural_count";
-
+export function decrementTopicIndexForKeywords(db: Database, keywords: string[]): void {
   const decrementStmt = db.prepare(
-    `UPDATE meta_topic_index SET ${col} = MAX(${col} - 1, 0) WHERE topic = ?`
+    `UPDATE meta_topic_index SET semantic_count = MAX(semantic_count - 1, 0) WHERE topic = ?`
   );
   const deleteStmt = db.prepare(
-    `DELETE FROM meta_topic_index WHERE topic = ? AND semantic_count <= 0 AND procedural_count <= 0`
+    `DELETE FROM meta_topic_index WHERE topic = ? AND semantic_count <= 0`
   );
 
   const txn = db.transaction(() => {
@@ -211,7 +208,7 @@ export function saveSemanticNote(
   );
 
   // Update topic index for each keyword
-  updateTopicIndexForKeywords(db, note.keywords, "semantic");
+  updateTopicIndexForKeywords(db, note.keywords);
 
   return id;
 }
@@ -684,7 +681,7 @@ export function archiveNotesForThread(db: Database, threadId: number): number {
     for (const note of notes) {
       expireStmt.run(now, now, note.noteId);
       if (note.keywords.length > 0) {
-        decrementTopicIndexForKeywords(db, note.keywords, "semantic");
+        decrementTopicIndexForKeywords(db, note.keywords);
       }
     }
   })();

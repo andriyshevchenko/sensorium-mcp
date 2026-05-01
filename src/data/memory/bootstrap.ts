@@ -25,7 +25,6 @@ export const MAX_MESSAGE_CONTENT_CHARS = 500;
 export interface TopicEntry {
   topic: string;
   semanticCount: number;
-  proceduralCount: number;
   lastUpdated: string | null;
   avgConfidence: number;
   totalAccesses: number;
@@ -79,7 +78,6 @@ function rowToTopicEntry(row: Record<string, unknown>): TopicEntry {
   return {
     topic: row.topic as string,
     semanticCount: row.semantic_count as number,
-    proceduralCount: row.procedural_count as number,
     lastUpdated: (row.last_updated as string) ?? null,
     avgConfidence: row.avg_confidence as number,
     totalAccesses: row.total_accesses as number,
@@ -228,7 +226,7 @@ export function forgetMemory(
     db.transaction(() => {
       db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
       db.prepare(`DELETE FROM note_embeddings WHERE note_id = ?`).run(memoryId);
-      decrementTopicIndexForKeywords(db, keywords, "semantic");
+      decrementTopicIndexForKeywords(db, keywords);
     })();
     return { layer: "semantic", deleted: true };
   }
@@ -248,7 +246,7 @@ export function forgetMemory(
     db.transaction(() => {
       db.prepare(`DELETE FROM semantic_notes WHERE note_id = ?`).run(memoryId);
       db.prepare(`DELETE FROM note_embeddings WHERE note_id = ?`).run(memoryId);
-      decrementTopicIndexForKeywords(db, keywords, "semantic");
+      decrementTopicIndexForKeywords(db, keywords);
     })();
     return { layer: "semantic", deleted: true };
   }
