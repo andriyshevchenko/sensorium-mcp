@@ -23,6 +23,7 @@ import {
 } from "../data/memory/consolidation.js";
 import { resolveKnowledgeThreadId } from "../config.js";
 import { passesStructuralGate, passesQualityGate, parseReflectionFields } from "../data/memory/reflection.js";
+import { getThread } from "../data/memory/thread-registry.js";
 import { chatCompletion, generateEmbedding, type ChatMessage } from "../integrations/openai/chat.js";
 import { log } from "../logger.js";
 import { nowISO, repairAndParseJSON } from "../data/memory/utils.js";
@@ -294,6 +295,12 @@ export async function runIntelligentConsolidation(
       durationMs: 0,
       details: ["Consolidation disabled via CONSOLIDATION_ENABLED env var."],
     };
+  }
+
+  const threadEntry = getThread(db, threadId);
+  if (threadEntry?.type === "worker") {
+    log.info(`[consolidation] Skipping — thread ${threadId} is a worker thread`);
+    return { episodesProcessed: 0, notesCreated: 0, durationMs: 0, details: ["Skipped — worker thread."] };
   }
 
   const skipLock = options?._skipLock ?? false;

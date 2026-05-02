@@ -17,6 +17,7 @@ import { chatCompletion } from "../../integrations/openai/chat.js";
 import { type Episode } from "./episodes.js";
 import { type SemanticNote } from "./semantic.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
+import { getThread } from "./thread-registry.js";
 import { parseJsonArray, parseJsonObject } from "./utils.js";
 import { errorMessage } from "../../utils.js";
 import { log } from "../../logger.js";
@@ -426,6 +427,12 @@ export async function runNarrativeGeneration(
     cached: [],
     errors: [],
   };
+
+  const threadEntry = getThread(db, threadId);
+  if (threadEntry?.type === "worker") {
+    log.info(`[narrative] Skipping — thread ${threadId} is a worker thread`);
+    return result;
+  }
 
   const resolutions: NarrativeResolution[] = ["day", "week", "month", "quarter", "half_year"];
   const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
