@@ -177,12 +177,12 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
       results.push(result);
     }
 
-    // Purge archived threads older than 2 months
+    // Purge archived threads older than 6 months
     let purged = 0;
     try {
       purged = purgeOldArchivedThreads(db);
       if (purged > 0) {
-        log.info(`[daily-rotation] Purged ${purged} archived thread(s) older than 60 days`);
+        log.info(`[daily-rotation] Purged ${purged} archived thread(s) older than 180 days`);
       }
     } catch (err) {
       log.error(`[daily-rotation] Archived thread purge failed: ${errorMessage(err)}`);
