@@ -15,6 +15,7 @@ import { saveSemanticNote, searchByEmbedding, saveNoteEmbedding } from "./semant
 import { nowISO, repairAndParseJSON } from "./utils.js";
 import { log } from "../../logger.js";
 import { resolveKnowledgeThreadId } from "../../config.js";
+import { getThread } from "./thread-registry.js";
 import {
   chatCompletion,
   generateEmbedding,
@@ -458,6 +459,13 @@ async function runReflectionInner(
   maxRecent: number,
   oldSampleSize: number,
 ): Promise<ReflectionResult> {
+
+  // ── Gate: worker thread ───────────────────────────────────────────────────
+  const threadEntry = getThread(db, threadId);
+  if (threadEntry?.type === "worker") {
+    log.info(`[reflection] Skipping — thread ${threadId} is a worker thread`);
+    return { insights: [], processedEpisodeCount: 0, duration: Date.now() - startMs };
+  }
 
   // ── Gate: environment ─────────────────────────────────────────────────────
   const apiKey = process.env.OPENAI_API_KEY;
