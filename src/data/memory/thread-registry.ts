@@ -287,21 +287,23 @@ export function purgeOldArchivedThreads(db: Database, maxAgeMs = 180 * 24 * 60 *
   if (rows.length === 0) return 0;
 
   const deleteEmbeddings = db.prepare(`DELETE FROM note_embeddings WHERE note_id IN (SELECT note_id FROM semantic_notes WHERE thread_id = ?)`);
-  const deleteTopicIndex = db.prepare(`DELETE FROM meta_topic_index WHERE thread_id = ?`);
   const deleteNarratives = db.prepare(`DELETE FROM temporal_narratives WHERE thread_id = ?`);
-  const deleteConsolidationLog = db.prepare(`DELETE FROM meta_consolidation_log WHERE thread_id = ?`);
+  const deleteVoiceSignatures = db.prepare(`DELETE FROM voice_signatures WHERE episode_id IN (SELECT episode_id FROM episodes WHERE thread_id = ?)`);
   const deleteNotes = db.prepare(`DELETE FROM semantic_notes WHERE thread_id = ?`);
   const deleteEpisodes = db.prepare(`DELETE FROM episodes WHERE thread_id = ?`);
+  const deleteSentMessages = db.prepare(`DELETE FROM sent_messages WHERE thread_id = ?`);
+  const deleteTopicRegistry = db.prepare(`DELETE FROM topic_registry WHERE thread_id = ?`);
   const deleteRegistry = db.prepare(`DELETE FROM thread_registry WHERE thread_id = ?`);
 
   db.transaction(() => {
     for (const { thread_id } of rows) {
       deleteEmbeddings.run(thread_id);
-      deleteTopicIndex.run(thread_id);
       deleteNarratives.run(thread_id);
-      deleteConsolidationLog.run(thread_id);
+      deleteVoiceSignatures.run(thread_id);
       deleteNotes.run(thread_id);
       deleteEpisodes.run(thread_id);
+      deleteSentMessages.run(thread_id);
+      deleteTopicRegistry.run(thread_id);
       deleteRegistry.run(thread_id);
     }
   })();
