@@ -36,13 +36,13 @@ export function assembleBootstrap(db: Database, threadId: number, memorySourceTh
 
   lines.push("# Memory Briefing");
   if (memorySourceThreadId !== undefined) {
-    lines.push(`> **Ghost thread** — memory sourced from parent thread ${memorySourceThreadId}. Runtime memory ops use thread ${threadId}.`);
+    lines.push(`> **Child thread** — memory sourced from parent thread ${memorySourceThreadId}. Runtime memory ops use thread ${threadId}.`);
     if (
       context.recentEpisodes.length === 0
       && context.pinnedNotes.length === 0
       && context.keyKnowledge.length === 0
     ) {
-      lines.push(`> ⚠️ No memory found for source thread ${memorySourceThreadId}. The ghost thread will start without parent context.`);
+      lines.push(`> ⚠️ No memory found for source thread ${memorySourceThreadId}. This thread will start without parent context.`);
     }
   }
   lines.push("");

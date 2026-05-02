@@ -411,12 +411,12 @@ export function getAllThreadKeepAlive(): Record<string, ThreadKeepAliveSettings>
 
 
 
-// ─── Ghost thread memory source ───────────────────────────────────────────
+// ─── Child thread memory source ───────────────────────────────────────────
 
 /**
  * Read the MEMORY_SOURCE_THREAD_ID env var set by the parent process
- * when spawning a ghost thread. Returns the parent thread ID for memory
- * briefing, or undefined if not a ghost thread.
+ * when spawning a child thread (worker/branch). Returns the parent
+ * thread ID for memory briefing, or undefined if not a child thread.
  */
 export function getMemorySourceThreadId(): number | undefined {
   const val = process.env.MEMORY_SOURCE_THREAD_ID;

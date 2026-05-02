@@ -177,7 +177,7 @@ export async function processIncomingMessages(
     const db = getMemoryDb();
     const shift = await detectTopicShift(db, effectiveThreadId, operatorText);
     if (shift?.shifted) {
-      autoMemoryContext += `\n\n## ⚡ Topic Shift Detected\nSimilarity to recent context: ${shift.similarity.toFixed(2)}\nRecent topic: "${shift.recentTopicSummary}"\nNew topic: "${shift.suggestedTopic}"\n\nConsider suggesting a focused ghost thread (via start_thread) for this new topic to keep the main thread focused.`;
+      autoMemoryContext += `\n\n## ⚡ Topic Shift Detected\nSimilarity to recent context: ${shift.similarity.toFixed(2)}\nRecent topic: "${shift.recentTopicSummary}"\nNew topic: "${shift.suggestedTopic}"\n\nConsider suggesting a focused worker thread (via start_thread) for this new topic to keep the main thread focused.`;
     }
   } catch { /* non-fatal */ }
 
