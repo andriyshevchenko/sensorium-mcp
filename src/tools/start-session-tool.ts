@@ -294,7 +294,7 @@ export async function handleStartSession(
     : "";
 
   // Auto-bootstrap memory
-  // Ghost threads: use the parent's thread ID for the initial memory briefing
+  // Child threads (worker/branch): use the parent's thread ID for the initial memory briefing
   const memorySourceThreadId = getMemorySourceThreadId();
   let memoryBriefing = "";
   if (!isReconnect) {

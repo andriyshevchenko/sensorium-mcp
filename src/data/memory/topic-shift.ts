@@ -6,7 +6,7 @@
  * centroid of recent conversation context.
  *
  * When a significant shift is detected, suggests creating a
- * scoped ghost thread so the main thread stays focused.
+ * scoped worker thread so the main thread stays focused.
  */
 
 import { generateEmbedding, cosineSimilarity } from "../../integrations/openai/chat.js";
