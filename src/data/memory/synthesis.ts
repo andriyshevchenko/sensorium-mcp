@@ -48,7 +48,7 @@ export function forkMemory(
       idMap.set(note.note_id, "sn_" + randomBytes(6).toString("hex"));
     }
 
-    // 3. Remap linked_notes JSON array to use new IDs
+    // 3. Remap linked_notes array and link_reasons keys to use new IDs
     function remapLinkedNotes(linkedNotes: string | null): string | null {
       if (!linkedNotes) return linkedNotes;
       try {
@@ -56,6 +56,20 @@ export function forkMemory(
         return JSON.stringify(ids.map((id) => idMap.get(id) ?? id));
       } catch {
         return linkedNotes;
+      }
+    }
+
+    function remapLinkReasons(linkReasons: string | null): string | null {
+      if (!linkReasons) return linkReasons;
+      try {
+        const reasons: Record<string, string> = JSON.parse(linkReasons);
+        const remapped: Record<string, string> = {};
+        for (const [oldId, reason] of Object.entries(reasons)) {
+          remapped[idMap.get(oldId) ?? oldId] = reason;
+        }
+        return JSON.stringify(remapped);
+      } catch {
+        return linkReasons;
       }
     }
 
@@ -76,7 +90,7 @@ export function forkMemory(
         note.confidence,
         note.source_episodes,
         remapLinkedNotes(note.linked_notes),
-        note.link_reasons,
+        remapLinkReasons(note.link_reasons),
         note.valid_from,
         note.priority,
         targetThreadId,
