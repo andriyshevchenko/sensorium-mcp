@@ -47,7 +47,12 @@ const TERMINAL_THREAD_STATUSES = new Set(["archived", "expired", "exited"]);
 
 export function getUnconsolidatedThreadIds(db: Database): number[] {
   const rows = db
-    .prepare(`SELECT DISTINCT thread_id FROM episodes WHERE consolidated = 0`)
+    .prepare(
+      `SELECT DISTINCT e.thread_id
+       FROM episodes e
+       LEFT JOIN thread_registry tr ON tr.thread_id = e.thread_id
+       WHERE e.consolidated = 0 AND (tr.type IS NULL OR tr.type != 'worker')`,
+    )
     .all() as { thread_id: number }[];
   return rows.map((row) => row.thread_id);
 }
