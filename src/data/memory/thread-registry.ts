@@ -273,11 +273,11 @@ export function deleteThread(db: Database, threadId: number): boolean {
 }
 
 /**
- * Purge archived threads older than `maxAgeMs` (default 60 days).
- * Deletes the thread's semantic notes, episodes, and registry entry.
+ * Purge archived threads older than `maxAgeMs` (default 180 days).
+ * Deletes the thread's associated data and registry entry.
  * Returns the number of threads purged.
  */
-export function purgeOldArchivedThreads(db: Database, maxAgeMs = 60 * 24 * 60 * 60 * 1000): number {
+export function purgeOldArchivedThreads(db: Database, maxAgeMs = 180 * 24 * 60 * 60 * 1000): number {
   const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
   const rows = db.prepare(
     `SELECT thread_id FROM thread_registry
@@ -287,6 +287,9 @@ export function purgeOldArchivedThreads(db: Database, maxAgeMs = 60 * 24 * 60 * 
   if (rows.length === 0) return 0;
 
   const deleteEmbeddings = db.prepare(`DELETE FROM note_embeddings WHERE note_id IN (SELECT note_id FROM semantic_notes WHERE thread_id = ?)`);
+  const deleteTopicIndex = db.prepare(`DELETE FROM meta_topic_index WHERE thread_id = ?`);
+  const deleteNarratives = db.prepare(`DELETE FROM temporal_narratives WHERE thread_id = ?`);
+  const deleteConsolidationLog = db.prepare(`DELETE FROM meta_consolidation_log WHERE thread_id = ?`);
   const deleteNotes = db.prepare(`DELETE FROM semantic_notes WHERE thread_id = ?`);
   const deleteEpisodes = db.prepare(`DELETE FROM episodes WHERE thread_id = ?`);
   const deleteRegistry = db.prepare(`DELETE FROM thread_registry WHERE thread_id = ?`);
@@ -294,6 +297,9 @@ export function purgeOldArchivedThreads(db: Database, maxAgeMs = 60 * 24 * 60 * 
   db.transaction(() => {
     for (const { thread_id } of rows) {
       deleteEmbeddings.run(thread_id);
+      deleteTopicIndex.run(thread_id);
+      deleteNarratives.run(thread_id);
+      deleteConsolidationLog.run(thread_id);
       deleteNotes.run(thread_id);
       deleteEpisodes.run(thread_id);
       deleteRegistry.run(thread_id);
