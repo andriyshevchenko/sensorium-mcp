@@ -37,6 +37,7 @@ import {
 import { getThread } from "./data/memory/thread-registry.js";
 import { findAliveThread, getActiveThreadIds, killProcessTree } from "./services/process.service.js";
 import { writeReconnectSnapshot } from "./services/reconnect-snapshot.service.js";
+import { checkMaintenanceFlag } from "./data/file-storage.js";
 import type { CreateMcpServerFn } from "./types.js";
 
 class BodyParseError extends Error {
@@ -449,13 +450,19 @@ export function startHttpServer(
 
     // Persist active thread IDs so the next server instance can offer
     // lightweight reconnect instead of a full cold-start briefing.
+    // Only written during maintenance (npm update) shutdowns — manual restarts
+    // and crashes should trigger a full bootstrap, not a lightweight reconnect.
     try {
-      const threadIds = getActiveThreadIds();
-      if (threadIds.length > 0) {
-        writeReconnectSnapshot(threadIds);
-        log.info(`[shutdown] Reconnect snapshot written for ${threadIds.length} thread(s): [${threadIds.join(", ")}]`);
+      if (checkMaintenanceFlag() !== null) {
+        const threadIds = getActiveThreadIds();
+        if (threadIds.length > 0) {
+          writeReconnectSnapshot(threadIds);
+          log.info(`[shutdown] Reconnect snapshot written for ${threadIds.length} thread(s): [${threadIds.join(", ")}]`);
+        } else {
+          log.info(`[shutdown] No active threads — skipping reconnect snapshot.`);
+        }
       } else {
-        log.info(`[shutdown] No active threads — skipping reconnect snapshot.`);
+        log.info(`[shutdown] Maintenance not active — skipping reconnect snapshot.`);
       }
     } catch (err) {
       log.warn(`[shutdown] Failed to write reconnect snapshot: ${err instanceof Error ? err.message : err}`);
