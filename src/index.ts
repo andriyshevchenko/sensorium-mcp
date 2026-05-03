@@ -54,6 +54,7 @@ const { log } = await import("./logger.js");
 const { resolveTelegramTopicId, threadRepository } = await import("./data/memory/thread-registry.js");
 const { BackgroundJobRunner } = await import("./services/background-runner.js");
 const { ThreadLifecycleService } = await import("./services/thread-lifecycle.service.js");
+const { startSelfUpdatePoller } = await import("./services/self-update.service.js");
 
 // ---------------------------------------------------------------------------
 // Shared singletons
@@ -122,7 +123,22 @@ function closeMemoryDb(): void {
 }
 
 if (process.env.MCP_HTTP_PORT) {
+  const httpPort = parseInt(process.env.MCP_HTTP_PORT, 10);
   startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb, threadLifecycle);
+
+  // Write own PID to server.pid — authoritative for the .NET supervisor and self-update.
+  // On Windows with shell:true spawning, the parent cannot know the real node PID,
+  // so the server must self-register.
+  const { writeFileSync: writePid, mkdirSync: mkPidDir } = await import("node:fs");
+  const { join: joinPid } = await import("node:path");
+  const { homedir: homePid } = await import("node:os");
+  const pidDir = joinPid(homePid(), ".remote-copilot-mcp");
+  try {
+    mkPidDir(pidDir, { recursive: true });
+    writePid(joinPid(pidDir, "server.pid"), JSON.stringify({ pid: process.pid }));
+  } catch {}
+
+  startSelfUpdatePoller({ pkgVersion: config.PKG_VERSION, httpPort });
 } else {
   await startStdioServer(createMcpServer, closeMemoryDb);
 }
