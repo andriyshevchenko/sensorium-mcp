@@ -468,6 +468,7 @@ export function supersedeNote(
     keywords: string[];
     confidence?: number;
     priority?: number;
+    qualityScore?: number | null;
     sourceEpisodes?: string[];
   }
 ): string {
@@ -479,6 +480,7 @@ export function supersedeNote(
     keywords: newNote.keywords,
     confidence: newNote.confidence,
     priority: newNote.priority,
+    qualityScore: newNote.qualityScore,
     threadId: oldRow?.thread_id ?? null,
     isGuardrail: (oldRow?.is_guardrail ?? 0) === 1,
     pinned: (oldRow?.pinned ?? 0) === 1,
