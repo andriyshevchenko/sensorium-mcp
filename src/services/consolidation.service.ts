@@ -2,10 +2,10 @@ import type { Database } from "../data/memory/schema.js";
 import { getUnconsolidatedEpisodes, markConsolidated } from "../data/memory/episodes.js";
 import {
   saveSemanticNote,
-  searchSemanticNotesRanked,
   searchByEmbedding,
   saveNoteEmbedding,
   supersedeNote,
+  updateSemanticNote,
 } from "../data/memory/semantic.js";
 import {
   cleanupConsolidationHousekeeping,
@@ -49,52 +49,18 @@ function extractEpisodeText(episodes: ReturnType<typeof getUnconsolidatedEpisode
     .join("\n");
 }
 
-async function buildExistingNotesSection(db: Database, episodesText: string, apiKey: string, threadId: number): Promise<string> {
-  try {
-    // Use embedding search to find semantically related notes (not just keyword match)
-    const embedding = await generateEmbedding(episodesText.slice(0, 8000), apiKey);
-    const related = searchByEmbedding(db, embedding, {
-      maxResults: 30,
-      minSimilarity: 0.3,
-      skipAccessTracking: true,
-      threadId,
-    });
-    if (related.length === 0) return "";
+type SupersedeBatchItem = {
+  noteIndex: number;
+  content: string;
+  candidates: Array<{ noteId: string; type: string; confidence: number; content: string }>;
+};
 
-    return `\n\nExisting memory notes (check for contradictions — supersede any that are outdated):
-${related.map((note) => `[${note.noteId}] (${note.type}, conf: ${note.confidence}) ${note.content}`).join("\n")}`;
-  } catch (err) {
-    log.warn(`[consolidation] Embedding search for existing notes failed: ${errorMessage(err)}`);
-    // Fallback to keyword search
-    try {
-      const topKeywords = episodesText
-        .toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
-        .filter((w) => w.length > 3)
-        .slice(0, 12);
-      if (topKeywords.length === 0) return "";
-      const ranked = searchSemanticNotesRanked(db, topKeywords.join(" "), {
-        maxResults: 15,
-        skipAccessTracking: true,
-        minMatchRatio: 0.2,
-        threadId,
-      });
-      if (ranked.length === 0) return "";
-      return `\n\nExisting memory notes (check for contradictions — supersede any that are outdated):
-${ranked.map((note) => `[${note.noteId}] (${note.type}, conf: ${note.confidence}) ${note.content}`).join("\n")}`;
-    } catch {
-      return "";
-    }
-  }
-}
-
-async function buildConsolidationPrompt(db: Database, episodes: ReturnType<typeof getUnconsolidatedEpisodes>, apiKey: string, threadId: number): Promise<string> {
+function buildExtractionPrompt(episodes: ReturnType<typeof getUnconsolidatedEpisodes>): string {
   const episodesText = extractEpisodeText(episodes);
-  const existingNotesSection = await buildExistingNotesSection(db, episodesText, apiKey, threadId);
-
   return `You are a memory consolidation agent. Extract ONLY actionable, durable knowledge from these episodes. Quality over quantity — fewer, better notes.
 
 Episodes:
-${episodesText}${existingNotesSection}
+${episodesText}
 
 Output a JSON object with:
 {
@@ -105,20 +71,7 @@ Output a JSON object with:
       "keywords": ["keyword1", "keyword2", "keyword3"],
       "confidence": 0.0-1.0,
       "priority": 0 | 1 | 2,
-      "quality_score": 1-5,
-      "linked_notes": ["sn_xxx"],
-      "link_reasons": ["brief causal relationship explanation"]
-    }
-  ],
-  "supersede": [
-    {
-      "oldNoteId": "sn_xxx",
-      "reason": "Why the old note is outdated/contradicted",
-      "newContent": "Updated version of the knowledge",
-      "type": "fact",
-      "keywords": ["keyword1", "keyword2"],
-      "confidence": 0.8,
-      "priority": 0 | 1 | 2
+      "quality_score": 1-5
     }
   ]
 }
@@ -133,14 +86,8 @@ BANNED content — do NOT extract:
 - Self-assessments or meta-observations about the agent's own behavior ("I tend to...", "I regularly...")
 - Passive observations that don't inform decisions ("a discussion occurred", "code was reviewed")
 - Transient status ("currently working on X", "PR is open", "tests passing")
-- Duplicate information already captured in an existing note (check the existing notes section carefully)
 
 EXCEPTION: If the operator explicitly corrected the agent's behavior, extract that correction as a preference.
-
-SUPERSEDE — check existing notes for contradictions:
-- CRITICAL: If a new episode contradicts or updates an existing note, add a "supersede" entry
-- Common triggers: decisions changed, projects completed/abandoned, preferences updated, tools/tech switched, version numbers changed
-- The new episodes represent MORE RECENT information
 
 TYPE RULES:
 - fact: Durable knowledge about the project, codebase, architecture, people, or external world
@@ -166,16 +113,67 @@ CONTENT QUALITY:
 - Capture WHY (motivation/context), not just WHAT. Include outcome if known
 - If neither WHY nor outcome is available, the note is probably not worth extracting
 - Include dates when known. Write "On April 15, operator requested X" not just "operator requested X." If the episode contains timestamps or date references, include them in the note content.
-- Return {"notes": [], "supersede": []} if nothing actionable
+- Return {"notes": []} if nothing actionable
 
 SPECIFICITY GATE — apply to every note before including it:
 - Every note MUST contain at least one specific anchor: a file name, commit hash, person name, date, or concrete number. If you cannot name something specific, do not create the note.
-- Do NOT create notes that merely say "X was completed" or "Y was done." If something was completed, state WHAT specifically was done — which files changed, what bug was fixed, what the outcome was. Headlines without substance are useless.
+- Do NOT create notes that merely say "X was completed" or "Y was done." If something was completed, state WHAT specifically was done — which files changed, what bug was fixed, what the outcome was. Headlines without substance are useless.`;
+}
 
-CAUSAL LINKING:
-- For each note, if it is causally related to any of the existing notes shown above (one caused the other, one is a consequence of the other, or they are part of the same chain of events), populate \`linked_notes\` with the existing note IDs and \`link_reasons\` with a parallel array of brief explanations — one explanation string per linked note ID, in the same order.
-- Example: if linked_notes is ["sn_a", "sn_b"], then link_reasons must be ["why sn_a is related", "why sn_b is related"].
-- If there are no causal relationships, omit \`linked_notes\` and \`link_reasons\` or set them to empty arrays.`;
+function buildSupersedePrompt(batch: SupersedeBatchItem[]): string {
+  const notesSection = batch
+    .map(
+      (item) =>
+        `[${item.noteIndex}] New: "${item.content}"\n` +
+        (item.candidates.length > 0
+          ? `    Candidates:\n${item.candidates.map((c) => `      [${c.noteId}] (${c.type}, conf: ${c.confidence}) ${c.content}`).join("\n")}`
+          : `    Candidates: none`),
+    )
+    .join("\n\n");
+  return `You are a contradiction detector for a memory system. For each new note, check if it contradicts or replaces any of its candidate existing notes.
+
+${notesSection}
+
+Output a JSON object:
+{
+  "results": [
+    { "noteIndex": 0, "supersede": true, "targetNoteId": "sn_xxx", "reason": "Why the candidate is now outdated" },
+    { "noteIndex": 1, "supersede": false }
+  ]
+}
+
+Rules:
+- supersede=true ONLY if the new note explicitly contradicts, updates, or replaces a candidate (e.g., newer value, completed/abandoned project, changed preference, updated version)
+- The new note represents MORE RECENT information than the candidates
+- supersede=false if the new note adds different information without invalidating any candidate
+- If no candidates are listed for a note, output supersede=false
+- Output exactly one result per note index, in ascending order
+- Only one candidate can be targeted per new note (the most directly contradicted one)`;
+}
+
+function buildLinkingPrompt(
+  newNote: { noteId: string; content: string },
+  neighbors: Array<{ noteId: string; type: string; content: string }>,
+): string {
+  const neighborsSection = neighbors.map((n) => `[${n.noteId}] (${n.type}) ${n.content}`).join("\n");
+  return `You are a causal link detector for a memory system. Determine if any of these existing notes are causally related to the new note.
+
+New note: "${newNote.content}"
+
+Existing notes to compare:
+${neighborsSection}
+
+Output a JSON object:
+{
+  "links": [
+    { "noteId": "sn_xxx", "reason": "Brief causal relationship — one caused the other, or they are part of the same chain" }
+  ]
+}
+
+Rules:
+- Only include notes where there is a CLEAR causal or sequential relationship (one caused the other, one is a consequence of the other, or they are part of the same decision chain)
+- Do NOT link notes that are merely on the same topic or share keywords — the relationship must be directional and causal
+- If no causal relationships exist, output { "links": [] }`;
 }
 
 async function checkConsolidationDuplicate(
@@ -336,19 +334,19 @@ export async function runIntelligentConsolidation(
     try {
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) throw new Error("OPENAI_API_KEY not set");
-      const messages: ChatMessage[] = [
-        { role: "system", content: await buildConsolidationPrompt(db, episodes, apiKey, knowledgeThreadId) },
+      // ── Step 1: Extract knowledge from episodes ───────────────────────────
+      const extractMessages: ChatMessage[] = [
+        { role: "system", content: buildExtractionPrompt(episodes) },
         { role: "user", content: "Extract knowledge from the episodes above." },
       ];
-
-      const raw = await chatCompletion(messages, apiKey, {
+      const extractRaw = await chatCompletion(extractMessages, apiKey, {
         model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o",
         maxTokens: 4096,
         responseFormat: { type: "json_object" },
         timeoutMs: 60_000,
       });
 
-      const parsed = repairAndParseJSON(raw) as {
+      const extractParsed = repairAndParseJSON(extractRaw) as {
         notes?: Array<{
           type: string;
           content: string;
@@ -356,26 +354,14 @@ export async function runIntelligentConsolidation(
           confidence: number;
           priority?: number;
           quality_score?: number;
-          linked_notes?: string[];
-          link_reasons?: string[];
-        }>;
-        supersede?: Array<{
-          oldNoteId: string;
-          reason: string;
-          newContent: string;
-          type: string;
-          keywords: string[];
-          confidence: number;
-          priority?: number;
         }>;
       };
 
-      const extractedNotes = parsed.notes ?? [];
-      const supersedeActions = parsed.supersede ?? [];
+      const extractedNotes = extractParsed.notes ?? [];
       const episodeIds = episodes.map((episode) => episode.episodeId);
 
       if (!dryRun) {
-        // Phase 1: async dedup checks — collect what to write before entering transaction.
+        // ── Step 1b: Dedup check ──────────────────────────────────────────
         type NoteWrite = {
           type: "fact" | "preference" | "pattern" | "entity" | "relationship";
           content: string;
@@ -384,8 +370,7 @@ export async function runIntelligentConsolidation(
           priority: number;
           qualityScore: number | null;
           embedding: Float32Array | null;
-          linkedNotes: string[];
-          linkReasons: Record<string, string>;
+          supersedeTargetId?: string;
         };
         const noteWrites: NoteWrite[] = [];
 
@@ -403,13 +388,6 @@ export async function runIntelligentConsolidation(
             continue;
           }
 
-          const rawLinked = Array.isArray(note.linked_notes) ? note.linked_notes.filter((id): id is string => typeof id === "string") : [];
-          const rawReasons: Record<string, string> = {};
-          if (Array.isArray(note.link_reasons)) {
-            rawLinked.forEach((id, i) => {
-              if (typeof note.link_reasons![i] === "string") rawReasons[id] = note.link_reasons![i];
-            });
-          }
           noteWrites.push({
             type: noteType,
             content: note.content,
@@ -418,75 +396,98 @@ export async function runIntelligentConsolidation(
             priority: Math.max(0, Math.min(2, note.priority ?? 0)),
             qualityScore: typeof note.quality_score === "number" ? note.quality_score : null,
             embedding: dedup.embedding,
-            linkedNotes: rawLinked,
-            linkReasons: rawReasons,
           });
         }
 
-        // Phase 1b: pre-generate embeddings for supersede replacement notes (async, must be outside transaction).
-        const supersedeWrites: Array<{
-          action: (typeof supersedeActions)[number];
-          noteType: ValidNoteType;
-          embedding: Float32Array | null;
-        }> = [];
-        for (const action of supersedeActions) {
-          if (!action.oldNoteId || !action.newContent) continue;
-          const noteType = (VALID_NOTE_TYPES.includes(action.type as ValidNoteType) ? action.type : "fact") as ValidNoteType;
-          let embedding: Float32Array | null = null;
+        // ── Step 2: Supersede check (batched LLM calls) ───────────────────
+        const SUPERSEDE_BATCH_SIZE = 4;
+        const notesWithCandidates = noteWrites.map((nw) => {
+          if (!nw.embedding) return { nw, candidates: [] as ReturnType<typeof searchByEmbedding> };
+          const similar = searchByEmbedding(db, nw.embedding, {
+            maxResults: 5,
+            minSimilarity: 0.4,
+            skipAccessTracking: true,
+            threadId: knowledgeThreadId,
+          });
+          return { nw, candidates: similar };
+        });
+
+        const toCheck = notesWithCandidates.filter((x) => x.candidates.length > 0);
+        for (let i = 0; i < toCheck.length; i += SUPERSEDE_BATCH_SIZE) {
+          const chunk = toCheck.slice(i, i + SUPERSEDE_BATCH_SIZE);
+          const batch: SupersedeBatchItem[] = chunk.map((item, idx) => ({
+            noteIndex: idx,
+            content: item.nw.content,
+            candidates: item.candidates.map((c) => ({
+              noteId: c.noteId,
+              type: c.type,
+              confidence: c.confidence,
+              content: c.content,
+            })),
+          }));
           try {
-            embedding = await generateEmbedding(action.newContent, apiKey);
-          } catch {
-            // non-fatal — supersede note will be saved without embedding
+            const supersedeRaw = await chatCompletion(
+              [
+                { role: "system", content: buildSupersedePrompt(batch) },
+                { role: "user", content: "Check for contradictions." },
+              ],
+              apiKey,
+              {
+                model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o",
+                maxTokens: 1024,
+                responseFormat: { type: "json_object" },
+                timeoutMs: 30_000,
+              },
+            );
+            const supersedeParsed = repairAndParseJSON(supersedeRaw) as {
+              results?: Array<{ noteIndex: number; supersede: boolean; targetNoteId?: string; reason?: string }>;
+            };
+            for (const result of supersedeParsed.results ?? []) {
+              if (result.supersede && result.targetNoteId && typeof result.noteIndex === "number") {
+                const item = chunk[result.noteIndex];
+                if (item) item.nw.supersedeTargetId = result.targetNoteId;
+              }
+            }
+          } catch (err) {
+            log.warn(`[consolidation] Supersede batch failed: ${errorMessage(err)}`);
           }
-          supersedeWrites.push({ action, embedding, noteType });
         }
 
-        // Phase 2: all DB writes in a single atomic transaction.
+        // ── Transaction: all DB writes ────────────────────────────────────
+        const savedNotes: Array<{ noteId: string; embedding: Float32Array | null; content: string }> = [];
         let supersededCount = 0;
         db.transaction(() => {
-          for (const nw of noteWrites) {
-            const noteId = saveSemanticNote(db, {
-              type: nw.type,
-              content: nw.content,
-              keywords: nw.keywords,
-              confidence: nw.confidence,
-              priority: nw.priority,
-              qualityScore: nw.qualityScore,
-              threadId: knowledgeThreadId,
-              sourceEpisodes: episodeIds,
-              linkedNotes: nw.linkedNotes.length > 0 ? nw.linkedNotes : undefined,
-              linkReasons: Object.keys(nw.linkReasons).length > 0 ? nw.linkReasons : undefined,
-            });
+          for (const { nw } of notesWithCandidates) {
+            let noteId: string;
+            if (nw.supersedeTargetId && hasActiveNote(db, nw.supersedeTargetId)) {
+              noteId = supersedeNote(db, nw.supersedeTargetId, {
+                type: nw.type,
+                content: nw.content,
+                keywords: nw.keywords,
+                confidence: nw.confidence,
+                priority: nw.priority,
+                sourceEpisodes: episodeIds,
+              });
+              supersededCount++;
+              details.push(`[supersede] ${nw.supersedeTargetId} → ${noteId}: replaced by extraction`);
+            } else {
+              noteId = saveSemanticNote(db, {
+                type: nw.type,
+                content: nw.content,
+                keywords: nw.keywords,
+                confidence: nw.confidence,
+                priority: nw.priority,
+                qualityScore: nw.qualityScore,
+                threadId: knowledgeThreadId,
+                sourceEpisodes: episodeIds,
+              });
+              notesCreated++;
+              details.push(`[${nw.type}] ${nw.content}`);
+            }
             if (nw.embedding) {
               saveNoteEmbedding(db, noteId, nw.embedding);
             }
-            notesCreated++;
-            details.push(`[${nw.type}] ${nw.content}`);
-          }
-
-          for (const { action, noteType, embedding } of supersedeWrites) {
-            if (!hasActiveNote(db, action.oldNoteId)) {
-              details.push(`[skip-supersede] ${action.oldNoteId} not found or already superseded`);
-              continue;
-            }
-
-            try {
-              const newId = supersedeNote(db, action.oldNoteId, {
-                type: noteType,
-                content: action.newContent,
-                keywords: Array.isArray(action.keywords) ? action.keywords : [],
-                confidence: Math.max(0, Math.min(1, action.confidence ?? 0.8)),
-                priority: Math.max(0, Math.min(2, action.priority ?? 0)),
-                sourceEpisodes: episodeIds,
-              });
-              if (embedding) {
-                saveNoteEmbedding(db, newId, embedding);
-              }
-              supersededCount++;
-              details.push(`[supersede] ${action.oldNoteId} → ${newId}: ${action.reason}`);
-            } catch (err) {
-              details.push(`[supersede-error] ${action.oldNoteId}: ${errorMessage(err)}`);
-            }
+            savedNotes.push({ noteId, embedding: nw.embedding, content: nw.content });
           }
 
           markConsolidated(db, episodeIds);
@@ -500,13 +501,58 @@ export async function runIntelligentConsolidation(
         if (supersededCount > 0) {
           log.info(`[memory] Contradiction resolution: superseded ${supersededCount} outdated note(s)`);
         }
+
+        // ── Step 3: Linking enrichment (post-save, optional) ──────────────
+        for (const saved of savedNotes) {
+          if (!saved.embedding) continue;
+          try {
+            const neighbors = searchByEmbedding(db, saved.embedding, {
+              maxResults: 6,
+              minSimilarity: 0.4,
+              skipAccessTracking: true,
+              threadId: knowledgeThreadId,
+            }).filter((n) => n.noteId !== saved.noteId).slice(0, 5);
+            if (neighbors.length === 0) continue;
+
+            const linkRaw = await chatCompletion(
+              [
+                {
+                  role: "system",
+                  content: buildLinkingPrompt(
+                    { noteId: saved.noteId, content: saved.content },
+                    neighbors.map((n) => ({ noteId: n.noteId, type: n.type, content: n.content })),
+                  ),
+                },
+                { role: "user", content: "Identify causal links." },
+              ],
+              apiKey,
+              {
+                model: process.env.CONSOLIDATION_MODEL ?? "gpt-4o",
+                maxTokens: 512,
+                responseFormat: { type: "json_object" },
+                timeoutMs: 20_000,
+              },
+            );
+            const linkParsed = repairAndParseJSON(linkRaw) as {
+              links?: Array<{ noteId: string; reason: string }>;
+            };
+            const links = (linkParsed.links ?? []).filter(
+              (l) => typeof l.noteId === "string" && typeof l.reason === "string",
+            );
+            if (links.length > 0) {
+              const linkedNotes = links.map((l) => l.noteId);
+              const linkReasons: Record<string, string> = {};
+              for (const l of links) linkReasons[l.noteId] = l.reason;
+              updateSemanticNote(db, saved.noteId, { linkedNotes, linkReasons });
+            }
+          } catch (err) {
+            log.warn(`[consolidation] Linking step failed for ${saved.noteId}: ${errorMessage(err)}`);
+          }
+        }
       } else {
         for (const note of extractedNotes) {
           details.push(`[dry-run] [${note.type}] ${note.content}`);
           notesCreated++;
-        }
-        for (const action of supersedeActions) {
-          details.push(`[dry-run] [supersede] ${action.oldNoteId} → ${action.reason}`);
         }
       }
     } catch (err) {
