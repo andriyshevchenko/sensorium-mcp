@@ -55,6 +55,8 @@ type SupersedeBatchItem = {
   candidates: Array<{ noteId: string; type: string; confidence: number; content: string }>;
 };
 
+type SupersedeDecision = { targetNoteId: string; reason: string };
+
 function buildExtractionPrompt(episodes: ReturnType<typeof getUnconsolidatedEpisodes>): string {
   const episodesText = extractEpisodeText(episodes);
   return `You are a memory consolidation agent. Extract ONLY actionable, durable knowledge from these episodes. Quality over quantity — fewer, better notes.
@@ -370,7 +372,7 @@ export async function runIntelligentConsolidation(
           priority: number;
           qualityScore: number | null;
           embedding: Float32Array | null;
-          supersedeTargetId?: string;
+          supersede?: SupersedeDecision;
         };
         const noteWrites: NoteWrite[] = [];
 
@@ -445,7 +447,14 @@ export async function runIntelligentConsolidation(
             for (const result of supersedeParsed.results ?? []) {
               if (result.supersede && result.targetNoteId && typeof result.noteIndex === "number") {
                 const item = chunk[result.noteIndex];
-                if (item) item.nw.supersedeTargetId = result.targetNoteId;
+                if (!item) continue;
+                // Guard: only allow IDs the LLM was actually shown
+                const candidateIds = new Set(item.candidates.map((c) => c.noteId));
+                if (!candidateIds.has(result.targetNoteId)) {
+                  log.warn(`[consolidation] Supersede rejected: ${result.targetNoteId} was not in candidate set`);
+                  continue;
+                }
+                item.nw.supersede = { targetNoteId: result.targetNoteId, reason: result.reason ?? "" };
               }
             }
           } catch (err) {
@@ -459,17 +468,18 @@ export async function runIntelligentConsolidation(
         db.transaction(() => {
           for (const { nw } of notesWithCandidates) {
             let noteId: string;
-            if (nw.supersedeTargetId && hasActiveNote(db, nw.supersedeTargetId)) {
-              noteId = supersedeNote(db, nw.supersedeTargetId, {
+            if (nw.supersede && hasActiveNote(db, nw.supersede.targetNoteId)) {
+              noteId = supersedeNote(db, nw.supersede.targetNoteId, {
                 type: nw.type,
                 content: nw.content,
                 keywords: nw.keywords,
                 confidence: nw.confidence,
                 priority: nw.priority,
+                qualityScore: nw.qualityScore,
                 sourceEpisodes: episodeIds,
               });
               supersededCount++;
-              details.push(`[supersede] ${nw.supersedeTargetId} → ${noteId}: replaced by extraction`);
+              details.push(`[supersede] ${nw.supersede.targetNoteId} → ${noteId}: ${nw.supersede.reason}`);
             } else {
               noteId = saveSemanticNote(db, {
                 type: nw.type,
