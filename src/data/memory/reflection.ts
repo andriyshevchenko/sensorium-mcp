@@ -147,9 +147,19 @@ function gatherEpisodes(
 
 // ─── Prompt ──────────────────────────────────────────────────────────────────
 
-const REFLECTION_SYSTEM_PROMPT = `You are a reflective reasoning system analyzing your own recent experiences. Your job is to extract DEEP cause-and-effect insights — not surface-level summaries. Write in first person ("I").
+const REFLECTION_ANALYZE_PROMPT = `You are a reflective reasoning system analyzing your own recent experiences. Your job is to think deeply and freely — no templates, no JSON, no structured output.
 
-For each insight, you MUST fill in ALL 5 template fields. If you cannot fill every field with specific, concrete information for a given episode, SKIP that episode entirely. Do not produce vague filler.
+Analyze the episodes for patterns, cause-effect chains, mistakes, recurring situations, and missed opportunities. Write in first person ("I"). Produce 2-3 paragraphs of genuine free-form reasoning. Focus on WHY things happened, not just WHAT happened. Dig into root causes and underlying mechanisms.
+
+## BANNED topics — do NOT analyze:
+- The memory system, consolidation, audits, cleanup, deduplication, or memory quality
+- The agent's own internal operations or meta-processes
+- How the agent manages its own notes, reflections, or knowledge base
+- Only reflect on EXTERNAL work: the project, codebase, operator interactions, technical decisions.`;
+
+const REFLECTION_STRUCTURE_PROMPT = `You are a reflective reasoning system. You will receive a free-form analysis and the original episodes it was based on. Your job is to extract the top 3-5 insights from the analysis into a structured format.
+
+For each insight, you MUST fill in ALL 5 template fields. If the analysis does not support filling every field with specific, concrete information, SKIP that insight entirely. Do not produce vague filler.
 
 ## Template fields (ALL required):
 
@@ -197,20 +207,13 @@ Respond in JSON format:
 - Lesson that doesn't start with a verb
 - Any field shorter than 10 characters
 
-## BANNED topics — do NOT generate insights about:
-
-- The memory system, consolidation, audits, cleanup, deduplication, or memory quality
-- The agent's own internal operations or meta-processes
-- How the agent manages its own notes, reflections, or knowledge base
-- These are implementation internals. Only reflect on EXTERNAL work: the project, codebase, operator interactions, technical decisions.
-
 Rules:
 - Minimum 1, maximum 5 insights — prefer fewer, deeper insights
-- Each insight must reference specific episodes by their ID
+- Each insight must reference specific episodes by their ID (from the original episodes provided)
 - Confidence should reflect how well-supported the insight is by evidence
 - Causal insights are most valuable — prioritize cause-and-effect
 - Quality over quantity: 2 deep insights beat 5 shallow ones
-- Return {"insights": []} if no episodes warrant deep reflection`;
+- Return {"insights": []} if the analysis does not support any deep insights`;
 
 // ─── De-duplication ──────────────────────────────────────────────────────────
 
@@ -502,24 +505,42 @@ async function runReflectionInner(
   // ── Step 2: Build narrative ───────────────────────────────────────────────
   const narrative = buildNarrative(episodes);
 
-  // ── Step 3: LLM call ─────────────────────────────────────────────────────
-  const messages: ChatMessage[] = [
-    { role: "system", content: REFLECTION_SYSTEM_PROMPT },
-    { role: "user", content: `## Episodes to reflect on:\n${narrative}\n\nAnalyze the episodes above and produce deep reflective insights.` },
+  // ── Step 3a: ANALYZE — free-form reasoning ───────────────────────────────
+  const analyzeMessages: ChatMessage[] = [
+    { role: "system", content: REFLECTION_ANALYZE_PROMPT },
+    { role: "user", content: `## Episodes to analyze:\n${narrative}\n\nAnalyze the episodes above. What patterns, cause-effect chains, mistakes, or recurring situations do you see? Think deeply. Write 2-3 paragraphs of free-form reasoning.` },
+  ];
+
+  let analysis: string;
+  try {
+    analysis = await chatCompletion(analyzeMessages, apiKey, {
+      model: process.env.REFLECTION_MODEL ?? process.env.CONSOLIDATION_MODEL ?? "gpt-4o",
+      maxTokens: 1500,
+      temperature: 0.55,
+      timeoutMs: 90_000,
+    });
+  } catch (err) {
+    log.error(`[reflection] Analyze step failed: ${errorMessage(err)}`);
+    return { insights: [], processedEpisodeCount: episodes.length, duration: Date.now() - startMs };
+  }
+
+  // ── Step 3b: STRUCTURE — mechanical formatting ────────────────────────────
+  const structureMessages: ChatMessage[] = [
+    { role: "system", content: REFLECTION_STRUCTURE_PROMPT },
+    { role: "user", content: `## Free-form analysis:\n${analysis}\n\n## Original episodes (for episode_refs):\n${narrative}\n\nExtract the top 3-5 insights from this analysis into the structured JSON format.` },
   ];
 
   let raw: string;
   try {
-    raw = await chatCompletion(messages, apiKey, {
+    raw = await chatCompletion(structureMessages, apiKey, {
       model: process.env.REFLECTION_MODEL ?? process.env.CONSOLIDATION_MODEL ?? "gpt-4o",
       maxTokens: 4096,
-      temperature: 0.4, // slightly creative for deeper reasoning
+      temperature: 0.25,
       responseFormat: { type: "json_object" },
       timeoutMs: 90_000,
     });
   } catch (err) {
-    const msg = errorMessage(err);
-    log.error(`[reflection] LLM call failed: ${msg}`);
+    log.error(`[reflection] Structure step failed: ${errorMessage(err)}`);
     return { insights: [], processedEpisodeCount: episodes.length, duration: Date.now() - startMs };
   }
 
