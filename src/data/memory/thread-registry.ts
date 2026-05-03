@@ -193,7 +193,7 @@ export function getThreadsByRoot(db: Database, rootThreadId: number): ThreadRegi
 
 export function getRootThreads(db: Database): ThreadRegistryEntry[] {
   const rows = db.prepare(
-    `SELECT * FROM thread_registry WHERE type = 'root' ORDER BY created_at DESC`,
+    `SELECT * FROM thread_registry WHERE type = 'root' AND status != 'archived' ORDER BY created_at DESC`,
   ).all() as Record<string, unknown>[];
   return rows.map(rowToEntry);
 }
