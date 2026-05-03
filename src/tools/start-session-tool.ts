@@ -402,7 +402,7 @@ export async function handleStartSession(
           client: agentType,
           chatId: TELEGRAM_CHAT_ID,
         });
-      } else {
+      } else if (existingThread.status !== 'archived') {
         threadLifecycle.activateThread(db, threadId, existingThread.keepAlive
           ? {}
           : { client: agentType });
