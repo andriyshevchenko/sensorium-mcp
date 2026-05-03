@@ -524,6 +524,13 @@ async function runReflectionInner(
     return { insights: [], processedEpisodeCount: episodes.length, duration: Date.now() - startMs };
   }
 
+  if (!analysis.trim()) {
+    log.warn("[reflection] Analyze step returned empty response — skipping structure step");
+    return { insights: [], processedEpisodeCount: episodes.length, duration: Date.now() - startMs };
+  }
+
+  log.debug(`[reflection] Analyze step complete (${analysis.length} chars): ${analysis.slice(0, 120)}…`);
+
   // ── Step 3b: STRUCTURE — mechanical formatting ────────────────────────────
   const structureMessages: ChatMessage[] = [
     { role: "system", content: REFLECTION_STRUCTURE_PROMPT },
@@ -540,7 +547,7 @@ async function runReflectionInner(
       timeoutMs: 90_000,
     });
   } catch (err) {
-    log.error(`[reflection] Structure step failed: ${errorMessage(err)}`);
+    log.error(`[reflection] Structure step failed: ${errorMessage(err)} — analysis was: ${analysis.slice(0, 200)}`);
     return { insights: [], processedEpisodeCount: episodes.length, duration: Date.now() - startMs };
   }
 
