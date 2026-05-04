@@ -546,8 +546,9 @@ export async function runIntelligentConsolidation(
             const linkParsed = repairAndParseJSON(linkRaw) as {
               links?: Array<{ noteId: string; reason: string }>;
             };
+            const neighborIds = new Set(neighbors.map((n) => n.noteId));
             const links = (linkParsed.links ?? []).filter(
-              (l) => typeof l.noteId === "string" && typeof l.reason === "string",
+              (l) => typeof l.noteId === "string" && typeof l.reason === "string" && neighborIds.has(l.noteId),
             );
             if (links.length > 0) {
               const linkedNotes = links.map((l) => l.noteId);
