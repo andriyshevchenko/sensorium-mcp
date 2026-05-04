@@ -14,7 +14,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
@@ -193,12 +193,17 @@ async function performUpdate(targetVersion: string): Promise<void> {
     const cmd = process.env.MCP_START_COMMAND ?? "npx -y sensorium-mcp@latest --prefer-online";
     log.info(`[self-update] Spawning replacement: ${cmd}`);
 
+    const spawnLogPath = join(DATA_DIR, "update-spawn.log");
+    mkdirSync(DATA_DIR, { recursive: true });
+    const logFd = openSync(spawnLogPath, "a");
+
     const child = spawn(cmd, [], {
       detached: true,
       shell: true,
-      stdio: "ignore",
+      stdio: ["ignore", logFd, logFd],
       env: { ...process.env },
     });
+    closeSync(logFd);
     child.unref();
 
     if (child.pid == null) {
