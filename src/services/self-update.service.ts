@@ -224,20 +224,9 @@ async function performUpdate(targetVersion: string): Promise<void> {
     const healthy = await waitForHealthy(configuredHttpPort, targetVersion);
 
     if (healthy) {
-      // The new server writes its own server.pid on startup (index.ts).
-      // On Windows with shell:true, child.pid is the transient cmd.exe shell,
-      // not the actual node process — so we do NOT overwrite server.pid here.
-      // The new instance's self-written PID is authoritative.
-      if (process.platform !== "win32" && child.pid) {
-        try {
-          writeFileSync(
-            join(DATA_DIR, "server.pid"),
-            JSON.stringify({ pid: child.pid }),
-          );
-        } catch (err) {
-          log.warn(`[self-update] Failed to write server.pid (non-fatal): ${err}`);
-        }
-      }
+      // The new server writes its own server.pid on startup (index.ts) with the
+      // real node PID. Do NOT overwrite here — child.pid is the transient shell
+      // PID on both Windows (cmd.exe) and Unix (/bin/sh), dead by this point.
 
       // Remove maintenance flag — watcher MCPs unblock, new keepAlive threads start
       try { unlinkSync(FLAG_PATH); } catch { /* best-effort */ }
