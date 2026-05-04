@@ -86,10 +86,15 @@ async function notifyTelegram(text: string): Promise<void> {
 }
 
 /**
- * Poll the local health endpoint until the new process responds or the
- * timeout elapses.
+ * Poll the local health endpoint until the NEW process responds with the
+ * expected version, or the timeout elapses.
+ *
+ * The version check is critical: the old server is still bound to the port
+ * during the update window.  Without it, the first poll would hit the OLD
+ * server (which also returns 200 /health), declare success, and exit before
+ * the new server has actually started.
  */
-async function waitForHealthy(port: number, timeoutMs = 60_000): Promise<boolean> {
+async function waitForHealthy(port: number, targetVersion: string, timeoutMs = 60_000): Promise<boolean> {
   const url = `http://127.0.0.1:${port}/health`;
   const deadline = Date.now() + timeoutMs;
 
@@ -97,7 +102,11 @@ async function waitForHealthy(port: number, timeoutMs = 60_000): Promise<boolean
     await sleep(2_000);
     try {
       const resp = await fetch(url, { signal: AbortSignal.timeout(3_000) });
-      if (resp.ok) return true;
+      if (resp.ok) {
+        const data = await resp.json() as { ok?: boolean; version?: string };
+        if (data.version === targetVersion) return true;
+        // Old server still responding — keep waiting for new one
+      }
     } catch {
       // not yet alive — keep polling
     }
@@ -212,7 +221,7 @@ async function performUpdate(targetVersion: string): Promise<void> {
 
     log.info(`[self-update] Replacement PID=${child.pid}, polling health on port ${configuredHttpPort}…`);
 
-    const healthy = await waitForHealthy(configuredHttpPort);
+    const healthy = await waitForHealthy(configuredHttpPort, targetVersion);
 
     if (healthy) {
       // The new server writes its own server.pid on startup (index.ts).

@@ -127,7 +127,7 @@ export function startHttpServer(
     // ── Health check (no auth required — used by self-update poller) ──
     if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
+      res.end(JSON.stringify({ ok: true, version: config.PKG_VERSION }));
       return;
     }
 
