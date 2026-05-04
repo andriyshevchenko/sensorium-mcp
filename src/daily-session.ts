@@ -194,7 +194,7 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
         if (r.error) return `❌ ${r.rootThreadId}: ${r.error}`;
         return `✅ ${r.rootThreadId}: consolidated=${r.consolidated}`;
       });
-      if (purged > 0) lines.push(`🗑 Purged ${purged} archived thread(s) older than 60 days`);
+      if (purged > 0) lines.push(`🗑 Purged ${purged} archived thread(s) older than 180 days`);
       await notifyTelegram(db, `🔄 <b>Daily rotation complete</b>\n${lines.join("\n")}`);
     }
 
