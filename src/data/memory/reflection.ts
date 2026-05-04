@@ -440,6 +440,13 @@ export async function runReflection(
   const maxRecent = options?.maxEpisodes ?? 30;
   const oldSampleSize = options?.includeOldSample !== false ? 10 : 0;
 
+  // ── Gate: worker thread ───────────────────────────────────────────────────
+  const threadEntry = getThread(db, threadId);
+  if (threadEntry?.type === "worker") {
+    log.info(`[reflection] Skipping — thread ${threadId} is a worker thread`);
+    return { insights: [], processedEpisodeCount: 0, duration: Date.now() - startMs };
+  }
+
   // ── Gate: rate limit ──────────────────────────────────────────────────────
   const lastRun = lastReflectionAt.get(threadId) ?? 0;
   if (Date.now() - lastRun < REFLECTION_COOLDOWN_MS) {
@@ -462,13 +469,6 @@ async function runReflectionInner(
   maxRecent: number,
   oldSampleSize: number,
 ): Promise<ReflectionResult> {
-
-  // ── Gate: worker thread ───────────────────────────────────────────────────
-  const threadEntry = getThread(db, threadId);
-  if (threadEntry?.type === "worker") {
-    log.info(`[reflection] Skipping — thread ${threadId} is a worker thread`);
-    return { insights: [], processedEpisodeCount: 0, duration: Date.now() - startMs };
-  }
 
   // ── Gate: environment ─────────────────────────────────────────────────────
   const apiKey = process.env.OPENAI_API_KEY;
