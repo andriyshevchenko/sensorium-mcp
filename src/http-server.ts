@@ -124,6 +124,13 @@ export function startHttpServer(
       return;
     }
 
+    // ── Health check (no auth required — used by self-update poller) ──
+    if (req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
     // ── Dashboard routes (served before MCP auth) ─────────────────────
     const dashCtx: DashboardContext = {
       getDb: getMemoryDb,
