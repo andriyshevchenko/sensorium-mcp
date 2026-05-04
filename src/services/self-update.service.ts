@@ -152,8 +152,8 @@ export async function getRemoteVersion(): Promise<string | null> {
  *   4. Write reconnect snapshot
  *   5. Clear npx cache
  *   6. Spawn replacement process (detached)
- *   7. Poll health endpoint
- *   8a. Healthy → write PID, remove flag, exit(0)
+ *   7. Poll health endpoint until new server responds with targetVersion
+ *   8a. Healthy → remove flag, exit(0)  (new server already wrote its own server.pid)
  *   8b. Unhealthy → kill child, remove flag, abort (MCP continues on current version)
  */
 async function performUpdate(targetVersion: string): Promise<void> {
