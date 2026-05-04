@@ -6,7 +6,7 @@ import { errorMessage } from "../../utils.js";
 import { nowISO } from "./utils.js";
 import type { Database } from "./schema.js";
 
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 25;
 
 function isDuplicateColumnError(err: unknown, columnName: string): boolean {
   const message = errorMessage(err).toLowerCase();
@@ -441,6 +441,10 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
       if (!isDuplicateColumnError(err, "quality_score")) throw err;
     }
     log.info("[migration-24] Added quality_score column to semantic_notes");
+  },
+  25: (db) => {
+    db.exec(`DROP TABLE IF EXISTS procedures`);
+    log.info("[migration-25] Dropped dead procedures table");
   },
 };
 
