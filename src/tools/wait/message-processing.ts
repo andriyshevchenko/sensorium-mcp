@@ -74,7 +74,7 @@ export async function processIncomingMessages(
 
   // Prevent zombie sessions from consuming messages meant for the active session.
   const currentSid = ctx.getMcpSessionId?.();
-  if (isSessionSuperseded(currentSid)) {
+  if (isSessionSuperseded(currentSid, effectiveThreadId)) {
     log.warn(`[wait] Session ${currentSid?.slice(0, 8)}… superseded before consuming ${peekedCount} messages — leaving in queue.`);
     return {
       content: [{

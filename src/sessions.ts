@@ -102,9 +102,25 @@ const expectedSessionCloses = new Set<string>();
  */
 const supersededSessions = new Set<string>();
 
+/** The authoritative owner session for each thread (set during start_session). */
+const threadOwnerSession = new Map<number, string>();
+
 /** Check if a session has been superseded by a newer session for its thread. */
-export function isSessionSuperseded(mcpSessionId: string | undefined): boolean {
-  return mcpSessionId !== undefined && supersededSessions.has(mcpSessionId);
+export function isSessionSuperseded(mcpSessionId: string | undefined, threadId?: number): boolean {
+  if (mcpSessionId === undefined) return false;
+  if (supersededSessions.has(mcpSessionId)) return true;
+  // Check if another session has claimed ownership of this thread
+  const resolvedThreadId = threadId ?? sessionThreadRegistry.get(mcpSessionId);
+  if (resolvedThreadId !== undefined) {
+    const owner = threadOwnerSession.get(resolvedThreadId);
+    if (owner !== undefined && owner !== mcpSessionId) return true;
+  }
+  return false;
+}
+
+/** Mark a session as the sole owner for a thread. Old sessions will be superseded. */
+export function setThreadOwnerSession(threadId: number, mcpSessionId: string): void {
+  threadOwnerSession.set(threadId, mcpSessionId);
 }
 
 export function registerMcpSession(

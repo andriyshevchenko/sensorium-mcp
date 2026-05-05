@@ -196,7 +196,7 @@ async function handleReportProgress(
     // runs.  Messages with media (photo, voice, document, video_note,
     // animation, sticker) are re-queued so wait_for_instructions can
     // still download / transcribe / vision-analyze them.
-    if (hasNewPreviews && !isSessionSuperseded(ctx.getMcpSessionId?.())) {
+    if (hasNewPreviews && !isSessionSuperseded(ctx.getMcpSessionId?.(), effectiveThreadId)) {
       const consumed = readThreadMessages(effectiveThreadId);
       for (const msg of consumed) {
         const hasMedia = hasMediaContent(msg.message as Record<string, unknown>);
