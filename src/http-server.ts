@@ -54,7 +54,7 @@ export function startHttpServer(
   getMemoryDb: () => Database,
   closeMemoryDb: () => void,
   threadLifecycle: ThreadLifecycleService,
-): void {
+): { closeServer: () => Promise<void> } {
   const rawPort = Number.parseInt(process.env.MCP_HTTP_PORT ?? "", 10);
   const httpPort = Number.isFinite(rawPort) ? rawPort : 3847;
   const httpBind = process.env.MCP_HTTP_BIND ?? "127.0.0.1";
@@ -497,4 +497,12 @@ export function startHttpServer(
   if (process.platform === "win32") {
     process.on("SIGBREAK", () => { void shutdown("SIGBREAK"); });
   }
+
+  return {
+    closeServer: () => new Promise<void>((resolve) => {
+      httpServer.close(() => resolve());
+      // Force-close idle keep-alive connections so close() completes promptly
+      httpServer.closeAllConnections();
+    }),
+  };
 }
