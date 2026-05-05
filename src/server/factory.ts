@@ -169,6 +169,7 @@ function createMcpServer(
       config,
       sessionStartedAt,
       getMemoryDb,
+      getMcpSessionId,
     };
   }
 
