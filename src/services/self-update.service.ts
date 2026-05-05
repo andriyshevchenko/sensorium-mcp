@@ -257,7 +257,9 @@ async function performUpdate(targetVersion: string): Promise<void> {
         }
       }
       try { unlinkSync(FLAG_PATH); } catch { /* best-effort */ }
-      // updateInProgress reset in finally — MCP continues on current version
+      // HTTP server is already closed — exit so supervisor restarts us cleanly
+      log.error("[self-update] Exiting (HTTP server closed, cannot recover). Supervisor will restart.");
+      process.exit(1);
     }
   } catch (err) {
     log.error(`[self-update] Update sequence failed: ${err}`);
