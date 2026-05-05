@@ -17,7 +17,7 @@
 import { existsSync } from "node:fs";
 import { readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { checkMaintenanceFlag, writeActivityHeartbeat, writeThreadHeartbeat } from "../../data/file-storage.js";
+import { checkMaintenanceFlag, writeActivityHeartbeat, writeThreadHeartbeatSync } from "../../data/file-storage.js";
 import { onMaintenanceSignal } from "../../services/maintenance-signal.js";
 import { getEffectiveAgentType, getEffectiveAutonomousMode } from "../../config.js";
 import { peekThreadMessages } from "../../dispatcher.js";
@@ -339,7 +339,7 @@ export async function handleWaitForInstructions(
     });
     writeActivityHeartbeat();
     if (effectiveThreadId !== undefined) {
-      writeThreadHeartbeat(effectiveThreadId);
+      writeThreadHeartbeatSync(effectiveThreadId);
       // Update thread_registry.lastActiveAt periodically (not on every poll
       // iteration — every 60s is enough for reconnect detection).
       if (Date.now() - lastRegistryUpdate > 60_000) {

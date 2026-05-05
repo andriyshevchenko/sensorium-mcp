@@ -68,9 +68,12 @@ export function writeThreadHeartbeat(threadId: number): void {
 }
 
 /** Synchronous heartbeat write — guarantees the file is flushed before returning.
- *  Used at spawn time so the keeper never sees a stale heartbeat. */
+ *  Used at spawn time and in the poll loop to prevent false zombie detection. */
 export function writeThreadHeartbeatSync(threadId: number): void {
-  try { writeFileSync(join(HEARTBEATS_DIR, `${threadId}`), String(Date.now()), "utf-8"); } catch { /* non-fatal */ }
+  try { writeFileSync(join(HEARTBEATS_DIR, `${threadId}`), String(Date.now()), "utf-8"); } catch (err) {
+    // Log failures — silent heartbeat loss causes keeper to kill healthy threads
+    console.error(`[heartbeat] Write FAILED for thread ${threadId}: ${err instanceof Error ? err.message : err}`);
+  }
 }
 
 /** Read the last heartbeat epoch for a thread. Returns null if no heartbeat. */
