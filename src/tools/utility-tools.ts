@@ -8,6 +8,7 @@ import { readFile, stat } from "fs/promises";
 import { basename, resolve as resolvePath, sep } from "node:path";
 import { homedir } from "node:os";
 import { checkMaintenanceFlag } from "../data/file-storage.js";
+import { isSessionSuperseded } from "../sessions.js";
 import { saveAgentEpisodeSafe, type Database } from "../memory.js";
 import { textToSpeech, TTS_VOICES, type TTSVoice } from "../openai.js";
 import { addSchedule, generateTaskId, listSchedules, removeSchedule, type ScheduledTask } from "../scheduler.js";
@@ -29,6 +30,7 @@ export interface UtilityToolContext {
   config: AppConfig;
   sessionStartedAt: number;
   getMemoryDb: () => Database;
+  getMcpSessionId?: () => string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +146,12 @@ async function handleSendVoice(
   if (effectiveThreadId === undefined) {
     return errorResult("Error: No active session. Call start_session first, then pass the returned threadId.");
   }
+
+  // Prevent zombie sessions from sending voice on a thread they no longer own.
+  if (isSessionSuperseded(ctx.getMcpSessionId?.(), effectiveThreadId)) {
+    return errorResult("Session superseded — a newer session owns this thread. Do not send further messages.");
+  }
+
   const text = typeof args.text === "string" ? args.text.trim() : "";
   const validVoices = TTS_VOICES;
   const voice: TTSVoice = typeof args.voice === "string" && (validVoices as readonly string[]).includes(args.voice)

@@ -89,6 +89,12 @@ async function handleReportProgress(
   if (effectiveThreadId === undefined) {
     return errorResult("Error: No active session. Call start_session first, then pass the returned threadId.");
   }
+
+  // Prevent zombie sessions from sending messages on a thread they no longer own.
+  if (isSessionSuperseded(ctx.getMcpSessionId?.(), effectiveThreadId)) {
+    return errorResult("Session superseded — a newer session owns this thread. Do not send further messages.");
+  }
+
   const rawMessage =
     typeof args?.message === "string"
       ? (args.message as string)
