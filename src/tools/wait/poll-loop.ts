@@ -173,7 +173,7 @@ export async function handleWaitForInstructions(
   // If start_thread or send_message_to_thread wrote a task file for this
   // thread, deliver it immediately — but only if this session is still active.
   const preSid = ctx.getMcpSessionId?.();
-  if (!isSessionSuperseded(preSid)) {
+  if (!isSessionSuperseded(preSid, effectiveThreadId)) {
     const preLoopTask = await consumePendingTask(effectiveThreadId);
     if (preLoopTask) return preLoopTask;
   }
@@ -194,7 +194,7 @@ export async function handleWaitForInstructions(
     // same thread. Without this, a zombie session races the active one for
     // messages — consuming them but responding with degraded/stale context.
     const currentSid = ctx.getMcpSessionId?.();
-    if (isSessionSuperseded(currentSid)) {
+    if (isSessionSuperseded(currentSid, effectiveThreadId)) {
       log.warn(`[wait] Session ${currentSid?.slice(0, 8)}… superseded for thread ${effectiveThreadId} — terminating poll loop.`);
       state.lastToolCallAt = Date.now();
       return {
@@ -251,7 +251,7 @@ export async function handleWaitForInstructions(
     // Guard: don't consume the reaction file if the SSE connection is
     // already dead — readPendingReaction() is destructive (read + delete).
     // Without this check the reaction is eaten but never delivered.
-    if (!extra.signal.aborted && !isSessionSuperseded(ctx.getMcpSessionId?.())) {
+    if (!extra.signal.aborted && !isSessionSuperseded(ctx.getMcpSessionId?.(), effectiveThreadId)) {
       const reactionResult = await handleReactionOnly({
         telegram,
         getMemoryDb,
@@ -262,11 +262,11 @@ export async function handleWaitForInstructions(
       if (reactionResult) return reactionResult;
     }
 
-    // ── Pending task injection (in-loop) ───────────────────────────────
+    // ── Pending task injection (in-loop) ─────────────────────────────────────────
     // Check for tasks sent via send_message_to_thread while we're already
     // polling.  Without this, messages arrive only on the NEXT
     // wait_for_instructions call, causing a "no instructions" gap.
-    if (!extra.signal.aborted && !isSessionSuperseded(ctx.getMcpSessionId?.())) {
+    if (!extra.signal.aborted && !isSessionSuperseded(ctx.getMcpSessionId?.(), effectiveThreadId)) {
       const inLoopTask = await consumePendingTask(effectiveThreadId);
       if (inLoopTask) return inLoopTask;
     }

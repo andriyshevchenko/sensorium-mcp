@@ -16,6 +16,7 @@ import { addSchedule, generateTaskId, listSchedules, purgeSchedules } from "../s
 import {
   purgeOtherSessions,
   registerMcpSession,
+  setThreadOwnerSession,
 } from "../sessions.js";
 import type { TelegramClient } from "../telegram.js";
 import type { AppConfig, ToolResult } from "../types.js";
@@ -352,8 +353,11 @@ export async function handleStartSession(
     if (purged > 0) {
       log.info(`[start_session] Purged ${purged} stale MCP session(s) for thread ${session.currentThreadId}.`);
     }
-    if (sid && ctx.closeTransport) {
-      registerMcpSession(session.currentThreadId, sid, ctx.closeTransport);
+    if (sid) {
+      setThreadOwnerSession(session.currentThreadId, sid);
+      if (ctx.closeTransport) {
+        registerMcpSession(session.currentThreadId, sid, ctx.closeTransport);
+      }
     }
   }
 
