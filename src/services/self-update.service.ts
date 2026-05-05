@@ -32,6 +32,7 @@ const FLAG_PATH = join(DATA_DIR, "maintenance.flag");
 let updateInProgress = false;
 let currentVersion = "";
 let configuredHttpPort = 0;
+let beforeSpawnHook: (() => Promise<void> | void) | null = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -89,10 +90,8 @@ async function notifyTelegram(text: string): Promise<void> {
  * Poll the local health endpoint until the NEW process responds with the
  * expected version, or the timeout elapses.
  *
- * The version check is critical: the old server is still bound to the port
- * during the update window.  Without it, the first poll would hit the OLD
- * server (which also returns 200 /health), declare success, and exit before
- * the new server has actually started.
+ * The version check is critical: on the off chance the old server hasn't
+ * fully released the port yet, we verify the response version matches.
  */
 async function waitForHealthy(port: number, targetVersion: string, timeoutMs = 60_000): Promise<boolean> {
   const url = `http://127.0.0.1:${port}/health`;
@@ -197,6 +196,12 @@ async function performUpdate(targetVersion: string): Promise<void> {
 
     // Clear npx cache to prevent stale tarball being served
     clearNpxCache();
+
+    // Close existing HTTP server to free the port for the replacement process
+    if (beforeSpawnHook) {
+      log.info("[self-update] Closing HTTP server to free port...");
+      await beforeSpawnHook();
+    }
 
     // Spawn the replacement process (detached so it survives our exit)
     const cmd = process.env.MCP_START_COMMAND ?? "npx -y sensorium-mcp@latest --prefer-online";
@@ -307,7 +312,7 @@ export async function checkForUpdate(): Promise<void> {
  * @param config.pkgVersion  Current package version string (e.g. "3.0.30").
  * @param config.httpPort    HTTP port the server is bound to (for health polling).
  */
-export function startSelfUpdatePoller(config: { pkgVersion: string; httpPort: number }): void {
+export function startSelfUpdatePoller(config: { pkgVersion: string; httpPort: number; onBeforeSpawn?: () => Promise<void> | void }): void {
   if (process.env.SELF_UPDATE_ENABLED === "false") {
     log.info("[self-update] Disabled via SELF_UPDATE_ENABLED=false — skipping.");
     return;
@@ -315,6 +320,7 @@ export function startSelfUpdatePoller(config: { pkgVersion: string; httpPort: nu
 
   currentVersion = config.pkgVersion;
   configuredHttpPort = config.httpPort;
+  if (config.onBeforeSpawn) beforeSpawnHook = config.onBeforeSpawn;
 
   const rawInterval = parseInt(process.env.SELF_UPDATE_POLL_INTERVAL_MS ?? "", 10);
   const interval = Number.isFinite(rawInterval) && rawInterval > 0 ? rawInterval : 60_000;

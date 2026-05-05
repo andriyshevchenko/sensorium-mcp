@@ -124,7 +124,7 @@ function closeMemoryDb(): void {
 
 if (process.env.MCP_HTTP_PORT) {
   const httpPort = parseInt(process.env.MCP_HTTP_PORT, 10);
-  startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb, threadLifecycle);
+  const { closeServer } = startHttpServer(createMcpServer, getMemoryDb, closeMemoryDb, threadLifecycle);
 
   // Write own PID to server.pid — authoritative for the .NET supervisor and self-update.
   // On Windows with shell:true spawning, the parent cannot know the real node PID,
@@ -138,7 +138,7 @@ if (process.env.MCP_HTTP_PORT) {
     writePid(joinPid(pidDir, "server.pid"), JSON.stringify({ pid: process.pid }));
   } catch {}
 
-  startSelfUpdatePoller({ pkgVersion: config.PKG_VERSION, httpPort });
+  startSelfUpdatePoller({ pkgVersion: config.PKG_VERSION, httpPort, onBeforeSpawn: closeServer });
 } else {
   await startStdioServer(createMcpServer, closeMemoryDb);
 }
