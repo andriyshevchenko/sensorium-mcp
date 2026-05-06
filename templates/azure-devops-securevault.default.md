@@ -1,9 +1,10 @@
 ---
 name: Azure DevOps via SecureVault
 triggers:
-  - azure devops securevault
-  - az cli securevault
-  - create pr securevault
+  - azure devops
+  - azure
+  - az cli
+  - securevault
 replaces_orchestrator: false
 ---
 
