@@ -283,13 +283,6 @@ export function getArchivedThreads(db: Database): ThreadRegistryEntry[] {
   return rows.map(rowToEntry);
 }
 
-export function updateThreadSummary(db: Database, threadId: number, summary: string): boolean {
-  const result = db.prepare(
-    `UPDATE thread_registry SET summary = ? WHERE thread_id = ?`,
-  ).run(summary, threadId);
-  return result.changes > 0;
-}
-
 export function deleteThread(db: Database, threadId: number): boolean {
   const result = db.prepare(
     `DELETE FROM thread_registry WHERE thread_id = ?`,
