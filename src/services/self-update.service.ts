@@ -93,7 +93,7 @@ async function notifyTelegram(text: string): Promise<void> {
  * The version check is critical: on the off chance the old server hasn't
  * fully released the port yet, we verify the response version matches.
  */
-async function waitForHealthy(port: number, targetVersion: string, timeoutMs = 120_000): Promise<boolean> {
+async function waitForHealthy(port: number, targetVersion: string, timeoutMs = 180_000): Promise<boolean> {
   const url = `http://127.0.0.1:${port}/health`;
   const deadline = Date.now() + timeoutMs;
 
@@ -204,7 +204,9 @@ async function performUpdate(targetVersion: string): Promise<void> {
     }
 
     // Spawn the replacement process (detached so it survives our exit)
-    const cmd = process.env.MCP_START_COMMAND ?? "npx -y sensorium-mcp@latest --prefer-online";
+    // Pin exact version to bypass stale npx cache (EPERM prevents cache clear on Windows)
+    const defaultCmd = `npx -y sensorium-mcp@${targetVersion} --prefer-online`;
+    const cmd = process.env.MCP_START_COMMAND ?? defaultCmd;
     log.info(`[self-update] Spawning replacement: ${cmd}`);
 
     const spawnLogPath = join(DATA_DIR, "update-spawn.log");
@@ -256,8 +258,8 @@ async function performUpdate(targetVersion: string): Promise<void> {
           log.warn(`[self-update] Could not kill orphan on port ${configuredHttpPort} — manual cleanup may be needed`);
         }
       }
-      try { unlinkSync(FLAG_PATH); } catch { /* best-effort */ }
-      // HTTP server is already closed — exit so supervisor restarts us cleanly
+      // Leave maintenance.flag intact so supervisor doesn't immediately race
+      // with an orphaned spawned child that may still be starting.
       log.error("[self-update] Exiting (HTTP server closed, cannot recover). Supervisor will restart.");
       process.exit(1);
     }
