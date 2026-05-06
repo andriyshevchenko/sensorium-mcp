@@ -156,7 +156,7 @@ backgroundRunner.start();
 
 // Clear any stale reconnect snapshot after 10 minutes — threads that haven't
 // reconnected by then should get a full briefing.
-setTimeout(clearReconnectSnapshot, 10 * 60 * 1000);
+setTimeout(clearReconnectSnapshot, 15 * 60 * 1000);
 
 // Start keeper service to monitor and restart keepAlive threads that die.
 const keeper = new KeeperService({

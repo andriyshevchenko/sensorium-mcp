@@ -14,7 +14,7 @@ import { log } from "../logger.js";
 
 const DATA_DIR = join(homedir(), ".remote-copilot-mcp");
 const SNAPSHOT_PATH = join(DATA_DIR, "active-sessions.json");
-const SNAPSHOT_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+const SNAPSHOT_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
 
 /** Write via temp file + rename to prevent partial reads from concurrent access. */
 function atomicWriteSnapshot(data: string): void {

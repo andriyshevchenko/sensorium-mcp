@@ -93,7 +93,7 @@ async function notifyTelegram(text: string): Promise<void> {
  * The version check is critical: on the off chance the old server hasn't
  * fully released the port yet, we verify the response version matches.
  */
-async function waitForHealthy(port: number, targetVersion: string, timeoutMs = 60_000): Promise<boolean> {
+async function waitForHealthy(port: number, targetVersion: string, timeoutMs = 120_000): Promise<boolean> {
   const url = `http://127.0.0.1:${port}/health`;
   const deadline = Date.now() + timeoutMs;
 
