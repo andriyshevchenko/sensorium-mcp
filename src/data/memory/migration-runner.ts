@@ -6,7 +6,7 @@ import { errorMessage } from "../../utils.js";
 import { nowISO } from "./utils.js";
 import type { Database } from "./schema.js";
 
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 
 function isDuplicateColumnError(err: unknown, columnName: string): boolean {
   const message = errorMessage(err).toLowerCase();
@@ -445,6 +445,19 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
   25: (db) => {
     db.exec(`DROP TABLE IF EXISTS procedures`);
     log.info("[migration-25] Dropped dead procedures table");
+  },
+  26: (db) => {
+    try {
+      db.exec(`ALTER TABLE thread_registry ADD COLUMN archived_at TEXT`);
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "archived_at")) throw err;
+    }
+    try {
+      db.exec(`ALTER TABLE thread_registry ADD COLUMN summary TEXT`);
+    } catch (err) {
+      if (!isDuplicateColumnError(err, "summary")) throw err;
+    }
+    log.info("[migration-26] Added archived_at and summary columns to thread_registry");
   },
 };
 

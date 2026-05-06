@@ -96,15 +96,18 @@ import { errorMessage } from "../utils.js";
 import {
     handleCreateThread,
     handleDeleteThread,
+    handleGetArchivedThreads,
     handleGetKeepAliveThreads,
     handleGetRootThreads,
     handleGetThread,
     handleConvertToRoot,
+    handleGenerateSummary,
     handleGetThreadChildren,
     handleGetThreadHeartbeat,
     handleGetThreadRunning,
     handleGetThreads,
     handleStartThread,
+    handleUnarchiveThread,
     handleUpdateThread,
 } from "./routes/threads.js";
 
@@ -165,6 +168,7 @@ const routeTable: Record<string, RouteHandler> = {
     "GET /api/threads": handleGetThreads,
     "GET /api/threads/roots": handleGetRootThreads,
     "GET /api/threads/keepalive": handleGetKeepAliveThreads,
+    "GET /api/threads/archived": handleGetArchivedThreads,
     "POST /api/threads": handleCreateThread,
 };
 
@@ -279,6 +283,14 @@ async function dispatchApiRoute(
         const threadStartMatch = /^\/api\/threads\/(\d+)\/start$/.exec(path);
         if (threadStartMatch && method === "POST") {
             return handleStartThread(args, Number.parseInt(threadStartMatch[1], 10));
+        }
+        const threadUnarchiveMatch = /^\/api\/threads\/(\d+)\/unarchive$/.exec(path);
+        if (threadUnarchiveMatch && method === "POST") {
+            return handleUnarchiveThread(args, Number.parseInt(threadUnarchiveMatch[1], 10));
+        }
+        const threadSummaryMatch = /^\/api\/threads\/(\d+)\/summary$/.exec(path);
+        if (threadSummaryMatch && method === "POST") {
+            return handleGenerateSummary(args, Number.parseInt(threadSummaryMatch[1], 10));
         }
         const threadConvertMatch = /^\/api\/threads\/(\d+)\/convert-to-root$/.exec(path);
         if (threadConvertMatch && method === "POST") {
