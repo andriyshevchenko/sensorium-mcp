@@ -6,9 +6,13 @@ import type { ThreadEntry } from '../types'
 const threads = ref<ThreadEntry[]>([])
 const loading = ref(true)
 const error = ref('')
-const generatingId = ref<number | null>(null)
+const summaries = ref<Record<number, string | null>>({})
+const generatingIds = ref<Set<number>>(new Set())
+const summaryProgress = ref({ done: 0, total: 0 })
 const unarchivingId = ref<number | null>(null)
 const filterType = ref<string>('all')
+
+const SUMMARY_CONCURRENCY = 3
 
 const badgeConfig: Record<string, { emoji: string; classes: string }> = {
   root:   { emoji: '🟢', classes: 'bg-green-500/20 text-green-400 border-green-500/30' },
@@ -30,17 +34,61 @@ const typeCounts = computed(() => {
   return counts
 })
 
+const isBuildingSummaries = computed(() => generatingIds.value.size > 0)
+
+function getSummary(threadId: number): string | null {
+  return summaries.value[threadId] ?? null
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
     const data = await api<{ threads?: ThreadEntry[] }>('/api/threads/archived')
     threads.value = data.threads ?? []
+    summaries.value = {}
+    if (threads.value.length > 0) {
+      void buildAllSummaries()
+    }
   } catch (e: unknown) {
     error.value = (e as Error).message || 'Failed to load archived threads'
   } finally {
     loading.value = false
   }
+}
+
+async function buildAllSummaries() {
+  const queue = [...threads.value]
+  summaryProgress.value = { done: 0, total: queue.length }
+
+  async function worker() {
+    while (queue.length > 0) {
+      const thread = queue.shift()!
+      generatingIds.value.add(thread.threadId)
+      generatingIds.value = new Set(generatingIds.value)
+      try {
+        const r = await fetch(`/api/threads/${thread.threadId}/summary`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${getToken()}` },
+        })
+        if (r.ok) {
+          const data = await r.json() as { summary?: string }
+          if (data.summary) {
+            summaries.value = { ...summaries.value, [thread.threadId]: data.summary }
+          }
+        }
+      } catch {
+        // skip failed summaries silently
+      } finally {
+        generatingIds.value.delete(thread.threadId)
+        generatingIds.value = new Set(generatingIds.value)
+        summaryProgress.value = { ...summaryProgress.value, done: summaryProgress.value.done + 1 }
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(SUMMARY_CONCURRENCY, queue.length) }, () => worker())
+  await Promise.all(workers)
 }
 
 function relativeTime(iso: string | null): string {
@@ -80,29 +128,6 @@ async function unarchive(thread: ThreadEntry) {
   }
 }
 
-async function generateSummary(thread: ThreadEntry) {
-  generatingId.value = thread.threadId
-  try {
-    const r = await fetch(`/api/threads/${thread.threadId}/summary`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${getToken()}` },
-    })
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({ error: r.statusText })) as { error?: string }
-      throw new Error(err.error ?? r.statusText)
-    }
-    const data = await r.json() as { summary?: string }
-    const idx = threads.value.findIndex(t => t.threadId === thread.threadId)
-    if (idx >= 0 && data.summary) {
-      threads.value[idx] = { ...threads.value[idx], summary: data.summary }
-    }
-  } catch (e: unknown) {
-    error.value = 'Failed to generate summary: ' + (e as Error).message
-  } finally {
-    generatingId.value = null
-  }
-}
-
 onMounted(load)
 </script>
 
@@ -115,15 +140,20 @@ onMounted(load)
           <h3 class="text-lg font-semibold">Archived Threads</h3>
           <p class="text-sm text-textSecondary mt-1">{{ threads.length }} archived thread{{ threads.length !== 1 ? 's' : '' }} — auto-purged after 180 days</p>
         </div>
-        <button @click="load" class="px-3 py-2 rounded-xl bg-card border border-gray-700 text-sm hover:bg-surface transition">
-          ↻ Refresh
-        </button>
+        <div class="flex items-center gap-3">
+          <span v-if="isBuildingSummaries" class="text-xs text-accentLight animate-pulse">
+            Building summaries… {{ summaryProgress.done }}/{{ summaryProgress.total }}
+          </span>
+          <button @click="load" class="px-3 py-2 rounded-xl bg-card border border-gray-700 text-sm hover:bg-surface transition">
+            ↻ Refresh
+          </button>
+        </div>
       </div>
 
       <!-- Type filter pills -->
       <div v-if="threads.length > 0" class="flex flex-wrap gap-2 mt-3">
         <button
-          v-for="ft in ['all', 'root', 'branch', 'daily', 'worker']"
+          v-for="ft in ['all', 'root', 'branch', 'daily']"
           :key="ft"
           @click="filterType = ft"
           :class="[
@@ -170,21 +200,16 @@ onMounted(load)
             </div>
 
             <!-- Summary -->
-            <div v-if="t.summary" class="text-sm text-textSecondary mt-1 leading-relaxed">
-              {{ t.summary }}
+            <div v-if="getSummary(t.threadId)" class="text-sm text-textSecondary mt-1 leading-relaxed">
+              {{ getSummary(t.threadId) }}
+            </div>
+            <div v-else-if="generatingIds.has(t.threadId)" class="text-sm text-muted mt-1 italic animate-pulse">
+              Generating summary…
             </div>
           </div>
 
           <!-- Right: actions -->
           <div class="flex items-center gap-2 shrink-0">
-            <button
-              @click="generateSummary(t)"
-              :disabled="generatingId === t.threadId"
-              class="px-2 py-1 rounded-lg text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 disabled:opacity-50 transition"
-              :title="t.summary ? 'Regenerate summary' : 'Generate AI summary'"
-            >
-              {{ generatingId === t.threadId ? 'Generating…' : (t.summary ? '↻ Summary' : '✦ Summary') }}
-            </button>
             <button
               @click="unarchive(t)"
               :disabled="unarchivingId === t.threadId"

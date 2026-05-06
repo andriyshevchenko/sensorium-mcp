@@ -278,7 +278,7 @@ export function unarchiveThread(db: Database, threadId: number): boolean {
 
 export function getArchivedThreads(db: Database): ThreadRegistryEntry[] {
   const rows = db.prepare(
-    `SELECT * FROM thread_registry WHERE status = 'archived' ORDER BY archived_at DESC, last_active_at DESC`,
+    `SELECT * FROM thread_registry WHERE status = 'archived' AND type != 'worker' ORDER BY archived_at DESC, last_active_at DESC`,
   ).all() as Record<string, unknown>[];
   return rows.map(rowToEntry);
 }

@@ -16,7 +16,6 @@ import {
     archiveThread,
     unarchiveThread,
     deleteThread,
-    updateThreadSummary,
     getExplicitTelegramTopicId,
     resolveTelegramTopicId,
     type ThreadRegistryEntry,
@@ -186,9 +185,7 @@ export function handleGenerateSummary(args: RouteArgs, threadId: number): boolea
             ).all(threadId) as { content: string; type: string; modality: string; timestamp: string }[];
 
             if (episodes.length === 0) {
-                const fallback = `Thread "${thread.name}" (${thread.type}) — no episodes recorded.`;
-                updateThreadSummary(db, threadId, fallback);
-                json({ ok: true, summary: fallback });
+                json({ ok: true, summary: `Thread "${thread.name}" (${thread.type}) — no episodes recorded.` });
                 return;
             }
 
@@ -208,7 +205,6 @@ export function handleGenerateSummary(args: RouteArgs, threadId: number): boolea
 
             const trimmed = summary.trim();
             if (!trimmed) { json({ error: "LLM returned empty summary" }, 502); return; }
-            updateThreadSummary(db, threadId, trimmed);
             json({ ok: true, summary: trimmed });
         } catch (err) {
             json({ error: errorMessage(err) }, 500);
