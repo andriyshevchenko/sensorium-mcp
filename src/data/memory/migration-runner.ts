@@ -457,6 +457,8 @@ const MIGRATIONS: Record<number, (db: Database) => void> = {
     } catch (err) {
       if (!isDuplicateColumnError(err, "summary")) throw err;
     }
+    // Backfill archived_at for threads archived before this migration
+    db.exec(`UPDATE thread_registry SET archived_at = last_active_at WHERE status = 'archived' AND archived_at IS NULL`);
     log.info("[migration-26] Added archived_at and summary columns to thread_registry");
   },
 };

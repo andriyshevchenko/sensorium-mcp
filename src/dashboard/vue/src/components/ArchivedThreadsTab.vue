@@ -7,18 +7,18 @@ const threads = ref<ThreadEntry[]>([])
 const loading = ref(true)
 const error = ref('')
 const summaries = ref<Record<number, string | null>>({})
-const generatingIds = ref<Set<number>>(new Set())
+const generatingIds = ref<Record<number, boolean>>({})
 const summaryProgress = ref({ done: 0, total: 0 })
 const unarchivingId = ref<number | null>(null)
 const filterType = ref<string>('all')
 
 const SUMMARY_CONCURRENCY = 3
+let summaryGeneration = 0
 
 const badgeConfig: Record<string, { emoji: string; classes: string }> = {
   root:   { emoji: '🟢', classes: 'bg-green-500/20 text-green-400 border-green-500/30' },
   daily:  { emoji: '🔵', classes: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
   branch: { emoji: '🟣', classes: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
-  worker: { emoji: '🟡', classes: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
 }
 
 const filtered = computed(() => {
@@ -34,11 +34,7 @@ const typeCounts = computed(() => {
   return counts
 })
 
-const isBuildingSummaries = computed(() => generatingIds.value.size > 0)
-
-function getSummary(threadId: number): string | null {
-  return summaries.value[threadId] ?? null
-}
+const isBuildingSummaries = computed(() => Object.values(generatingIds.value).some(Boolean))
 
 async function load() {
   loading.value = true
@@ -47,6 +43,7 @@ async function load() {
     const data = await api<{ threads?: ThreadEntry[] }>('/api/threads/archived')
     threads.value = data.threads ?? []
     summaries.value = {}
+    generatingIds.value = {}
     if (threads.value.length > 0) {
       void buildAllSummaries()
     }
@@ -58,19 +55,20 @@ async function load() {
 }
 
 async function buildAllSummaries() {
+  const gen = ++summaryGeneration
   const queue = [...threads.value]
   summaryProgress.value = { done: 0, total: queue.length }
 
   async function worker() {
-    while (queue.length > 0) {
+    while (queue.length > 0 && gen === summaryGeneration) {
       const thread = queue.shift()!
-      generatingIds.value.add(thread.threadId)
-      generatingIds.value = new Set(generatingIds.value)
+      generatingIds.value = { ...generatingIds.value, [thread.threadId]: true }
       try {
         const r = await fetch(`/api/threads/${thread.threadId}/summary`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${getToken()}` },
         })
+        if (gen !== summaryGeneration) return
         if (r.ok) {
           const data = await r.json() as { summary?: string }
           if (data.summary) {
@@ -80,9 +78,11 @@ async function buildAllSummaries() {
       } catch {
         // skip failed summaries silently
       } finally {
-        generatingIds.value.delete(thread.threadId)
-        generatingIds.value = new Set(generatingIds.value)
-        summaryProgress.value = { ...summaryProgress.value, done: summaryProgress.value.done + 1 }
+        if (gen === summaryGeneration) {
+          const { [thread.threadId]: _, ...rest } = generatingIds.value
+          generatingIds.value = rest
+          summaryProgress.value = { ...summaryProgress.value, done: summaryProgress.value.done + 1 }
+        }
       }
     }
   }
@@ -200,10 +200,10 @@ onMounted(load)
             </div>
 
             <!-- Summary -->
-            <div v-if="getSummary(t.threadId)" class="text-sm text-textSecondary mt-1 leading-relaxed">
-              {{ getSummary(t.threadId) }}
+            <div v-if="summaries[t.threadId]" class="text-sm text-textSecondary mt-1 leading-relaxed">
+              {{ summaries[t.threadId] }}
             </div>
-            <div v-else-if="generatingIds.has(t.threadId)" class="text-sm text-muted mt-1 italic animate-pulse">
+            <div v-else-if="generatingIds[t.threadId]" class="text-sm text-muted mt-1 italic animate-pulse">
               Generating summary…
             </div>
           </div>
