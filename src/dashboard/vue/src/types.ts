@@ -77,4 +77,6 @@ export interface ThreadEntry {
   lastActiveAt: string | null
   sessionResetAt: string | null
   status: 'active' | 'archived' | 'expired' | 'exited'
+  archivedAt: string | null
+  summary: string | null
 }

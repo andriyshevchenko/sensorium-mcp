@@ -9,11 +9,14 @@ import {
     getRootThreads,
     getKeepAliveThreads,
     getActiveThreads,
+    getArchivedThreads,
     getDashboardThreads,
     getThreadsByRoot,
     updateThread,
     archiveThread,
+    unarchiveThread,
     deleteThread,
+    updateThreadSummary,
     getExplicitTelegramTopicId,
     resolveTelegramTopicId,
     type ThreadRegistryEntry,
@@ -137,6 +140,82 @@ export const handleGetKeepAliveThreads: RouteHandler = ({ json, db }) => {
     json({ threads: enrichThreadNames(db, getKeepAliveThreads(db)) });
     return true;
 };
+
+// ─── GET /api/threads/archived — list archived threads ──────────────────────
+
+export const handleGetArchivedThreads: RouteHandler = ({ json, db }) => {
+    const threads = enrichThreadNames(db, getArchivedThreads(db));
+    json({ threads });
+    return true;
+};
+
+// ─── POST /api/threads/:threadId/unarchive — restore an archived thread ────
+
+export function handleUnarchiveThread(args: RouteArgs, threadId: number): boolean {
+    const { json, db } = args;
+    const existing = getThread(db, threadId);
+    if (!existing) {
+        json({ error: `Thread ${threadId} not found` }, 404);
+        return true;
+    }
+    if (existing.status !== "archived") {
+        json({ error: `Thread ${threadId} is not archived (status: ${existing.status})` }, 400);
+        return true;
+    }
+    unarchiveThread(db, threadId);
+    json({ ok: true, thread: getThread(db, threadId) });
+    return true;
+}
+
+// ─── POST /api/threads/:threadId/summary — generate AI summary ─────────────
+
+export function handleGenerateSummary(args: RouteArgs, threadId: number): boolean {
+    const { json, db } = args;
+    void (async () => {
+        try {
+            const thread = getThread(db, threadId);
+            if (!thread) { json({ error: `Thread ${threadId} not found` }, 404); return; }
+
+            const apiKey = process.env.OPENAI_API_KEY;
+            if (!apiKey) { json({ error: "OPENAI_API_KEY not configured" }, 500); return; }
+
+            // Gather recent episodes for context
+            const episodes = db.prepare(
+                `SELECT content, type, modality, timestamp FROM episodes
+                 WHERE thread_id = ? ORDER BY timestamp DESC LIMIT 30`
+            ).all(threadId) as { content: string; type: string; modality: string; timestamp: string }[];
+
+            if (episodes.length === 0) {
+                const fallback = `Thread "${thread.name}" (${thread.type}) — no episodes recorded.`;
+                updateThreadSummary(db, threadId, fallback);
+                json({ ok: true, summary: fallback });
+                return;
+            }
+
+            const episodeText = episodes.reverse().map(e =>
+                `[${e.timestamp}] (${e.type}) ${e.content.slice(0, 200)}`
+            ).join("\n");
+
+            const { chatCompletion } = await import("../../integrations/openai/chat.js");
+            const summary = await chatCompletion(
+                [
+                    { role: "system", content: "You are a concise summarizer. Given a thread's conversation episodes, produce a 1-2 sentence summary of what was discussed/accomplished. Be specific about the topic and outcome. No filler." },
+                    { role: "user", content: `Thread: "${thread.name}" (type: ${thread.type})\n\nEpisodes:\n${episodeText}` },
+                ],
+                apiKey,
+                { maxTokens: 150, temperature: 0.3 },
+            );
+
+            const trimmed = summary.trim();
+            if (!trimmed) { json({ error: "LLM returned empty summary" }, 502); return; }
+            updateThreadSummary(db, threadId, trimmed);
+            json({ ok: true, summary: trimmed });
+        } catch (err) {
+            json({ error: errorMessage(err) }, 500);
+        }
+    })();
+    return true;
+}
 
 // ─── POST /api/threads — create/register a thread ──────────────────────────
 

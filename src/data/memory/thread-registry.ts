@@ -31,6 +31,8 @@ export interface ThreadRegistryEntry {
   lastActiveAt: string | null;
   sessionResetAt: string | null;
   status: 'active' | 'archived' | 'expired' | 'exited';
+  archivedAt: string | null;
+  summary: string | null;
 }
 
 type RegisterThreadEntry = {
@@ -119,6 +121,8 @@ function rowToEntry(row: Record<string, unknown>): ThreadRegistryEntry {
     lastActiveAt: (row.last_active_at as string | null) ?? null,
     sessionResetAt: (row.session_reset_at as string | null) ?? null,
     status: row.status as ThreadRegistryEntry['status'],
+    archivedAt: (row.archived_at as string | null) ?? null,
+    summary: (row.summary as string | null) ?? null,
   };
 }
 
@@ -260,8 +264,29 @@ export function updateThread(
 
 export function archiveThread(db: Database, threadId: number): boolean {
   const result = db.prepare(
-    `UPDATE thread_registry SET status = 'archived', keep_alive = 0 WHERE thread_id = ?`,
+    `UPDATE thread_registry SET status = 'archived', keep_alive = 0, archived_at = ? WHERE thread_id = ?`,
+  ).run(nowISO(), threadId);
+  return result.changes > 0;
+}
+
+export function unarchiveThread(db: Database, threadId: number): boolean {
+  const result = db.prepare(
+    `UPDATE thread_registry SET status = 'active', archived_at = NULL WHERE thread_id = ? AND status = 'archived'`,
   ).run(threadId);
+  return result.changes > 0;
+}
+
+export function getArchivedThreads(db: Database): ThreadRegistryEntry[] {
+  const rows = db.prepare(
+    `SELECT * FROM thread_registry WHERE status = 'archived' ORDER BY archived_at DESC, last_active_at DESC`,
+  ).all() as Record<string, unknown>[];
+  return rows.map(rowToEntry);
+}
+
+export function updateThreadSummary(db: Database, threadId: number, summary: string): boolean {
+  const result = db.prepare(
+    `UPDATE thread_registry SET summary = ? WHERE thread_id = ?`,
+  ).run(summary, threadId);
   return result.changes > 0;
 }
 
