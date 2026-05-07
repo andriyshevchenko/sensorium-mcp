@@ -217,18 +217,64 @@ function Install-StartupLauncher {
     Write-Host "Startup launcher installed: $StartupLauncher" -ForegroundColor Green
 }
 
+function Load-DotEnv {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    Write-Host "Loading environment from $Path ..."
+    $lines = Get-Content -LiteralPath $Path
+    foreach ($line in $lines) {
+        $trimmed = $line.Trim()
+        if ($trimmed -eq "" -or $trimmed.StartsWith("#")) { continue }
+        $eqIdx = $trimmed.IndexOf("=")
+        if ($eqIdx -le 0) { continue }
+        $key = $trimmed.Substring(0, $eqIdx).Trim()
+        $val = $trimmed.Substring($eqIdx + 1).Trim()
+        # Strip surrounding quotes
+        if (($val.StartsWith('"') -and $val.EndsWith('"')) -or ($val.StartsWith("'") -and $val.EndsWith("'"))) {
+            $val = $val.Substring(1, $val.Length - 2)
+        }
+        [Environment]::SetEnvironmentVariable($key, $val, "Process")
+    }
+    return $true
+}
+
+function Test-SecureVaultAvailable {
+    try {
+        $null = Get-Command securevault -ErrorAction Stop
+        return $true
+    }
+    catch { return $false }
+}
+
 function Start-Supervisor {
     $env:SUPERVISOR_UPDATE_MODE = $UpdateMode
     $env:MCP_START_COMMAND = $EffectiveMCPStartCommand
 
-    Write-Host "Starting sensorium-supervisor via SecureVault (profile: $SecureVaultProfile)..."
-    try {
-        securevault run "`"$Binary`"" --profile $SecureVaultProfile --detached
+    $useSecureVault = (-not [string]::IsNullOrWhiteSpace($SecureVaultProfile)) -and (Test-SecureVaultAvailable)
+
+    if ($useSecureVault) {
+        Write-Host "Starting sensorium-supervisor via SecureVault (profile: $SecureVaultProfile)..."
+        try {
+            securevault run "`"$Binary`"" --profile $SecureVaultProfile --detached
+        }
+        catch {
+            Write-Host "[ERROR] SecureVault launch failed: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "[HINT] Make sure SecureVault backend is running: securevault" -ForegroundColor Yellow
+            throw
+        }
     }
-    catch {
-        Write-Host "[ERROR] SecureVault launch failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "[HINT] Make sure SecureVault backend is running: securevault" -ForegroundColor Yellow
-        throw
+    else {
+        # Fall back to .env file
+        $envFile = Join-Path (Get-Location) ".env"
+        $loaded = Load-DotEnv $envFile
+        if (-not $loaded) {
+            Write-Host "[ERROR] SecureVault not found and no .env file in current directory." -ForegroundColor Red
+            Write-Host "[HINT] Create a .env file with TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, and other secrets." -ForegroundColor Yellow
+            Write-Host "       See .env.example in the repository for the full list." -ForegroundColor Yellow
+            throw "No secret source available. Provide SecureVault or a .env file."
+        }
+        Write-Host "Starting sensorium-supervisor (secrets from .env)..."
+        Start-Process -FilePath $Binary -WindowStyle Hidden
     }
     Start-Sleep -Seconds 2
 }
