@@ -117,8 +117,6 @@ export async function rotateDailySession(
   } catch (err) {
     result.error = errorMessage(err);
     log.error(`Daily rotation failed for root ${rootThreadId}: ${result.error}`);
-  } finally {
-    if (ownDb) activeDb.close();
   }
 
   return result;
@@ -202,7 +200,8 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
     if (allSucceeded) _lastRotationDate = todayDate;
     return results;
   } finally {
-    db.close();
+    // Do NOT close db — initMemoryDb() returns the singleton shared across
+    // the entire process.  Closing it here kills the DB for all components.
     _rotating = false;
   }
 }
