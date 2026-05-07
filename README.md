@@ -16,25 +16,54 @@ AI assistants forget everything between sessions. Every restart is a blank slate
 - **Remote control** via Telegram — give instructions, send files, receive progress updates from anywhere
 - **Multi-thread orchestration** — spawn worker, branch, and daily threads with shared or isolated memory
 
-## Quickstart
+## Getting Started
+
+### Prerequisites
+
+- Windows 10/11 (supervisor is Windows-only; the MCP server itself is cross-platform)
+- Node.js 18+
+- A [Telegram bot token](https://core.telegram.org/bots#botfather)
+- A Telegram **forum supergroup** with the bot as admin (Manage Topics right)
+
+### 1. Create a Telegram bot and forum group
+
+1. Message [@BotFather](https://t.me/BotFather) on Telegram and create a new bot — copy the token
+2. Create a Telegram group, convert to supergroup, and enable **Topics** in settings
+3. Add your bot as admin with **Manage Topics** permission
+4. Get the chat ID (use [@userinfobot](https://t.me/userinfobot) or the Telegram API)
+
+### 2. Create a `.env` file
+
+Copy `.env.example` to `.env` in the directory where you'll run the installer:
 
 ```bash
-npx sensorium-mcp@latest
+cp .env.example .env
 ```
 
-Or add to your VS Code `mcp.json`:
+Fill in at minimum `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID`. Add `OPENAI_API_KEY` for voice and memory consolidation features. Set `MCP_HTTP_PORT` (e.g. `3847`) to enable multi-thread agent spawning.
+
+If you have [SecureVault](https://github.com/nicepkg/securevault) installed, the installer uses it automatically instead of `.env`.
+
+### 3. Install and run
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Install-Sensorium.ps1
+```
+
+This downloads the supervisor binary, installs a startup launcher, loads secrets (from SecureVault or `.env`), and starts the supervisor in the background. The supervisor manages the MCP server lifecycle — spawning, health checks, auto-restart on crash, and coordinating updates.
+
+Configuration is stored in `~/.remote-copilot-mcp/install.config.json`.
+
+### 4. Connect your agent
+
+The supervisor starts the MCP server on the configured HTTP port. Point your AI agent to it:
 
 ```json
 {
   "servers": {
     "sensorium-mcp": {
-      "command": "npx",
-      "args": ["sensorium-mcp@latest"],
-      "env": {
-        "TELEGRAM_TOKEN": "...",
-        "TELEGRAM_CHAT_ID": "...",
-        "OPENAI_API_KEY": "..."
-      }
+      "type": "streamableHttp",
+      "url": "http://localhost:3847/mcp"
     }
   }
 }
@@ -46,41 +75,17 @@ Then tell your agent:
 Start remote copilot session
 ```
 
-## Setup
+### Running without the supervisor
 
-### 1. Create a Telegram bot
-
-1. Message [@BotFather](https://t.me/BotFather) on Telegram and create a new bot
-2. Copy the bot token — this is your `TELEGRAM_TOKEN`
-
-### 2. Create a forum supergroup
-
-1. Create a Telegram group and convert it to a supergroup
-2. Enable **Topics** in group settings (this makes it a forum supergroup)
-3. Add your bot as admin with **Manage Topics** permission
-4. Get the chat ID (you can use [@userinfobot](https://t.me/userinfobot) or the Telegram API)
-
-### 3. Set environment variables
-
-**Option A: `.env` file** (simplest)
-
-Copy `.env.example` to `.env` and fill in your values:
+You can also run the MCP server directly:
 
 ```bash
-cp .env.example .env
+# HTTP transport (recommended — required for multi-thread spawning)
+MCP_HTTP_PORT=3847 TELEGRAM_TOKEN=... TELEGRAM_CHAT_ID=... npx sensorium-mcp@latest
+
+# stdio transport (simplest, for single-session use)
+npx sensorium-mcp@latest
 ```
-
-**Option B: MCP config** (VS Code / Claude Desktop)
-
-Pass variables directly in your MCP server configuration (see Quickstart above).
-
-**Option C: SecureVault** (production)
-
-If you have [SecureVault](https://github.com/nicepkg/securevault) installed, the install script uses it automatically. Configure a profile named `SENSORIUM` with your secrets.
-
-### 4. (Optional) Get an OpenAI API key
-
-Required for voice transcription (Whisper), text-to-speech (`send_voice`), and memory consolidation. Without it, the server still works but voice features and consolidation are disabled.
 
 ## Features
 
@@ -95,7 +100,7 @@ Every operator message is automatically captured. Knowledge is extracted and con
 | **Semantic Memory** | Extracted facts, preferences, patterns, entities, relationships |
 | **Meta-Memory** | Confidence scores, quality scoring, topic indexing, causal links |
 
-Storage: SQLite at `~/.sensorium-mcp/memory.db`. No external database required.
+Storage: SQLite at `~/.remote-copilot-mcp/memory.db`. No external database required.
 
 **Auto-bootstrap** — session start auto-injects a memory briefing so the agent immediately knows who you are and what you've been working on.
 
@@ -108,7 +113,7 @@ Storage: SQLite at `~/.sensorium-mcp/memory.db`. No external database required.
 Operate your AI assistant from anywhere through a Telegram forum supergroup.
 
 - Concurrent sessions with a shared file-based dispatcher (no 409 conflicts)
-- Named session persistence across VS Code restarts
+- Named session persistence across restarts
 - Image, document, and video note support
 - Voice messages with Whisper transcription
 - Automatic Markdown to Telegram MarkdownV2 conversion
@@ -123,6 +128,7 @@ Spawn and manage multiple agent threads from a single session.
 | **branch** | Fork of a root thread — copies memory at fork time, then independent |
 | **worker** | Temporary task executor — reads parent memory, writes to own (discarded later) |
 | **daily** | Daily session for a root thread — reads and writes to the root's memory |
+| **resume** | Restart an existing dormant thread as-is (requires `targetThreadId`) |
 
 Threads can communicate via `send_message_to_thread` and coordinate work across multiple agents.
 
@@ -139,6 +145,7 @@ Real-time voice emotion analysis via an optional microservice (see `voice-analys
 Schedule tasks that fire during `wait_for_instructions`.
 
 - **One-shot**: `runAt` — trigger at a specific time
+- **Cron**: `cron` — recurring schedule using 5-field cron expressions
 - **Idle-triggered**: `afterIdleMinutes` — trigger after N minutes of inactivity
 
 ### Skills System
@@ -147,7 +154,7 @@ Customizable prompt templates that agents can discover and load on demand.
 
 - `search_skills` — find relevant skills by keyword
 - `get_skill` — load a specific skill template
-- Templates stored in `~/.sensorium-mcp/templates/` with `{{VARIABLE}}` bindings
+- Templates stored in `~/.remote-copilot-mcp/templates/` with `{{VARIABLE}}` bindings
 
 ## Tools
 
@@ -162,7 +169,7 @@ Customizable prompt templates that agents can discover and load on demand.
 | `send_message_to_thread` | Send a message to another thread's agent |
 | `start_thread` | Spawn a worker, branch, daily, or root thread |
 | `get_threads_health` | Show thread status, PIDs, last activity |
-| `schedule_wake_up` | Schedule a one-shot or idle-triggered task |
+| `schedule_wake_up` | Schedule a one-shot, cron, or idle-triggered task |
 | `memory_search` | Search episodic/semantic memory by query |
 | `memory_save` | Save a fact, preference, pattern, entity, or relationship |
 | `memory_update` | Update or supersede an existing note |
@@ -180,8 +187,8 @@ Customizable prompt templates that agents can discover and load on demand.
 | `TELEGRAM_TOKEN` | Yes | — | Telegram Bot API token |
 | `TELEGRAM_CHAT_ID` | Yes | — | Forum supergroup chat ID |
 | `OPENAI_API_KEY` | No | — | For voice transcription (Whisper), TTS, and memory consolidation |
-| `MCP_HTTP_PORT` | No | — | Enable HTTP/SSE transport on this port (required for multi-thread spawning) |
-| `MCP_HTTP_SECRET` | No | — | Shared secret for HTTP transport authentication |
+| `MCP_HTTP_PORT` | No | — | Enable HTTP transport on this port (required for multi-thread spawning) |
+| `MCP_HTTP_SECRET` | No | — | Shared secret for HTTP transport auth (recommended when `MCP_HTTP_PORT` is set) |
 | `MCP_HTTP_BIND` | No | `127.0.0.1` | Bind address for HTTP server |
 | `TELEGRAM_SUPERVISOR_TOKEN` | No | — | Separate bot token for supervisor DM commands (avoids 409 conflict) |
 | `VOICE_ANALYSIS_URL` | No | — | Voice emotion analysis microservice URL |
@@ -194,97 +201,15 @@ Customizable prompt templates that agents can discover and load on demand.
 | `DMN_ACTIVATION_HOURS` | No | `4` | Hours of idle before DMN reflection fires |
 | `DEBUG` | No | — | Enable debug-level logging |
 
-## Prerequisites
-
-- Node.js 18+ (uses native `fetch`)
-- A [Telegram bot token](https://core.telegram.org/bots#botfather)
-- A Telegram **forum supergroup** with the bot as admin (Manage Topics right)
-
-## Transport Modes
-
-**stdio (default)** — standard MCP transport. Used with `npx sensorium-mcp@latest`.
-
-**HTTP/SSE** — set `MCP_HTTP_PORT` to start an HTTP server instead of stdio. Required for multi-thread agent spawning. Useful for development (restart server without restarting VS Code) or remote connections:
-
-```json
-{
-  "servers": {
-    "sensorium-mcp": {
-      "type": "streamableHttp",
-      "url": "http://localhost:3847/mcp"
-    }
-  }
-}
-```
-
-Start the server separately:
-```bash
-MCP_HTTP_PORT=3847 TELEGRAM_TOKEN=... TELEGRAM_CHAT_ID=... npx sensorium-mcp@latest
-```
-
 ## Data Privacy
 
-### Memory Consolidation
-The memory system periodically sends conversation excerpts to OpenAI's API for knowledge extraction and consolidation. This helps maintain useful context across sessions.
+The memory system periodically sends conversation excerpts to OpenAI's API for knowledge extraction and consolidation. To disable:
 
-To disable this behavior, set the environment variable:
 ```
 CONSOLIDATION_ENABLED=false
 ```
 
-When disabled, the memory system still stores episodes locally but does not send them to OpenAI for consolidation.
-
-## Watcher MCP Server
-
-During server updates, the main `sensorium-mcp` process restarts and cannot accept tool calls. The **watcher** is a lightweight sidecar that stays alive across updates — agents call its `await_server_ready` tool and block until the new version is ready.
-
-Add it alongside `sensorium-mcp` in your agent's MCP config:
-
-**VS Code Copilot** (`mcp.json`):
-```json
-{
-  "servers": {
-    "sensorium-mcp": { "..." : "..." },
-    "sensorium-watcher": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "sensorium-mcp@latest", "--watcher"]
-    }
-  }
-}
-```
-
-**Claude Desktop** (`claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "sensorium-watcher": {
-      "command": "npx",
-      "args": ["-y", "sensorium-mcp@latest", "--watcher"]
-    }
-  }
-}
-```
-
-If the watcher is not configured, the maintenance response falls back to a sleep command.
-
-## Supervisor (Windows)
-
-The supervisor is a companion binary that manages the MCP server lifecycle — auto-restarts on crash, handles updates, and runs as a background process.
-
-### Install
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Install-Sensorium.ps1
-```
-
-The installer:
-1. Downloads the supervisor binary from GitHub Releases
-2. Installs a startup launcher in `shell:startup`
-3. Loads secrets from **SecureVault** (if available) or a **`.env` file** in the current directory
-4. Starts the supervisor in the background
-
-Configuration is stored in `~/.remote-copilot-mcp/install.config.json`.
+When disabled, episodes are still stored locally but not sent to OpenAI.
 
 ## How It Works
 
@@ -297,16 +222,16 @@ Configuration is stored in `~/.remote-copilot-mcp/install.config.json`.
 ## Architecture
 
 ```
-~/.sensorium-mcp/
+~/.remote-copilot-mcp/
   memory.db                   <- SQLite: episodes, semantic notes, voice signatures, thread registry
   settings.json               <- Per-thread agent types, keep-alive, conversation modes
+  install.config.json          <- Installer configuration (SecureVault profile, update mode)
   poller.lock                 <- PID + timestamp; first instance becomes the poller
   offset                      <- Shared getUpdates offset
   server.pid                  <- Authoritative PID for supervisor and self-update
   templates/                  <- Skill templates (*.default.md)
   threads/
     <threadId>.jsonl           <- Messages for each topic thread
-    general.jsonl              <- Messages with no thread ID
   bin/
     sensorium-supervisor.exe   <- Supervisor binary (Windows)
   logs/
