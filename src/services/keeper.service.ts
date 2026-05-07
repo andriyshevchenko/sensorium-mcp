@@ -16,7 +16,6 @@ const FAST_EXIT_MAX_COUNT = 3;
 const FAST_EXIT_BASE_COOLDOWN_MS = 600_000;    // 10 min
 const FAST_EXIT_MAX_COOLDOWN_MS = 14_400_000;  // 4 hours
 const STUCK_THRESHOLD_MS = 1_800_000;          // 30 min
-const RECONNECT_DEADLINE_MS = 1_800_000;        // 30 min — restored processes must produce a fresh heartbeat within this window
 
 interface KeeperEntry {
   threadId: number;
@@ -27,8 +26,6 @@ interface KeeperEntry {
   cooldownUntil: number;
   stopped: boolean;
   checking: boolean;
-  /** When this entry was first tracked (for reconnect deadline on restored processes) */
-  trackedAt: number;
 }
 
 export class KeeperService {
@@ -96,7 +93,6 @@ export class KeeperService {
           cooldownUntil: 0,
           stopped: false,
           checking: false,
-          trackedAt: Date.now(),
         });
         log.info(`[keeper] Started keeper for thread ${thread.threadId} ('${thread.name}')`);
       }
@@ -142,33 +138,7 @@ export class KeeperService {
           // means the process never wrote one — definitely stuck.
           : true;
 
-      // Reconnect deadline: if this process was NOT spawned by the current keeper
-      // (lastStartTime=0) and hasn't produced a heartbeat fresher than when we
-      // started tracking it, kill it — it's stuck on a dead server connection.
-      if (!isStuck && entry.lastStartTime === 0 && (now - entry.trackedAt) > RECONNECT_DEADLINE_MS) {
-        const heartbeatFresherThanTracking = heartbeat !== null && heartbeat > entry.trackedAt;
-        if (!heartbeatFresherThanTracking) {
-          log.warn(`[keeper] Thread ${entry.threadId} missed reconnect deadline (no fresh heartbeat since tracking started ${Math.round((now - entry.trackedAt) / 1000)}s ago) — killing`);
-          try {
-            const dlDb = this.deps.getMemoryDb();
-            this.deps.threadLifecycle.transitionThread(dlDb, entry.threadId, ThreadState.Stuck);
-          } catch (err) {
-            log.warn(`[keeper] Active→Stuck transition failed for ${entry.threadId}: ${errorMessage(err)}`);
-          }
-          await killProcessTree(alivePid, entry.threadId);
-          entry.retryCount = 0;
-          // Fall through to restart below
-          // (skip the isStuck block since we're handling it here)
-        } else {
-          // Heartbeat is fresh — process reconnected, clear the restored flag
-          entry.lastStartTime = entry.trackedAt;
-          log.debug(`[keeper] Thread ${entry.threadId} is healthy`);
-          entry.retryCount = 0;
-          entry.fastExitCount = 0;
-          entry.fastExitEscalation = 0;
-          return;
-        }
-      } else if (isStuck) {
+      if (isStuck) {
         const reason = heartbeat !== null
           ? `no heartbeat for ${Math.round((now - heartbeat) / 60000)}m`
           : `no valid heartbeat (zombie process)`;
