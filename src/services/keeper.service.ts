@@ -16,7 +16,7 @@ const FAST_EXIT_MAX_COUNT = 3;
 const FAST_EXIT_BASE_COOLDOWN_MS = 600_000;    // 10 min
 const FAST_EXIT_MAX_COOLDOWN_MS = 14_400_000;  // 4 hours
 const STUCK_THRESHOLD_MS = 1_800_000;          // 30 min
-const RECONNECT_DEADLINE_MS = 300_000;         // 5 min — restored processes must produce a fresh heartbeat within this window
+const RECONNECT_DEADLINE_MS = 1_800_000;        // 30 min — restored processes must produce a fresh heartbeat within this window
 
 interface KeeperEntry {
   threadId: number;
