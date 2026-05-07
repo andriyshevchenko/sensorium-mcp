@@ -428,8 +428,8 @@ export async function handleStartSession(
       {
         type: "text",
         text: isReconnect
-          ? `Session reconnected on thread ${threadId}. Memory briefing skipped (already loaded).` +
-            ` Call the remote_copilot_wait_for_instructions tool next.` +
+          ? `Lightweight reconnect complete (thread ${threadId}). Server was updated — your session state is intact. No briefing needed.` +
+            ` Call the remote_copilot_wait_for_instructions tool NOW.` +
             reminders +
             endDirective
           : `Session ${resolvedPreexisting ? "resumed" : "started"}.${threadNote}` +
