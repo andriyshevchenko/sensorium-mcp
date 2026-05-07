@@ -204,7 +204,7 @@ Customizable prompt templates that agents can discover and load on demand.
 
 **stdio (default)** — standard MCP transport. Used with `npx sensorium-mcp@latest`.
 
-**HTTP/SSE** — set `MCP_HTTP_PORT` to start an HTTP server. Required for multi-thread agent spawning. Useful for development (restart server without restarting VS Code) or remote connections:
+**HTTP/SSE** — set `MCP_HTTP_PORT` to start an HTTP server instead of stdio. Required for multi-thread agent spawning. Useful for development (restart server without restarting VS Code) or remote connections:
 
 ```json
 {

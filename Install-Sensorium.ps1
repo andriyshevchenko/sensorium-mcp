@@ -229,6 +229,11 @@ function Load-DotEnv {
         if ($eqIdx -le 0) { continue }
         $key = $trimmed.Substring(0, $eqIdx).Trim()
         $val = $trimmed.Substring($eqIdx + 1).Trim()
+        # Strip inline comments (e.g. VALUE=abc  # comment)
+        if (-not ($val.StartsWith('"') -or $val.StartsWith("'"))) {
+            $commentIdx = $val.IndexOf(" #")
+            if ($commentIdx -gt 0) { $val = $val.Substring(0, $commentIdx).TrimEnd() }
+        }
         # Strip surrounding quotes
         if (($val.StartsWith('"') -and $val.EndsWith('"')) -or ($val.StartsWith("'") -and $val.EndsWith("'"))) {
             $val = $val.Substring(1, $val.Length - 2)
