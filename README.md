@@ -54,22 +54,11 @@ This downloads the supervisor binary, installs a startup launcher, loads secrets
 
 Configuration is stored in `~/.remote-copilot-mcp/install.config.json`.
 
-### 4. Connect your agent
+### 4. Use it
 
-The supervisor starts the MCP server on the configured HTTP port. Point your AI agent to it:
+The supervisor starts the MCP server on the configured HTTP port. When the server spawns agent threads (Claude, Copilot, Codex), it automatically generates per-thread MCP configs and injects them — no manual `mcp.json` setup needed.
 
-```json
-{
-  "servers": {
-    "sensorium-mcp": {
-      "type": "streamableHttp",
-      "url": "http://localhost:3847/mcp"
-    }
-  }
-}
-```
-
-Then tell your agent:
+Tell your agent:
 
 ```
 Start remote copilot session
@@ -77,7 +66,7 @@ Start remote copilot session
 
 ### Running without the supervisor
 
-You can also run the MCP server directly:
+For development or quick testing, run the MCP server directly:
 
 ```bash
 # HTTP transport (recommended — required for multi-thread spawning)
