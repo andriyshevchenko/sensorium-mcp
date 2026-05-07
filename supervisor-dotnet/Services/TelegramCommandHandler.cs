@@ -312,6 +312,9 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
 
         MaintenanceFlagWriter.Write(_opts.Paths.MaintenanceFlag, "cmd-nuke", _log);
 
+        // Kill agent processes tracked in PID files (claude.exe etc.)
+        KillTrackedAgentProcesses();
+
         // Kill all node.exe / node processes
         try
         {
@@ -345,7 +348,42 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
 
         TryDeleteFile(_opts.Paths.MaintenanceFlag);
 
-        return "💥 Nuke complete — all node processes killed, lock files cleared, MCP respawned.";
+        return "💥 Nuke complete — all node + agent processes killed, lock files cleared, MCP respawned.";
+    }
+
+    // ── Kill tracked agent processes ──────────────────────────────────────────
+
+    private void KillTrackedAgentProcesses()
+    {
+        var pidsDir = Path.Combine(_opts.DataDir, "pids");
+        if (!Directory.Exists(pidsDir)) return;
+
+        foreach (var pidFile in Directory.EnumerateFiles(pidsDir, "*.pid"))
+        {
+            try
+            {
+                var json = File.ReadAllText(pidFile);
+                // PID files contain JSON like {"pid":12345,"name":"..."}
+                var match = System.Text.RegularExpressions.Regex.Match(json, @"""pid""\s*:\s*(\d+)");
+                if (!match.Success) continue;
+                var pid = int.Parse(match.Groups[1].Value);
+
+                using var proc = System.Diagnostics.Process.GetProcessById(pid);
+                proc.Kill(entireProcessTree: true);
+                _log.LogInformation("Nuke: killed agent PID {Pid} from {File}", pid, Path.GetFileName(pidFile));
+            }
+            catch (ArgumentException) { /* process already dead */ }
+            catch (Exception ex)
+            {
+                _log.LogDebug(ex, "Nuke: failed to kill process from {File}", Path.GetFileName(pidFile));
+            }
+        }
+
+        // Clean up all PID files
+        foreach (var pidFile in Directory.EnumerateFiles(pidsDir, "*.pid"))
+        {
+            TryDeleteFile(pidFile);
+        }
     }
 
     // ── Help ──────────────────────────────────────────────────────────────────
