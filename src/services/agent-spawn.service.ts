@@ -235,7 +235,7 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
   for (const shared of [".credentials.json", "settings.json"]) {
     const src = join(mainClaudeDir, shared);
     const dst = join(claudeConfigDir, shared);
-    try { if (existsSync(src)) copyFileSync(src, dst); } catch { /* non-fatal */ }
+    try { if (existsSync(src)) copyFileSync(src, dst); } catch (err) { log.debug(`[spawn] Failed to copy ${shared} for thread ${threadId}: ${errorMessage(err)}`); }
   }
   const spawnEnv = sanitizeSpawnEnv({ CLAUDE_CONFIG_DIR: claudeConfigDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) for (const candidate of [join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"), "C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"]) if (existsSync(candidate)) { spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate; break; }
