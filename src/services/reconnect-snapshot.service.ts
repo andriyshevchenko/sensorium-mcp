@@ -86,7 +86,8 @@ export function isReconnectCandidate(threadId: number): boolean {
     }
     log.info(`[reconnect-snapshot] Consumed reconnect slot for thread ${threadId}.`);
     return true;
-  } catch {
+  } catch (err) {
+    log.debug(`[reconnect-snapshot] isReconnectCandidate failed for thread ${threadId}: ${err}`);
     return false;
   }
 }

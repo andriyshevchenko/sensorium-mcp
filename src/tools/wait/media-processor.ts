@@ -253,12 +253,12 @@ export async function processVideoNote(
         log.error(`[video-note] Frame extraction failed: ${errorMessage(err)}`);
         return [] as Buffer[];
       }),
-      transcribeAudio(buffer, ctx.openaiApiKey, "video.mp4").catch(() => ""),
+      transcribeAudio(buffer, ctx.openaiApiKey, "video.mp4").catch((err) => { log.error(`[video-note] Transcription failed: ${errorMessage(err)}`); return ""; }),
       ctx.voiceAnalysisUrl
         ? analyzeVoiceEmotion(buffer, ctx.voiceAnalysisUrl, {
             mimeType: "video/mp4",
             filename: "video.mp4",
-          }).catch(() => null)
+          }).catch((err) => { log.warn(`[video-note] Voice analysis failed: ${errorMessage(err)}`); return null; })
         : Promise.resolve(null),
     ]);
 

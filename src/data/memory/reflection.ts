@@ -238,7 +238,8 @@ async function checkDuplicate(
       (m) => m.similarity >= DEDUP_SIMILARITY_THRESHOLD && m.content.startsWith("[REFLECTION]"),
     );
     return { isDuplicate, embedding };
-  } catch {
+  } catch (err) {
+    log.warn(`[reflection] Dedup embedding lookup failed: ${errorMessage(err)}`);
     // Embedding lookup failed — allow the insight through to avoid data loss
     return { isDuplicate: false, embedding: null };
   }
@@ -268,7 +269,8 @@ async function checkLessonDuplicate(
       return true;
     }
     return false;
-  } catch {
+  } catch (err) {
+    log.warn(`[reflection] Lesson dedup embedding lookup failed: ${errorMessage(err)}`);
     // Embedding lookup failed — allow through to avoid data loss
     return false;
   }

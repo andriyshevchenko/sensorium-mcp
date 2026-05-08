@@ -82,7 +82,7 @@ export function readThreadHeartbeat(threadId: number): number | null {
     const raw = readFileSync(join(HEARTBEATS_DIR, `${threadId}`), "utf-8").trim();
     const ts = parseInt(raw, 10);
     return Number.isFinite(ts) ? ts : null;
-  } catch { return null; }
+  } catch (err: any) { if (err?.code !== "ENOENT") log.debug(`[heartbeat] Read failed for thread ${threadId}: ${err}`); return null; }
 }
 
 // ─── Maintenance flag ───────────────────────────────────────────────────────

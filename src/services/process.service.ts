@@ -70,9 +70,9 @@ export function readPidFiles(): PidFileEntry[] {
           pid = Number(raw);
         }
         if (Number.isFinite(threadId) && Number.isFinite(pid)) entries.push({ threadId, pid, filePath, name, threadType, startedAt });
-      } catch {}
+      } catch (err) { log.debug(`[readPidFiles] Failed to read entry ${file}: ${errorMessage(err)}`); }
     }
-  } catch {}
+  } catch (err) { log.warn(`[readPidFiles] Failed to read PIDS_DIR: ${errorMessage(err)}`); }
   return entries;
 }
 
@@ -93,7 +93,7 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
         try { unlinkSync(pidEntry.filePath); } catch {}
         return undefined;
       }
-    } catch {}
+    } catch (err) { log.debug(`[findAliveThread] tasklist check failed for PID ${pidEntry.pid}: ${errorMessage(err)}`); }
   }
   const restored: SpawnedThread = { pid: pidEntry.pid, threadId, name: pidEntry.name ?? `Thread ${threadId}`, startedAt: pidEntry.startedAt ?? Date.now(), createdAt: pidEntry.startedAt ?? Date.now(), logFile: "", ...(pidEntry.threadType ? { threadType: pidEntry.threadType } : {}) };
   spawnedThreads.push(restored);

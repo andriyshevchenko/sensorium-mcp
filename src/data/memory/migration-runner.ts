@@ -19,7 +19,8 @@ function getCurrentSchemaVersion(db: Database): number {
       .prepare("SELECT MAX(version) as v FROM schema_version")
       .get() as { v: number | null } | undefined;
     return row?.v ?? 1;
-  } catch {
+  } catch (err) {
+    log.debug(`[migration] getCurrentSchemaVersion failed (assuming 0): ${errorMessage(err)}`);
     return 0;
   }
 }

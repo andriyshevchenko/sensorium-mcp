@@ -45,7 +45,8 @@ function loadSessionMap(): SessionMap {
   try {
     const raw = readFileSync(SESSION_STORE_PATH, "utf8");
     return JSON.parse(raw) as SessionMap;
-  } catch {
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") log.warn(`[sessions] Failed to load session map: ${err}`);
     return {};
   }
 }

@@ -76,7 +76,8 @@ function loadSchedules(threadId: number): ScheduledTask[] {
         if (!existsSync(file)) return [];
         const raw = readFileSync(file, "utf8");
         return JSON.parse(raw) as ScheduledTask[];
-    } catch {
+    } catch (err) {
+        log.warn(`[scheduler] Failed to parse schedules for thread ${threadId}: ${err}`);
         return [];
     }
 }

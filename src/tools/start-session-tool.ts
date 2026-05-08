@@ -271,8 +271,8 @@ export async function handleStartSession(
       );
       await telegram.sendMessage(TELEGRAM_CHAT_ID, greeting, "MarkdownV2", session.currentThreadId);
       startupNotificationSent = true;
-    } catch {
-      // Non-fatal.
+    } catch (err) {
+      log.warn(`[start_session] Greeting send failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

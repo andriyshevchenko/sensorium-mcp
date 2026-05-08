@@ -174,7 +174,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
         string pidStr = pidOk ? pid.ToString() : "unknown";
 
         bool healthy = false;
-        try { healthy = await _mcp.IsServerReadyAsync(ct).ConfigureAwait(false); } catch { }
+        try { healthy = await _mcp.IsServerReadyAsync(ct).ConfigureAwait(false); } catch (Exception ex) { _log.LogDebug(ex, "Health check failed during /status"); }
         string healthStr = healthy ? "✅ ready" : "❌ not ready";
 
         string version = await GetMcpVersionAsync().ConfigureAwait(false);
