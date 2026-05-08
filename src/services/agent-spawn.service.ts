@@ -228,7 +228,9 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
   const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
   const effectiveConfigPath = buildClaudeMcpConfig(transport, threadId);
   const logFd = openSync(logFilePath, "a");
-  const spawnEnv = sanitizeSpawnEnv({ ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
+  const claudeConfigDir = join(PROCESS_BASE_DIR, "claude-configs", String(threadId));
+  mkdirSync(claudeConfigDir, { recursive: true });
+  const spawnEnv = sanitizeSpawnEnv({ CLAUDE_CONFIG_DIR: claudeConfigDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) for (const candidate of [join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"), "C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"]) if (existsSync(candidate)) { spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate; break; }
   try {
     const claudeModel = threadType === "worker"
