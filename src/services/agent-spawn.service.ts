@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDefaultThreadModel, getDefaultWorkerModel, type AgentType } from "../config.js";
@@ -230,6 +230,13 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
   const logFd = openSync(logFilePath, "a");
   const claudeConfigDir = join(PROCESS_BASE_DIR, "claude-configs", String(threadId));
   mkdirSync(claudeConfigDir, { recursive: true });
+  // Share credentials/settings from the main ~/.claude dir so auth works
+  const mainClaudeDir = join(homedir(), ".claude");
+  for (const shared of [".credentials.json", "settings.json"]) {
+    const src = join(mainClaudeDir, shared);
+    const dst = join(claudeConfigDir, shared);
+    try { if (existsSync(src)) copyFileSync(src, dst); } catch { /* non-fatal */ }
+  }
   const spawnEnv = sanitizeSpawnEnv({ CLAUDE_CONFIG_DIR: claudeConfigDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) for (const candidate of [join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"), "C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"]) if (existsSync(candidate)) { spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate; break; }
   try {
