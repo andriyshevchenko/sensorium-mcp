@@ -69,8 +69,8 @@ function refreshTopicToThreadCache(): void {
              WHERE telegram_topic_id IS NOT NULL AND telegram_topic_id != thread_id`
         ).all() as { thread_id: number; telegram_topic_id: number }[];
         for (const r of rows) topicToThreadCache.set(r.telegram_topic_id, r.thread_id);
-    } catch {
-        // Non-fatal: fall back to the raw Telegram topic ID.
+    } catch (err) {
+        log.warn(`[broker] refreshTopicToThreadCache DB query failed: ${errorMessage(err)}`);
     }
 }
 
@@ -82,7 +82,8 @@ function lookupThreadForTopicInDb(telegramTopicId: number): number | undefined {
             `SELECT thread_id FROM thread_registry WHERE telegram_topic_id = ?`
         ).get(telegramTopicId) as { thread_id: number } | undefined;
         return row?.thread_id;
-    } catch {
+    } catch (err) {
+        log.warn(`[broker] lookupThreadForTopicInDb failed for topic ${telegramTopicId}: ${errorMessage(err)}`);
         return undefined;
     }
 }
@@ -276,7 +277,8 @@ export function readOffset(): number {
         const raw = readFileSync(OFFSET_FILE, "utf8").trim();
         const n = Number(raw);
         return Number.isFinite(n) ? n : 0;
-    } catch {
+    } catch (err: any) {
+        if (err?.code !== "ENOENT") log.warn(`[dispatcher] readOffset failed: ${errorMessage(err)}`);
         return 0;
     }
 }
@@ -379,15 +381,15 @@ export function readThreadMessages(threadId: number | undefined): StoredMessage[
     try {
         renameSync(file, tmp);
     } catch {
-        return [];
+        return []; // ENOENT expected — no pending messages
     }
     try {
         const raw = readFileSync(tmp, "utf8").trim();
         const messages = parseJsonlLines(raw, `${key}.jsonl`);
         try { unlinkSync(tmp); } catch { /* already gone */ }
         return messages;
-    } catch {
-        // Read failed — restore the original file to prevent message loss
+    } catch (err) {
+        log.warn(`[dispatcher] readThreadMessages read failed for ${key}, restoring file: ${errorMessage(err)}`);
         try { renameSync(tmp, file); } catch { /* best effort */ }
         return [];
     }
@@ -404,7 +406,8 @@ export function peekThreadMessages(threadId: number | undefined): StoredMessage[
     try {
         const raw = readFileSync(file, "utf8").trim();
         return parseJsonlLines(raw, `${key}.jsonl`);
-    } catch {
+    } catch (err: any) {
+        if (err?.code !== "ENOENT") log.debug(`[dispatcher] peekThreadMessages failed for ${key}: ${errorMessage(err)}`);
         return [];
     }
 }

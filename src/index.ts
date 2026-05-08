@@ -136,7 +136,7 @@ if (process.env.MCP_HTTP_PORT) {
   try {
     mkPidDir(pidDir, { recursive: true });
     writePid(joinPid(pidDir, "server.pid"), JSON.stringify({ pid: process.pid }));
-  } catch {}
+  } catch (err) { log.warn(`[init] Failed to write server.pid: ${err}`); }
 
   startSelfUpdatePoller({ pkgVersion: config.PKG_VERSION, httpPort, onBeforeSpawn: closeServer });
 } else {

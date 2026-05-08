@@ -373,7 +373,7 @@ export function spawnKeepAliveThreads(threadLifecycle: ThreadLifecycleService): 
     const client = thread.client ?? "claude";
     const spawnResult = dispatchSpawn(client as AgentType, thread.name, thread.threadId, threadLifecycle, thread.workingDirectory ?? undefined);
     if ("error" in spawnResult) { result.errors.push(spawnResult.error); continue; }
-    try { threadLifecycle.activateThread(db, thread.threadId); } catch {}
+    try { threadLifecycle.activateThread(db, thread.threadId); } catch (err) { log.warn(`[spawn] activateThread failed for ${thread.threadId}: ${errorMessage(err)}`); }
     result.spawned++;
   }
   return result;

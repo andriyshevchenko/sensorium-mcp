@@ -77,6 +77,10 @@ public sealed class SingletonLock : ISingletonLock
             using var proc = Process.GetProcessById(pid);
             return !proc.HasExited;
         }
+        catch (ArgumentException)
+        {
+            return false;
+        }
         catch
         {
             return false;

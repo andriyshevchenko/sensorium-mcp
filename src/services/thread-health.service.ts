@@ -37,7 +37,7 @@ function collectThreadData(getMemoryDb: () => ReturnType<typeof initMemoryDb>): 
   const registryByThread = new Map<number, ThreadRegistryEntry>();
   try {
     for (const entry of getAllThreads(getMemoryDb())) registryByThread.set(entry.threadId, entry);
-  } catch {}
+  } catch (err) { log.debug(`[thread-health] Failed to load thread registry: ${err}`); }
   const spawnedByThread = new Map<number, SpawnedThread>(spawnedThreads.map((s) => [s.threadId, s]));
   const pidByThread = new Map<number, number>(pidFiles.map((p) => [p.threadId, p.pid]));
   const threadNames = new Map<number, string>();

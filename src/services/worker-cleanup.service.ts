@@ -15,7 +15,7 @@ export async function decommissionWorker(
   },
 ): Promise<void> {
   // 0. Mark thread as Exiting so the state machine reflects teardown-in-progress
-  try { deps.threadLifecycle.transitionThread(deps.db, thread.threadId, ThreadState.Exiting); } catch {}
+  try { deps.threadLifecycle.transitionThread(deps.db, thread.threadId, ThreadState.Exiting); } catch (err) { log.warn(`[decommission] transitionThread failed for ${thread.threadId}: ${errorMessage(err)}`); }
   // 1. Kill process (no-op if already dead)
   if (thread.pid !== undefined) {
     await killProcessTree(thread.pid, thread.threadId);
@@ -24,9 +24,9 @@ export async function decommissionWorker(
   try {
     const topicId = getExplicitTelegramTopicId(deps.db, thread.threadId) ?? thread.threadId;
     await deps.telegram.deleteForumTopic(deps.chatId, topicId);
-  } catch {}
+  } catch (err) { log.warn(`[decommission] deleteForumTopic failed for thread ${thread.threadId}: ${errorMessage(err)}`); }
   // 3. Archive notes
-  try { archiveNotesForThread(deps.db, thread.threadId); } catch {}
+  try { archiveNotesForThread(deps.db, thread.threadId); } catch (err) { log.warn(`[decommission] archiveNotesForThread failed for ${thread.threadId}: ${errorMessage(err)}`); }
   // 4. Archive thread in DB
   try { deps.threadLifecycle.archiveThread(deps.db, thread.threadId); } catch (err) { log.warn(`[decommission] archiveThread failed for thread ${thread.threadId}: ${errorMessage(err)}`); }
   // 5. Remove from spawnedThreads array
@@ -76,9 +76,9 @@ export async function cleanupExpiredWorkers(
           // Use explicit telegram_topic_id if set, otherwise fall back to thread_id.
           const topicId = row.telegram_topic_id ?? row.thread_id;
           await telegram.deleteForumTopic(chatId, topicId);
-        } catch {}
+        } catch (err) { log.warn(`[worker-cleanup] deleteForumTopic failed for orphan thread ${row.thread_id}: ${errorMessage(err)}`); }
         threadLifecycle.archiveThread(db, row.thread_id);
-        try { archiveNotesForThread(db, row.thread_id); } catch {}
+        try { archiveNotesForThread(db, row.thread_id); } catch (err) { log.warn(`[worker-cleanup] archiveNotesForThread failed for orphan thread ${row.thread_id}: ${errorMessage(err)}`); }
         // Remove from in-memory registry if present (zombie re-registered at startup)
         const idx = spawnedThreads.findIndex((t) => t.threadId === row.thread_id);
         if (idx !== -1) spawnedThreads.splice(idx, 1);

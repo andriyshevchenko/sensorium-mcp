@@ -11,6 +11,7 @@
 
 import { generateEmbedding, cosineSimilarity } from "../../integrations/openai/chat.js";
 import { getRecentEpisodes } from "./episodes.js";
+import { log } from "../../logger.js";
 import type { Database } from "./schema.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -116,7 +117,8 @@ export async function detectTopicShift(
       suggestedTopic: extractTopicHint(newMessage),
       recentTopicSummary: extractTopicHint(recentTexts[0]),
     };
-  } catch {
+  } catch (err) {
+    log.debug(`[topic-shift] Embedding generation failed: ${err}`);
     return null; // embedding generation failed — skip silently
   }
 }

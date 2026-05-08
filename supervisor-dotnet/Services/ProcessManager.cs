@@ -354,8 +354,9 @@ public sealed class ProcessManager : IProcessManager
         {
             return false;
         }
-        catch
+        catch (Exception ex)
         {
+            _log.LogDebug(ex, "IsProcessAlive: unexpected error checking PID {Pid}", pid);
             return false;
         }
     }
@@ -382,8 +383,9 @@ public sealed class ProcessManager : IProcessManager
 
             return (false, 0);
         }
-        catch
+        catch (Exception ex)
         {
+            _log.LogDebug(ex, "ReadPidFileAsync: could not read PID from {Path}", path);
             return (false, 0);
         }
     }

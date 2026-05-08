@@ -316,7 +316,7 @@ export async function buildSmartContext(
       });
       autoMemoryContext += `\n\n## Persistent Context (always active)\n${pinnedLines.join("\n")}`;
     }
-  } catch { /* non-critical */ }
+  } catch (err) { log.debug(`[delivery] Pinned notes retrieval failed: ${err}`); }
 
   return autoMemoryContext;
 }

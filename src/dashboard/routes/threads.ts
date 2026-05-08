@@ -37,6 +37,7 @@ import {
 
 import { readBody, safeParseJSON, type RouteHandler, type RouteArgs } from "./types.js";
 import { errorMessage } from "../../utils.js";
+import { log } from "../../logger.js";
 import { isThreadRunning } from "../../services/process.service.js";
 import { readThreadHeartbeat } from "../../data/file-storage.js";
 import { deleteTelegramTopicByBotApi } from "../../services/topic.service.js";
@@ -514,7 +515,7 @@ function syncKeepAliveToSettings(db: Database): void {
                 removeThreadKeepAlive(t.threadId);
             }
         }
-    } catch {
-        // Best-effort sync — don't fail the API call
+    } catch (err) {
+        log.warn(`[threads] Keep-alive sync failed: ${errorMessage(err)}`);
     }
 }

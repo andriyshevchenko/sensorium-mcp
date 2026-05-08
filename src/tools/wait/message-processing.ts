@@ -109,7 +109,7 @@ export async function processIncomingMessages(
       try { await telegram.setMessageReaction(telegramChatId, msg.message.message_id); } catch { /* non-critical */ }
       if (stored.length > 1) await new Promise<void>(r => setTimeout(r, 100));
     }
-  })().catch(() => {});
+  })().catch((err) => { log.warn(`[wait] Reaction loop failed: ${errorMessage(err)}`); });
 
   const contentBlocks: Array<TextBlock | ImageBlock> = [];
   let hasVoiceMessages = false;
@@ -179,7 +179,7 @@ export async function processIncomingMessages(
     if (shift?.shifted) {
       autoMemoryContext += `\n\n## ⚡ Topic Shift Detected\nSimilarity to recent context: ${shift.similarity.toFixed(2)}\nRecent topic: "${shift.recentTopicSummary}"\nNew topic: "${shift.suggestedTopic}"\n\nConsider suggesting a focused worker thread (via start_thread) for this new topic to keep the main thread focused.`;
     }
-  } catch { /* non-fatal */ }
+  } catch (err) { log.debug(`[wait] Topic-shift detection failed: ${errorMessage(err)}`); }
 
   // Voice messages have no .text — extract transcriptions from content blocks
   // so the intent classifier sees spoken words rather than empty string.
@@ -216,7 +216,7 @@ export async function processIncomingMessages(
         messageBuffer.pop();
       }
     }
-  } catch { /* non-fatal — LLM classifier will use current message only */ }
+  } catch (err) { log.debug(`[wait] Message buffer build failed: ${errorMessage(err)}`); }
   // Append current message as the latest operator entry
   if (intentText) {
     messageBuffer.push({ role: "operator", text: intentText.slice(0, 300) });
@@ -292,7 +292,7 @@ export function handlePollTimeout(
       const db = getMemoryDb();
       const refresh = assembleCompactRefresh(db, effectiveThreadId);
       if (refresh) memoryRefresh = `\n\n${refresh}`;
-    } catch (_) { /* non-fatal */ }
+    } catch (err) { log.debug(`[wait] Memory refresh failed: ${err}`); }
   }
 
   // ── 3-Phase Probabilistic Autonomous Drive ──────────────────────────────

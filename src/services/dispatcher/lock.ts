@@ -13,6 +13,7 @@ import {
 import { readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { log } from "../../logger.js";
 
 // ---------------------------------------------------------------------------
 // Paths & constants
@@ -83,7 +84,8 @@ export async function refreshLock(): Promise<boolean> {
         );
         await rename(tmp, LOCK_FILE);
         return true;
-    } catch {
+    } catch (err) {
+        log.warn(`[dispatcher-lock] refreshLock failed: ${err}`);
         return false;
     }
 }

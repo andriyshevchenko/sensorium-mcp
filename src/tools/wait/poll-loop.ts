@@ -87,7 +87,8 @@ async function consumePendingTask(threadId: number): Promise<ToolResult | null> 
         },
       ],
     };
-  } catch {
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") log.warn(`[wait] Pending task read failed: ${err}`);
     return null; // File doesn't exist or read error
   }
 }

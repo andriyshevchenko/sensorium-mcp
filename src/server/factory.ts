@@ -117,7 +117,8 @@ function createMcpServer(
       }
 
       return "I should review memory and the codebase for anything interesting while the operator is away.";
-    } catch {
+    } catch (err) {
+      log.warn(`[factory] Drive prompt generation failed: ${errorMessage(err)}`);
       return "I should review memory and the codebase for anything interesting while the operator is away.";
     }
   }

@@ -9,7 +9,7 @@ export function ensureSchemaIntegrity(db: Database): void {
       db.prepare(
         "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)"
       ).run(v, nowISO());
-    } catch {}
+    } catch (err) { log.warn(`[schema-guard] Failed to stamp version ${v}: ${err}`); }
   };
 
   const getTableSql = (tableName: string): string => {

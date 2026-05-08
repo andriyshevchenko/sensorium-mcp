@@ -75,7 +75,7 @@ export function initMemoryDb(): Database {
        )
        WHERE (thread_registry.name IS NULL OR thread_registry.name = '')`
     ).run();
-  } catch {}
+  } catch (err) { log.debug(`[schema] Thread name backfill from topic_registry failed: ${err}`); }
 
   _singletonDb = db;
   return db;

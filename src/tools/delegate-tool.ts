@@ -170,7 +170,7 @@ export async function handleStartThread(
         workingDirectory = stored.workingDirectory;
         log.info(`[start_thread] Using stored workingDirectory for thread ${explicitThreadId}: ${workingDirectory}`);
       }
-    } catch { /* best-effort DB lookup */ }
+    } catch (err) { log.debug(`[start_thread] DB lookup for workingDirectory failed: ${errorMessage(err)}`); }
   }
   if (!workingDirectory) workingDirectory = process.cwd();
 
@@ -287,7 +287,7 @@ export async function handleStartThread(
         await killProcessTree(pe.pid, threadId);
       }
     }
-  } catch { /* best-effort orphan cleanup */ }
+  } catch (err) { log.debug(`[start_thread] Orphan PID cleanup failed: ${errorMessage(err)}`); }
 
   // ── 4. Pre-queue task, fork memory & spawn ──────────────────────────
   ensureDirs();
@@ -341,7 +341,7 @@ export async function handleStartThread(
         chatId: telegramChatId,
       });
     }
-  } catch { /* registration is best-effort */ }
+  } catch (err) { log.debug(`[start_thread] Thread registry write failed for ${threadId}: ${errorMessage(err)}`); }
 
   const status = topicExisted ? "restarted" : "created";
 
