@@ -1,6 +1,7 @@
 import { persistSession, lookupSession, lookupTopicRegistry, registerTopic } from "../sessions.js";
 import type { Database } from "../data/memory/schema.js";
 import type { ThreadLifecycleService } from "./thread-lifecycle.service.js";
+import { getThread } from "../data/memory/thread-registry.js";
 import { errorMessage } from "../utils.js";
 import { log } from "../logger.js";
 
@@ -55,6 +56,15 @@ export async function probeOrRemapTopic(opts: {
   } catch (err) {
     const msg = errorMessage(err);
     if (!/thread not found|topic.*(closed|deleted|not found)/i.test(msg)) return { remapped: false };
+
+    // Skip remap for worker threads (disposable — dead-worker-sweep archives them)
+    // and already-archived/expired/exited threads (no active session to serve).
+    const threadRecord = getThread(db, logicalThreadId);
+    if (threadRecord?.type === "worker" || threadRecord?.status === "archived" || threadRecord?.status === "expired" || threadRecord?.status === "exited") {
+      log.info(`[topic] Thread ${logicalThreadId} topic is dead (type=${threadRecord.type}, status=${threadRecord.status}) — skipping remap.`);
+      return { remapped: false };
+    }
+
     log.warn(`[topic] Thread ${logicalThreadId} topic is dead (${msg}) - creating replacement.`);
     const newTopicId = await createManagedTopic(telegram, chatId, topicName, aliases);
     threadLifecycle.remapTopic(db, {
