@@ -13,6 +13,8 @@ import type { VoiceAnalysisResult } from "./openai.js";
 import { getDefaultRemindersTemplate } from "./dashboard/presets.js";
 import type { ToolResult } from "./types.js";
 
+const WAIT_DIRECTIVE = "When your current work is complete, call `remote_copilot_wait_for_instructions` to continue listening.";
+
 // ── Stop-word list for auto-memory keyword extraction ─────────────────
 const STOP_WORDS = new Set([
   "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
@@ -116,8 +118,7 @@ export function getReminders(
   // don't double up — the base template already contains the full reminder.
   // Agent suffix only adds value when it exists as a separate file.
   const parts = [basePart, agentPart].filter(Boolean);
-  const pollDirective = "When your current work is complete, call `remote_copilot_wait_for_instructions` to continue listening.";
-  return "\n" + parts.join("\n") + "\n" + pollDirective;
+  return "\n" + parts.join("\n") + "\n" + WAIT_DIRECTIVE;
 }
 
 /**
@@ -145,7 +146,7 @@ export function getMediumReminder(
 
   return (
     `\nthreadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m | mode: ${mode} | conversation: ${convMode}`
-    + `\nWhen your current work is complete, call \`remote_copilot_wait_for_instructions\` to continue listening.`
+    + `\n${WAIT_DIRECTIVE}`
   );
 }
 
