@@ -2,6 +2,7 @@ import { getAllRegisteredTopics, getDashboardSessions, WAIT_LIVENESS_MS } from "
 import { getAllThreads, type ThreadRegistryEntry } from "../data/memory/thread-registry.js";
 import type { initMemoryDb } from "../data/memory/schema.js";
 import { isProcessAlive, readPidFiles, spawnedThreads, type SpawnedThread } from "./process.service.js";
+import { log } from "../logger.js";
 
 type ThreadStatus = "running" | "dormant" | "dead" | "unknown";
 
