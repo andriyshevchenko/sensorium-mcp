@@ -144,6 +144,7 @@ export function getMediumReminder(
 
   return (
     `\nthreadId=${threadId ?? "?"} | ${timeStr} | uptime: ${uptimeMin}m | mode: ${mode} | conversation: ${convMode}`
+    + `\nWhen your current work is complete, call \`remote_copilot_wait_for_instructions\` to continue listening.`
   );
 }
 

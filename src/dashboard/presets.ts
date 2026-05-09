@@ -18,24 +18,31 @@ export const DEFAULT_DRIVE_PROMPT = `The operator is away. The session is yours.
 const AGENT_REMINDERS_TEMPLATES: Record<AgentType, string> = {
   copilot: `For tasks, load relevant skill via get_skill first.
 threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+When your current work is complete, call \`remote_copilot_wait_for_instructions\` to continue listening.
 `,
   copilot_claude: `For tasks, load relevant skill via get_skill first.
 threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+When your current work is complete, call \`remote_copilot_wait_for_instructions\` to continue listening.
 `,
   copilot_codex: `For tasks, load relevant skill via get_skill first.
 threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+When your current work is complete, call \`remote_copilot_wait_for_instructions\` to continue listening.
 `,
   claude: `For tasks, load relevant skill via get_skill first.
 You coordinate work via MCP tools. For complex tasks, break them into sequential steps. Keep context lean — summarize progress before starting new work. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+When your current work is complete, call \`remote_copilot_wait_for_instructions\` to continue listening.
 `,
   cursor: `For tasks, load relevant skill via get_skill first.
 You coordinate work via MCP tools. Prefer targeted, minimal edits. threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+When your current work is complete, call \`remote_copilot_wait_for_instructions\` to continue listening.
 `,
   codex: `For tasks, load relevant skill via get_skill first.
 threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+When your current work is complete, call \`remote_copilot_wait_for_instructions\` to continue listening.
 `,
   openai_codex: `For tasks, load relevant skill via get_skill first.
 threadId={{THREAD_ID}} | {{TIME}} | uptime: {{UPTIME}}
+When your current work is complete, call \`remote_copilot_wait_for_instructions\` to continue listening.
 `,
 };
 
