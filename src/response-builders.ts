@@ -116,7 +116,8 @@ export function getReminders(
   // don't double up — the base template already contains the full reminder.
   // Agent suffix only adds value when it exists as a separate file.
   const parts = [basePart, agentPart].filter(Boolean);
-  return "\n" + parts.join("\n");
+  const pollDirective = "When your current work is complete, call `remote_copilot_wait_for_instructions` to continue listening.";
+  return "\n" + parts.join("\n") + "\n" + pollDirective;
 }
 
 /**
