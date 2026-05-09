@@ -11,7 +11,7 @@
 
 import { log } from "./logger.js";
 import {
-  getRootThreads,
+  getDailyRotationThreads,
   getThread,
   purgeOldArchivedThreads,
   resetDailySession,
@@ -128,7 +128,7 @@ let _rotating = false;
 let _lastRotationDate: string | null = null;
 
 /**
- * Check and rotate all root threads that have keepAlive enabled.
+ * Check and rotate all threads that have daily rotation enabled.
  * Called from the watcher service on a schedule (e.g., 4 AM daily).
  */
 export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
@@ -149,16 +149,15 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
 
   const db = initMemoryDb();
   try {
-    const roots = getRootThreads(db);
+    const threads = getDailyRotationThreads(db);
     const results: DailyRotationResult[] = [];
 
     // Collect threads that need rotation
-    const pending = roots.filter(root => {
-      if (!root.dailyRotation) return false;
-      if (root.sessionResetAt) {
-        const resetDate = root.sessionResetAt.slice(0, 10);
+    const pending = threads.filter(thread => {
+      if (thread.sessionResetAt) {
+        const resetDate = thread.sessionResetAt.slice(0, 10);
         if (resetDate === todayDate) {
-          log.info(`Root ${root.threadId} already rotated today, skipping`);
+          log.info(`Thread ${thread.threadId} already rotated today, skipping`);
           return false;
         }
       }
@@ -170,8 +169,8 @@ export async function rotateAllDailySessions(): Promise<DailyRotationResult[]> {
       await notifyTelegram(db, `🔄 <b>Daily session rotation starting</b>\nThreads: ${names}`);
     }
 
-    for (const root of pending) {
-      const result = await rotateDailySession(root.threadId, db);
+    for (const thread of pending) {
+      const result = await rotateDailySession(thread.threadId, db);
       results.push(result);
     }
 

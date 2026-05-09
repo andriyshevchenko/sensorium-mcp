@@ -202,6 +202,13 @@ export function getRootThreads(db: Database): ThreadRegistryEntry[] {
   return rows.map(rowToEntry);
 }
 
+export function getDailyRotationThreads(db: Database): ThreadRegistryEntry[] {
+  const rows = db.prepare(
+    `SELECT * FROM thread_registry WHERE daily_rotation = 1 AND type != 'worker' AND status != 'archived' ORDER BY created_at DESC`,
+  ).all() as Record<string, unknown>[];
+  return rows.map(rowToEntry);
+}
+
 export function getKeepAliveThreads(db: Database): ThreadRegistryEntry[] {
   const rows = db.prepare(
     `SELECT * FROM thread_registry WHERE keep_alive = 1 AND type != 'worker' AND status != 'archived' ORDER BY created_at DESC`,
