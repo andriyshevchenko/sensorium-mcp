@@ -6,7 +6,7 @@
  * session greeting with reminders.
  */
 
-import { getEffectiveAutonomousMode, getMemorySourceThreadId, setThreadAgentType } from "../config.js";
+import { getEffectiveAutonomousMode, getMemorySourceThreadId } from "../config.js";
 import { parsePositiveInt, parseAgentType } from "./shared-agent-utils.js";
 import { convertMarkdown } from "../markdown.js";
 import { type initMemoryDb } from "../memory.js";
@@ -393,8 +393,9 @@ export async function handleStartSession(
   const threadId = session.currentThreadId;
   // Set per-thread agent type if declared — determines agent-specific reminders
   if (threadId !== undefined && agentType) {
-    setThreadAgentType(threadId, agentType);
-    // Sync agent type to thread_registry (also ensures thread is registered)
+    // Persist agent type via thread_registry below; for existing keepAlive
+    // threads the client is intentionally preserved (the spawn-time choice
+    // wins over the start_session arg).
     try {
       const db = getMemoryDb();
       const existingThread = getThread(db, threadId);
