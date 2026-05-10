@@ -93,7 +93,11 @@ export const handlePostThreadAgentType: RouteHandler = ({ req, json }) => {
                 json({ error: "Invalid agent type" }, 400);
                 return;
             }
-            setThreadAgentType(parsed.threadId, parsed.agentType);
+            const updated = setThreadAgentType(parsed.threadId, parsed.agentType);
+            if (!updated) {
+                json({ error: `Thread ${parsed.threadId} not found` }, 404);
+                return;
+            }
             json({ ok: true, threadId: parsed.threadId, agentType: parsed.agentType });
         } catch (err) {
             json({ error: errorMessage(err) }, 500);
