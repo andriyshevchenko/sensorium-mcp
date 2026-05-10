@@ -44,6 +44,14 @@ export function checkForDueTasks(
   const dueTask = checkDueTasks(effectiveThreadId, state.lastOperatorMessageAt, false);
   if (!dueTask) return null;
 
+  // DMN sentinel — only fires when autonomous mode is currently on for this
+  // thread. Stale DMN tasks left over from when autonomy was previously enabled
+  // are dropped silently (the one-shot consume in checkDueTasks already removed
+  // them from disk, so they won't fire again).
+  if (dueTask.prompt === "__DMN__" && !getEffectiveAutonomousMode(effectiveThreadId)) {
+    return null;
+  }
+
   // DMN sentinel: generate dynamic first-person reflection
   const taskPrompt = dueTask.prompt === "__DMN__"
     ? ctx.generateDmnReflection(effectiveThreadId)
