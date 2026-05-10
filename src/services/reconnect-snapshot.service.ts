@@ -59,17 +59,23 @@ export function writeReconnectSnapshot(threadIds: number[]): void {
  */
 export function isReconnectCandidate(threadId: number): boolean {
   try {
-    if (!existsSync(SNAPSHOT_PATH)) return false;
+    if (!existsSync(SNAPSHOT_PATH)) {
+      log.info(`[reconnect-snapshot] Miss for thread ${threadId}: no snapshot file at ${SNAPSHOT_PATH}.`);
+      return false;
+    }
     const raw = readFileSync(SNAPSHOT_PATH, "utf-8");
     const snapshot = JSON.parse(raw) as ReconnectSnapshot;
-    const age = Date.now() - new Date(snapshot.timestamp).getTime();
-    if (age > SNAPSHOT_MAX_AGE_MS) {
+    const ageSec = Math.round((Date.now() - new Date(snapshot.timestamp).getTime()) / 1000);
+    if (ageSec * 1000 > SNAPSHOT_MAX_AGE_MS) {
       log.info(
-        `[reconnect-snapshot] Snapshot too old (${Math.round(age / 1000)}s) — ignoring.`,
+        `[reconnect-snapshot] Miss for thread ${threadId}: snapshot too old (${ageSec}s > ${SNAPSHOT_MAX_AGE_MS / 1000}s).`,
       );
       return false;
     }
     if (!Array.isArray(snapshot.threadIds) || !snapshot.threadIds.includes(threadId)) {
+      log.info(
+        `[reconnect-snapshot] Miss for thread ${threadId}: not in snapshot (age=${ageSec}s, remaining=[${(snapshot.threadIds ?? []).join(", ")}]).`,
+      );
       return false;
     }
     // Consume: remove this threadId so it can't match again
@@ -84,10 +90,12 @@ export function isReconnectCandidate(threadId: number): boolean {
       log.warn(`[reconnect-snapshot] Matched thread ${threadId} but failed to persist consume: ${writeErr}`);
       // Still return true — the match was valid, and the 10-min TTL bounds the risk
     }
-    log.info(`[reconnect-snapshot] Consumed reconnect slot for thread ${threadId}.`);
+    log.info(
+      `[reconnect-snapshot] Hit for thread ${threadId} (age=${ageSec}s, remaining after consume=[${snapshot.threadIds.join(", ")}]).`,
+    );
     return true;
   } catch (err) {
-    log.debug(`[reconnect-snapshot] isReconnectCandidate failed for thread ${threadId}: ${err}`);
+    log.warn(`[reconnect-snapshot] isReconnectCandidate failed for thread ${threadId}: ${err}`);
     return false;
   }
 }

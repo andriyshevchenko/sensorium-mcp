@@ -211,7 +211,10 @@ export class KeeperService {
       return;
     }
 
-    log.info(`[keeper] Thread ${entry.threadId} not running — restarting (attempt ${entry.retryCount + 1}/${KEEPER_MAX_RETRIES})`);
+    const lastStartLabel = entry.lastStartTime > 0
+      ? `last keeper-start ${Math.round((now - entry.lastStartTime) / 1000)}s ago`
+      : "never started by this server (inherited PID file)";
+    log.info(`[keeper] Thread ${entry.threadId} not running — restarting (attempt ${entry.retryCount + 1}/${KEEPER_MAX_RETRIES}, ${lastStartLabel})`);
 
     const result = dispatchSpawn(
       (thread.client || "claude") as AgentType,
