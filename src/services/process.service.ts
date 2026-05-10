@@ -104,7 +104,10 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
 export const isThreadRunning = (threadId: number): boolean => findAliveThread(threadId) !== undefined;
 
 export function getActiveThreadIds(): number[] {
-  const spawned = spawnedThreads.filter(t => isProcessAlive(t.pid)).map(t => t.threadId);
+  // Workers are disposable and not eligible for reconnect — exclude them.
+  const spawned = spawnedThreads
+    .filter(t => t.threadType !== "worker" && isProcessAlive(t.pid))
+    .map(t => t.threadId);
   // Also include threads from active MCP sessions (root threads that aren't
   // in spawnedThreads because they connected externally, not spawned by us).
   const sessionThreadIds = getDashboardSessions()
