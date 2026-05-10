@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { log } from "./logger.js";
 import type { AppConfig } from "./types.js";
 import { FILES_DIR } from "./data/file-storage.js";
-import { getThread } from "./data/memory/thread-registry.js";
+import { getThread, getAllThreads, updateThread } from "./data/memory/thread-registry.js";
 import type { Database } from "./data/memory/schema.js";
 
 const esmRequire = createRequire(import.meta.url);
@@ -96,25 +96,31 @@ export function setAgentType(type: AgentType): void {
   updateSettings(s => { s.agentType = type; });
 }
 
-// ─── Per-thread agent-type overrides ────────────────────────────────────────
+// ─── Memory DB accessor (used by per-thread lookups below) ─────────────────
 
-/** Returns the per-thread agent-type override, or null if none is set. */
-function getThreadAgentType(threadId: number): AgentType | null {
-  const map = readSettings().threadAgentTypes as Record<string, unknown> | undefined;
-  if (map) {
-    const t = map[String(threadId)];
-    if (isValidAgentType(t)) return t;
-  }
-  return null;
+type DbGetter = () => Database;
+let _threadDbGetter: DbGetter | null = null;
+
+/** Wire up the memory DB accessor so per-thread lookups (agent type, autonomous mode) work. */
+export function setThreadDb(getter: DbGetter): void {
+  _threadDbGetter = getter;
 }
 
-/** Persists a per-thread agent-type override. */
-export function setThreadAgentType(threadId: number, agentType: AgentType): void {
-  updateSettings(s => {
-    const map = (s.threadAgentTypes ?? {}) as Record<string, unknown>;
-    map[String(threadId)] = agentType;
-    s.threadAgentTypes = map;
-  });
+// ─── Per-thread agent-type overrides ────────────────────────────────────────
+
+/**
+ * Persists a per-thread agent-type override into thread_registry.client.
+ * Returns true if the row was updated, false if no thread exists or the DB
+ * accessor is not yet wired up.
+ */
+export function setThreadAgentType(threadId: number, agentType: AgentType): boolean {
+  if (!_threadDbGetter) {
+    log.warn(`[config] setThreadAgentType(${threadId}, ${agentType}): DB not initialized — skipping`);
+    return false;
+  }
+  try {
+    return updateThread(_threadDbGetter(), threadId, { client: agentType });
+  } catch (err) { log.warn(`[config] setThreadAgentType DB write failed: ${err}`); return false; }
 }
 
 // ─── Per-thread conversation mode ───────────────────────────────────────────
@@ -140,40 +146,33 @@ export function setThreadConversationMode(threadId: number, mode: ConversationMo
   });
 }
 
-/** Returns all per-thread agent-type overrides. */
+/** Returns all per-thread agent-type overrides from thread_registry.client. */
 export function getAllThreadAgentTypes(): Record<string, AgentType> {
-  const map = readSettings().threadAgentTypes as Record<string, string> | undefined;
-  if (map && typeof map === "object") {
+  if (!_threadDbGetter) return {};
+  try {
     const result: Record<string, AgentType> = {};
-    for (const [k, v] of Object.entries(map)) {
-      if (isValidAgentType(v)) result[k] = v;
+    for (const t of getAllThreads(_threadDbGetter())) {
+      if (isValidAgentType(t.client)) result[String(t.threadId)] = t.client;
     }
     return result;
-  }
-  return {};
+  } catch (err) { log.debug(`[config] getAllThreadAgentTypes DB lookup failed: ${err}`); return {}; }
 }
 
 /**
  * Returns the effective agent type for a given thread.
- * Per-thread override takes precedence over the global default.
+ * Per-thread thread_registry.client takes precedence over the global default.
  */
 export function getEffectiveAgentType(threadId?: number): AgentType {
-  if (threadId !== undefined) {
-    const override = getThreadAgentType(threadId);
-    if (override) return override;
+  if (threadId !== undefined && _threadDbGetter) {
+    try {
+      const entry = getThread(_threadDbGetter(), threadId);
+      if (entry && isValidAgentType(entry.client)) return entry.client;
+    } catch (err) { log.debug(`[config] getEffectiveAgentType DB lookup failed: ${err}`); }
   }
   return getAgentType();
 }
 
 // ─── Per-thread autonomous mode ──────────────────────────────────────────────
-
-type DbGetter = () => Database;
-let _threadDbGetter: DbGetter | null = null;
-
-/** Wire up the memory DB accessor so per-thread autonomous-mode lookups work. */
-export function setThreadDb(getter: DbGetter): void {
-  _threadDbGetter = getter;
-}
 
 /**
  * Returns the effective autonomous mode for a given thread.
