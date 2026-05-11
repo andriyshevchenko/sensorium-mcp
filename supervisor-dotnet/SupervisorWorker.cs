@@ -164,6 +164,13 @@ public sealed class SupervisorWorker : BackgroundService
             {
                 tickCount++;
 
+                // Skip auto-restart when maintenance flag is present (e.g. after /nuke)
+                if (File.Exists(_opts.Paths.MaintenanceFlag))
+                {
+                    _log.LogDebug("Maintenance flag present — skipping health check");
+                    continue;
+                }
+
                 var (ok, pid) = await _proc.ReadPidFileAsync(_opts.Paths.ServerPid).ConfigureAwait(false);
                 if (!ok || !_proc.IsProcessAlive(pid))
                 {
