@@ -76,7 +76,7 @@ export async function refreshLock(): Promise<boolean> {
         return false; // Lock missing or owned by someone else.
     }
     try {
-        const tmp = LOCK_FILE + ".tmp." + process.pid;
+        const tmp = LOCK_FILE + `.tmp.${process.pid}.${Date.now()}`;
         await writeFile(
             tmp,
             JSON.stringify({ pid: process.pid, ts: Date.now() }),

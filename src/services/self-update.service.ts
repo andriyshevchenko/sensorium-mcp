@@ -14,7 +14,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
@@ -42,26 +42,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Clear the npx package cache so the spawned replacement fetches the latest
- * tarball from the registry instead of serving a stale cached copy.
- */
-function clearNpxCache(): void {
-  const cacheDir = process.platform === "win32"
-    ? join(process.env.LOCALAPPDATA ?? "", "npm-cache", "_npx")
-    : join(homedir(), ".npm", "_npx");
 
-  try {
-    if (existsSync(cacheDir)) {
-      rmSync(cacheDir, { recursive: true, force: true });
-      log.info(`[self-update] Cleared npx cache: ${cacheDir}`);
-    } else {
-      log.info(`[self-update] npx cache not found at ${cacheDir} — skipping`);
-    }
-  } catch (err) {
-    log.warn(`[self-update] Failed to clear npx cache at ${cacheDir}: ${err}`);
-  }
-}
 
 /**
  * Send a best-effort Telegram message to the operator chat.
@@ -149,8 +130,7 @@ export async function getRemoteVersion(): Promise<string | null> {
  *   2. Emit in-process signal  (belt-and-suspenders for loops not using fs.watch)
  *   3. Grace period            (agents observe flag and return maintenance response)
  *   4. Write reconnect snapshot
- *   5. Clear npx cache
- *   6. Spawn replacement process (detached)
+ *   5. Spawn replacement process (detached)
  *   7. Poll health endpoint until new server responds with targetVersion
  *   8a. Healthy → remove flag, exit(0)  (new server already wrote its own server.pid)
  *   8b. Unhealthy → kill child, remove flag, abort (MCP continues on current version)
@@ -193,9 +173,6 @@ async function performUpdate(targetVersion: string): Promise<void> {
     } catch (err) {
       log.warn(`[self-update] Reconnect snapshot failed (non-fatal): ${err}`);
     }
-
-    // Clear npx cache to prevent stale tarball being served
-    clearNpxCache();
 
     // Close existing HTTP server to free the port for the replacement process
     if (beforeSpawnHook) {
