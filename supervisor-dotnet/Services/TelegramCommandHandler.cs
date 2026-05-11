@@ -340,15 +340,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
         TryDeleteFile(_opts.Paths.PollerLock);
         TryDeleteFile(_opts.Paths.ServerPid);
 
-        await Task.Delay(1_000, ct).ConfigureAwait(false);
-
-        // Respawn MCP
-        if (!ct.IsCancellationRequested)
-            await _proc.SpawnMcpServerAsync(ct).ConfigureAwait(false);
-
-        TryDeleteFile(_opts.Paths.MaintenanceFlag);
-
-        return "💥 Nuke complete — all node + agent processes killed, lock files cleared, MCP respawned.";
+        return "💥 Nuke complete — all node + agent processes killed, lock files cleared. Use /restart to bring MCP back.";
     }
 
     // ── Kill tracked agent processes ──────────────────────────────────────────
@@ -394,7 +386,7 @@ public sealed class TelegramCommandHandler : BackgroundService, ITelegramCommand
         "/restart — graceful MCP restart\n" +
         "/snapshots — list available snapshots\n" +
         "/restore &lt;name&gt; — restore a snapshot\n" +
-        "/nuke — kill all node processes and respawn";
+        "/nuke — kill all node + agent processes (no respawn)";
 
     // ── Telegram send ─────────────────────────────────────────────────────────
 

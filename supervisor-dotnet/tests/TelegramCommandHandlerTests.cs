@@ -137,13 +137,14 @@ public class TelegramCommandHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task NukeCommand_SpawnsMcpAfterKill()
+    public async Task NukeCommand_DoesNotRespawnMcp()
     {
         int before = _proc.SpawnCount;
 
         await InvokeHandleCommand("/sv nuke");
 
-        Assert.True(_proc.SpawnCount > before);
+        Assert.Equal(before, _proc.SpawnCount);
+        Assert.Contains("Use /restart", _httpHandler.SentBodies[0]);
     }
 
     [Fact]

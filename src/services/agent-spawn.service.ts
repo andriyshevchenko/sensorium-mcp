@@ -15,7 +15,7 @@ import { buildClaudeMcpConfig, buildCopilotMcpConfig, buildCodexMcpArgs, type Se
 import { decommissionWorker } from "./worker-cleanup.service.js";
 import { writeThreadHeartbeatSync } from "../data/file-storage.js";
 
-const ENV_DENYLIST = new Set(["TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "MCP_HTTP_SECRET", "DASHBOARD_TOKEN", "MCP_START_COMMAND", "WATCHER_START_COMMAND"]);
+const ENV_DENYLIST = new Set(["TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "MCP_HTTP_SECRET", "DASHBOARD_TOKEN", "MCP_START_COMMAND", "WATCHER_START_COMMAND", "CLAUDE_CODE_OAUTH_TOKEN"]);
 
 // ── Copilot spawn helpers ───────────────────────────────────────────────────
 
@@ -230,14 +230,22 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
   const logFd = openSync(logFilePath, "a");
   const claudeConfigDir = join(PROCESS_BASE_DIR, "claude-configs", String(threadId));
   mkdirSync(claudeConfigDir, { recursive: true });
-  // Share credentials/settings from the main ~/.claude dir so auth works
+  // When CLAUDE_CODE_OAUTH_TOKEN is set, skip credentials copy — the env var
+  // provides a long-lived setup-token that bypasses the broken OAuth refresh flow.
+  // Only copy settings.json (for preferences). Without this, expired credentials
+  // get copied on every restart, causing an infinite 401 → restart death loop.
+  const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
   const mainClaudeDir = join(homedir(), ".claude");
-  for (const shared of [".credentials.json", "settings.json"]) {
+  const sharedFiles = oauthToken ? ["settings.json"] : [".credentials.json", "settings.json"];
+  // Remove stale credentials from previous runs so Claude doesn't try to use them
+  if (oauthToken) { try { const stale = join(claudeConfigDir, ".credentials.json"); if (existsSync(stale)) unlinkSync(stale); } catch {} }
+  for (const shared of sharedFiles) {
     const src = join(mainClaudeDir, shared);
     const dst = join(claudeConfigDir, shared);
     try { if (existsSync(src)) copyFileSync(src, dst); } catch (err) { log.debug(`[spawn] Failed to copy ${shared} for thread ${threadId}: ${errorMessage(err)}`); }
   }
-  const spawnEnv = sanitizeSpawnEnv({ CLAUDE_CONFIG_DIR: claudeConfigDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
+  // CLAUDE_CODE_OAUTH_TOKEN is on ENV_DENYLIST to avoid leaking to Copilot/Codex — pass explicitly only to Claude spawns
+  const spawnEnv = sanitizeSpawnEnv({ CLAUDE_CONFIG_DIR: claudeConfigDir, ...(oauthToken ? { CLAUDE_CODE_OAUTH_TOKEN: oauthToken } : {}), ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) for (const candidate of [join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"), "C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"]) if (existsSync(candidate)) { spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate; break; }
   try {
     const claudeModel = threadType === "worker"
