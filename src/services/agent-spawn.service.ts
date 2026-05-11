@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { closeSync, copyFileSync, createWriteStream, existsSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDefaultThreadModel, getDefaultWorkerModel, type AgentType } from "../config.js";
@@ -227,7 +227,6 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
   const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
   const effectiveConfigPath = buildClaudeMcpConfig(transport, threadId);
-  const logFd = openSync(logFilePath, "a");
   const claudeConfigDir = join(PROCESS_BASE_DIR, "claude-configs", String(threadId));
   mkdirSync(claudeConfigDir, { recursive: true });
   // When CLAUDE_CODE_OAUTH_TOKEN is set, skip credentials copy — the env var
@@ -252,10 +251,15 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
       ? (process.env.CLAUDE_WORKER_MODEL || getDefaultWorkerModel())
       : (process.env.CLAUDE_MODEL || getDefaultThreadModel());
     const sessionPrompt = `Start remote session with sensorium. Thread name = '${name}'. Use threadId=${threadId} when calling start_session.`;
-    const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "--model", claudeModel, "-p", sessionPrompt, "--output-format", "stream-json", "--include-partial-messages"], { stdio: ["ignore", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
-    closeSync(logFd);
+    const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "--model", claudeModel, "-p", sessionPrompt, "--output-format", "stream-json", "--include-partial-messages"], { stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
+    // Relay child stdout/stderr to log file via pipe to avoid OS-level full-buffering
+    // that occurs when stdout is a regular file handle (64KB blocks on Windows).
+    const logStream = createWriteStream(logFilePath, { flags: "a" });
+    child.stdout?.pipe(logStream, { end: false });
+    child.stderr?.pipe(logStream, { end: false });
+    child.on("exit", () => logStream.end());
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: effectiveConfigPath, agentLabel: "Claude", memorySourceThreadId, memoryTargetThreadId, threadType }, threadLifecycle);
-  } catch (err) { closeSync(logFd); return { error: `Failed to spawn Claude process: ${errorMessage(err)}` }; }
+  } catch (err) { return { error: `Failed to spawn Claude process: ${errorMessage(err)}` }; }
 }
 
 export function spawnCopilotProcess(copilotPath: string, name: string, threadId: number, threadLifecycle: ThreadLifecycleService, workingDirectory?: string, memorySourceThreadId?: number, agentType?: string, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
@@ -267,13 +271,15 @@ export function spawnCopilotProcess(copilotPath: string, name: string, threadId:
   writeCopilotInstructions(copilotHomeDir);
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
   const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
-  const logFd = openSync(logFilePath, "a");
   try {
     const sessionPrompt = `Start remote session with sensorium. Thread name = '${name}'. Use threadId=${threadId} when calling start_session.`;
-    const child = spawn(copilotPath, ["-p", sessionPrompt, "--allow-all-tools", "--model", agentType === "copilot_codex" ? "gpt-5.3-codex" : (process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL), "--autopilot"], { stdio: ["ignore", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(copilotPath), detached: true, windowsHide: false, env: sanitizeSpawnEnv({ COPILOT_HOME: copilotHomeDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}) }), cwd: workingDirectory || undefined });
-    closeSync(logFd);
+    const child = spawn(copilotPath, ["-p", sessionPrompt, "--allow-all-tools", "--model", agentType === "copilot_codex" ? "gpt-5.3-codex" : (process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL), "--autopilot"], { stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(copilotPath), detached: true, windowsHide: false, env: sanitizeSpawnEnv({ COPILOT_HOME: copilotHomeDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}) }), cwd: workingDirectory || undefined });
+    const logStream = createWriteStream(logFilePath, { flags: "a" });
+    child.stdout?.pipe(logStream, { end: false });
+    child.stderr?.pipe(logStream, { end: false });
+    child.on("exit", () => logStream.end());
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: copilotHomeDir, agentLabel: "Copilot", memorySourceThreadId, threadType }, threadLifecycle);
-  } catch (err) { closeSync(logFd); return { error: `Failed to spawn Copilot process: ${errorMessage(err)}` }; }
+  } catch (err) { return { error: `Failed to spawn Copilot process: ${errorMessage(err)}` }; }
 }
 
 export function spawnCodexProcess(codexPath: string, name: string, threadId: number, threadLifecycle: ThreadLifecycleService, workingDirectory?: string, memorySourceThreadId?: number, threadType?: "worker" | "branch"): { pid: number; logFile: string } | { error: string } {
@@ -288,15 +294,17 @@ export function spawnCodexProcess(codexPath: string, name: string, threadId: num
   const cliArgs = ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", ...(model ? ["-m", model] : []), "--json", ...mcpArgs, "-"];
   if (workingDirectory) cliArgs.splice(1, 0, "-C", workingDirectory);
   const spawnEnv = sanitizeSpawnEnv({ ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(transport.secret ? { SENSORIUM_MCP_SECRET: transport.secret } : {}) });
-  const logFd = openSync(logFilePath, "a");
   try {
     const nativeExe = resolveCodexExe();
     const nodeExeResult = !nativeExe && process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath) ? resolveCodexNodeExe() : null;
-    const child = nativeExe ? spawn(nativeExe, cliArgs, { stdio: ["pipe", logFd, logFd], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : nodeExeResult ? spawn(nodeExeResult.nodeExe, [nodeExeResult.codexJs, ...cliArgs], { stdio: ["pipe", logFd, logFd], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : spawn(codexPath, cliArgs, { stdio: ["pipe", logFd, logFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
-    closeSync(logFd);
+    const child = nativeExe ? spawn(nativeExe, cliArgs, { stdio: ["pipe", "pipe", "pipe"], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : nodeExeResult ? spawn(nodeExeResult.nodeExe, [nodeExeResult.codexJs, ...cliArgs], { stdio: ["pipe", "pipe", "pipe"], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : spawn(codexPath, cliArgs, { stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
+    const logStream = createWriteStream(logFilePath, { flags: "a" });
+    child.stdout?.pipe(logStream, { end: false });
+    child.stderr?.pipe(logStream, { end: false });
+    child.on("exit", () => logStream.end());
     try { child.stdin?.write(prompt + "\n"); child.stdin?.end(); } catch {}
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: CODEX_HOME_DIR, agentLabel: "Codex", memorySourceThreadId, threadType }, threadLifecycle);
-  } catch (err) { closeSync(logFd); return { error: `Failed to spawn Codex process: ${errorMessage(err)}` }; }
+  } catch (err) { return { error: `Failed to spawn Codex process: ${errorMessage(err)}` }; }
 }
 
 /**
