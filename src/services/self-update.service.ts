@@ -42,8 +42,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-
-
 /**
  * Send a best-effort Telegram message to the operator chat.
  * Uses the TELEGRAM_TOKEN / TELEGRAM_CHAT_ID env vars directly so this
