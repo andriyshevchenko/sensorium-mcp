@@ -255,9 +255,10 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
     // Relay child stdout/stderr to log file via pipe to avoid OS-level full-buffering
     // that occurs when stdout is a regular file handle (64KB blocks on Windows).
     const logStream = createWriteStream(logFilePath, { flags: "a" });
+    logStream.on("error", (err) => log.warn(`[spawn] log stream error for thread ${threadId}: ${err}`));
     child.stdout?.pipe(logStream, { end: false });
     child.stderr?.pipe(logStream, { end: false });
-    child.on("exit", () => logStream.end());
+    child.on("close", () => logStream.end());
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: effectiveConfigPath, agentLabel: "Claude", memorySourceThreadId, memoryTargetThreadId, threadType }, threadLifecycle);
   } catch (err) { return { error: `Failed to spawn Claude process: ${errorMessage(err)}` }; }
 }
@@ -275,9 +276,10 @@ export function spawnCopilotProcess(copilotPath: string, name: string, threadId:
     const sessionPrompt = `Start remote session with sensorium. Thread name = '${name}'. Use threadId=${threadId} when calling start_session.`;
     const child = spawn(copilotPath, ["-p", sessionPrompt, "--allow-all-tools", "--model", agentType === "copilot_codex" ? "gpt-5.3-codex" : (process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL), "--autopilot"], { stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(copilotPath), detached: true, windowsHide: false, env: sanitizeSpawnEnv({ COPILOT_HOME: copilotHomeDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}) }), cwd: workingDirectory || undefined });
     const logStream = createWriteStream(logFilePath, { flags: "a" });
+    logStream.on("error", (err) => log.warn(`[spawn] log stream error for thread ${threadId}: ${err}`));
     child.stdout?.pipe(logStream, { end: false });
     child.stderr?.pipe(logStream, { end: false });
-    child.on("exit", () => logStream.end());
+    child.on("close", () => logStream.end());
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: copilotHomeDir, agentLabel: "Copilot", memorySourceThreadId, threadType }, threadLifecycle);
   } catch (err) { return { error: `Failed to spawn Copilot process: ${errorMessage(err)}` }; }
 }
@@ -299,9 +301,10 @@ export function spawnCodexProcess(codexPath: string, name: string, threadId: num
     const nodeExeResult = !nativeExe && process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath) ? resolveCodexNodeExe() : null;
     const child = nativeExe ? spawn(nativeExe, cliArgs, { stdio: ["pipe", "pipe", "pipe"], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : nodeExeResult ? spawn(nodeExeResult.nodeExe, [nodeExeResult.codexJs, ...cliArgs], { stdio: ["pipe", "pipe", "pipe"], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : spawn(codexPath, cliArgs, { stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
     const logStream = createWriteStream(logFilePath, { flags: "a" });
+    logStream.on("error", (err) => log.warn(`[spawn] log stream error for thread ${threadId}: ${err}`));
     child.stdout?.pipe(logStream, { end: false });
     child.stderr?.pipe(logStream, { end: false });
-    child.on("exit", () => logStream.end());
+    child.on("close", () => logStream.end());
     try { child.stdin?.write(prompt + "\n"); child.stdin?.end(); } catch {}
     return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: CODEX_HOME_DIR, agentLabel: "Codex", memorySourceThreadId, threadType }, threadLifecycle);
   } catch (err) { return { error: `Failed to spawn Codex process: ${errorMessage(err)}` }; }
