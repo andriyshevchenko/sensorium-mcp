@@ -654,8 +654,8 @@ async function runReflectionInner(
       try {
         const embedding = await generateEmbedding(prefixedContent, apiKey);
         saveNoteEmbedding(db, noteId, embedding);
-      } catch {
-        // Non-fatal — backfill will catch it later
+      } catch (err) {
+        log.debug(`[reflection] Embedding save failed (backfill will retry): ${errorMessage(err)}`);
       }
     }
 

@@ -77,7 +77,10 @@ function atomicWriteSettings(settings: Record<string, unknown>): void {
 function readSettings(): Record<string, unknown> {
   try {
     return JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
-  } catch { return {}; }
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") log.warn(`[config] Failed to read settings: ${err}`);
+    return {};
+  }
 }
 
 /** Read settings, apply a mutator, and atomically persist the result. */

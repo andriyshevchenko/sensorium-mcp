@@ -226,7 +226,7 @@ export async function handleStartSession(
               `If you sent instructions while the agent was offline, please resend them.`,
             );
             await telegram.sendMessage(TELEGRAM_CHAT_ID, notice, "MarkdownV2", session.currentThreadId);
-          } catch { /* non-fatal */ }
+          } catch (err) { log.warn(`[start_session] Stale-message notification failed: ${err instanceof Error ? err.message : String(err)}`); }
         }
       }
     }

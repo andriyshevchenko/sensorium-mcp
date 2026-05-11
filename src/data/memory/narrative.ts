@@ -481,7 +481,7 @@ export function getNarrativesForBootstrap(
         result[res] = last.narrative;
       }
     }
-  } catch { /* table might not exist in older schemas */ }
+  } catch (err) { log.debug(`[narrative] getNarrativesForBootstrap failed: ${errorMessage(err)}`); }
 
   return result;
 }
