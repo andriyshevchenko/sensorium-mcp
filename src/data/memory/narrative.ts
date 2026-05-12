@@ -331,10 +331,10 @@ function buildPrompt(
   const endYear = new Date().getFullYear();
   const instructions: Record<NarrativeResolution, string> = {
     day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. For each major event, explain WHY it happened and what it caused. Don't just list what happened — explain the chain of consequences. Target ~500 tokens.`,
-    week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~300 tokens.`,
-    month: `Write a narrative arc for this past month (${periodLabel}). Structure around 2-3 major cause-effect chains: what problem or opportunity emerged, what decisions were made in response, and how those decisions played out. Name specific features, tools, or systems — not abstractions. End with what's unresolved. Target ~200 tokens.`,
-    quarter: `Write a narrative arc for this quarter (${periodLabel}). Identify 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved through concrete cause-and-effect, not vague 'themes'. Target ~150 tokens.`,
-    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture the 1-2 biggest transformations: where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision — no unsupported generalizations like 'significant progress' or 'notable improvements'. Target ~120 tokens.`,
+    week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~450 tokens.`,
+    month: `Write a narrative arc for this past month (${periodLabel}). Structure around 2-3 major cause-effect chains: what problem or opportunity emerged, what decisions were made in response, and how those decisions played out. Name specific features, tools, or systems — not abstractions. End with what's unresolved. Target ~350 tokens.`,
+    quarter: `Write a narrative arc for this quarter (${periodLabel}). Identify 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved through concrete cause-and-effect, not vague 'themes'. Target ~250 tokens.`,
+    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture the 1-2 biggest transformations: where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision — no unsupported generalizations like 'significant progress' or 'notable improvements'. Target ~200 tokens.`,
   };
 
   return `You are a temporal memory narrator. You create coherent stories from raw interaction data.
@@ -375,7 +375,7 @@ function buildHierarchicalPrompt(
 ): string {
   const startYear = new Date(periodStart).getFullYear();
   const endYear = new Date().getFullYear();
-  const instructions: Record<string, string> = {
+  const instructions: Partial<Record<NarrativeResolution, string>> = {
     week: `Write a narrative of the key developments this past week (${periodLabel}). You have ${childCount} daily narratives below — synthesize them into a coherent weekly arc. For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how earlier days' decisions led to later outcomes. Target ~450 tokens.`,
     month: `Write a narrative arc for this past month (${periodLabel}). You have ${childCount} weekly narratives below — synthesize them into 2-3 major cause-effect chains. Show how the week-to-week trajectory evolved: what problems emerged, what decisions were made, and how they played out across weeks. Name specific features, tools, or systems. End with what's unresolved. Target ~350 tokens.`,
     quarter: `Write a narrative arc for this quarter (${periodLabel}). You have ${childCount} monthly narratives below — synthesize them into 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved month-over-month through concrete cause-and-effect. Target ~250 tokens.`,
@@ -411,7 +411,7 @@ function buildFlatPrompt(
   start: string,
   end: string,
   periodLabel: string,
-): string | null {
+): { prompt: string; episodeCount: number; noteCount: number } | null {
   const episodes = getEpisodesInPeriod(db, knowledgeThreadId, start, end);
   const minEpisodes = resolution === "day" ? 3 : 5;
   if (episodes.length < minEpisodes) return null;
@@ -423,7 +423,11 @@ function buildFlatPrompt(
   if (episodesText.length < 200 && notes.length === 0) return null;
 
   const notesText = formatNotesForLLM(notes, maxChars);
-  return buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel, start);
+  return {
+    prompt: buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel, start),
+    episodeCount: episodes.length,
+    noteCount: notes.length,
+  };
 }
 
 // ─── Cooldown Check ──────────────────────────────────────────────────────────
@@ -493,23 +497,31 @@ async function generateNarrative(
   // Hierarchical composition: week+ resolutions compose from child narratives when available
   const childRes = CHILD_RESOLUTION[resolution];
   let prompt: string;
+  let sourceEpisodeCount: number;
+  let sourceNoteCount: number;
 
   if (childRes) {
     const children = getChildNarratives(db, knowledgeThreadId, resolution, start, end);
     if (children.length >= MIN_CHILD_NARRATIVES) {
       const childText = formatChildNarrativesForLLM(children);
       prompt = buildHierarchicalPrompt(resolution, childText, childRes, children.length, periodLabel, start);
+      sourceEpisodeCount = children.length;
+      sourceNoteCount = 0;
       log.info(`[narrative] ${resolution}: composing from ${children.length} ${childRes} narratives (hierarchical)`);
     } else {
       log.info(`[narrative] ${resolution}: only ${children.length} ${childRes} narratives available, falling back to raw episodes`);
       const fallback = buildFlatPrompt(db, knowledgeThreadId, resolution, start, end, periodLabel);
       if (!fallback) return null;
-      prompt = fallback;
+      prompt = fallback.prompt;
+      sourceEpisodeCount = fallback.episodeCount;
+      sourceNoteCount = fallback.noteCount;
     }
   } else {
     const fallback = buildFlatPrompt(db, knowledgeThreadId, resolution, start, end, periodLabel);
     if (!fallback) return null;
-    prompt = fallback;
+    prompt = fallback.prompt;
+    sourceEpisodeCount = fallback.episodeCount;
+    sourceNoteCount = fallback.noteCount;
   }
 
   const narrative = await chatCompletion(
@@ -556,10 +568,6 @@ async function generateNarrative(
     }
   }
 
-  // Count source data for the upsert
-  const episodes = getEpisodesInPeriod(db, knowledgeThreadId, start, end);
-  const notes = getNotesInPeriod(db, knowledgeThreadId, start);
-
   // Upsert (replace existing for same period)
   db.prepare(
     `INSERT INTO temporal_narratives (thread_id, resolution, period_start, period_end, narrative, source_episode_count, source_note_count, model)
@@ -571,7 +579,7 @@ async function generateNarrative(
        source_note_count = excluded.source_note_count,
        model = excluded.model,
        created_at = datetime('now')`,
-  ).run(knowledgeThreadId, resolution, start, end, finalNarrative, episodes.length, notes.length, NARRATIVE_MODEL);
+  ).run(knowledgeThreadId, resolution, start, end, finalNarrative, sourceEpisodeCount, sourceNoteCount, NARRATIVE_MODEL);
 
   return getLastNarrative(db, knowledgeThreadId, resolution);
 }
