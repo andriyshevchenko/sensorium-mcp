@@ -67,6 +67,40 @@ function findFillerPhrase(text: string): string | null {
   return null;
 }
 
+function findDateViolation(text: string, periodStart: string, periodEnd: string): string | null {
+  const startDate = new Date(periodStart);
+  const endDate = new Date(periodEnd);
+  const validYears = new Set<number>();
+  for (let y = startDate.getFullYear(); y <= endDate.getFullYear(); y++) validYears.add(y);
+
+  // Check standalone year references (e.g. "in 2025", "2025–2026")
+  const yearMatches = text.matchAll(/\b(20\d{2})\b/g);
+  for (const m of yearMatches) {
+    const year = parseInt(m[1], 10);
+    if (!validYears.has(year)) return `year ${year} outside valid range ${[...validYears].join("–")}`;
+  }
+
+  // Check month+year combos (e.g. "March 2026", "Apr 2025")
+  const monthNames = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+  const monthPattern = /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(20\d{2})\b/gi;
+  for (const m of text.matchAll(monthPattern)) {
+    const monthStr = m[1].toLowerCase().slice(0, 3);
+    const monthIdx = monthNames.findIndex((mn) => mn.startsWith(monthStr));
+    const year = parseInt(m[2], 10);
+    if (monthIdx === -1) continue;
+    const refDate = new Date(year, monthIdx, 15);
+    const windowStart = new Date(startDate);
+    windowStart.setDate(windowStart.getDate() - 7);
+    const windowEnd = new Date(endDate);
+    windowEnd.setDate(windowEnd.getDate() + 7);
+    if (refDate < windowStart || refDate > windowEnd) {
+      return `"${m[0]}" falls outside the period ${periodStart.slice(0, 10)} to ${periodEnd.slice(0, 10)}`;
+    }
+  }
+
+  return null;
+}
+
 /** Cooldown per resolution before regenerating */
 const COOLDOWNS: Record<NarrativeResolution, number> = {
   day: 2 * 60 * 60 * 1000,        // 2 hours
@@ -79,11 +113,20 @@ const COOLDOWNS: Record<NarrativeResolution, number> = {
 /** Target output token count per resolution */
 const OUTPUT_TOKEN_TARGETS: Record<NarrativeResolution, number> = {
   day: 500,
-  week: 300,
-  month: 200,
-  quarter: 150,
-  half_year: 120,
+  week: 450,
+  month: 350,
+  quarter: 250,
+  half_year: 200,
 };
+
+const CHILD_RESOLUTION: Partial<Record<NarrativeResolution, NarrativeResolution>> = {
+  week: "day",
+  month: "week",
+  quarter: "month",
+  half_year: "quarter",
+};
+
+const MIN_CHILD_NARRATIVES = 2;
 
 const NARRATIVE_MODEL =
   process.env.NARRATIVE_MODEL || process.env.CONSOLIDATION_MODEL || "gpt-4o";
@@ -189,6 +232,50 @@ function getNotesInPeriod(db: Database, threadId: number, start: string): Semant
   }));
 }
 
+// ─── Child Narrative Retrieval ──────────────────────────────────────────────
+
+function getChildNarratives(
+  db: Database,
+  threadId: number,
+  resolution: NarrativeResolution,
+  start: string,
+  end: string,
+): TemporalNarrative[] {
+  const child = CHILD_RESOLUTION[resolution];
+  if (!child) return [];
+
+  const rows = db
+    .prepare(
+      `SELECT * FROM temporal_narratives
+       WHERE thread_id = ? AND resolution = ? AND period_start >= ? AND period_start <= ?
+       ORDER BY period_start ASC`,
+    )
+    .all(threadId, child, start, end) as Record<string, unknown>[];
+
+  return rows.map((r) => ({
+    id: r.id as number,
+    threadId: r.thread_id as number,
+    resolution: r.resolution as NarrativeResolution,
+    periodStart: r.period_start as string,
+    periodEnd: r.period_end as string,
+    narrative: r.narrative as string,
+    sourceEpisodeCount: r.source_episode_count as number,
+    sourceNoteCount: r.source_note_count as number,
+    model: r.model as string | null,
+    createdAt: r.created_at as string,
+  }));
+}
+
+function formatChildNarrativesForLLM(narratives: TemporalNarrative[]): string {
+  return narratives
+    .map((n) => {
+      const fmtDate = (d: string) =>
+        new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      return `--- ${n.resolution} narrative (${fmtDate(n.periodStart)} – ${fmtDate(n.periodEnd)}, ${n.sourceEpisodeCount} episodes) ---\n${n.narrative}`;
+    })
+    .join("\n\n");
+}
+
 // ─── Content Extraction ──────────────────────────────────────────────────────
 
 function extractEpisodeText(ep: Episode): string {
@@ -278,6 +365,67 @@ ${notesText || "(no notes)"}
 Write the narrative now. Plain text, no markdown headers.`;
 }
 
+function buildHierarchicalPrompt(
+  resolution: NarrativeResolution,
+  childNarrativesText: string,
+  childResolution: NarrativeResolution,
+  childCount: number,
+  periodLabel: string,
+  periodStart: string,
+): string {
+  const startYear = new Date(periodStart).getFullYear();
+  const endYear = new Date().getFullYear();
+  const instructions: Record<string, string> = {
+    week: `Write a narrative of the key developments this past week (${periodLabel}). You have ${childCount} daily narratives below — synthesize them into a coherent weekly arc. For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how earlier days' decisions led to later outcomes. Target ~450 tokens.`,
+    month: `Write a narrative arc for this past month (${periodLabel}). You have ${childCount} weekly narratives below — synthesize them into 2-3 major cause-effect chains. Show how the week-to-week trajectory evolved: what problems emerged, what decisions were made, and how they played out across weeks. Name specific features, tools, or systems. End with what's unresolved. Target ~350 tokens.`,
+    quarter: `Write a narrative arc for this quarter (${periodLabel}). You have ${childCount} monthly narratives below — synthesize them into 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved month-over-month through concrete cause-and-effect. Target ~250 tokens.`,
+    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). You have ${childCount} quarterly narratives below — synthesize them into the 1-2 biggest transformations. Where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision from the source narratives. Target ~200 tokens.`,
+  };
+
+  return `You are a temporal memory narrator. You create coherent stories by synthesizing lower-resolution narratives into higher-level arcs.
+
+${instructions[resolution]}
+
+FORMAT RULES:
+- Write in first person for yourself ("I did...", "I noticed...") and third person for the operator ("The operator...")
+- Preserve causal chains: "X happened, which led to Y, resulting in Z"
+- Do NOT list facts — weave them into a narrative
+- Do NOT use bullet points — write flowing paragraphs
+- End with current status / what's next
+- NEVER use filler phrases like: "significant progress/evolution/strides", "notable improvement/milestone/achievement", "various features", "several enhancements", "pivotal moments", "crucial step/milestone/decision", "substantial/remarkable/meaningful progress", "overall good/positive", "as I navigated/reflected/observed", "this prompted me to reflect", "I noticed a critical/key ..."
+- Every claim must be grounded in a specific event, decision, or outcome from the source narratives
+- NEVER open with a date-setting sentence like "In [Month Year]..." or "During [Month Year]..." — start with what actually happened
+- Only use years that appear in the period range (${startYear}${startYear !== endYear ? `–${endYear}` : ""}) — never substitute today's year for an earlier period
+
+SOURCE: ${childCount} ${childResolution} narratives
+
+${childNarrativesText}
+
+Write the narrative now. Plain text, no markdown headers.`;
+}
+
+function buildFlatPrompt(
+  db: Database,
+  knowledgeThreadId: number,
+  resolution: NarrativeResolution,
+  start: string,
+  end: string,
+  periodLabel: string,
+): string | null {
+  const episodes = getEpisodesInPeriod(db, knowledgeThreadId, start, end);
+  const minEpisodes = resolution === "day" ? 3 : 5;
+  if (episodes.length < minEpisodes) return null;
+
+  const notes = getNotesInPeriod(db, knowledgeThreadId, start);
+  const maxChars = OUTPUT_TOKEN_TARGETS[resolution] * 16;
+  const episodesText = formatEpisodesForLLM(episodes, maxChars * 2);
+
+  if (episodesText.length < 200 && notes.length === 0) return null;
+
+  const notesText = formatNotesForLLM(notes, maxChars);
+  return buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel, start);
+}
+
 // ─── Cooldown Check ──────────────────────────────────────────────────────────
 
 function getLastNarrative(
@@ -330,22 +478,6 @@ async function generateNarrative(
   const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
 
   const { start, end } = getPeriodBounds(resolution);
-  const episodes = getEpisodesInPeriod(db, knowledgeThreadId, start, end);
-
-  // Sparse-thread guard: require minimum episode count to prevent fabricated narratives.
-  // Day narratives need fewer episodes; longer resolutions need more signal to be useful.
-  const minEpisodes = resolution === "day" ? 3 : 5;
-  if (episodes.length < minEpisodes) return null;
-
-  const notes = getNotesInPeriod(db, knowledgeThreadId, start);
-  const maxChars = OUTPUT_TOKEN_TARGETS[resolution] * 16; // ~4 chars/token × 4 for source data headroom
-
-  const episodesText = formatEpisodesForLLM(episodes, maxChars * 2);
-
-  // Content density check: if episode text is too thin, skip generation to avoid fabrication
-  if (episodesText.length < 200 && notes.length === 0) return null;
-
-  const notesText = formatNotesForLLM(notes, maxChars);
 
   const fmtShort = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const fmtRange = `${fmtShort(start)} – ${fmtShort(end)}`;
@@ -358,7 +490,27 @@ async function generateNarrative(
   };
   const periodLabel = periodLabels[resolution];
 
-  const prompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel, start);
+  // Hierarchical composition: week+ resolutions compose from child narratives when available
+  const childRes = CHILD_RESOLUTION[resolution];
+  let prompt: string;
+
+  if (childRes) {
+    const children = getChildNarratives(db, knowledgeThreadId, resolution, start, end);
+    if (children.length >= MIN_CHILD_NARRATIVES) {
+      const childText = formatChildNarrativesForLLM(children);
+      prompt = buildHierarchicalPrompt(resolution, childText, childRes, children.length, periodLabel, start);
+      log.info(`[narrative] ${resolution}: composing from ${children.length} ${childRes} narratives (hierarchical)`);
+    } else {
+      log.info(`[narrative] ${resolution}: only ${children.length} ${childRes} narratives available, falling back to raw episodes`);
+      const fallback = buildFlatPrompt(db, knowledgeThreadId, resolution, start, end, periodLabel);
+      if (!fallback) return null;
+      prompt = fallback;
+    }
+  } else {
+    const fallback = buildFlatPrompt(db, knowledgeThreadId, resolution, start, end, periodLabel);
+    if (!fallback) return null;
+    prompt = fallback;
+  }
 
   const narrative = await chatCompletion(
     [{ role: "user", content: prompt }],
@@ -373,13 +525,21 @@ async function generateNarrative(
 
   if (!narrative?.trim()) return null;
 
-  // ─── Quality gate: reject filler language, retry once ──────────────────
+  // ─── Quality gate: reject filler language and date errors, retry once ───
   let finalNarrative = narrative.trim();
   const fillerMatch = findFillerPhrase(finalNarrative);
-  if (fillerMatch) {
-    log.warn(`[narrative] filler phrase detected (${fillerMatch}) in ${resolution} narrative — retrying`);
-    const retryPrompt = buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel, start)
-      + "\n\nRewrite the narrative using no filler phrases. Every claim must reference a specific event or decision from the source data.";
+  const dateViolation = findDateViolation(finalNarrative, start, end);
+  if (fillerMatch || dateViolation) {
+    const issues: string[] = [];
+    if (fillerMatch) issues.push(`filler phrase "${fillerMatch}"`);
+    if (dateViolation) issues.push(`date violation: ${dateViolation}`);
+    log.warn(`[narrative] quality issue in ${resolution} narrative (${issues.join(", ")}) — retrying`);
+
+    const corrections: string[] = [];
+    if (fillerMatch) corrections.push("Rewrite using no filler phrases.");
+    if (dateViolation) corrections.push(`Fix date error: ${dateViolation}. Only reference dates within the period ${start.slice(0, 10)} to ${end.slice(0, 10)}. Do NOT substitute the current year for dates in earlier periods.`);
+
+    const retryPrompt = prompt + "\n\n" + corrections.join(" ") + " Every claim must reference a specific event or decision from the source data.";
     const retried = await chatCompletion(
       [{ role: "system", content: "You are a temporal memory narrator." }, { role: "assistant", content: finalNarrative }, { role: "user", content: retryPrompt }],
       apiKey,
@@ -387,13 +547,18 @@ async function generateNarrative(
     );
     if (retried?.trim()) {
       const retryFiller = findFillerPhrase(retried.trim());
-      if (retryFiller) {
-        log.warn(`[narrative] retry still contains filler (${retryFiller}) in ${resolution} — keeping original`);
+      const retryDate = findDateViolation(retried.trim(), start, end);
+      if (retryFiller || retryDate) {
+        log.warn(`[narrative] retry still has issues in ${resolution} — keeping original`);
       } else {
         finalNarrative = retried.trim();
       }
     }
   }
+
+  // Count source data for the upsert
+  const episodes = getEpisodesInPeriod(db, knowledgeThreadId, start, end);
+  const notes = getNotesInPeriod(db, knowledgeThreadId, start);
 
   // Upsert (replace existing for same period)
   db.prepare(
