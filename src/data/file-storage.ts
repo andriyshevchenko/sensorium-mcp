@@ -61,27 +61,29 @@ export function writeActivityHeartbeat(): void {
 
 const HEARTBEATS_DIR = join(DATA_DIR, "heartbeats");
 mkdirSync(HEARTBEATS_DIR, { recursive: true });
+// Clean up orphaned tmp files from previous crashes
+try { for (const f of readdirSync(HEARTBEATS_DIR)) if (f.includes(".tmp.")) try { unlinkSync(join(HEARTBEATS_DIR, f)); } catch {} } catch {}
+let hbSeq = 0;
 
 /** Write epoch timestamp for a specific thread. Called on every MCP tool call.
  *  Uses atomic write (tmp + rename) to prevent keeper from reading a truncated file. */
 export function writeThreadHeartbeat(threadId: number): void {
   const target = join(HEARTBEATS_DIR, `${threadId}`);
-  const tmp = target + `.tmp.${process.pid}`;
+  const tmp = target + `.tmp.${process.pid}.${++hbSeq}`;
   writeFile(tmp, String(Date.now()), "utf-8")
     .then(() => rename(tmp, target))
-    .catch(() => { /* non-fatal */ });
+    .catch((err) => { log.debug(`[heartbeat] Async write failed for thread ${threadId}: ${err instanceof Error ? err.message : err}`); });
 }
 
 /** Synchronous heartbeat write — guarantees the file is flushed before returning.
  *  Used at spawn time and in the poll loop to prevent false zombie detection. */
 export function writeThreadHeartbeatSync(threadId: number): void {
   const target = join(HEARTBEATS_DIR, `${threadId}`);
-  const tmp = target + `.tmp.${process.pid}`;
+  const tmp = target + `.tmp.${process.pid}.${++hbSeq}`;
   try {
     writeFileSync(tmp, String(Date.now()), "utf-8");
     renameSync(tmp, target);
   } catch (err) {
-    // Log failures — silent heartbeat loss causes keeper to kill healthy threads
     console.error(`[heartbeat] Write FAILED for thread ${threadId}: ${err instanceof Error ? err.message : err}`);
   }
 }
