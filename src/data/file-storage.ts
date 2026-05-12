@@ -5,8 +5,8 @@
  * Extracted from config.ts during modular decomposition (phase 1).
  */
 
-import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { mkdirSync, existsSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { writeFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
@@ -62,15 +62,25 @@ export function writeActivityHeartbeat(): void {
 const HEARTBEATS_DIR = join(DATA_DIR, "heartbeats");
 mkdirSync(HEARTBEATS_DIR, { recursive: true });
 
-/** Write epoch timestamp for a specific thread. Called on every MCP tool call. */
+/** Write epoch timestamp for a specific thread. Called on every MCP tool call.
+ *  Uses atomic write (tmp + rename) to prevent keeper from reading a truncated file. */
 export function writeThreadHeartbeat(threadId: number): void {
-  writeFile(join(HEARTBEATS_DIR, `${threadId}`), String(Date.now()), "utf-8").catch(() => { /* non-fatal */ });
+  const target = join(HEARTBEATS_DIR, `${threadId}`);
+  const tmp = target + `.tmp.${process.pid}`;
+  writeFile(tmp, String(Date.now()), "utf-8")
+    .then(() => rename(tmp, target))
+    .catch(() => { /* non-fatal */ });
 }
 
 /** Synchronous heartbeat write — guarantees the file is flushed before returning.
  *  Used at spawn time and in the poll loop to prevent false zombie detection. */
 export function writeThreadHeartbeatSync(threadId: number): void {
-  try { writeFileSync(join(HEARTBEATS_DIR, `${threadId}`), String(Date.now()), "utf-8"); } catch (err) {
+  const target = join(HEARTBEATS_DIR, `${threadId}`);
+  const tmp = target + `.tmp.${process.pid}`;
+  try {
+    writeFileSync(tmp, String(Date.now()), "utf-8");
+    renameSync(tmp, target);
+  } catch (err) {
     // Log failures — silent heartbeat loss causes keeper to kill healthy threads
     console.error(`[heartbeat] Write FAILED for thread ${threadId}: ${err instanceof Error ? err.message : err}`);
   }
