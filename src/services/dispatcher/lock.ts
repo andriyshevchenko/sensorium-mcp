@@ -8,6 +8,7 @@
 
 import {
     existsSync,
+    readFileSync,
     unlinkSync,
 } from "node:fs";
 import { readFile, writeFile, rename, unlink } from "node:fs/promises";
@@ -92,9 +93,11 @@ export async function refreshLock(): Promise<boolean> {
 
 export function removeLock(): void {
     try {
-        unlinkSync(LOCK_FILE);
+        const raw = readFileSync(LOCK_FILE, "utf8");
+        const parsed = JSON.parse(raw);
+        if (parsed.pid === process.pid) unlinkSync(LOCK_FILE);
     } catch {
-        // Already gone.
+        // Already gone or corrupt.
     }
 }
 
