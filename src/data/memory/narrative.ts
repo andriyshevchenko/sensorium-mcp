@@ -348,16 +348,24 @@ function buildPrompt(
   const startYear = new Date(periodStart).getFullYear();
   const endYear = new Date().getFullYear();
   const instructions: Record<NarrativeResolution, string> = {
-    day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. For each major event, explain WHY it happened and what it caused. Don't just list what happened — explain the chain of consequences. Target ~500 tokens.`,
-    week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~450 tokens.`,
-    month: `Write a narrative arc for this past month (${periodLabel}). Structure around 2-3 major cause-effect chains: what problem or opportunity emerged, what decisions were made in response, and how those decisions played out. Name specific features, tools, or systems — not abstractions. End with what's unresolved. Target ~350 tokens.`,
-    quarter: `Write a narrative arc for this quarter (${periodLabel}). Identify 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved through concrete cause-and-effect, not vague 'themes'. Target ~250 tokens.`,
-    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture the 1-2 biggest transformations: where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision — no unsupported generalizations like 'significant progress' or 'notable improvements'. Target ~200 tokens.`,
+    day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. For each major event, explain WHY it happened and what it caused. Don't just list what happened — explain the chain of consequences. Target ~400 tokens.`,
+    week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~600 tokens.`,
+    month: `Write a narrative arc for this past month (${periodLabel}). Structure around 2-3 major cause-effect chains: what problem or opportunity emerged, what decisions were made in response, and how those decisions played out. Name specific features, tools, or systems — not abstractions. End with what's unresolved. Target ~800 tokens.`,
+    quarter: `Write a narrative arc for this quarter (${periodLabel}). Identify 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved through concrete cause-and-effect, not vague 'themes'. Target ~1000 tokens.`,
+    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture the 1-2 biggest transformations: where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision — no unsupported generalizations like 'significant progress' or 'notable improvements'. Target ~1200 tokens.`,
   };
 
   return `You are a temporal memory narrator. You create coherent stories from raw interaction data.
 
 ${instructions[resolution]}
+
+PRECISION RULES (non-negotiable):
+- Name every thread, feature, tool, or system by its EXACT name. Include IDs/numbers where available (e.g., "thread 'Archived threads viewer' (ID 16586)", not "the new thread").
+- Include timestamps (dates at minimum, times when relevant) for every event.
+- Never write "the thread" / "the feature" / "this issue" / "the system" without naming it first.
+- Every sentence must contain at least one concrete identifier: a name, version, date, ID, or number. If a sentence contains none, delete it.
+- When referencing a decision, state WHO decided, WHAT was decided, and WHY.
+- Zero filler: if removing a sentence loses no information, don't write it. Density over flow.
 
 FORMAT RULES:
 - Write in first person for yourself ("I did...", "I noticed...") and third person for the operator ("The operator...")
@@ -394,15 +402,23 @@ function buildHierarchicalPrompt(
   const startYear = new Date(periodStart).getFullYear();
   const endYear = new Date().getFullYear();
   const instructions: Partial<Record<NarrativeResolution, string>> = {
-    week: `Write a narrative of the key developments this past week (${periodLabel}). You have ${childCount} daily narratives below — synthesize them into a coherent weekly arc. For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how earlier days' decisions led to later outcomes. Target ~450 tokens.`,
-    month: `Write a narrative arc for this past month (${periodLabel}). You have ${childCount} weekly narratives below — synthesize them into 2-3 major cause-effect chains. Show how the week-to-week trajectory evolved: what problems emerged, what decisions were made, and how they played out across weeks. Name specific features, tools, or systems. End with what's unresolved. Target ~350 tokens.`,
-    quarter: `Write a narrative arc for this quarter (${periodLabel}). You have ${childCount} monthly narratives below — synthesize them into 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved month-over-month through concrete cause-and-effect. Target ~250 tokens.`,
-    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). You have ${childCount} quarterly narratives below — synthesize them into the 1-2 biggest transformations. Where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision from the source narratives. Target ~200 tokens.`,
+    week: `Write a narrative of the key developments this past week (${periodLabel}). You have ${childCount} daily narratives below — synthesize them into a coherent weekly arc. For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how earlier days' decisions led to later outcomes. Target ~600 tokens.`,
+    month: `Write a narrative arc for this past month (${periodLabel}). You have ${childCount} weekly narratives below — synthesize them into 2-3 major cause-effect chains. Show how the week-to-week trajectory evolved: what problems emerged, what decisions were made, and how they played out across weeks. Name specific features, tools, or systems. End with what's unresolved. Target ~800 tokens.`,
+    quarter: `Write a narrative arc for this quarter (${periodLabel}). You have ${childCount} monthly narratives below — synthesize them into 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved month-over-month through concrete cause-and-effect. Target ~1000 tokens.`,
+    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). You have ${childCount} quarterly narratives below — synthesize them into the 1-2 biggest transformations. Where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision from the source narratives. Target ~1200 tokens.`,
   };
 
   return `You are a temporal memory narrator. You create coherent stories by synthesizing lower-resolution narratives into higher-level arcs.
 
 ${instructions[resolution]}
+
+PRECISION RULES (non-negotiable):
+- Name every thread, feature, tool, or system by its EXACT name. Include IDs/numbers where available (e.g., "thread 'Archived threads viewer' (ID 16586)", not "the new thread").
+- Include timestamps (dates at minimum, times when relevant) for every event.
+- Never write "the thread" / "the feature" / "this issue" / "the system" without naming it first.
+- Every sentence must contain at least one concrete identifier: a name, version, date, ID, or number. If a sentence contains none, delete it.
+- When referencing a decision, state WHO decided, WHAT was decided, and WHY.
+- Zero filler: if removing a sentence loses no information, don't write it. Density over flow.
 
 FORMAT RULES:
 - Write in first person for yourself ("I did...", "I noticed...") and third person for the operator ("The operator...")
@@ -571,7 +587,7 @@ async function generateNarrative(
 
     const retryPrompt = prompt + "\n\n" + corrections.join(" ") + " Every claim must reference a specific event or decision from the source data.";
     const retried = await chatCompletion(
-      [{ role: "system", content: "You are a temporal memory narrator." }, { role: "assistant", content: finalNarrative }, { role: "user", content: retryPrompt }],
+      [{ role: "user", content: retryPrompt }],
       apiKey,
       { model: NARRATIVE_MODEL, temperature: 0.3, maxTokens: Math.round(OUTPUT_TOKEN_TARGETS[resolution] * 1.5), timeoutMs: 60_000 },
     );
