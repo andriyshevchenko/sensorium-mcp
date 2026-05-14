@@ -281,19 +281,29 @@ function formatChildNarrativesForLLM(narratives: TemporalNarrative[]): string {
 function extractEpisodeText(ep: Episode): string {
   const content = ep.content as Record<string, unknown>;
   const text = (content.text || content.caption || content.message || "") as string;
-  return text.slice(0, 300);
+  return text.slice(0, 1500);
 }
 
 function formatEpisodesForLLM(episodes: Episode[], maxChars: number): string {
   const lines: string[] = [];
   let chars = 0;
 
-  for (const ep of episodes) {
+  // Sort by importance DESC within chronological hour buckets so high-importance
+  // episodes aren't crowded out when the char budget is hit.
+  const sorted = [...episodes].sort((a, b) => {
+    const hourA = a.timestamp.slice(0, 13);
+    const hourB = b.timestamp.slice(0, 13);
+    if (hourA !== hourB) return hourA < hourB ? -1 : 1;
+    return (b.importance ?? 0.5) - (a.importance ?? 0.5);
+  });
+
+  for (const ep of sorted) {
     const text = extractEpisodeText(ep);
     if (!text.trim()) continue;
 
     const ts = ep.timestamp.slice(0, 16).replace("T", " ");
-    const line = `[${ts}] (${ep.type}/${ep.modality}) ${text}`;
+    const tags = ep.topicTags.length > 0 ? ` [tags: ${ep.topicTags.join(", ")}]` : "";
+    const line = `[${ts}] (${ep.type}/${ep.modality})${tags} ${text}`;
 
     if (chars + line.length > maxChars) break;
     lines.push(line);
@@ -308,7 +318,7 @@ function formatNotesForLLM(notes: SemanticNote[], maxChars: number): string {
   let chars = 0;
 
   for (const n of notes) {
-    const line = `- [${n.type}] ${n.content.slice(0, 200)} (conf: ${n.confidence.toFixed(2)})`;
+    const line = `- [${n.type}] ${n.content.slice(0, 600)} (conf: ${n.confidence.toFixed(2)})`;
     if (chars + line.length > maxChars) break;
     lines.push(line);
     chars += line.length;
