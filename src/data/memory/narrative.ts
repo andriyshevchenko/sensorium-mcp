@@ -2,11 +2,11 @@
  * Temporal Narrative Generator
  *
  * Produces multi-resolution narratives from episodes and semantic notes:
- * - day:       detailed events (~500 tokens)
- * - week:      key decisions and progress (~300 tokens)
- * - month:     high-level arc (~200 tokens)
- * - quarter:   strategic 3-month arc (~150 tokens)
- * - half_year: bird's-eye 6-month arc (~120 tokens)
+ * - day:       detailed events (~400 tokens)
+ * - week:      key decisions and progress (~600 tokens)
+ * - month:     high-level arc (~800 tokens)
+ * - quarter:   strategic 3-month arc (~1000 tokens)
+ * - half_year: bird's-eye 6-month arc (~1200 tokens)
  *
  * These narratives replace raw note dumps in bootstrap and give the agent
  * coherent temporal awareness across long-running sessions.
@@ -112,11 +112,19 @@ const COOLDOWNS: Record<NarrativeResolution, number> = {
 
 /** Target output token count per resolution */
 const OUTPUT_TOKEN_TARGETS: Record<NarrativeResolution, number> = {
-  day: 500,
-  week: 450,
-  month: 350,
-  quarter: 250,
-  half_year: 200,
+  day: 400,
+  week: 600,
+  month: 800,
+  quarter: 1000,
+  half_year: 1200,
+};
+
+const INPUT_CHAR_BUDGETS: Record<NarrativeResolution, { episodes: number; notes: number }> = {
+  day: { episodes: 30_000, notes: 10_000 },
+  week: { episodes: 50_000, notes: 15_000 },
+  month: { episodes: 60_000, notes: 20_000 },
+  quarter: { episodes: 80_000, notes: 25_000 },
+  half_year: { episodes: 100_000, notes: 30_000 },
 };
 
 const CHILD_RESOLUTION: Partial<Record<NarrativeResolution, NarrativeResolution>> = {
@@ -427,12 +435,12 @@ function buildFlatPrompt(
   if (episodes.length < minEpisodes) return null;
 
   const notes = getNotesInPeriod(db, knowledgeThreadId, start);
-  const maxChars = OUTPUT_TOKEN_TARGETS[resolution] * 16;
-  const episodesText = formatEpisodesForLLM(episodes, maxChars * 2);
+  const budget = INPUT_CHAR_BUDGETS[resolution];
+  const episodesText = formatEpisodesForLLM(episodes, budget.episodes);
 
   if (episodesText.length < 200 && notes.length === 0) return null;
 
-  const notesText = formatNotesForLLM(notes, maxChars);
+  const notesText = formatNotesForLLM(notes, budget.notes);
   return {
     prompt: buildPrompt(resolution, episodesText, notesText, episodes.length, periodLabel, start),
     episodeCount: episodes.length,
@@ -540,7 +548,7 @@ async function generateNarrative(
     {
       model: NARRATIVE_MODEL,
       temperature: 0.3,
-      maxTokens: OUTPUT_TOKEN_TARGETS[resolution],
+      maxTokens: Math.round(OUTPUT_TOKEN_TARGETS[resolution] * 1.5),
       timeoutMs: 60_000,
     },
   );
@@ -565,7 +573,7 @@ async function generateNarrative(
     const retried = await chatCompletion(
       [{ role: "system", content: "You are a temporal memory narrator." }, { role: "assistant", content: finalNarrative }, { role: "user", content: retryPrompt }],
       apiKey,
-      { model: NARRATIVE_MODEL, temperature: 0.3, maxTokens: OUTPUT_TOKEN_TARGETS[resolution], timeoutMs: 60_000 },
+      { model: NARRATIVE_MODEL, temperature: 0.3, maxTokens: Math.round(OUTPUT_TOKEN_TARGETS[resolution] * 1.5), timeoutMs: 60_000 },
     );
     if (retried?.trim()) {
       const retryFiller = findFillerPhrase(retried.trim());
