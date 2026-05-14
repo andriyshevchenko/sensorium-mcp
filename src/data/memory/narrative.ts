@@ -101,6 +101,34 @@ function findDateViolation(text: string, periodStart: string, periodEnd: string)
   return null;
 }
 
+function findLowDensitySentences(text: string): { count: number; total: number; examples: string[] } {
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(s => s.length > 20);
+  if (sentences.length === 0) return { count: 0, total: 0, examples: [] };
+
+  const identifierPattern = /\b(?:\d{4}[-/]\d{2}[-/]\d{2}|v\d+\.\d+|#\d+|ID\s*\d+|\d{4,}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2})/i;
+  const quotedNamePattern = /['"][^'"]+['"]/;
+  const threadIdPattern = /thread\s*\d+|ID\s*\d+/i;
+  // Check for proper nouns after the first word (sentence-initial caps don't count)
+  const midSentenceProperNoun = (s: string): boolean => {
+    const afterFirst = s.replace(/^\S+\s+/, "");
+    return /\b[A-Z][a-z]{2,}/.test(afterFirst);
+  };
+
+  const lowDensity: string[] = [];
+  for (const sentence of sentences) {
+    const hasIdentifier = identifierPattern.test(sentence);
+    const hasProperNoun = midSentenceProperNoun(sentence);
+    const hasQuotedName = quotedNamePattern.test(sentence);
+    const hasThreadId = threadIdPattern.test(sentence);
+
+    if (!hasIdentifier && !hasProperNoun && !hasQuotedName && !hasThreadId) {
+      lowDensity.push(sentence.slice(0, 80));
+    }
+  }
+
+  return { count: lowDensity.length, total: sentences.length, examples: lowDensity.slice(0, 3) };
+}
+
 /** Cooldown per resolution before regenerating */
 const COOLDOWNS: Record<NarrativeResolution, number> = {
   day: 2 * 60 * 60 * 1000,        // 2 hours
@@ -571,19 +599,24 @@ async function generateNarrative(
 
   if (!narrative?.trim()) return null;
 
-  // ─── Quality gate: reject filler language and date errors, retry once ───
+  // ─── Quality gate: reject filler language, date errors, and low density, retry once ───
   let finalNarrative = narrative.trim();
   const fillerMatch = findFillerPhrase(finalNarrative);
   const dateViolation = findDateViolation(finalNarrative, start, end);
-  if (fillerMatch || dateViolation) {
+  const density = findLowDensitySentences(finalNarrative);
+  const densityRatio = density.total > 0 ? density.count / density.total : 0;
+  const hasDensityProblem = densityRatio > 0.2;
+  if (fillerMatch || dateViolation || hasDensityProblem) {
     const issues: string[] = [];
     if (fillerMatch) issues.push(`filler phrase "${fillerMatch}"`);
     if (dateViolation) issues.push(`date violation: ${dateViolation}`);
+    if (hasDensityProblem) issues.push(`${density.count}/${density.total} sentences lack identifiers (${(densityRatio * 100).toFixed(0)}%)`);
     log.warn(`[narrative] quality issue in ${resolution} narrative (${issues.join(", ")}) — retrying`);
 
     const corrections: string[] = [];
     if (fillerMatch) corrections.push("Rewrite using no filler phrases.");
     if (dateViolation) corrections.push(`Fix date error: ${dateViolation}. Only reference dates within the period ${start.slice(0, 10)} to ${end.slice(0, 10)}. Do NOT substitute the current year for dates in earlier periods.`);
+    if (hasDensityProblem) corrections.push(`${density.count} sentences contain no identifiers (names, dates, numbers, IDs). Examples: ${density.examples.map(s => `"${s}..."`).join("; ")}. Every sentence must contain at least one concrete identifier.`);
 
     const retryPrompt = prompt + "\n\n" + corrections.join(" ") + " Every claim must reference a specific event or decision from the source data.";
     const retried = await chatCompletion(
@@ -594,7 +627,9 @@ async function generateNarrative(
     if (retried?.trim()) {
       const retryFiller = findFillerPhrase(retried.trim());
       const retryDate = findDateViolation(retried.trim(), start, end);
-      if (retryFiller || retryDate) {
+      const retryDensity = findLowDensitySentences(retried.trim());
+      const retryDensityRatio = retryDensity.total > 0 ? retryDensity.count / retryDensity.total : 0;
+      if (retryFiller || retryDate || retryDensityRatio > 0.2) {
         log.warn(`[narrative] retry still has issues in ${resolution} — keeping original`);
       } else {
         finalNarrative = retried.trim();
