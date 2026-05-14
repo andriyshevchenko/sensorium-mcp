@@ -567,11 +567,35 @@ async function generateNarrative(
     if (children.length >= MIN_CHILD_NARRATIVES) {
       const childText = formatChildNarrativesForLLM(children);
       prompt = buildHierarchicalPrompt(resolution, childText, childRes, children.length, periodLabel, start);
-      sourceEpisodeCount = children.length;
+      sourceEpisodeCount = children.reduce((sum, c) => sum + c.sourceEpisodeCount, 0);
       sourceNoteCount = 0;
       log.info(`[narrative] ${resolution}: composing from ${children.length} ${childRes} narratives (hierarchical)`);
+    } else if (children.length > 0) {
+      // Hybrid: available child narratives + raw episodes for uncovered periods
+      const childText = formatChildNarrativesForLLM(children);
+      const coveredPeriods = new Set(
+        children.flatMap(c => {
+          const dates: string[] = [];
+          const cur = new Date(c.periodStart);
+          const stop = new Date(c.periodEnd);
+          while (cur <= stop) {
+            dates.push(cur.toISOString().slice(0, 10));
+            cur.setUTCDate(cur.getUTCDate() + 1);
+          }
+          return dates;
+        }),
+      );
+      const episodes = getEpisodesInPeriod(db, knowledgeThreadId, start, end);
+      const gapEpisodes = episodes.filter(ep => !coveredPeriods.has(ep.timestamp.slice(0, 10)));
+      const budget = INPUT_CHAR_BUDGETS[resolution];
+      const gapText = gapEpisodes.length > 0 ? formatEpisodesForLLM(gapEpisodes, budget.episodes) : "";
+      const combinedSource = `=== ${children.length} ${childRes} narrative(s) ===\n${childText}\n\n=== Raw episodes from uncovered periods ===\n${gapText || "(none)"}`;
+      prompt = buildHierarchicalPrompt(resolution, combinedSource, childRes, children.length, periodLabel, start);
+      sourceEpisodeCount = children.reduce((sum, c) => sum + c.sourceEpisodeCount, 0) + gapEpisodes.length;
+      sourceNoteCount = 0;
+      log.info(`[narrative] ${resolution}: hybrid — ${children.length} ${childRes} narratives + ${gapEpisodes.length} gap episodes`);
     } else {
-      log.info(`[narrative] ${resolution}: only ${children.length} ${childRes} narratives available, falling back to raw episodes`);
+      log.info(`[narrative] ${resolution}: no ${childRes} narratives available, falling back to raw episodes`);
       const fallback = buildFlatPrompt(db, knowledgeThreadId, resolution, start, end, periodLabel);
       if (!fallback) return null;
       prompt = fallback.prompt;
