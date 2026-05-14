@@ -105,23 +105,24 @@ function findLowDensitySentences(text: string): { count: number; total: number; 
   const sentences = text.split(/(?<=[.!?])\s+/).filter(s => s.length > 20);
   if (sentences.length === 0) return { count: 0, total: 0, examples: [] };
 
-  const identifierPattern = /\b(?:\d{4}[-/]\d{2}[-/]\d{2}|v\d+\.\d+|#\d+|ID\s*\d+|\d{4,}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2})/i;
-  const quotedNamePattern = /['"][^'"]+['"]/;
-  const threadIdPattern = /thread\s*\d+|ID\s*\d+/i;
-  // Check for proper nouns after the first word (sentence-initial caps don't count)
+  const identifierPattern = /\b(?:\d{4}[-/]\d{2}[-/]\d{2}|\d{1,2}:\d{2}|v\d+\.\d+|#\d+|ID\s*\d+|\d{3,}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2}|(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday))/i;
+  const quotedNamePattern = /['"][^'"]+['"]|`[^`]+`/;
+  const namedEntityPattern = /thread\s*\d+|ID\s*\d+|(?:MCP|API|LLM|GPT|SQL|WAL|CLI|SDK|PR|CI|CD)\b/i;
   const midSentenceProperNoun = (s: string): boolean => {
     const afterFirst = s.replace(/^\S+\s+/, "");
     return /\b[A-Z][a-z]{2,}/.test(afterFirst);
   };
+  const hasNumber = (s: string): boolean => /\d+/.test(s);
 
   const lowDensity: string[] = [];
   for (const sentence of sentences) {
     const hasIdentifier = identifierPattern.test(sentence);
     const hasProperNoun = midSentenceProperNoun(sentence);
     const hasQuotedName = quotedNamePattern.test(sentence);
-    const hasThreadId = threadIdPattern.test(sentence);
+    const hasEntity = namedEntityPattern.test(sentence);
+    const hasNum = hasNumber(sentence);
 
-    if (!hasIdentifier && !hasProperNoun && !hasQuotedName && !hasThreadId) {
+    if (!hasIdentifier && !hasProperNoun && !hasQuotedName && !hasEntity && !hasNum) {
       lowDensity.push(sentence.slice(0, 80));
     }
   }
@@ -629,7 +630,7 @@ async function generateNarrative(
   const dateViolation = findDateViolation(finalNarrative, start, end);
   const density = findLowDensitySentences(finalNarrative);
   const densityRatio = density.total > 0 ? density.count / density.total : 0;
-  const hasDensityProblem = densityRatio > 0.2;
+  const hasDensityProblem = densityRatio > 0.35;
   if (fillerMatch || dateViolation || hasDensityProblem) {
     const issues: string[] = [];
     if (fillerMatch) issues.push(`filler phrase "${fillerMatch}"`);
@@ -653,7 +654,7 @@ async function generateNarrative(
       const retryDate = findDateViolation(retried.trim(), start, end);
       const retryDensity = findLowDensitySentences(retried.trim());
       const retryDensityRatio = retryDensity.total > 0 ? retryDensity.count / retryDensity.total : 0;
-      if (retryFiller || retryDate || retryDensityRatio > 0.2) {
+      if (retryFiller || retryDate || retryDensityRatio > 0.35) {
         log.warn(`[narrative] retry still has issues in ${resolution} — keeping original`);
       } else {
         finalNarrative = retried.trim();
