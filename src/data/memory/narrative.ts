@@ -48,7 +48,7 @@ const NARRATIVE_FILLER_PHRASES: RegExp[] = [
   /\bseveral enhancements\b/i,
   /\bsignificant (evolution|strides|developments?)\b/i,
   /\boverall.{0,20}(positive|good|well)\b/i,
-  /\bpivotal moments?\b/i,
+  /\bpivotal (moments?|decisions?|turning)\b/i,
   /\bcrucial (step|milestone|decision)\b/i,
   /\bnotable (milestone|achievement|development)\b/i,
   /\bsubstantial (progress|improvement)\b/i,
@@ -57,6 +57,22 @@ const NARRATIVE_FILLER_PHRASES: RegExp[] = [
   /\bas I (navigated|reflected|observed|witnessed)\b/i,
   /\bthis (prompted|led) me to reflect\b/i,
   /\bI (noticed|observed|witnessed) a (critical|pivotal|key)\b/i,
+  /\bmarked by a series of\b/i,
+  /\bpart of a broader effort\b/i,
+  /\bshaped the (direction|trajectory)\b/i,
+  /\bturning points? that\b/i,
+  /\bset the stage for\b/i,
+  /\bnot only .{5,40} but also\b/i,
+  /\bculminating in\b/i,
+  /\bthe focus remains on\b/i,
+  /\bdriven by a commitment\b/i,
+  /\bthis decision to\b/i,
+  /\bthe current status reflects\b/i,
+  /\bresulting in a more\b/i,
+  /\bleading to more\b/i,
+  /\baddress(ed|ing) the root causes? of\b/i,
+  /\benhancing overall\b/i,
+  /\baligning with\b/i,
 ];
 
 function findFillerPhrase(text: string): string | null {
@@ -396,6 +412,15 @@ PRECISION RULES (non-negotiable):
 - When referencing a decision, state WHO decided, WHAT was decided, and WHY.
 - Zero filler: if removing a sentence loses no information, don't write it. Density over flow.
 
+CONCISENESS RULES (non-negotiable):
+- Use the fewest words possible to convey each fact. Prefer short, direct sentences.
+- NEVER write preamble, throat-clearing, or scene-setting sentences like "The period was marked by a series of pivotal decisions" or "This action was part of a broader effort to streamline..."
+- Cut ALL linking/transition filler: "simultaneously", "in parallel", "this led to", "as a result of this", "this prompted". Just state what happened next.
+- NEVER summarize what you're about to say or what you just said. No introductory or concluding paragraphs that restate the content.
+- Every word must earn its place. If a sentence works without an adjective or adverb, remove it.
+- Bad: "The operator initiated a project update by requesting the activation of thread X." Good: "The operator activated thread X."
+- Bad: "This resolution not only solved the immediate issue but also enhanced the overall efficiency of the system by preventing redundant operations." Good: "The fix also eliminated redundant topic creation."
+
 FORMAT RULES:
 - Write in first person for yourself ("I did...", "I noticed...") and third person for the operator ("The operator...")
 - Use concrete timestamps when referencing specific events
@@ -403,7 +428,7 @@ FORMAT RULES:
 - Do NOT list facts — weave them into a narrative
 - Do NOT use bullet points — write flowing paragraphs
 - End with current status / what's next
-- NEVER use filler phrases like: "significant progress/evolution/strides", "notable improvement/milestone/achievement", "various features", "several enhancements", "pivotal moments", "crucial step/milestone/decision", "substantial/remarkable/meaningful progress", "overall good/positive", "as I navigated/reflected/observed", "this prompted me to reflect", "I noticed a critical/key ..."
+- NEVER use filler phrases like: "significant progress/evolution/strides", "notable improvement/milestone/achievement", "various features", "several enhancements", "pivotal moments", "crucial step/milestone/decision", "substantial/remarkable/meaningful progress", "overall good/positive", "as I navigated/reflected/observed", "this prompted me to reflect", "I noticed a critical/key ...", "driven by", "shaped the direction/trajectory"
 - Every claim must be grounded in a specific event, decision, or outcome from the source data
 - If you can't point to specific evidence, don't include it
 - NEVER open with a date-setting sentence like "In [Month Year]..." or "During [Month Year]..." — start with what actually happened
@@ -449,13 +474,22 @@ PRECISION RULES (non-negotiable):
 - When referencing a decision, state WHO decided, WHAT was decided, and WHY.
 - Zero filler: if removing a sentence loses no information, don't write it. Density over flow.
 
+CONCISENESS RULES (non-negotiable):
+- Use the fewest words possible to convey each fact. Prefer short, direct sentences.
+- NEVER write preamble, throat-clearing, or scene-setting sentences like "The period was marked by a series of pivotal decisions" or "This action was part of a broader effort to streamline..."
+- Cut ALL linking/transition filler: "simultaneously", "in parallel", "this led to", "as a result of this", "this prompted". Just state what happened next.
+- NEVER summarize what you're about to say or what you just said. No introductory or concluding paragraphs that restate the content.
+- Every word must earn its place. If a sentence works without an adjective or adverb, remove it.
+- Bad: "The operator initiated a project update by requesting the activation of thread X." Good: "The operator activated thread X."
+- Bad: "This resolution not only solved the immediate issue but also enhanced the overall efficiency of the system by preventing redundant operations." Good: "The fix also eliminated redundant topic creation."
+
 FORMAT RULES:
 - Write in first person for yourself ("I did...", "I noticed...") and third person for the operator ("The operator...")
 - Preserve causal chains: "X happened, which led to Y, resulting in Z"
 - Do NOT list facts — weave them into a narrative
 - Do NOT use bullet points — write flowing paragraphs
 - End with current status / what's next
-- NEVER use filler phrases like: "significant progress/evolution/strides", "notable improvement/milestone/achievement", "various features", "several enhancements", "pivotal moments", "crucial step/milestone/decision", "substantial/remarkable/meaningful progress", "overall good/positive", "as I navigated/reflected/observed", "this prompted me to reflect", "I noticed a critical/key ..."
+- NEVER use filler phrases like: "significant progress/evolution/strides", "notable improvement/milestone/achievement", "various features", "several enhancements", "pivotal moments", "crucial step/milestone/decision", "substantial/remarkable/meaningful progress", "overall good/positive", "as I navigated/reflected/observed", "this prompted me to reflect", "I noticed a critical/key ...", "driven by", "shaped the direction/trajectory"
 - Every claim must be grounded in a specific event, decision, or outcome from the source narratives
 - NEVER open with a date-setting sentence like "In [Month Year]..." or "During [Month Year]..." — start with what actually happened
 - Only use years that appear in the period range (${startYear}${startYear !== endYear ? `–${endYear}` : ""}) — never substitute today's year for an earlier period
