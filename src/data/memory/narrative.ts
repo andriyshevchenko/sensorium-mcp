@@ -3,10 +3,10 @@
  *
  * Produces multi-resolution narratives from episodes and semantic notes:
  * - day:       detailed events (~400 tokens)
- * - week:      key decisions and progress (~600 tokens)
- * - month:     high-level arc (~800 tokens)
- * - quarter:   strategic 3-month arc (~1000 tokens)
- * - half_year: bird's-eye 6-month arc (~1200 tokens)
+ * - week:      key decisions and progress (~800 tokens)
+ * - month:     high-level arc (~1200 tokens)
+ * - quarter:   strategic 3-month arc (~2000 tokens)
+ * - half_year: bird's-eye 6-month arc (~2500 tokens)
  *
  * These narratives replace raw note dumps in bootstrap and give the agent
  * coherent temporal awareness across long-running sessions.
@@ -158,10 +158,10 @@ const COOLDOWNS: Record<NarrativeResolution, number> = {
 /** Target output token count per resolution */
 const OUTPUT_TOKEN_TARGETS: Record<NarrativeResolution, number> = {
   day: 400,
-  week: 600,
-  month: 800,
-  quarter: 1000,
-  half_year: 1200,
+  week: 800,
+  month: 1200,
+  quarter: 2000,
+  half_year: 2500,
 };
 
 const INPUT_CHAR_BUDGETS: Record<NarrativeResolution, { episodes: number; notes: number }> = {
@@ -394,10 +394,10 @@ function buildPrompt(
   const endYear = new Date().getFullYear();
   const instructions: Record<NarrativeResolution, string> = {
     day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. For each major event, explain WHY it happened and what it caused. Don't just list what happened — explain the chain of consequences. Target ~400 tokens.`,
-    week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~600 tokens.`,
-    month: `Write a narrative arc for this past month (${periodLabel}). Structure around 2-3 major cause-effect chains: what problem or opportunity emerged, what decisions were made in response, and how those decisions played out. Name specific features, tools, or systems — not abstractions. End with what's unresolved. Target ~800 tokens.`,
-    quarter: `Write a narrative arc for this quarter (${periodLabel}). Identify 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved through concrete cause-and-effect, not vague 'themes'. Target ~1000 tokens.`,
-    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture the 1-2 biggest transformations: where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision — no unsupported generalizations like 'significant progress' or 'notable improvements'. Target ~1200 tokens.`,
+    week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~800 tokens.`,
+    month: `Write a narrative arc for this past month (${periodLabel}). Structure around 2-3 major cause-effect chains: what problem or opportunity emerged, what decisions were made in response, and how those decisions played out. Name specific features, tools, or systems — not abstractions. End with what's unresolved. Target ~1200 tokens.`,
+    quarter: `Write a narrative arc for this quarter (${periodLabel}). Identify 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved through concrete cause-and-effect, not vague 'themes'. Cover the ENTIRE period — do not skip early events. Target ~2000 tokens.`,
+    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture the 1-2 biggest transformations: where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision — no unsupported generalizations like 'significant progress' or 'notable improvements'. Cover the ENTIRE period from start to end. Target ~2500 tokens.`,
   };
 
   return `You are a temporal memory narrator. You create coherent stories from raw interaction data.
@@ -456,10 +456,10 @@ function buildHierarchicalPrompt(
   const startYear = new Date(periodStart).getFullYear();
   const endYear = new Date().getFullYear();
   const instructions: Partial<Record<NarrativeResolution, string>> = {
-    week: `Write a narrative of the key developments this past week (${periodLabel}). You have ${childCount} daily narratives below — synthesize them into a coherent weekly arc. For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how earlier days' decisions led to later outcomes. Target ~600 tokens.`,
-    month: `Write a narrative arc for this past month (${periodLabel}). You have ${childCount} weekly narratives below — synthesize them into 2-3 major cause-effect chains. Show how the week-to-week trajectory evolved: what problems emerged, what decisions were made, and how they played out across weeks. Name specific features, tools, or systems. End with what's unresolved. Target ~800 tokens.`,
-    quarter: `Write a narrative arc for this quarter (${periodLabel}). You have ${childCount} monthly narratives below — synthesize them into 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved month-over-month through concrete cause-and-effect. Target ~1000 tokens.`,
-    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). You have ${childCount} quarterly narratives below — synthesize them into the 1-2 biggest transformations. Where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision from the source narratives. Target ~1200 tokens.`,
+    week: `Write a narrative of the key developments this past week (${periodLabel}). You have ${childCount} daily narratives below — synthesize them into a coherent weekly arc. For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how earlier days' decisions led to later outcomes. Target ~800 tokens.`,
+    month: `Write a narrative arc for this past month (${periodLabel}). You have ${childCount} weekly narratives below — synthesize them into 2-3 major cause-effect chains. Show how the week-to-week trajectory evolved: what problems emerged, what decisions were made, and how they played out across weeks. Name specific features, tools, or systems. End with what's unresolved. Target ~1200 tokens.`,
+    quarter: `Write a narrative arc for this quarter (${periodLabel}). You have ${childCount} monthly narratives below — synthesize them into 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved month-over-month through concrete cause-and-effect. Cover the ENTIRE period — do not skip early events. Target ~2000 tokens.`,
+    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). You have ${childCount} quarterly narratives below — synthesize them into the 1-2 biggest transformations. Where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision from the source narratives. Cover the ENTIRE period from start to end. Target ~2500 tokens.`,
   };
 
   return `You are a temporal memory narrator. You create coherent stories by synthesizing lower-resolution narratives into higher-level arcs.
@@ -599,14 +599,7 @@ async function generateNarrative(
 
   if (childRes) {
     const children = getChildNarratives(db, knowledgeThreadId, resolution, start, end);
-    if (children.length >= MIN_CHILD_NARRATIVES) {
-      const childText = formatChildNarrativesForLLM(children);
-      prompt = buildHierarchicalPrompt(resolution, childText, childRes, children.length, periodLabel, start);
-      sourceEpisodeCount = children.reduce((sum, c) => sum + c.sourceEpisodeCount, 0);
-      sourceNoteCount = 0;
-      log.info(`[narrative] ${resolution}: composing from ${children.length} ${childRes} narratives (hierarchical)`);
-    } else if (children.length > 0) {
-      // Hybrid: available child narratives + raw episodes for uncovered periods
+    if (children.length > 0) {
       const childText = formatChildNarrativesForLLM(children);
       const coveredPeriods = new Set(
         children.flatMap(c => {
@@ -624,11 +617,16 @@ async function generateNarrative(
       const gapEpisodes = episodes.filter(ep => !coveredPeriods.has(ep.timestamp.slice(0, 10)));
       const budget = INPUT_CHAR_BUDGETS[resolution];
       const gapText = gapEpisodes.length > 0 ? formatEpisodesForLLM(gapEpisodes, budget.episodes) : "";
-      const combinedSource = `=== ${children.length} ${childRes} narrative(s) ===\n${childText}\n\n=== Raw episodes from uncovered periods ===\n${gapText || "(none)"}`;
-      prompt = buildHierarchicalPrompt(resolution, combinedSource, childRes, children.length, periodLabel, start);
+      let source: string;
+      if (gapEpisodes.length > 0) {
+        source = `=== ${children.length} ${childRes} narrative(s) ===\n${childText}\n\n=== Raw episodes from uncovered periods ===\n${gapText}`;
+      } else {
+        source = childText;
+      }
+      prompt = buildHierarchicalPrompt(resolution, source, childRes, children.length, periodLabel, start);
       sourceEpisodeCount = children.reduce((sum, c) => sum + c.sourceEpisodeCount, 0) + gapEpisodes.length;
       sourceNoteCount = 0;
-      log.info(`[narrative] ${resolution}: hybrid — ${children.length} ${childRes} narratives + ${gapEpisodes.length} gap episodes`);
+      log.info(`[narrative] ${resolution}: ${children.length} ${childRes} narratives + ${gapEpisodes.length} gap episodes`);
     } else {
       log.info(`[narrative] ${resolution}: no ${childRes} narratives available, falling back to raw episodes`);
       const fallback = buildFlatPrompt(db, knowledgeThreadId, resolution, start, end, periodLabel);
