@@ -164,7 +164,8 @@ export function getShortReminder(threadId: number | undefined, sessionStartedAt:
   const threadHint = threadId !== undefined
     ? `\n- Active Telegram thread ID: **${threadId}** — if this session is restarted, call start_session with threadId=${threadId} to resume this topic.`
     : "";
-  return threadHint + `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`;
+  return threadHint + `\n- Current time: ${timeStr} | Session uptime: ${uptimeMin}m`
+    + `\n${WAIT_DIRECTIVE}`;
 }
 
 /**
