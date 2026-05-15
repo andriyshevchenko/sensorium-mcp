@@ -568,17 +568,78 @@ function isCooldownActive(db: Database, threadId: number, resolution: NarrativeR
 
 // ─── Generation ──────────────────────────────────────────────────────────────
 
+function getChildWindowDays(resolution: NarrativeResolution): number {
+  switch (resolution) {
+    case "week": return 1;
+    case "month": return 7;
+    case "quarter": return 30;
+    case "half_year": return 90;
+    default: return 0;
+  }
+}
+
+function enumerateChildWindows(
+  resolution: NarrativeResolution,
+  parentStart: string,
+  parentEnd: string,
+): Array<{ start: string; end: string }> {
+  const childRes = CHILD_RESOLUTION[resolution];
+  if (!childRes) return [];
+  const windowDays = getChildWindowDays(resolution);
+  if (windowDays === 0) return [];
+
+  const windows: Array<{ start: string; end: string }> = [];
+  const pEnd = new Date(parentEnd);
+  const cur = new Date(parentStart);
+  cur.setUTCHours(0, 0, 0, 0);
+
+  while (cur < pEnd) {
+    const wEnd = new Date(cur);
+    wEnd.setUTCDate(wEnd.getUTCDate() + windowDays);
+    if (wEnd > pEnd) wEnd.setTime(pEnd.getTime());
+    windows.push({ start: cur.toISOString(), end: wEnd.toISOString() });
+    cur.setUTCDate(cur.getUTCDate() + windowDays);
+  }
+  return windows;
+}
+
+async function backfillChildNarratives(
+  db: Database,
+  threadId: number,
+  resolution: NarrativeResolution,
+  parentStart: string,
+  parentEnd: string,
+): Promise<void> {
+  const childRes = CHILD_RESOLUTION[resolution];
+  if (!childRes) return;
+
+  const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
+  const existing = getChildNarratives(db, knowledgeThreadId, resolution, parentStart, parentEnd);
+  const existingStarts = new Set(existing.map(n => n.periodStart.slice(0, 10)));
+
+  const windows = enumerateChildWindows(resolution, parentStart, parentEnd);
+  for (const w of windows) {
+    if (existingStarts.has(w.start.slice(0, 10))) continue;
+    const episodes = getEpisodesInPeriod(db, knowledgeThreadId, w.start, w.end);
+    if (episodes.length < 3) continue;
+
+    log.info(`[narrative] backfilling ${childRes} for ${w.start.slice(0, 10)} — ${w.end.slice(0, 10)} (${episodes.length} episodes)`);
+    await generateNarrative(db, threadId, childRes, { start: w.start, end: w.end });
+  }
+}
+
 async function generateNarrative(
   db: Database,
   threadId: number,
   resolution: NarrativeResolution,
+  periodOverride?: { start: string; end: string },
 ): Promise<TemporalNarrative | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
   const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
 
-  const { start, end } = getPeriodBounds(resolution);
+  const { start, end } = periodOverride ?? getPeriodBounds(resolution);
 
   const fmtShort = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const fmtRange = `${fmtShort(start)} – ${fmtShort(end)}`;
@@ -598,6 +659,7 @@ async function generateNarrative(
   let sourceNoteCount: number;
 
   if (childRes) {
+    await backfillChildNarratives(db, threadId, resolution, start, end);
     const children = getChildNarratives(db, knowledgeThreadId, resolution, start, end);
     if (children.length > 0) {
       const childText = formatChildNarrativesForLLM(children);
