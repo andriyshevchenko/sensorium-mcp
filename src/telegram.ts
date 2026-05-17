@@ -119,18 +119,31 @@ export class TelegramClient {
     init?: RequestInit,
   ): Promise<Response> {
     const timeoutMs = 30_000;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (!init?.signal) {
-      const controller = new AbortController();
-      timer = setTimeout(() => controller.abort(), timeoutMs);
-      init = { ...init, signal: controller.signal };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    // If an external signal is provided, forward its abort to our controller.
+    const externalSignal = init?.signal;
+    let onExternalAbort: (() => void) | undefined;
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        clearTimeout(timer);
+        controller.abort(externalSignal.reason);
+      } else {
+        onExternalAbort = () => controller.abort(externalSignal.reason);
+        externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+      }
     }
+
     try {
-      return await fetch(input, init);
+      return await fetch(input, { ...init, signal: controller.signal });
     } catch (err) {
       throw this.redactError(err);
     } finally {
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
+      if (externalSignal && onExternalAbort) {
+        externalSignal.removeEventListener("abort", onExternalAbort);
+      }
     }
   }
 
