@@ -159,9 +159,9 @@ const COOLDOWNS: Record<NarrativeResolution, number> = {
 const OUTPUT_TOKEN_TARGETS: Record<NarrativeResolution, number> = {
   day: 400,
   week: 800,
-  month: 1200,
-  quarter: 2000,
-  half_year: 2500,
+  month: 1600,
+  quarter: 3000,
+  half_year: 4000,
 };
 
 const INPUT_CHAR_BUDGETS: Record<NarrativeResolution, { episodes: number; notes: number }> = {
@@ -179,7 +179,7 @@ const CHILD_RESOLUTION: Partial<Record<NarrativeResolution, NarrativeResolution>
   half_year: "quarter",
 };
 
-const MIN_CHILD_NARRATIVES = 2;
+
 
 const NARRATIVE_MODEL =
   process.env.NARRATIVE_MODEL || process.env.CONSOLIDATION_MODEL || "gpt-4o";
@@ -221,6 +221,13 @@ function getPeriodBounds(resolution: NarrativeResolution): { start: string; end:
   }
   const _exhaustive: never = resolution;
   throw new Error(`Unhandled narrative resolution: ${_exhaustive}`);
+}
+
+function getEarliestEpisodeDate(db: Database, threadId: number): string | null {
+  const row = db
+    .prepare(`SELECT MIN(timestamp) as earliest FROM episodes WHERE thread_id = ?`)
+    .get(threadId) as { earliest: string | null } | undefined;
+  return row?.earliest ?? null;
 }
 
 // ─── Source Data Collection ──────────────────────────────────────────────────
@@ -333,37 +340,58 @@ function formatChildNarrativesForLLM(narratives: TemporalNarrative[]): string {
 
 function extractEpisodeText(ep: Episode): string {
   const content = ep.content as Record<string, unknown>;
-  const text = (content.text || content.caption || content.message || "") as string;
+  const text = (content.text || content.raw || content.caption || content.message || "") as string;
   return text.slice(0, 1500);
 }
 
+function formatEpisodeLine(ep: Episode, text: string): string {
+  const ts = ep.timestamp.slice(0, 16).replace("T", " ");
+  const imp = ep.importance != null && ep.importance !== 0.5 ? ` [imp: ${ep.importance.toFixed(1)}]` : "";
+  const tags = ep.topicTags.length > 0 ? ` [tags: ${ep.topicTags.join(", ")}]` : "";
+  return `[${ts}] (${ep.type}/${ep.modality})${imp}${tags} ${text}`;
+}
+
 function formatEpisodesForLLM(episodes: Episode[], maxChars: number): string {
-  const lines: string[] = [];
-  let chars = 0;
+  const importanceBudget = Math.round(maxChars * 0.3);
 
-  // Sort by importance DESC within chronological hour buckets so high-importance
-  // episodes aren't crowded out when the char budget is hit.
-  const sorted = [...episodes].sort((a, b) => {
-    const hourA = a.timestamp.slice(0, 13);
-    const hourB = b.timestamp.slice(0, 13);
-    if (hourA !== hourB) return hourA < hourB ? -1 : 1;
-    return (b.importance ?? 0.5) - (a.importance ?? 0.5);
-  });
+  // Pool 1: top episodes by importance (guaranteed inclusion)
+  const byImportance = [...episodes].sort((a, b) => (b.importance ?? 0.5) - (a.importance ?? 0.5));
+  const selected = new Set<string>();
+  const pool1: Array<{ ep: Episode; line: string }> = [];
+  let pool1Chars = 0;
 
-  for (const ep of sorted) {
+  for (const ep of byImportance) {
     const text = extractEpisodeText(ep);
     if (!text.trim()) continue;
-
-    const ts = ep.timestamp.slice(0, 16).replace("T", " ");
-    const tags = ep.topicTags.length > 0 ? ` [tags: ${ep.topicTags.join(", ")}]` : "";
-    const line = `[${ts}] (${ep.type}/${ep.modality})${tags} ${text}`;
-
-    if (chars + line.length > maxChars) break;
-    lines.push(line);
-    chars += line.length;
+    const line = formatEpisodeLine(ep, text);
+    if (pool1Chars + line.length > importanceBudget) break;
+    pool1.push({ ep, line });
+    selected.add(ep.episodeId);
+    pool1Chars += line.length;
   }
 
-  return lines.join("\n");
+  // Pool 2: chronological fill (remaining budget)
+  const remainingBudget = maxChars - pool1Chars;
+  const chronological = [...episodes]
+    .filter(ep => !selected.has(ep.episodeId))
+    .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
+  const pool2: Array<{ ep: Episode; line: string }> = [];
+  let pool2Chars = 0;
+
+  for (const ep of chronological) {
+    const text = extractEpisodeText(ep);
+    if (!text.trim()) continue;
+    const line = formatEpisodeLine(ep, text);
+    if (pool2Chars + line.length > remainingBudget) break;
+    pool2.push({ ep, line });
+    pool2Chars += line.length;
+  }
+
+  // Merge both pools and sort chronologically for coherent reading
+  return [...pool1, ...pool2]
+    .sort((a, b) => (a.ep.timestamp < b.ep.timestamp ? -1 : 1))
+    .map(x => x.line)
+    .join("\n");
 }
 
 function formatNotesForLLM(notes: SemanticNote[], maxChars: number): string {
@@ -395,9 +423,9 @@ function buildPrompt(
   const instructions: Record<NarrativeResolution, string> = {
     day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. For each major event, explain WHY it happened and what it caused. Don't just list what happened — explain the chain of consequences. Target ~400 tokens.`,
     week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~800 tokens.`,
-    month: `Write a narrative arc for this past month (${periodLabel}). Structure around 2-3 major cause-effect chains: what problem or opportunity emerged, what decisions were made in response, and how those decisions played out. Name specific features, tools, or systems — not abstractions. End with what's unresolved. Target ~1200 tokens.`,
-    quarter: `Write a narrative arc for this quarter (${periodLabel}). Identify 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved through concrete cause-and-effect, not vague 'themes'. Cover the ENTIRE period — do not skip early events. Target ~2000 tokens.`,
-    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). Capture the 1-2 biggest transformations: where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision — no unsupported generalizations like 'significant progress' or 'notable improvements'. Cover the ENTIRE period from start to end. Target ~2500 tokens.`,
+    month: `Write a thematic narrative for this past month (${periodLabel}). Identify 2-3 major themes that defined this period. For each theme: name specific features/systems involved, what triggered the work, what key decisions were made and by whom, and what the outcome was. Group events by theme, not by date. Mention dates for key turning points but don't structure as a timeline. End with unresolved threads. Target ~1600 tokens.`,
+    quarter: `Write a thematic narrative for this quarter (${periodLabel}). Identify 2-3 major themes or arcs that defined the period. For each theme: what was the initial state, what specific decisions and events drove change (name systems, threads, versions), and what transformed as a result. Group by theme, not chronology — use dates only for key turning points. Episodes marked [imp: 0.6+] are operator-priority — weight them heavily. Cover the ENTIRE period from start to end. Target ~3000 tokens.`,
+    half_year: `Write a thematic narrative for this half-year (${periodLabel}). Identify 2-3 defining arcs of transformation. For each: where things started, what specific events/decisions caused the shift (name systems, versions, thread IDs), and where things stand now. Structure by theme, not timeline — dates only for pivotal moments. Episodes marked [imp: 0.6+] are operator-priority — weight them heavily. Every claim must reference a concrete event. Cover the ENTIRE period. Target ~4000 tokens.`,
   };
 
   return `You are a temporal memory narrator. You create coherent stories from raw interaction data.
@@ -457,9 +485,9 @@ function buildHierarchicalPrompt(
   const endYear = new Date().getFullYear();
   const instructions: Partial<Record<NarrativeResolution, string>> = {
     week: `Write a narrative of the key developments this past week (${periodLabel}). You have ${childCount} daily narratives below — synthesize them into a coherent weekly arc. For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how earlier days' decisions led to later outcomes. Target ~800 tokens.`,
-    month: `Write a narrative arc for this past month (${periodLabel}). You have ${childCount} weekly narratives below — synthesize them into 2-3 major cause-effect chains. Show how the week-to-week trajectory evolved: what problems emerged, what decisions were made, and how they played out across weeks. Name specific features, tools, or systems. End with what's unresolved. Target ~1200 tokens.`,
-    quarter: `Write a narrative arc for this quarter (${periodLabel}). You have ${childCount} monthly narratives below — synthesize them into 2-3 pivotal decisions or turning points. For each: what was the situation before, what changed, and what was the lasting impact. Show how the project's direction evolved month-over-month through concrete cause-and-effect. Cover the ENTIRE period — do not skip early events. Target ~2000 tokens.`,
-    half_year: `Write a bird's-eye narrative for this half-year (${periodLabel}). You have ${childCount} quarterly narratives below — synthesize them into the 1-2 biggest transformations. Where the project started, what specific events or decisions caused the shift, and where it stands now. Every claim must reference a concrete event or decision from the source narratives. Cover the ENTIRE period from start to end. Target ~2500 tokens.`,
+    month: `Write a thematic narrative for this past month (${periodLabel}). You have ${childCount} weekly narratives below. Identify 2-3 major themes that defined this month. For each theme: name specific features/systems, what triggered the work, key decisions (by whom and why), and outcomes. Group by theme, not by week. Use dates only for turning points. End with unresolved threads. Target ~1600 tokens.`,
+    quarter: `Write a thematic narrative for this quarter (${periodLabel}). You have ${childCount} monthly narratives and possibly top-importance raw episodes below. Identify 2-3 defining themes or arcs. For each: initial state, what decisions/events drove change (name systems, threads, versions), and what transformed. Structure by theme, not month-by-month. Raw episodes marked [imp: 0.6+] are operator-priority — ensure they appear in the narrative. Cover the ENTIRE period. Target ~3000 tokens.`,
+    half_year: `Write a thematic narrative for this half-year (${periodLabel}). You have ${childCount} quarterly narratives and possibly top-importance raw episodes below. Identify 2-3 defining arcs of transformation. For each: where things started, what drove the shift (name systems, versions, thread IDs), and current state. Structure by theme. Raw episodes marked [imp: 0.6+] are operator-priority — ensure they appear. Every claim must reference a concrete event. Cover the ENTIRE period. Target ~4000 tokens.`,
   };
 
   return `You are a temporal memory narrator. You create coherent stories by synthesizing lower-resolution narratives into higher-level arcs.
@@ -538,7 +566,7 @@ function getLastNarrative(
     .prepare(
       `SELECT * FROM temporal_narratives
        WHERE thread_id = ? AND resolution = ?
-       ORDER BY created_at DESC LIMIT 1`,
+       ORDER BY period_start DESC LIMIT 1`,
     )
     .get(threadId, resolution) as Record<string, unknown> | undefined;
 
@@ -621,7 +649,7 @@ async function backfillChildNarratives(
   for (const w of windows) {
     if (existingStarts.has(w.start.slice(0, 10))) continue;
     const episodes = getEpisodesInPeriod(db, knowledgeThreadId, w.start, w.end);
-    if (episodes.length < 3) continue;
+    if (episodes.length < 5) continue;
 
     log.info(`[narrative] backfilling ${childRes} for ${w.start.slice(0, 10)} — ${w.end.slice(0, 10)} (${episodes.length} episodes)`);
     await generateNarrative(db, threadId, childRes, { start: w.start, end: w.end });
@@ -639,7 +667,11 @@ async function generateNarrative(
 
   const knowledgeThreadId = resolveKnowledgeThreadId(threadId);
 
-  const { start, end } = periodOverride ?? getPeriodBounds(resolution);
+  const bounds = periodOverride ?? getPeriodBounds(resolution);
+  // Clamp period start to earliest actual episode to prevent hallucinated dates
+  const earliest = getEarliestEpisodeDate(db, knowledgeThreadId);
+  const start = earliest && earliest > bounds.start ? earliest : bounds.start;
+  const end = bounds.end;
 
   const fmtShort = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const fmtRange = `${fmtShort(start)} – ${fmtShort(end)}`;
@@ -679,12 +711,27 @@ async function generateNarrative(
       const gapEpisodes = episodes.filter(ep => !coveredPeriods.has(ep.timestamp.slice(0, 10)));
       const budget = INPUT_CHAR_BUDGETS[resolution];
       const gapText = gapEpisodes.length > 0 ? formatEpisodesForLLM(gapEpisodes, budget.episodes) : "";
-      let source: string;
-      if (gapEpisodes.length > 0) {
-        source = `=== ${children.length} ${childRes} narrative(s) ===\n${childText}\n\n=== Raw episodes from uncovered periods ===\n${gapText}`;
-      } else {
-        source = childText;
+
+      // For quarter/half_year: inject top-20 highest-importance raw episodes so strategic
+      // decisions survive hierarchical compression
+      let topEpisodesText = "";
+      if (resolution === "quarter" || resolution === "half_year") {
+        const topN = [...episodes]
+          .filter(ep => (ep.importance ?? 0.5) >= 0.6)
+          .sort((a, b) => (b.importance ?? 0.5) - (a.importance ?? 0.5))
+          .slice(0, 20);
+        if (topN.length > 0) {
+          topEpisodesText = topN.map(ep => {
+            const text = extractEpisodeText(ep);
+            return text.trim() ? formatEpisodeLine(ep, text) : "";
+          }).filter(Boolean).join("\n");
+        }
       }
+
+      const parts = [`=== ${children.length} ${childRes} narrative(s) ===\n${childText}`];
+      if (topEpisodesText) parts.push(`=== Top-importance raw episodes (for detail recovery) ===\n${topEpisodesText}`);
+      if (gapEpisodes.length > 0) parts.push(`=== Raw episodes from uncovered periods ===\n${gapText}`);
+      const source = parts.join("\n\n");
       prompt = buildHierarchicalPrompt(resolution, source, childRes, children.length, periodLabel, start);
       sourceEpisodeCount = children.reduce((sum, c) => sum + c.sourceEpisodeCount, 0) + gapEpisodes.length;
       sourceNoteCount = 0;
