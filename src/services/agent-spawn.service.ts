@@ -244,7 +244,7 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
     try { if (existsSync(src)) copyFileSync(src, dst); } catch (err) { log.debug(`[spawn] Failed to copy ${shared} for thread ${threadId}: ${errorMessage(err)}`); }
   }
   // CLAUDE_CODE_OAUTH_TOKEN is on ENV_DENYLIST to avoid leaking to Copilot/Codex — pass explicitly only to Claude spawns
-  const spawnEnv = sanitizeSpawnEnv({ CLAUDE_CONFIG_DIR: claudeConfigDir, ...(oauthToken ? { CLAUDE_CODE_OAUTH_TOKEN: oauthToken } : {}), ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
+  const spawnEnv = sanitizeSpawnEnv({ CLAUDE_CONFIG_DIR: claudeConfigDir, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ...(oauthToken ? { CLAUDE_CODE_OAUTH_TOKEN: oauthToken } : {}), ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}), ...(memoryTargetThreadId !== undefined ? { MEMORY_TARGET_THREAD_ID: String(memoryTargetThreadId) } : {}) });
   if (process.platform === "win32" && !spawnEnv.CLAUDE_CODE_GIT_BASH_PATH) for (const candidate of [join(homedir(), "AppData", "Local", "Programs", "Git", "bin", "bash.exe"), "C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"]) if (existsSync(candidate)) { spawnEnv.CLAUDE_CODE_GIT_BASH_PATH = candidate; break; }
   try {
     const claudeModel = threadType === "worker"
