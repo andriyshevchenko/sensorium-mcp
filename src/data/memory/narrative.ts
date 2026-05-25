@@ -173,7 +173,6 @@ const INPUT_CHAR_BUDGETS: Record<NarrativeResolution, { episodes: number; notes:
 };
 
 const CHILD_RESOLUTION: Partial<Record<NarrativeResolution, NarrativeResolution>> = {
-  week: "day",
   month: "week",
   quarter: "month",
   half_year: "quarter",
@@ -421,46 +420,27 @@ function buildPrompt(
   const startYear = new Date(periodStart).getFullYear();
   const endYear = new Date().getFullYear();
   const instructions: Record<NarrativeResolution, string> = {
-    day: `Write a detailed narrative of what happened today (${periodLabel}). Include specific events, decisions made, problems encountered, and outcomes. Use chronological order. Be concrete — mention specific features, fixes, discussions. For each major event, explain WHY it happened and what it caused. Don't just list what happened — explain the chain of consequences. Target ~400 tokens.`,
-    week: `Write a concise narrative of the key developments this past week (${periodLabel}). For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how Monday's decision led to Wednesday's outcome. Group by causal chains, not just themes. Target ~800 tokens.`,
-    month: `Write a thematic narrative for this past month (${periodLabel}). Identify 2-3 major themes that defined this period. For each theme: name specific features/systems involved, what triggered the work, what key decisions were made and by whom, and what the outcome was. Group events by theme, not by date. Mention dates for key turning points but don't structure as a timeline. End with unresolved threads. Target ~1600 tokens.`,
-    quarter: `Write a thematic narrative for this quarter (${periodLabel}). Identify 2-3 major themes or arcs that defined the period. For each theme: what was the initial state, what specific decisions and events drove change (name systems, threads, versions), and what transformed as a result. Group by theme, not chronology — use dates only for key turning points. Episodes marked [imp: 0.6+] are operator-priority — weight them heavily. Cover the ENTIRE period from start to end. Target ~3000 tokens.`,
-    half_year: `Write a thematic narrative for this half-year (${periodLabel}). Identify 2-3 defining arcs of transformation. For each: where things started, what specific events/decisions caused the shift (name systems, versions, thread IDs), and where things stand now. Structure by theme, not timeline — dates only for pivotal moments. Episodes marked [imp: 0.6+] are operator-priority — weight them heavily. Every claim must reference a concrete event. Cover the ENTIRE period. Target ~4000 tokens.`,
+    day: `Write a chronological log of what happened today (${periodLabel}). For each event: what happened, who decided, why, and what resulted. Include timestamps (hours:minutes). Be direct — short sentences, no filler. Target ~400 tokens.`,
+    week: `Write a chronological log of key decisions and outcomes this week (${periodLabel}). Skip routine events — only include decisions, bugs found, features shipped, and their consequences. Use day-level dates, no hours. For each: who decided, what, why, result. Target ~800 tokens.`,
+    month: `Write a chronological decision log for this month (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, bugs that broke something, features shipped. Skip routine fixes, code reviews, type errors, status checks. For each entry: include WHY the decision was made and WHAT it caused. Day-level dates, no hours. End with unresolved items. Target ~1600 tokens.`,
+    quarter: `Write a chronological decision log for this quarter (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors, status checks. For each entry: WHY the decision was made and WHAT it caused. Day-level dates, strict chronological order. Episodes marked [imp: 0.6+] are operator-priority — include them. End with unresolved items. Target ~3000 tokens.`,
+    half_year: `Write a chronological decision log for this half-year (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors, status checks. For each entry: WHY and WHAT it caused. Day-level dates, strict chronological order. Episodes marked [imp: 0.6+] are operator-priority — include them. End with current state. Target ~4000 tokens.`,
   };
 
-  return `You are a temporal memory narrator. You create coherent stories from raw interaction data.
+  return `You are a temporal memory narrator. You write concise decision logs from raw interaction data.
 
 ${instructions[resolution]}
 
-PRECISION RULES (non-negotiable):
-- Name every thread, feature, tool, or system by its EXACT name. Include IDs/numbers where available (e.g., "thread 'Archived threads viewer' (ID 16586)", not "the new thread").
-- Include timestamps (dates at minimum, times when relevant) for every event.
-- Never write "the thread" / "the feature" / "this issue" / "the system" without naming it first.
-- Every sentence must contain at least one concrete identifier: a name, version, date, ID, or number. If a sentence contains none, delete it.
-- When referencing a decision, state WHO decided, WHAT was decided, and WHY.
-- Zero filler: if removing a sentence loses no information, don't write it. Density over flow.
-
-CONCISENESS RULES (non-negotiable):
-- Use the fewest words possible to convey each fact. Prefer short, direct sentences.
-- NEVER write preamble, throat-clearing, or scene-setting sentences like "The period was marked by a series of pivotal decisions" or "This action was part of a broader effort to streamline..."
-- Cut ALL linking/transition filler: "simultaneously", "in parallel", "this led to", "as a result of this", "this prompted". Just state what happened next.
-- NEVER summarize what you're about to say or what you just said. No introductory or concluding paragraphs that restate the content.
-- Every word must earn its place. If a sentence works without an adjective or adverb, remove it.
-- Bad: "The operator initiated a project update by requesting the activation of thread X." Good: "The operator activated thread X."
-- Bad: "This resolution not only solved the immediate issue but also enhanced the overall efficiency of the system by preventing redundant operations." Good: "The fix also eliminated redundant topic creation."
-
-FORMAT RULES:
-- Write in first person for yourself ("I did...", "I noticed...") and third person for the operator ("The operator...")
-- Use concrete timestamps when referencing specific events
-- Preserve causal chains: "X happened, which led to Y, resulting in Z"
-- Do NOT list facts — weave them into a narrative
-- Do NOT use bullet points — write flowing paragraphs
-- End with current status / what's next
-- NEVER use filler phrases like: "significant progress/evolution/strides", "notable improvement/milestone/achievement", "various features", "several enhancements", "pivotal moments", "crucial step/milestone/decision", "substantial/remarkable/meaningful progress", "overall good/positive", "as I navigated/reflected/observed", "this prompted me to reflect", "I noticed a critical/key ...", "driven by", "shaped the direction/trajectory"
-- Every claim must be grounded in a specific event, decision, or outcome from the source data
-- If you can't point to specific evidence, don't include it
-- NEVER open with a date-setting sentence like "In [Month Year]..." or "During [Month Year]..." — start with what actually happened
-- Only use years that appear in the period range (${startYear}${startYear !== endYear ? `–${endYear}` : ""}) — never substitute today's year for an earlier period
+STYLE:
+- Short, direct sentences. No filler, no adjectives, no transitions.
+- Write like a log entry, not an essay. Example: "April 19 — operator initiated narrative overhaul because quality was poor. I proposed three fixes: reflection limits, causal prompts, semantic validation."
+- First person for yourself ("I did..."), third person for the operator ("The operator...").
+- Name every system, thread, feature by exact name with IDs where available.
+- Every sentence must have at least one identifier (name, version, date, ID, number).
+- NEVER write: "significant progress", "notable improvement", "pivotal moment", "crucial step", "as I reflected", "this prompted", "driven by", "shaped the direction", "the focus remains on", "enhancing overall".
+- NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
+- NEVER write an introductory or concluding paragraph that summarizes.
+- Only use years in the range ${startYear}${startYear !== endYear ? `–${endYear}` : ""}.
 
 SOURCE DATA (${episodeCount} episodes):
 
@@ -470,7 +450,7 @@ ${episodesText || "(no episodes in this period)"}
 === Relevant Knowledge ===
 ${notesText || "(no notes)"}
 
-Write the narrative now. Plain text, no markdown headers.`;
+Write now. Plain text, no markdown.`;
 }
 
 function buildHierarchicalPrompt(
@@ -484,49 +464,31 @@ function buildHierarchicalPrompt(
   const startYear = new Date(periodStart).getFullYear();
   const endYear = new Date().getFullYear();
   const instructions: Partial<Record<NarrativeResolution, string>> = {
-    week: `Write a narrative of the key developments this past week (${periodLabel}). You have ${childCount} daily narratives below — synthesize them into a coherent weekly arc. For each development, explain: what triggered it, what decision was made, and what resulted. Connect events causally — show how earlier days' decisions led to later outcomes. Target ~800 tokens.`,
-    month: `Write a thematic narrative for this past month (${periodLabel}). You have ${childCount} weekly narratives below. Identify 2-3 major themes that defined this month. For each theme: name specific features/systems, what triggered the work, key decisions (by whom and why), and outcomes. Group by theme, not by week. Use dates only for turning points. End with unresolved threads. Target ~1600 tokens.`,
-    quarter: `Write a thematic narrative for this quarter (${periodLabel}). You have ${childCount} monthly narratives and possibly top-importance raw episodes below. Identify 2-3 defining themes or arcs. For each: initial state, what decisions/events drove change (name systems, threads, versions), and what transformed. Structure by theme, not month-by-month. Raw episodes marked [imp: 0.6+] are operator-priority — ensure they appear in the narrative. Cover the ENTIRE period. Target ~3000 tokens.`,
-    half_year: `Write a thematic narrative for this half-year (${periodLabel}). You have ${childCount} quarterly narratives and possibly top-importance raw episodes below. Identify 2-3 defining arcs of transformation. For each: where things started, what drove the shift (name systems, versions, thread IDs), and current state. Structure by theme. Raw episodes marked [imp: 0.6+] are operator-priority — ensure they appear. Every claim must reference a concrete event. Cover the ENTIRE period. Target ~4000 tokens.`,
+    month: `Write a chronological decision log for this month (${periodLabel}). You have ${childCount} weekly narratives below. Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, bugs that broke something, features shipped. Skip routine fixes, code reviews, type errors, status checks. For each entry: WHY the decision was made and WHAT it caused. Day-level dates, no hours. End with unresolved items. Target ~1600 tokens.`,
+    quarter: `Write a chronological decision log for this quarter (${periodLabel}). You have ${childCount} monthly narratives and possibly top-importance raw episodes below. Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors, status checks. For each entry: WHY and WHAT it caused. Day-level dates, strict chronological order. Raw episodes marked [imp: 0.6+] are operator-priority — include them. End with unresolved items. Target ~3000 tokens.`,
+    half_year: `Write a chronological decision log for this half-year (${periodLabel}). You have ${childCount} quarterly narratives and possibly top-importance raw episodes below. Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors, status checks. For each entry: WHY and WHAT it caused. Day-level dates, strict chronological order. Raw episodes marked [imp: 0.6+] are operator-priority — include them. End with current state. Target ~4000 tokens.`,
   };
 
-  return `You are a temporal memory narrator. You create coherent stories by synthesizing lower-resolution narratives into higher-level arcs.
+  return `You are a temporal memory narrator. You write concise decision logs by synthesizing lower-resolution narratives.
 
 ${instructions[resolution]}
 
-PRECISION RULES (non-negotiable):
-- Name every thread, feature, tool, or system by its EXACT name. Include IDs/numbers where available (e.g., "thread 'Archived threads viewer' (ID 16586)", not "the new thread").
-- Include timestamps (dates at minimum, times when relevant) for every event.
-- Never write "the thread" / "the feature" / "this issue" / "the system" without naming it first.
-- Every sentence must contain at least one concrete identifier: a name, version, date, ID, or number. If a sentence contains none, delete it.
-- When referencing a decision, state WHO decided, WHAT was decided, and WHY.
-- Zero filler: if removing a sentence loses no information, don't write it. Density over flow.
-
-CONCISENESS RULES (non-negotiable):
-- Use the fewest words possible to convey each fact. Prefer short, direct sentences.
-- NEVER write preamble, throat-clearing, or scene-setting sentences like "The period was marked by a series of pivotal decisions" or "This action was part of a broader effort to streamline..."
-- Cut ALL linking/transition filler: "simultaneously", "in parallel", "this led to", "as a result of this", "this prompted". Just state what happened next.
-- NEVER summarize what you're about to say or what you just said. No introductory or concluding paragraphs that restate the content.
-- Every word must earn its place. If a sentence works without an adjective or adverb, remove it.
-- Bad: "The operator initiated a project update by requesting the activation of thread X." Good: "The operator activated thread X."
-- Bad: "This resolution not only solved the immediate issue but also enhanced the overall efficiency of the system by preventing redundant operations." Good: "The fix also eliminated redundant topic creation."
-
-FORMAT RULES:
-- Write in first person for yourself ("I did...", "I noticed...") and third person for the operator ("The operator...")
-- Preserve causal chains: "X happened, which led to Y, resulting in Z"
-- Do NOT list facts — weave them into a narrative
-- Do NOT use bullet points — write flowing paragraphs
-- End with current status / what's next
-- NEVER use filler phrases like: "significant progress/evolution/strides", "notable improvement/milestone/achievement", "various features", "several enhancements", "pivotal moments", "crucial step/milestone/decision", "substantial/remarkable/meaningful progress", "overall good/positive", "as I navigated/reflected/observed", "this prompted me to reflect", "I noticed a critical/key ...", "driven by", "shaped the direction/trajectory"
-- Every claim must be grounded in a specific event, decision, or outcome from the source narratives
-- NEVER open with a date-setting sentence like "In [Month Year]..." or "During [Month Year]..." — start with what actually happened
-- Only use years that appear in the period range (${startYear}${startYear !== endYear ? `–${endYear}` : ""}) — never substitute today's year for an earlier period
+STYLE:
+- Short, direct sentences. No filler, no adjectives, no transitions.
+- Write like a log entry, not an essay. Example: "April 19 — operator initiated narrative overhaul because quality was poor. I proposed three fixes: reflection limits, causal prompts, semantic validation."
+- First person for yourself ("I did..."), third person for the operator ("The operator...").
+- Name every system, thread, feature by exact name with IDs where available.
+- Every sentence must have at least one identifier (name, version, date, ID, number).
+- NEVER write: "significant progress", "notable improvement", "pivotal moment", "crucial step", "as I reflected", "this prompted", "driven by", "shaped the direction", "the focus remains on", "enhancing overall".
+- NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
+- NEVER write an introductory or concluding paragraph that summarizes.
+- Only use years in the range ${startYear}${startYear !== endYear ? `–${endYear}` : ""}.
 
 SOURCE: ${childCount} ${childResolution} narratives
 
 ${childNarrativesText}
 
-Write the narrative now. Plain text, no markdown headers.`;
+Write now. Plain text, no markdown.`;
 }
 
 function buildFlatPrompt(
@@ -566,7 +528,39 @@ function getLastNarrative(
     .prepare(
       `SELECT * FROM temporal_narratives
        WHERE thread_id = ? AND resolution = ?
-       ORDER BY period_start DESC LIMIT 1`,
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(threadId, resolution) as Record<string, unknown> | undefined;
+
+  if (!row) return null;
+
+  return {
+    id: row.id as number,
+    threadId: row.thread_id as number,
+    resolution: row.resolution as NarrativeResolution,
+    periodStart: row.period_start as string,
+    periodEnd: row.period_end as string,
+    narrative: row.narrative as string,
+    sourceEpisodeCount: row.source_episode_count as number,
+    sourceNoteCount: row.source_note_count as number,
+    model: row.model as string | null,
+    createdAt: row.created_at as string,
+  };
+}
+
+function getCurrentNarrative(
+  db: Database,
+  threadId: number,
+  resolution: NarrativeResolution,
+): TemporalNarrative | null {
+  const row = db
+    .prepare(
+      `SELECT * FROM temporal_narratives
+       WHERE thread_id = ? AND resolution = ?
+         AND period_start <= datetime('now')
+         AND period_end >= datetime('now', '-1 day')
+       ORDER BY julianday(period_end) - julianday(period_start) DESC, created_at DESC
+       LIMIT 1`,
     )
     .get(threadId, resolution) as Record<string, unknown> | undefined;
 
@@ -884,9 +878,9 @@ export function getNarrativesForBootstrap(
 
   try {
     for (const res of ["day", "week", "month", "quarter", "half_year"] as NarrativeResolution[]) {
-      const last = getLastNarrative(db, threadId, res);
-      if (last) {
-        result[res] = last.narrative;
+      const narrative = getCurrentNarrative(db, threadId, res) ?? getLastNarrative(db, threadId, res);
+      if (narrative) {
+        result[res] = narrative.narrative;
       }
     }
   } catch (err) { log.debug(`[narrative] getNarrativesForBootstrap failed: ${errorMessage(err)}`); }

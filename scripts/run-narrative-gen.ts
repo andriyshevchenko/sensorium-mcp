@@ -19,7 +19,7 @@ db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
 async function main() {
-  const { runNarrativeGeneration } = await import("../src/data/memory/narrative.js");
+  const { runNarrativeGeneration } = await import("../dist/data/memory/narrative.js");
 
   console.log(`Regenerating narratives for thread ${THREAD_ID}...\n`);
   const result = await runNarrativeGeneration(db, THREAD_ID, { force: true });
