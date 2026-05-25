@@ -35,3 +35,12 @@ securevault run --profile azure-devops -- git push origin <branch>
 ## Rules
 - ALWAYS use `securevault run --profile azure-devops --` for authenticated ops
 - NEVER use `az` directly, NEVER ask for PAT values
+- `#<number>` in Azure DevOps PR comments/descriptions auto-links to a **work item**, not a PR. To reference a PR, use the full URL: `[PR 58041](https://dev.azure.com/ORG/PROJECT/_git/REPO/pullrequest/58041)`
+
+## PR Comments
+When leaving comments on pull requests (e.g. replying to reviewer questions), write structured, human-readable responses:
+- Use **bold** for key terms and section headers
+- Use bullet lists and numbered lists for clarity
+- Compare before/after when explaining a change
+- Explain the "why" clearly — the reviewer is a person, not a compiler
+- Keep technical but conversational — no walls of unformatted text
