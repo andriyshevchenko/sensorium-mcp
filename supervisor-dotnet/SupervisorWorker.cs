@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -157,12 +158,31 @@ public sealed class SupervisorWorker : BackgroundService
         using var timer = new PeriodicTimer(_opts.HealthCheckInterval);
         int tickCount = 0;
         int httpFailCount = 0;
+        var lastTick = DateTimeOffset.UtcNow;
+        // Hibernation threshold: if the time between ticks is > 3× the expected interval,
+        // the system was likely asleep (suspended/hibernated).
+        var hibernationThreshold = _opts.HealthCheckInterval * 3;
 
         try
         {
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
             {
                 tickCount++;
+                var now = DateTimeOffset.UtcNow;
+                var elapsed = now - lastTick;
+                lastTick = now;
+
+                // ── Hibernation/sleep detection ──────────────────────────────
+                if (elapsed > hibernationThreshold)
+                {
+                    _log.LogInformation(
+                        "System wake detected: tick gap {Elapsed:F0}s (expected ~{Expected:F0}s)",
+                        elapsed.TotalSeconds, _opts.HealthCheckInterval.TotalSeconds);
+
+                    // Skip wake notification during maintenance (e.g. /nuke in progress)
+                    if (!File.Exists(_opts.Paths.MaintenanceFlag))
+                        await HandleSystemWakeAsync(ct).ConfigureAwait(false);
+                }
 
                 // Skip auto-restart when maintenance flag is present (e.g. after /nuke)
                 if (File.Exists(_opts.Paths.MaintenanceFlag))
@@ -240,6 +260,68 @@ public sealed class SupervisorWorker : BackgroundService
             await _mcp.PrepareShutdownAsync(CancellationToken.None).ConfigureAwait(false);
             await _proc.KillProcessDirectAsync(shutdownPid).ConfigureAwait(false);
         }
+    }
+
+    private async Task HandleSystemWakeAsync(CancellationToken ct)
+    {
+        // Give MCP a moment to recover (network stack, DNS, etc.)
+        await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+
+        var (pidOk, pid) = await _proc.ReadPidFileAsync(_opts.Paths.ServerPid).ConfigureAwait(false);
+        bool mcpAlive = pidOk && _proc.IsProcessAlive(pid);
+        bool mcpReady = mcpAlive && await _mcp.IsServerReadyAsync(ct).ConfigureAwait(false);
+
+        if (!mcpReady)
+        {
+            _log.LogWarning("MCP not ready after wake — waiting up to 60s...");
+            mcpReady = await _mcp.WaitForReadyAsync(
+                TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(60), ct).ConfigureAwait(false);
+        }
+
+        if (!mcpReady)
+        {
+            await _notify.NotifyAsync(
+                "⚠️ <b>System woke from sleep</b> — MCP server is NOT responding. Will attempt restart on next health tick.",
+                ct: ct).ConfigureAwait(false);
+            return;
+        }
+
+        // Count alive thread processes from PID files
+        int activeThreads = CountAliveThreads();
+
+        var message = activeThreads > 0
+            ? $"✅ <b>System woke from sleep</b> — MCP healthy, {activeThreads} thread(s) listening."
+            : "⚠️ <b>System woke from sleep</b> — MCP healthy but no active threads detected.";
+
+        _log.LogInformation("Post-wake status: MCP ready, active threads = {Count}", activeThreads);
+        await _notify.NotifyAsync(message, ct: ct).ConfigureAwait(false);
+    }
+
+    private int CountAliveThreads()
+    {
+        var pidsDir = Path.Combine(_opts.DataDir, "pids");
+        if (!Directory.Exists(pidsDir)) return 0;
+
+        int count = 0;
+        foreach (var file in Directory.EnumerateFiles(pidsDir, "*.pid"))
+        {
+            try
+            {
+                var content = File.ReadAllText(file);
+                using var doc = JsonDocument.Parse(content);
+                if (doc.RootElement.TryGetProperty("pid", out var pidProp))
+                {
+                    int threadPid = pidProp.GetInt32();
+                    if (_proc.IsProcessAlive(threadPid))
+                        count++;
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogDebug(ex, "Failed to read thread PID file {File}", file);
+            }
+        }
+        return count;
     }
 
     private static void TryDeleteFile(string path)
