@@ -156,12 +156,12 @@ public sealed class SupervisorWorker : BackgroundService
         _log.LogInformation("All subsystems started — supervisor is running (PID {Pid})", Environment.ProcessId);
 
         using var timer = new PeriodicTimer(_opts.HealthCheckInterval);
-        int tickCount = 0;
+        long tickCount = 0;
         int httpFailCount = 0;
         var lastTick = DateTimeOffset.UtcNow;
         // Hibernation threshold: if the time between ticks is > 3× the expected interval,
         // the system was likely asleep (suspended/hibernated).
-        var hibernationThreshold = _opts.HealthCheckInterval * 3;
+        var wakeDetectionThreshold = _opts.HealthCheckInterval * 3;
 
         try
         {
@@ -173,7 +173,7 @@ public sealed class SupervisorWorker : BackgroundService
                 lastTick = now;
 
                 // ── Hibernation/sleep detection ──────────────────────────────
-                if (elapsed > hibernationThreshold)
+                if (elapsed > wakeDetectionThreshold)
                 {
                     _log.LogInformation(
                         "System wake detected: tick gap {Elapsed:F0}s (expected ~{Expected:F0}s)",
@@ -265,7 +265,7 @@ public sealed class SupervisorWorker : BackgroundService
     private async Task HandleSystemWakeAsync(CancellationToken ct)
     {
         // Give MCP a moment to recover (network stack, DNS, etc.)
-        await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+        await Task.Delay(_opts.WakeRecoveryDelay, ct).ConfigureAwait(false);
 
         var (pidOk, pid) = await _proc.ReadPidFileAsync(_opts.Paths.ServerPid).ConfigureAwait(false);
         bool mcpAlive = pidOk && _proc.IsProcessAlive(pid);
@@ -273,16 +273,21 @@ public sealed class SupervisorWorker : BackgroundService
 
         if (!mcpReady)
         {
-            _log.LogWarning("MCP not ready after wake — waiting up to 60s...");
+            _log.LogWarning("MCP not ready after wake — waiting up to {Timeout}s...", _opts.WakeReadyTimeout.TotalSeconds);
             mcpReady = await _mcp.WaitForReadyAsync(
-                TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(60), ct).ConfigureAwait(false);
+                _opts.ReadyPollInterval, _opts.WakeReadyTimeout, ct).ConfigureAwait(false);
         }
 
         if (!mcpReady)
         {
+            _log.LogError("MCP not responding after wake — restarting immediately");
             await _notify.NotifyAsync(
-                "⚠️ <b>System woke from sleep</b> — MCP server is NOT responding. Will attempt restart on next health tick.",
+                "⚠️ <b>System woke from sleep</b> — MCP server is NOT responding. Restarting...",
                 ct: ct).ConfigureAwait(false);
+            await _proc.KillByPortAsync(_opts.McpHttpPort).ConfigureAwait(false);
+            TryDeleteFile(_opts.Paths.PollerLock);
+            if (!ct.IsCancellationRequested)
+                await _proc.SpawnMcpServerAsync(ct).ConfigureAwait(false);
             return;
         }
 

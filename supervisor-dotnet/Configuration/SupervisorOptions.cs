@@ -22,6 +22,10 @@ public sealed class SupervisorOptions
     public int HttpCheckEveryNTicks { get; set; } = 5;
     /// <summary>Telegram long-poll timeout in seconds for the command handler. Default 30.</summary>
     public int CommandPollTimeoutSeconds { get; set; } = 30;
+    /// <summary>Delay after wake before checking MCP health (network stabilisation). Default 5s.</summary>
+    public TimeSpan WakeRecoveryDelay { get; set; } = TimeSpan.FromSeconds(5);
+    /// <summary>Max time to wait for MCP readiness after system wake. Default 60s.</summary>
+    public TimeSpan WakeReadyTimeout { get; set; } = TimeSpan.FromSeconds(60);
     public SupervisorPaths Paths { get; set; } = new();
 }
 
