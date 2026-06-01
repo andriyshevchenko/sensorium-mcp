@@ -420,26 +420,60 @@ function buildPrompt(
   const startYear = new Date(periodStart).getFullYear();
   const endYear = new Date().getFullYear();
   const instructions: Record<NarrativeResolution, string> = {
-    day: `Write a chronological log of what happened today (${periodLabel}). For each event: what happened, who decided, why, and what resulted. Include timestamps (hours:minutes). Be direct — short sentences, no filler. Target ~400 tokens.`,
-    week: `Write a chronological log of key decisions and outcomes this week (${periodLabel}). Skip routine events — only include decisions, bugs found, features shipped, and their consequences. Use day-level dates, no hours. For each: who decided, what, why, result. Target ~800 tokens.`,
-    month: `Write a chronological decision log for this month (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, bugs that broke something, features shipped. Skip routine fixes, code reviews, type errors, status checks. For each entry: include WHY the decision was made and WHAT it caused. Day-level dates, no hours. End with unresolved items. Target ~1600 tokens.`,
-    quarter: `Write a chronological decision log for this quarter (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors, status checks. For each entry: WHY the decision was made and WHAT it caused. Day-level dates, strict chronological order. Episodes marked [imp: 0.6+] are operator-priority — include them. End with unresolved items. Target ~3000 tokens.`,
-    half_year: `Write a chronological decision log for this half-year (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors, status checks. For each entry: WHY and WHAT it caused. Day-level dates, strict chronological order. Episodes marked [imp: 0.6+] are operator-priority — include them. End with current state. Target ~4000 tokens.`,
+    day: `Write a narrative of what happened today (${periodLabel}). Tell the story chronologically — what happened, why, what it caused. Include timestamps (hours:minutes) for each event. Write in flowing prose, connecting events with cause and effect. Be specific: name systems, threads, versions, IDs. Target ~400 tokens.`,
+    week: `Write a narrative of the key developments this week (${periodLabel}). Tell the story chronologically by day. For each event: what triggered it, what was decided, what resulted. Connect events across days — show how Monday's decision led to Wednesday's outcome. Write in flowing prose, not a list. Use day-level dates, no hours. Target ~800 tokens.`,
+    month: `Write a chronological decision log for this month (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — a reader who sees only this entry should understand why it matters. Only include: decisions that changed project direction, bugs that broke something, features shipped. Skip routine fixes, code reviews, type errors, status checks. Day-level dates, no hours. End with unresolved items. Target ~1600 tokens.`,
+    quarter: `Write a chronological decision log for this quarter (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — explain what problem existed before, what decision was made, and what changed after. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors. Episodes marked [imp: 0.6+] are operator-priority — include them. Day-level dates, strict chronological order. End with unresolved items. Target ~3000 tokens.`,
+    half_year: `Write a chronological decision log for this half-year (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — explain the situation before, what decision was made, and what changed as a result. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors. Episodes marked [imp: 0.6+] are operator-priority — include them. Day-level dates, strict chronological order. End with current state. Target ~4000 tokens.`,
   };
 
-  return `You are a temporal memory narrator. You write concise decision logs from raw interaction data.
+  const styleByResolution: Record<NarrativeResolution, string> = {
+    day: `STYLE:
+- Write flowing prose, not bullet points or numbered lists. Connect events into a story.
+- First person for yourself ("I did..."), third person for the operator ("The operator...").
+- Name every system, thread, feature by exact name with IDs where available.
+- Be concrete — every sentence needs at least one identifier (name, version, date, ID, number).
+- Preserve cause-and-effect chains: "X happened because Y, which led to Z."
+- No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step".
+- NEVER open with "In [Month]..." or "During [Month]..." — start with what happened.
+- NEVER write introductory or concluding paragraphs that summarize.`,
+    week: `STYLE:
+- Write flowing prose, not bullet points or numbered lists. Connect events into a weekly story.
+- First person for yourself ("I did..."), third person for the operator ("The operator...").
+- Name every system, thread, feature by exact name with IDs where available.
+- Be concrete — every sentence needs at least one identifier (name, version, date, ID, number).
+- Preserve cause-and-effect chains across days.
+- No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step".
+- NEVER open with "In [Month]..." or "During [Month]..." — start with what happened.
+- NEVER write introductory or concluding paragraphs that summarize.`,
+    month: `STYLE:
+- Each log entry: 1-2 sentences with full context. A reader should understand the entry without reading others.
+- First person for yourself ("I did..."), third person for the operator ("The operator...").
+- Name every system, thread, feature by exact name with IDs where available.
+- No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step".
+- NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
+- NEVER write introductory or concluding paragraphs.`,
+    quarter: `STYLE:
+- Each log entry: 1-3 sentences with full context. Explain the situation before the decision, not just the decision itself.
+- First person for yourself ("I did..."), third person for the operator ("The operator...").
+- Name every system, thread, feature by exact name with IDs where available.
+- No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step".
+- NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
+- NEVER write introductory or concluding paragraphs.`,
+    half_year: `STYLE:
+- Each log entry: 1-3 sentences with full context. Explain the situation before the decision, not just the decision itself.
+- First person for yourself ("I did..."), third person for the operator ("The operator...").
+- Name every system, thread, feature by exact name with IDs where available.
+- No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step".
+- NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
+- NEVER write introductory or concluding paragraphs.`,
+  };
+
+  return `You are a temporal memory narrator. You create concise records from raw interaction data.
 
 ${instructions[resolution]}
 
-STYLE:
-- Short, direct sentences. No filler, no adjectives, no transitions.
-- Write like a log entry, not an essay. Example: "April 19 — operator initiated narrative overhaul because quality was poor. I proposed three fixes: reflection limits, causal prompts, semantic validation."
-- First person for yourself ("I did..."), third person for the operator ("The operator...").
-- Name every system, thread, feature by exact name with IDs where available.
-- Every sentence must have at least one identifier (name, version, date, ID, number).
-- NEVER write: "significant progress", "notable improvement", "pivotal moment", "crucial step", "as I reflected", "this prompted", "driven by", "shaped the direction", "the focus remains on", "enhancing overall".
-- NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
-- NEVER write an introductory or concluding paragraph that summarizes.
+${styleByResolution[resolution]}
 - Only use years in the range ${startYear}${startYear !== endYear ? `–${endYear}` : ""}.
 
 SOURCE DATA (${episodeCount} episodes):
@@ -464,24 +498,23 @@ function buildHierarchicalPrompt(
   const startYear = new Date(periodStart).getFullYear();
   const endYear = new Date().getFullYear();
   const instructions: Partial<Record<NarrativeResolution, string>> = {
-    month: `Write a chronological decision log for this month (${periodLabel}). You have ${childCount} weekly narratives below. Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, bugs that broke something, features shipped. Skip routine fixes, code reviews, type errors, status checks. For each entry: WHY the decision was made and WHAT it caused. Day-level dates, no hours. End with unresolved items. Target ~1600 tokens.`,
-    quarter: `Write a chronological decision log for this quarter (${periodLabel}). You have ${childCount} monthly narratives and possibly top-importance raw episodes below. Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors, status checks. For each entry: WHY and WHAT it caused. Day-level dates, strict chronological order. Raw episodes marked [imp: 0.6+] are operator-priority — include them. End with unresolved items. Target ~3000 tokens.`,
-    half_year: `Write a chronological decision log for this half-year (${periodLabel}). You have ${childCount} quarterly narratives and possibly top-importance raw episodes below. Format: "Date — decision/event. Reason. Result." One entry per line. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors, status checks. For each entry: WHY and WHAT it caused. Day-level dates, strict chronological order. Raw episodes marked [imp: 0.6+] are operator-priority — include them. End with current state. Target ~4000 tokens.`,
+    month: `Write a chronological decision log for this month (${periodLabel}). You have ${childCount} weekly narratives below. Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — a reader who sees only this entry should understand why it matters. Preserve important context from the weekly narratives — don't compress away the reasons and consequences. Only include: decisions that changed project direction, bugs that broke something, features shipped. Skip routine fixes, code reviews, type errors. Day-level dates, no hours. End with unresolved items. Target ~1600 tokens.`,
+    quarter: `Write a chronological decision log for this quarter (${periodLabel}). You have ${childCount} monthly narratives and possibly top-importance raw episodes below. Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — explain what problem existed before, what decision was made, and what changed after. Don't just extract dates and facts from the monthly narratives — preserve the WHY and the consequences. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Raw episodes marked [imp: 0.6+] are operator-priority — include them. Day-level dates, strict chronological order. End with unresolved items. Target ~3000 tokens.`,
+    half_year: `Write a chronological decision log for this half-year (${periodLabel}). You have ${childCount} quarterly narratives and possibly top-importance raw episodes below. Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — explain the situation before, what decision was made, and what changed as a result. Don't just extract dates and facts — preserve the full story behind each entry from the source narratives. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Raw episodes marked [imp: 0.6+] are operator-priority — include them. Day-level dates, strict chronological order. End with current state. Target ~4000 tokens.`,
   };
 
-  return `You are a temporal memory narrator. You write concise decision logs by synthesizing lower-resolution narratives.
+  return `You are a temporal memory narrator. You create concise decision logs by synthesizing lower-resolution narratives.
 
 ${instructions[resolution]}
 
 STYLE:
-- Short, direct sentences. No filler, no adjectives, no transitions.
-- Write like a log entry, not an essay. Example: "April 19 — operator initiated narrative overhaul because quality was poor. I proposed three fixes: reflection limits, causal prompts, semantic validation."
+- Each log entry: 1-3 sentences with full context. Explain the situation, not just the fact.
 - First person for yourself ("I did..."), third person for the operator ("The operator...").
 - Name every system, thread, feature by exact name with IDs where available.
 - Every sentence must have at least one identifier (name, version, date, ID, number).
-- NEVER write: "significant progress", "notable improvement", "pivotal moment", "crucial step", "as I reflected", "this prompted", "driven by", "shaped the direction", "the focus remains on", "enhancing overall".
+- No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step", "driven by", "shaped the direction", "the focus remains on".
 - NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
-- NEVER write an introductory or concluding paragraph that summarizes.
+- NEVER write introductory or concluding paragraphs.
 - Only use years in the range ${startYear}${startYear !== endYear ? `–${endYear}` : ""}.
 
 SOURCE: ${childCount} ${childResolution} narratives
