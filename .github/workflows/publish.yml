@@ -87,6 +87,9 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Build step may produce changes (e.g. dist/dashboard/spa.html) — stage them
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: update build artifacts [skip ci]"
           # [skip ci] prevents CI from running on the version-bump commit; CI may still run on the subsequent tag push.
           npm version '${{ github.event.inputs.version }}' --message "chore: release v%s [skip ci]"
 
