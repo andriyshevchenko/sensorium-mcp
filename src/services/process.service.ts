@@ -209,25 +209,46 @@ export function killProcessTree(pid: number, threadId: number): Promise<void> {
       try { unlinkSync(pidFile); } catch {}
     };
 
+    const verifyDead = (attempt: number) => {
+      if (!isProcessAlive(pid)) {
+        log.info(`[process] Killed process tree for thread ${threadId} PID=${pid}`);
+        cleanupPidFile();
+        resolve();
+        return;
+      }
+      if (attempt >= 3) {
+        log.warn(`[process] PID ${pid} (thread ${threadId}) still alive after ${attempt} kill attempts — NOT removing PID file`);
+        resolve();
+        return;
+      }
+      // Retry kill after a short delay
+      log.warn(`[process] PID ${pid} (thread ${threadId}) still alive after kill attempt ${attempt} — retrying`);
+      if (process.platform === "win32") {
+        execFile("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 10000, windowsHide: true }, () => {
+          setTimeout(() => verifyDead(attempt + 1), 1000);
+        });
+      } else {
+        try { process.kill(pid, "SIGKILL"); } catch {}
+        setTimeout(() => verifyDead(attempt + 1), 1000);
+      }
+    };
+
     if (process.platform === "win32") {
       execFile("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 10000, windowsHide: true }, (err) => {
         if (err) {
-          log.debug(`[process] Kill process ${pid} (thread ${threadId}): ${errorMessage(err)}`);
-        } else {
-          log.info(`[process] Killed process tree for thread ${threadId} PID=${pid}`);
+          log.warn(`[process] Kill process ${pid} (thread ${threadId}) failed: ${errorMessage(err)}`);
         }
-        cleanupPidFile();
-        resolve();
+        // Always verify — taskkill can report success but process lingers,
+        // or report failure but process is actually dead.
+        setTimeout(() => verifyDead(1), 500);
       });
     } else {
       try {
         process.kill(pid, "SIGTERM");
-        log.info(`[process] Killed process tree for thread ${threadId} PID=${pid}`);
       } catch (err) {
         log.debug(`[process] Kill process ${pid} (thread ${threadId}): ${errorMessage(err)}`);
       }
-      cleanupPidFile();
-      resolve();
+      setTimeout(() => verifyDead(1), 500);
     }
   });
 }

@@ -1,5 +1,5 @@
 import { log } from "../logger.js";
-import { findAliveThreadViaPidFile, killProcessTree } from "./process.service.js";
+import { findAliveThreadViaPidFile, isProcessAlive, killProcessTree } from "./process.service.js";
 import { readThreadHeartbeat } from "../data/file-storage.js";
 import { dispatchSpawn } from "./agent-spawn.service.js";
 import { getKeepAliveThreads, getThread } from "../data/memory/thread-registry.js";
@@ -150,6 +150,14 @@ export class KeeperService {
           log.warn(`[keeper] Active→Stuck transition failed for ${entry.threadId}: ${errorMessage(err)}`);
         }
         await killProcessTree(alivePid, entry.threadId);
+
+        // Verify kill succeeded before restarting — if the process is still alive,
+        // do NOT spawn a second instance. Keeper will retry on the next cycle.
+        if (isProcessAlive(alivePid)) {
+          log.warn(`[keeper] Thread ${entry.threadId} PID=${alivePid} survived kill — skipping restart (will retry next cycle)`);
+          return;
+        }
+
         entry.retryCount = 0;
         // Fall through to restart
       } else {
