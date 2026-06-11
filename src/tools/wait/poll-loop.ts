@@ -26,7 +26,7 @@ import type { TelegramClient } from "../../telegram.js";
 import type { AppConfig, ToolResult } from "../../types.js";
 import { log } from "../../logger.js";
 import { getShortReminder, buildMaintenanceResponse } from "../../response-builders.js";
-import type { ThreadLifecycleService } from "../../services/thread-lifecycle.service.js";
+import { ThreadState, type ThreadLifecycleService } from "../../services/thread-lifecycle.service.js";
 
 import { PENDING_TASKS_DIR } from "../../services/process.service.js";
 import { isSessionSuperseded } from "../../sessions.js";
@@ -183,6 +183,8 @@ export async function handleWaitForInstructions(
   let lastKeepalive = Date.now();
   let lastDriveCheck = 0;
   let lastRegistryUpdate = 0;
+  let lastArchivedCheck = 0;
+  const ARCHIVED_CHECK_INTERVAL_MS = 10_000;
 
   while (Date.now() < deadline) {
     try {
@@ -205,6 +207,19 @@ export async function handleWaitForInstructions(
       return {
         content: [{ type: "text", text: "Client disconnected. Call wait_for_instructions again to resume." }],
       };
+    }
+
+    // Bail out if the thread has been archived — graceful shutdown without kill.
+    if (Date.now() - lastArchivedCheck >= ARCHIVED_CHECK_INTERVAL_MS) {
+      lastArchivedCheck = Date.now();
+      const threadState = ctx.threadLifecycle.getThreadState(getMemoryDb(), effectiveThreadId);
+      if (threadState === ThreadState.Archived || threadState === ThreadState.Expired) {
+        log.info(`[wait] Thread ${effectiveThreadId} is ${threadState} — instructing agent to exit.`);
+        state.lastToolCallAt = Date.now();
+        return {
+          content: [{ type: "text", text: "Session terminated. Thread has been archived. Do not call wait_for_instructions again — exit immediately." }],
+        };
+      }
     }
 
     // Check for pending update — tell agent to use the watcher MCP server
