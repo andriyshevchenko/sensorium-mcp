@@ -423,8 +423,8 @@ function buildPrompt(
     day: `Write a narrative of what happened today (${periodLabel}). Tell the story chronologically — what happened, why, what it caused. Include timestamps (hours:minutes) for each event. Write in flowing prose, connecting events with cause and effect. Be specific: name systems, threads, versions, IDs. Target ~400 tokens.`,
     week: `Write a narrative of the key developments this week (${periodLabel}). Tell the story chronologically by day. For each event: what triggered it, what was decided, what resulted. Connect events across days — show how Monday's decision led to Wednesday's outcome. Write in flowing prose, not a list. Use day-level dates, no hours. Target ~800 tokens.`,
     month: `Write a chronological decision log for this month (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — a reader who sees only this entry should understand why it matters. Only include: decisions that changed project direction, bugs that broke something, features shipped. Skip routine fixes, code reviews, type errors, status checks. Day-level dates, no hours. End with unresolved items. Target ~1600 tokens.`,
-    quarter: `Write a chronological decision log for this quarter (${periodLabel}). Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — explain what problem existed before, what decision was made, and what changed after. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Skip routine fixes, minor code reviews, type errors. Episodes marked [imp: 0.6+] are operator-priority — include them. Day-level dates, strict chronological order. End with unresolved items. Target ~3000 tokens.`,
-    half_year: `Write a high-level evolution summary for this half-year (${periodLabel}). Do NOT repeat the quarterly decision log — instead, synthesize it into 5-8 thematic arcs that show HOW the project evolved. For each arc: what the system looked like at the start, what forces drove change, and where it ended up. Example arcs: "Memory system evolution", "Session management maturity", "Narrative pipeline development". Within each arc, reference specific dates and versions as evidence, but the focus is the trajectory, not individual events. End with a "Current state" section: what works, what's fragile, what's next. Target ~4000 tokens.`,
+    quarter: `Write a narrative overview of this quarter (${periodLabel}) organized by initiative. Group by subsystem (e.g. "Dashboard", "Memory system", "Narrative pipeline", "Session management"). For each initiative, write 1-2 flowing paragraphs that tell the STORY of how it evolved: what the state was at the start of the quarter, what problems appeared, what decisions were made and why, and where it ended up. Reference specific dates, versions, and IDs as evidence within the prose — but do NOT use a list or log format. The reader should understand the arc of each initiative from a connected narrative, not from scanning dated entries. Include initiatives where direction changed, major bugs appeared, features shipped, or architecture shifted. Episodes marked [imp: 0.6+] are operator-priority — weave them in. End with a short "Unresolved" section. Target ~3000 tokens.`,
+    half_year: `Write a high-level evolution summary for this half-year (${periodLabel}). Do NOT repeat the quarterly grouped changelog — instead, synthesize it into 5-8 thematic arcs that show HOW the project evolved. For each arc: what the system looked like at the start, what forces drove change, and where it ended up. Example arcs: "Memory system evolution", "Session management maturity", "Narrative pipeline development". Within each arc, reference specific dates and versions as evidence, but the focus is the trajectory, not individual events. End with a "Current state" section: what works, what's fragile, what's next. Target ~4000 tokens.`,
   };
 
   const styleByResolution: Record<NarrativeResolution, string> = {
@@ -454,9 +454,12 @@ function buildPrompt(
 - NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
 - NEVER write introductory or concluding paragraphs.`,
     quarter: `STYLE:
-- Each log entry: 1-3 sentences with full context. Explain the situation before the decision, not just the decision itself.
+- Start each initiative with its name on its own line, then write 1-2 prose paragraphs. NO dated entries, NO log format.
+- Write flowing connected narrative — "The memory system entered the quarter with X problem. In April, Y happened because Z, which led to W by May."
 - First person for yourself ("I did..."), third person for the operator ("The operator...").
 - Name every system, thread, feature by exact name with IDs where available.
+- Reference dates and versions naturally within prose, not as entry prefixes.
+- Show cross-month cause-effect — how one month's decisions shaped the next.
 - No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step".
 - NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
 - NEVER write introductory or concluding paragraphs.`,
@@ -500,22 +503,43 @@ function buildHierarchicalPrompt(
   const endYear = new Date().getFullYear();
   const instructions: Partial<Record<NarrativeResolution, string>> = {
     month: `Write a chronological decision log for this month (${periodLabel}). You have ${childCount} weekly narratives below. Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — a reader who sees only this entry should understand why it matters. Preserve important context from the weekly narratives — don't compress away the reasons and consequences. Only include: decisions that changed project direction, bugs that broke something, features shipped. Skip routine fixes, code reviews, type errors. Day-level dates, no hours. End with unresolved items. Target ~1600 tokens.`,
-    quarter: `Write a chronological decision log for this quarter (${periodLabel}). You have ${childCount} monthly narratives and possibly top-importance raw episodes below. Format: "Date — decision/event. Reason. Result." One entry per line. Each entry should have enough context to stand alone — explain what problem existed before, what decision was made, and what changed after. Don't just extract dates and facts from the monthly narratives — preserve the WHY and the consequences. Only include: decisions that changed project direction, major bugs, features shipped, architectural changes. Raw episodes marked [imp: 0.6+] are operator-priority — include them. Day-level dates, strict chronological order. End with unresolved items. Target ~3000 tokens.`,
-    half_year: `Write a high-level evolution summary for this half-year (${periodLabel}). You have ${childCount} quarterly narratives and possibly top-importance raw episodes below. Do NOT repeat the quarterly decision logs — instead, synthesize them into 5-8 thematic arcs that show HOW the project evolved over 6 months. For each arc: what the system looked like at the start of the period, what forces drove change (operator feedback, bugs, scaling needs), and where it ended up. Example arcs: "Memory system evolution", "Session management maturity", "Narrative pipeline development". Within each arc, reference specific dates and versions as evidence, but the focus is the trajectory — not individual events. End with a "Current state" section: what works, what's fragile, what's next. Target ~4000 tokens.`,
+    quarter: `Write a narrative overview of this quarter (${periodLabel}) organized by initiative. You have ${childCount} monthly narratives and possibly top-importance raw episodes below. Group by subsystem (e.g. "Dashboard", "Memory system", "Narrative pipeline", "Session management"). For each initiative, write 1-2 flowing paragraphs that tell the STORY of how it evolved: what the state was at the start, what problems appeared, what decisions were made and why, and where it ended up. Reference specific dates, versions, and IDs within the prose — but do NOT use a list or log format. Synthesize the monthly narratives into a connected story, don't just re-list their entries. The reader should understand each initiative's arc from prose, not from scanning dated lines. Raw episodes marked [imp: 0.6+] are operator-priority — weave them in. End with a short "Unresolved" section. Target ~3000 tokens.`,
+    half_year: `Write a high-level evolution summary for this half-year (${periodLabel}). You have ${childCount} quarterly changelogs and possibly top-importance raw episodes below. Do NOT repeat the quarterly grouped changelogs — instead, synthesize them into 5-8 thematic arcs that show HOW the project evolved over 6 months. For each arc: what the system looked like at the start of the period, what forces drove change (operator feedback, bugs, scaling needs), and where it ended up. Example arcs: "Memory system evolution", "Session management maturity", "Narrative pipeline development". Within each arc, reference specific dates and versions as evidence, but the focus is the trajectory — not individual events. End with a "Current state" section: what works, what's fragile, what's next. Target ~4000 tokens.`,
   };
 
-  return `You are a temporal memory narrator. You create concise decision logs by synthesizing lower-resolution narratives.
-
-${instructions[resolution]}
-
-STYLE:
+  const styleByResolution: Partial<Record<NarrativeResolution, string>> = {
+    month: `STYLE:
 - Each log entry: 1-3 sentences with full context. Explain the situation, not just the fact.
 - First person for yourself ("I did..."), third person for the operator ("The operator...").
 - Name every system, thread, feature by exact name with IDs where available.
 - Every sentence must have at least one identifier (name, version, date, ID, number).
 - No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step", "driven by", "shaped the direction", "the focus remains on".
 - NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
-- NEVER write introductory or concluding paragraphs.
+- NEVER write introductory or concluding paragraphs.`,
+    quarter: `STYLE:
+- Start each initiative with its name on its own line, then write 1-2 prose paragraphs. NO dated entries, NO log format.
+- Write flowing connected narrative that tells the story of each initiative's evolution.
+- First person for yourself ("I did..."), third person for the operator ("The operator...").
+- Name every system, thread, feature by exact name with IDs where available.
+- Reference dates and versions naturally within prose, not as entry prefixes.
+- No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step", "driven by", "shaped the direction", "the focus remains on".
+- NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
+- NEVER write introductory or concluding paragraphs.`,
+    half_year: `STYLE:
+- Write in thematic arc paragraphs. Each arc = 1-2 paragraphs showing system evolution.
+- First person for yourself ("I did..."), third person for the operator ("The operator...").
+- Name every system, thread, feature by exact name with IDs where available.
+- Reference dates and versions as evidence of the trajectory within prose.
+- No filler phrases: "significant progress", "notable improvement", "pivotal moment", "crucial step", "driven by", "shaped the direction", "the focus remains on".
+- NEVER open with "In [Month]..." or "During [Month]..." or "The period was marked by...".
+- NEVER write introductory or concluding paragraphs.`,
+  };
+
+  return `You are a temporal memory narrator. You synthesize lower-resolution narratives into higher-level summaries.
+
+${instructions[resolution]}
+
+${styleByResolution[resolution] || ""}
 - Only use years in the range ${startYear}${startYear !== endYear ? `–${endYear}` : ""}.
 
 SOURCE: ${childCount} ${childResolution} narratives
