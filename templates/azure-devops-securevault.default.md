@@ -44,3 +44,6 @@ When leaving comments on pull requests (e.g. replying to reviewer questions), wr
 - Compare before/after when explaining a change
 - Explain the "why" clearly — the reviewer is a person, not a compiler
 - Keep technical but conversational — no walls of unformatted text
+
+### Posting comments via API
+When using `az devops invoke` to post PR comments with `--in-file`, **always write a fresh file** with the comment payload immediately before posting. Never reuse a temp file path that may contain stale content from a previous operation — this can accidentally post unrelated comments to the wrong PR thread.
