@@ -151,7 +151,10 @@ function ownerKey(mcpSessionId: string): string {
 export function isSessionSuperseded(mcpSessionId: string | undefined, threadId?: number): boolean {
   if (mcpSessionId === undefined) return false;
   const key = ownerKey(mcpSessionId);
-  if (supersededSessions.has(key)) return true;
+  if (supersededSessions.has(key)) {
+    log.debug(`[session] superseded-check: ${key.slice(0, 12)}… is in the superseded set (thread ${threadId ?? "?"}).`);
+    return true;
+  }
   // A different identity owns this thread now. With token-based keys a reconnect
   // resolves to the SAME key as the owner, so this only fires for a genuinely
   // different process (or a legacy session-id whose transport changed) — the
@@ -159,7 +162,10 @@ export function isSessionSuperseded(mcpSessionId: string | undefined, threadId?:
   const resolvedThreadId = threadId ?? sessionThreadRegistry.get(mcpSessionId);
   if (resolvedThreadId !== undefined) {
     const owner = threadOwnerSession.get(resolvedThreadId);
-    if (owner !== undefined && owner !== key) return true;
+    if (owner !== undefined && owner !== key) {
+      log.debug(`[session] superseded-check: thread ${resolvedThreadId} owned by ${owner.slice(0, 12)}…, caller ${key.slice(0, 12)}… — superseded.`);
+      return true;
+    }
   }
   return false;
 }
@@ -192,7 +198,10 @@ export function reconcileThreadOwnership(
 ): boolean {
   if (mcpSessionId === undefined) return false;
   const key = ownerKey(mcpSessionId);
-  if (supersededSessions.has(key)) return true;
+  if (supersededSessions.has(key)) {
+    log.warn(`[session] Rejecting ${key.slice(0, 12)}… on thread ${threadId} — already superseded (zombie/evicted).`);
+    return true;
+  }
   const owner = threadOwnerSession.get(threadId);
   if (owner === key) return false;
   // Refuse cross-thread adoption: this identity already owns another thread.
@@ -221,6 +230,9 @@ export function reconcileThreadOwnership(
     log.warn(
       `[session] Thread ${threadId} ownership adopted by ${key.slice(0, 12)}… (was ${owner.slice(0, 12)}…) — legacy/no-token reconnect`,
     );
+  } else {
+    // First claim for a currently-unowned thread (fresh start or after restart).
+    log.info(`[session] Thread ${threadId} ownership established by ${key.slice(0, 12)}….`);
   }
   threadOwnerSession.set(threadId, key);
   return false;
@@ -235,6 +247,9 @@ export function setThreadOwnerSession(threadId: number, mcpSessionId: string): v
     // spawned a replacement). Supersede the prior owner so its stale wait-loop
     // and any late writes — including reconnects under the old token — stop.
     supersededSessions.add(previous);
+    log.info(`[session] Thread ${threadId} ownership transferred to ${key.slice(0, 12)}… (superseded ${previous.slice(0, 12)}…) via start_session.`);
+  } else if (previous === undefined) {
+    log.info(`[session] Thread ${threadId} owner set to ${key.slice(0, 12)}… via start_session.`);
   }
   // The new owner must not remain flagged from a prior life.
   supersededSessions.delete(key);
@@ -251,6 +266,7 @@ export function registerMcpSession(
   threadSessionRegistry.set(threadId, entries);
   sessionThreadRegistry.set(mcpSessionId, threadId);
   expectedSessionCloses.delete(mcpSessionId);
+  log.debug(`[session] Registered transport ${mcpSessionId.slice(0, 8)}… for thread ${threadId} (${ownerKey(mcpSessionId).slice(0, 12)}…).`);
 }
 
 export function getThreadIdForMcpSession(mcpSessionId: string): number | undefined {
@@ -281,6 +297,7 @@ export function unregisterMcpSession(mcpSessionId: string): void {
   sessionThreadRegistry.delete(mcpSessionId);
   expectedSessionCloses.delete(mcpSessionId);
   sessionSpawnToken.delete(mcpSessionId);
+  log.debug(`[session] Unregistered transport ${mcpSessionId.slice(0, 8)}… (thread ${threadId ?? "?"}).`);
 }
 
 /**
@@ -303,9 +320,18 @@ export function purgeOtherSessions(threadId: number, keepMcpSessionId?: string):
     // Supersede only DIFFERENT processes. A stale transport of the SAME process
     // (a prior reconnect — same key as the keeper) is closed but never
     // superseded, otherwise we would evict the live owner.
-    if (entryKey !== keepKey) supersededSessions.add(entryKey);
+    if (entryKey !== keepKey) {
+      supersededSessions.add(entryKey);
+      log.info(`[session] Purging session ${entry.mcpSessionId.slice(0, 8)}… (${entryKey.slice(0, 12)}…) from thread ${threadId} — superseded by start_session.`);
+    } else {
+      log.debug(`[session] Closing stale reconnect transport ${entry.mcpSessionId.slice(0, 8)}… of current owner on thread ${threadId}.`);
+    }
     expectMcpSessionClose(entry.mcpSessionId);
-    try { entry.closeTransport(); } catch (_) { /* best-effort */ }
+    try {
+      entry.closeTransport();
+    } catch (err) {
+      log.warn(`[session] closeTransport failed for ${entry.mcpSessionId.slice(0, 8)}… on thread ${threadId}: ${errorMessage(err)}`);
+    }
     unregisterMcpSession(entry.mcpSessionId);
     purged++;
   }

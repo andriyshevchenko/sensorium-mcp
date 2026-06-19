@@ -71,6 +71,10 @@ export function startHttpServer(
 
   const sessions = new Map<string, SessionEntry>();
 
+  // Sessions for which we already warned about a missing spawn token — so the
+  // observability warning fires once per session, not on every request.
+  const tokenlessWarned = new Set<string>();
+
   const MCP_HTTP_SECRET = process.env.MCP_HTTP_SECRET;
   const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
   const serverStartTime = Date.now();
@@ -81,8 +85,10 @@ export function startHttpServer(
     entry.server = null;
     try {
       await server.close();
-    } catch {
-      // Best-effort cleanup during disconnect/shutdown paths.
+    } catch (err) {
+      // Best-effort cleanup during disconnect/shutdown paths — never fatal,
+      // but surfaced at debug so a stuck close is diagnosable.
+      log.debug(`[http] closeSessionServer failed: ${errorMessage(err)}`);
     }
   }
 
@@ -209,7 +215,12 @@ export function startHttpServer(
         existing.lastActivity = Date.now();
         existing.status = "active";
         delete existing.disconnectedAt;
-        if (spawnToken) associateSessionToken(sessionId!, spawnToken);
+        if (spawnToken) {
+          associateSessionToken(sessionId!, spawnToken);
+        } else if (sessionId && !tokenlessWarned.has(sessionId)) {
+          tokenlessWarned.add(sessionId);
+          log.warn(`[http] Session ${sessionId.slice(0, 8)}… has no spawn token — using legacy sid-key ownership (zombie detection degraded). Check the agent's MCP config.`);
+        }
         updateDashboardActivity(sessionId!);
         await existing.transport.handleRequest(req, res, body);
         return;
@@ -237,7 +248,12 @@ export function startHttpServer(
             capturedSid = sid;
             log.info(`[http] New MCP session created: ${sid.slice(0, 8)}…`);
             sessions.set(sid, { transport, server: null, lastActivity: Date.now(), status: "active" });
-            if (spawnToken) associateSessionToken(sid, spawnToken);
+            if (spawnToken) {
+              associateSessionToken(sid, spawnToken);
+            } else {
+              tokenlessWarned.add(sid);
+              log.warn(`[http] New session ${sid.slice(0, 8)}… initialized WITHOUT spawn token — legacy sid-key ownership (zombie detection degraded). Check the agent's MCP config.`);
+            }
             registerDashboardSession(sid, "http");
           },
         });
@@ -257,14 +273,21 @@ export function startHttpServer(
             markDashboardSessionDisconnected(sid);
             const threadId = getThreadIdForMcpSession(sid);
             unregisterMcpSession(sid);
-            if (!expectedClose && threadId !== undefined) {
+            tokenlessWarned.delete(sid);
+            if (expectedClose) {
+              log.debug(`[session] Session ${sid.slice(0, 8)}… closed (expected) for thread ${threadId ?? "?"} — no kill.`);
+            } else if (threadId !== undefined) {
               const thread = getThread(getMemoryDb(), threadId);
               if (thread?.status === "active") {
                 const alive = findAliveThread(threadId);
                 if (alive) {
-                  log.warn(`[session] Session closed for thread ${threadId} - killing process ${alive.pid} to force reconnect`);
+                  log.warn(`[session] Session ${sid.slice(0, 8)}… closed UNEXPECTEDLY for active thread ${threadId} — killing PID ${alive.pid} to force reconnect.`);
                   void killProcessTree(alive.pid, threadId);
+                } else {
+                  log.debug(`[session] Session ${sid.slice(0, 8)}… closed unexpectedly for thread ${threadId} but no live process found — no kill.`);
                 }
+              } else {
+                log.debug(`[session] Session ${sid.slice(0, 8)}… closed unexpectedly for thread ${threadId} (status ${thread?.status ?? "unknown"}) — no kill.`);
               }
             }
           }
@@ -274,7 +297,13 @@ export function startHttpServer(
         // connect to one transport, so concurrent clients each need their own.
         const sessionServer = createMcpServerFn(
           () => capturedSid,
-          () => { try { transport.close(); } catch (_) { /* best-effort */ } },
+          () => {
+            try {
+              transport.close();
+            } catch (err) {
+              log.warn(`[http] transport.close() failed for ${capturedSid?.slice(0, 8) ?? "?"}…: ${errorMessage(err)}`);
+            }
+          },
         );
         await sessionServer.connect(transport);
         // Store server reference so it can be closed during shutdown
@@ -410,7 +439,7 @@ export function startHttpServer(
       if (entry.transport && now - entry.lastActivity > STALE_SESSION_MS) {
         log.info(`[session-sweep] Closing stale session ${sid.slice(0, 8)}… (idle ${Math.round((now - entry.lastActivity) / 60000)}m)`);
         expectMcpSessionClose(sid);
-        try { entry.transport.close(); } catch (_) { /* best-effort */ }
+        try { entry.transport.close(); } catch (err) { log.debug(`[session-sweep] transport.close() failed for ${sid.slice(0, 8)}…: ${errorMessage(err)}`); }
         void closeSessionServer(entry);
         sessions.delete(sid);
         removeDashboardSession(sid);
@@ -487,10 +516,10 @@ export function startHttpServer(
     for (const [sid, entry] of sessions) {
       if (entry.transport) {
         expectMcpSessionClose(sid);
-        try { entry.transport.close(); } catch (_) { /* best-effort */ }
+        try { entry.transport.close(); } catch (err) { log.debug(`[shutdown] transport.close() failed for ${sid.slice(0, 8)}…: ${errorMessage(err)}`); }
       }
       if (entry.server) {
-        try { await entry.server.close(); } catch (_) { /* best-effort */ }
+        try { await entry.server.close(); } catch (err) { log.debug(`[shutdown] server.close() failed for ${sid.slice(0, 8)}…: ${errorMessage(err)}`); }
       }
       sessions.delete(sid);
     }

@@ -213,6 +213,8 @@ async function handleReportProgress(
         }
       }
       log.info(`[report_progress] Consumed ${consumed.length} messages (re-queued ${consumed.filter(m => hasMediaContent(m.message as Record<string, unknown>)).length} with media)`);
+    } else if (hasNewPreviews) {
+      log.debug(`[report_progress] Skipped consuming pending messages for thread ${effectiveThreadId} — session superseded; leaving them in queue.`);
     }
   } catch (err) {
     // Non-fatal: pending messages will still be picked up by the next
