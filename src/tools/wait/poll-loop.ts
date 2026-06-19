@@ -29,7 +29,7 @@ import { getShortReminder, buildMaintenanceResponse } from "../../response-build
 import { ThreadState, type ThreadLifecycleService } from "../../services/thread-lifecycle.service.js";
 
 import { PENDING_TASKS_DIR } from "../../services/process.service.js";
-import { isSessionSuperseded } from "../../sessions.js";
+import { isSessionSuperseded, reconcileThreadOwnership } from "../../sessions.js";
 import { handleReactionOnly } from "./reaction-handler.js";
 import { checkForDueTasks } from "./task-handler.js";
 import { processIncomingMessages, handlePollTimeout } from "./message-processing.js";
@@ -168,11 +168,19 @@ export async function handleWaitForInstructions(
   // ── Pending task injection (pre-loop check) ────────────────────────────
   // If start_thread or send_message_to_thread wrote a task file for this
   // thread, deliver it immediately — but only if this session is still active.
+  // reconcileThreadOwnership adopts ownership for a reconnecting transport of
+  // the same process (start_session is not re-run on reconnect), so a fresh
+  // wait call after reconnect becomes the active owner instead of being blocked.
   const preSid = ctx.getMcpSessionId?.();
-  if (!isSessionSuperseded(preSid, effectiveThreadId)) {
-    const preLoopTask = await consumePendingTask(effectiveThreadId);
-    if (preLoopTask) return preLoopTask;
+  if (reconcileThreadOwnership(preSid, effectiveThreadId)) {
+    log.warn(`[wait] Session ${preSid?.slice(0, 8)}… superseded for thread ${effectiveThreadId} — terminating before poll loop.`);
+    state.lastToolCallAt = Date.now();
+    return {
+      content: [{ type: "text", text: "Session terminated — a newer session is now active for this thread. Do not call wait_for_instructions again." }],
+    };
   }
+  const preLoopTask = await consumePendingTask(effectiveThreadId);
+  if (preLoopTask) return preLoopTask;
 
   // Poll the dispatcher's per-thread file instead of calling getUpdates
   // directly. This avoids 409 conflicts between concurrent instances.

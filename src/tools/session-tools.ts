@@ -9,7 +9,7 @@ import type { TelegramClient } from "../telegram.js";
 import type { peekThreadMessages, readThreadMessages, appendToThread } from "../dispatcher.js";
 import { log } from "../logger.js";
 import { saveAgentEpisodeSafe, type Database } from "../memory.js";
-import { isSessionSuperseded } from "../sessions.js";
+import { isSessionSuperseded, reconcileThreadOwnership } from "../sessions.js";
 import type { ToolResult } from "../types.js";
 import { errorMessage } from "../utils.js";
 import { getThread } from "../data/memory/thread-registry.js";
@@ -91,7 +91,9 @@ async function handleReportProgress(
   }
 
   // Prevent zombie sessions from sending messages on a thread they no longer own.
-  if (isSessionSuperseded(ctx.getMcpSessionId?.(), effectiveThreadId)) {
+  // reconcileThreadOwnership adopts ownership for a reconnecting transport of the
+  // same process; only an explicitly evicted (genuine zombie) session is rejected.
+  if (reconcileThreadOwnership(ctx.getMcpSessionId?.(), effectiveThreadId)) {
     return errorResult("Session superseded — a newer session owns this thread. Do not send further messages.");
   }
 

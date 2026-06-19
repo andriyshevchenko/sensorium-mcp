@@ -99,7 +99,10 @@ const expectedSessionCloses = new Set<string>();
  * Sessions that have been superseded by a newer session for the same thread.
  * Any poll loop running under a superseded session should exit immediately
  * rather than consuming messages meant for the replacement session.
- * Cleared on process restart. Grows at most a few entries per day.
+ * Entries are added on start_session eviction (purgeOtherSessions) and on
+ * reconnect-adoption (reconcileThreadOwnership). Cleared only on process
+ * restart; with SSE reconnects this can reach the low hundreds/day across all
+ * actively-polling threads — a few hundred small strings, negligible memory.
  */
 const supersededSessions = new Set<string>();
 
@@ -109,13 +112,66 @@ const threadOwnerSession = new Map<number, string>();
 /** Check if a session has been superseded by a newer session for its thread. */
 export function isSessionSuperseded(mcpSessionId: string | undefined, threadId?: number): boolean {
   if (mcpSessionId === undefined) return false;
+  // Only EXPLICITLY evicted sessions are superseded. A session is evicted when a
+  // newer one claims the thread via start_session (purgeOtherSessions) or via
+  // reconnect-adoption (reconcileThreadOwnership). We deliberately do NOT treat a
+  // plain owner mismatch as supersession: when a Claude process reconnects, its
+  // SDK opens a fresh transport with a new sessionId WITHOUT re-running
+  // start_session, so the new (legitimate) transport differs from the recorded
+  // owner. Blocking on that mismatch wrongly killed live threads.
+  return supersededSessions.has(mcpSessionId);
+}
+
+/**
+ * Reconcile thread ownership for an incoming tool call and report whether the
+ * caller may proceed.
+ *
+ * Returns true if the caller is superseded (a newer session was explicitly
+ * promoted and this one must stop). Returns false if the caller is the active
+ * owner — adopting ownership if needed.
+ *
+ * Reconnect-adoption: when a session that was NOT explicitly evicted differs
+ * from the recorded owner, it is the same Claude process reconnecting with a
+ * fresh transport (start_session is not re-run on reconnect). It adopts
+ * ownership and the previous owner is marked superseded so its stale wait-loop
+ * and any late writes from the old transport stop. A genuine zombie process
+ * (from a second start_session) is already in `supersededSessions` and is
+ * rejected by the guard above before reaching adoption.
+ *
+ * PRECONDITION (load-bearing): the keeper guarantees at most one live process
+ * per thread (kill is verified via isProcessAlive before a replacement spawns).
+ * Adoption assumes a non-evicted owner-mismatch is a reconnect of that single
+ * process, not a competing process.
+ *
+ * Cross-thread guard: a transport that already owns a DIFFERENT thread may not
+ * adopt this one. A legitimate reconnect carries a brand-new sessionId that
+ * owns nothing yet, so this only blocks a wrong/forged `threadId` argument from
+ * hijacking another thread.
+ */
+export function reconcileThreadOwnership(
+  mcpSessionId: string | undefined,
+  threadId: number,
+): boolean {
+  if (mcpSessionId === undefined) return false;
   if (supersededSessions.has(mcpSessionId)) return true;
-  // Check if another session has claimed ownership of this thread
-  const resolvedThreadId = threadId ?? sessionThreadRegistry.get(mcpSessionId);
-  if (resolvedThreadId !== undefined) {
-    const owner = threadOwnerSession.get(resolvedThreadId);
-    if (owner !== undefined && owner !== mcpSessionId) return true;
+  const owner = threadOwnerSession.get(threadId);
+  if (owner === mcpSessionId) return false;
+  // Refuse cross-thread adoption: this session already owns another thread.
+  for (const [otherThreadId, otherOwner] of threadOwnerSession) {
+    if (otherOwner === mcpSessionId && otherThreadId !== threadId) {
+      log.warn(
+        `[session] Session ${mcpSessionId.slice(0, 8)}… tried to adopt thread ${threadId} but already owns ${otherThreadId} — refused.`,
+      );
+      return true;
+    }
   }
+  if (owner !== undefined) {
+    supersededSessions.add(owner);
+    log.info(
+      `[session] Thread ${threadId} ownership adopted by ${mcpSessionId.slice(0, 8)}… (was ${owner.slice(0, 8)}…) — reconnect`,
+    );
+  }
+  threadOwnerSession.set(threadId, mcpSessionId);
   return false;
 }
 
