@@ -32,6 +32,7 @@ import {
   markDashboardSessionDisconnected,
   removeDashboardSession,
   getDashboardSessions,
+  associateSessionToken,
   WAIT_LIVENESS_MS,
 } from "./sessions.js";
 import { getThread } from "./data/memory/thread-registry.js";
@@ -186,6 +187,9 @@ export function startHttpServer(
     }
 
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    // Stable per-process identity (survives transport reconnects). Used for
+    // thread-ownership decisions so a reconnect is not mistaken for a zombie.
+    const spawnToken = req.headers["x-sensorium-spawn-token"] as string | undefined;
 
     if (req.method === "POST") {
       let body: unknown;
@@ -205,6 +209,7 @@ export function startHttpServer(
         existing.lastActivity = Date.now();
         existing.status = "active";
         delete existing.disconnectedAt;
+        if (spawnToken) associateSessionToken(sessionId!, spawnToken);
         updateDashboardActivity(sessionId!);
         await existing.transport.handleRequest(req, res, body);
         return;
@@ -232,6 +237,7 @@ export function startHttpServer(
             capturedSid = sid;
             log.info(`[http] New MCP session created: ${sid.slice(0, 8)}…`);
             sessions.set(sid, { transport, server: null, lastActivity: Date.now(), status: "active" });
+            if (spawnToken) associateSessionToken(sid, spawnToken);
             registerDashboardSession(sid, "http");
           },
         });

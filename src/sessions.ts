@@ -99,85 +99,146 @@ const expectedSessionCloses = new Set<string>();
  * Sessions that have been superseded by a newer session for the same thread.
  * Any poll loop running under a superseded session should exit immediately
  * rather than consuming messages meant for the replacement session.
- * Entries are added on start_session eviction (purgeOtherSessions) and on
- * reconnect-adoption (reconcileThreadOwnership). Cleared only on process
+ * Entries are added on start_session ownership transfer (setThreadOwnerSession /
+ * purgeOtherSessions) and on legacy reconnect-adoption. Cleared only on process
  * restart; with SSE reconnects this can reach the low hundreds/day across all
  * actively-polling threads — a few hundred small strings, negligible memory.
+ *
+ * NOTE: entries are "owner keys" (see ownerKey()), not raw transport session
+ * ids — so superseding one identity covers all of its transport reconnects.
  */
 const supersededSessions = new Set<string>();
 
-/** The authoritative owner session for each thread (set during start_session). */
+/** The authoritative owner key for each thread (set during start_session). */
 const threadOwnerSession = new Map<number, string>();
+
+/**
+ * Transport session id → per-process spawn token. The token is sent by the
+ * agent on every request (including reconnects), giving a STABLE process
+ * identity: a reconnect reuses the same token under a new session id, while a
+ * genuine second process carries a different token.
+ */
+const sessionSpawnToken = new Map<string, string>();
+
+/** Associate a transport session id with its per-process spawn token. */
+export function associateSessionToken(mcpSessionId: string, spawnToken: string): void {
+  // Write-once: a given transport session id must keep a stable identity. If a
+  // later request presents a DIFFERENT token for the same session id (buggy or
+  // hostile client), ignore it — flipping the key mid-session would falsely
+  // supersede the live owner.
+  const existing = sessionSpawnToken.get(mcpSessionId);
+  if (existing !== undefined) {
+    if (existing !== spawnToken) {
+      log.warn(`[session] Ignoring conflicting spawn token for session ${mcpSessionId.slice(0, 8)}… (keeping first).`);
+    }
+    return;
+  }
+  sessionSpawnToken.set(mcpSessionId, spawnToken);
+}
+
+/**
+ * Resolve the stable ownership key for a transport session id.
+ * Prefers the per-process spawn token (survives reconnects); falls back to the
+ * raw session id when no token is known (e.g. STDIO or pre-token agents), which
+ * preserves the previous session-id-based behavior for those.
+ */
+function ownerKey(mcpSessionId: string): string {
+  const token = sessionSpawnToken.get(mcpSessionId);
+  return token ? `tok:${token}` : `sid:${mcpSessionId}`;
+}
 
 /** Check if a session has been superseded by a newer session for its thread. */
 export function isSessionSuperseded(mcpSessionId: string | undefined, threadId?: number): boolean {
   if (mcpSessionId === undefined) return false;
-  // Only EXPLICITLY evicted sessions are superseded. A session is evicted when a
-  // newer one claims the thread via start_session (purgeOtherSessions) or via
-  // reconnect-adoption (reconcileThreadOwnership). We deliberately do NOT treat a
-  // plain owner mismatch as supersession: when a Claude process reconnects, its
-  // SDK opens a fresh transport with a new sessionId WITHOUT re-running
-  // start_session, so the new (legitimate) transport differs from the recorded
-  // owner. Blocking on that mismatch wrongly killed live threads.
-  return supersededSessions.has(mcpSessionId);
+  const key = ownerKey(mcpSessionId);
+  if (supersededSessions.has(key)) return true;
+  // A different identity owns this thread now. With token-based keys a reconnect
+  // resolves to the SAME key as the owner, so this only fires for a genuinely
+  // different process (or a legacy session-id whose transport changed) — the
+  // poll loop running under the stale identity must stop.
+  const resolvedThreadId = threadId ?? sessionThreadRegistry.get(mcpSessionId);
+  if (resolvedThreadId !== undefined) {
+    const owner = threadOwnerSession.get(resolvedThreadId);
+    if (owner !== undefined && owner !== key) return true;
+  }
+  return false;
 }
 
 /**
  * Reconcile thread ownership for an incoming tool call and report whether the
  * caller may proceed.
  *
- * Returns true if the caller is superseded (a newer session was explicitly
- * promoted and this one must stop). Returns false if the caller is the active
- * owner — adopting ownership if needed.
+ * Returns true if the caller is superseded (a newer session owns the thread and
+ * this one must stop). Returns false if the caller is the active owner —
+ * claiming ownership when the thread is currently unowned.
  *
- * Reconnect-adoption: when a session that was NOT explicitly evicted differs
- * from the recorded owner, it is the same Claude process reconnecting with a
- * fresh transport (start_session is not re-run on reconnect). It adopts
- * ownership and the previous owner is marked superseded so its stale wait-loop
- * and any late writes from the old transport stop. A genuine zombie process
- * (from a second start_session) is already in `supersededSessions` and is
- * rejected by the guard above before reaching adoption.
+ * Identity is the per-process spawn token (ownerKey), which is STABLE across
+ * transport reconnects. Therefore:
+ *   - A reconnect of the owning process resolves to the SAME key → allowed,
+ *     with no ownership change (fixes false-supersede-on-reconnect).
+ *   - A genuinely different process (distinct spawn token) is REJECTED while a
+ *     token-bearing owner holds the thread — ownership only transfers via
+ *     start_session (setThreadOwnerSession), which supersedes the prior owner.
+ *     This makes zombie / duplicate processes reliably detectable.
+ *   - When token info is missing on either side (legacy/STDIO), fall back to the
+ *     previous adoption behavior so those paths keep working.
  *
- * PRECONDITION (load-bearing): the keeper guarantees at most one live process
- * per thread (kill is verified via isProcessAlive before a replacement spawns).
- * Adoption assumes a non-evicted owner-mismatch is a reconnect of that single
- * process, not a competing process.
- *
- * Cross-thread guard: a transport that already owns a DIFFERENT thread may not
- * adopt this one. A legitimate reconnect carries a brand-new sessionId that
- * owns nothing yet, so this only blocks a wrong/forged `threadId` argument from
- * hijacking another thread.
+ * A caller that already owns a DIFFERENT thread may never adopt this one
+ * (guards against a forged `threadId` argument hijacking another thread).
  */
 export function reconcileThreadOwnership(
   mcpSessionId: string | undefined,
   threadId: number,
 ): boolean {
   if (mcpSessionId === undefined) return false;
-  if (supersededSessions.has(mcpSessionId)) return true;
+  const key = ownerKey(mcpSessionId);
+  if (supersededSessions.has(key)) return true;
   const owner = threadOwnerSession.get(threadId);
-  if (owner === mcpSessionId) return false;
-  // Refuse cross-thread adoption: this session already owns another thread.
+  if (owner === key) return false;
+  // Refuse cross-thread adoption: this identity already owns another thread.
   for (const [otherThreadId, otherOwner] of threadOwnerSession) {
-    if (otherOwner === mcpSessionId && otherThreadId !== threadId) {
+    if (otherOwner === key && otherThreadId !== threadId) {
       log.warn(
-        `[session] Session ${mcpSessionId.slice(0, 8)}… tried to adopt thread ${threadId} but already owns ${otherThreadId} — refused.`,
+        `[session] ${key.slice(0, 12)}… tried to act on thread ${threadId} but owns ${otherThreadId} — refused.`,
       );
       return true;
     }
   }
   if (owner !== undefined) {
+    const bothTokens = key.startsWith("tok:") && owner.startsWith("tok:");
+    if (bothTokens) {
+      // Two distinct processes claim this thread. The owner was set by the most
+      // recent start_session; this caller is a stale/zombie process. Reject —
+      // do NOT steal ownership.
+      log.warn(
+        `[session] Thread ${threadId} owned by ${owner.slice(0, 12)}…; rejecting different process ${key.slice(0, 12)}… (zombie/duplicate).`,
+      );
+      return true;
+    }
+    // Legacy path (token missing on one side): cannot distinguish a reconnect
+    // from a competing process — adopt as before, evicting the prior owner.
     supersededSessions.add(owner);
-    log.info(
-      `[session] Thread ${threadId} ownership adopted by ${mcpSessionId.slice(0, 8)}… (was ${owner.slice(0, 8)}…) — reconnect`,
+    log.warn(
+      `[session] Thread ${threadId} ownership adopted by ${key.slice(0, 12)}… (was ${owner.slice(0, 12)}…) — legacy/no-token reconnect`,
     );
   }
-  threadOwnerSession.set(threadId, mcpSessionId);
+  threadOwnerSession.set(threadId, key);
   return false;
 }
 
-/** Mark a session as the sole owner for a thread. Old sessions will be superseded. */
+/** Mark a session as the sole owner for a thread. Old owners are superseded. */
 export function setThreadOwnerSession(threadId: number, mcpSessionId: string): void {
-  threadOwnerSession.set(threadId, mcpSessionId);
+  const key = ownerKey(mcpSessionId);
+  const previous = threadOwnerSession.get(threadId);
+  if (previous !== undefined && previous !== key) {
+    // start_session is the explicit ownership-transfer signal (e.g. the keeper
+    // spawned a replacement). Supersede the prior owner so its stale wait-loop
+    // and any late writes — including reconnects under the old token — stop.
+    supersededSessions.add(previous);
+  }
+  // The new owner must not remain flagged from a prior life.
+  supersededSessions.delete(key);
+  threadOwnerSession.set(threadId, key);
 }
 
 export function registerMcpSession(
@@ -219,6 +280,7 @@ export function unregisterMcpSession(mcpSessionId: string): void {
   }
   sessionThreadRegistry.delete(mcpSessionId);
   expectedSessionCloses.delete(mcpSessionId);
+  sessionSpawnToken.delete(mcpSessionId);
 }
 
 /**
@@ -228,18 +290,24 @@ export function unregisterMcpSession(mcpSessionId: string): void {
  */
 export function purgeOtherSessions(threadId: number, keepMcpSessionId?: string): number {
   const entries = threadSessionRegistry.get(threadId) ?? [];
+  const keepKey = keepMcpSessionId ? ownerKey(keepMcpSessionId) : undefined;
   let purged = 0;
   const kept: SessionRegistryEntry[] = [];
   for (const entry of entries) {
     if (entry.mcpSessionId === keepMcpSessionId) {
       kept.push(entry);
-    } else {
-      supersededSessions.add(entry.mcpSessionId);
-      expectMcpSessionClose(entry.mcpSessionId);
-      try { entry.closeTransport(); } catch (_) { /* best-effort */ }
-      unregisterMcpSession(entry.mcpSessionId);
-      purged++;
+      continue;
     }
+    // Resolve the identity BEFORE unregister clears its token mapping.
+    const entryKey = ownerKey(entry.mcpSessionId);
+    // Supersede only DIFFERENT processes. A stale transport of the SAME process
+    // (a prior reconnect — same key as the keeper) is closed but never
+    // superseded, otherwise we would evict the live owner.
+    if (entryKey !== keepKey) supersededSessions.add(entryKey);
+    expectMcpSessionClose(entry.mcpSessionId);
+    try { entry.closeTransport(); } catch (_) { /* best-effort */ }
+    unregisterMcpSession(entry.mcpSessionId);
+    purged++;
   }
   threadSessionRegistry.set(threadId, kept);
   if (keepMcpSessionId) sessionThreadRegistry.set(keepMcpSessionId, threadId);

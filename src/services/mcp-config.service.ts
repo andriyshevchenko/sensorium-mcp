@@ -10,6 +10,7 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { getMcpServers, type McpServerConfig } from "../config.js";
 import { PROCESS_PIDS_DIR } from "./process.service.js";
 
@@ -34,9 +35,25 @@ function formatJsonMcpEntry(cfg: McpServerConfig): Record<string, unknown> {
   return entry;
 }
 
-function buildSensoriumJsonEntry(transport: SensoriumTransport, extras?: Record<string, unknown>): Record<string, unknown> {
+/**
+ * HTTP header carrying a per-process spawn token. Set once at spawn time and
+ * re-sent by the agent SDK on every request — including transport reconnects
+ * (e.g. after an SSE idle/network blip). The server uses it as a STABLE process
+ * identity for thread ownership, so a reconnect (same token, new transport id)
+ * is not mistaken for a competing/zombie process, and a genuine second process
+ * (different token) is reliably detected.
+ */
+export const SPAWN_TOKEN_HEADER = "X-Sensorium-Spawn-Token";
+
+function buildSensoriumJsonEntry(
+  transport: SensoriumTransport,
+  spawnToken: string,
+  extras?: Record<string, unknown>,
+): Record<string, unknown> {
   const entry: Record<string, unknown> = { ...extras, type: "http", url: `http://127.0.0.1:${transport.httpPort}/mcp` };
-  if (transport.secret) entry.headers = { Authorization: `Bearer ${transport.secret}` };
+  const headers: Record<string, string> = { [SPAWN_TOKEN_HEADER]: spawnToken };
+  if (transport.secret) headers.Authorization = `Bearer ${transport.secret}`;
+  entry.headers = headers;
   return entry;
 }
 
@@ -49,7 +66,7 @@ function buildSensoriumJsonEntry(transport: SensoriumTransport, extras?: Record<
  */
 export function buildClaudeMcpConfig(transport: SensoriumTransport, threadId: number): string {
   const servers: Record<string, Record<string, unknown>> = {};
-  servers["sensorium-mcp"] = buildSensoriumJsonEntry(transport);
+  servers["sensorium-mcp"] = buildSensoriumJsonEntry(transport, randomUUID());
 
   for (const [name, cfg] of Object.entries(getMcpServers())) {
     servers[name] = formatJsonMcpEntry(cfg);
@@ -70,7 +87,7 @@ export function buildClaudeMcpConfig(transport: SensoriumTransport, threadId: nu
  */
 export function buildCopilotMcpConfig(transport: SensoriumTransport, copilotHomeDir: string): void {
   const servers: Record<string, Record<string, unknown>> = {};
-  servers["sensorium-mcp"] = buildSensoriumJsonEntry(transport, { tools: ["*"] });
+  servers["sensorium-mcp"] = buildSensoriumJsonEntry(transport, randomUUID(), { tools: ["*"] });
 
   for (const [name, cfg] of Object.entries(getMcpServers())) {
     servers[name] = formatJsonMcpEntry(cfg);
