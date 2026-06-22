@@ -65,6 +65,7 @@ Results arrive as a message in `wait_for_instructions`. Review, approve, or requ
 
 ### Rules
 
+- **PREFER** breaking down your main task into atomic, small steps. A worker should never recieve a huge task to work on.
 - **NEVER** duplicate work after delegating. If you sent it to a worker, wait for the response.
 - **ALWAYS** include the orchestrator thread ID in the task message so the worker can report back.
 - **ALWAYS** include clear acceptance criteria in the task message.

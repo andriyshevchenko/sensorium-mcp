@@ -12,7 +12,7 @@ import {
     readdirSync,
     unlinkSync,
 } from "node:fs";
-import { readFile, writeFile, rename, unlink } from "node:fs/promises";
+import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../../logger.js";

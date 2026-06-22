@@ -10,30 +10,37 @@ replaces_orchestrator: false
 
 # Azure DevOps via SecureVault
 
-Wrap all `az` CLI calls with `securevault run --profile azure-devops -- <command>`. PAT is injected from OS keychain as `AZURE_DEVOPS_EXT_PAT`. Agent never sees credentials.
+Wrap all `az` CLI calls with `securevault run --profile Azure_DevOps <command>`. PAT is injected from OS keychain as `AZURE_DEVOPS_EXT_PAT`. Agent never sees credentials.
+
+- Profile name is **`Azure_DevOps`** (case-sensitive — not `azure-devops`).
+- On Windows do **not** add the `--` separator between `securevault run --profile Azure_DevOps` and the command — it breaks under cmd. Just append the command directly.
+
+## Org and project
+The org and project the vault PATs are scoped to are persisted in `~/.azure/azuredevops/config` (set once via `az devops configure --defaults`). A 401 on every call almost always means the wrong org is configured — verify with `az devops configure --list` before assuming the token is expired.
 
 ## Before first use
 ```bash
 securevault health   # start backend if fails: securevault &
+securevault run --profile Azure_DevOps az devops configure --list   # confirm org/project defaults
 ```
 
 ## Examples
 ```bash
 # Create PR
-securevault run --profile azure-devops -- az repos pr create --repository <repo> --source-branch <branch> --target-branch main --title "title" --org <org> --project <project>
+securevault run --profile Azure_DevOps az repos pr create --repository <repo> --source-branch <branch> --target-branch main --title "title" --org <org> --project <project>
 
 # PR threads
-securevault run --profile azure-devops -- az devops invoke --area git --resource pullRequestThreads --route-parameters project=<p> repositoryId=<r> pullRequestId=<id> --org <org>
+securevault run --profile Azure_DevOps az devops invoke --area git --resource pullRequestThreads --route-parameters project=<p> repositoryId=<r> pullRequestId=<id> --org <org>
 
 # Clone
-securevault run --profile azure-devops -- git clone https://<org>@dev.azure.com/<org>/<project>/_git/<repo>
+securevault run --profile Azure_DevOps git clone https://<org>@dev.azure.com/<org>/<project>/_git/<repo>
 
 # Push
-securevault run --profile azure-devops -- git push origin <branch>
+securevault run --profile Azure_DevOps git push origin <branch>
 ```
 
 ## Rules
-- ALWAYS use `securevault run --profile azure-devops --` for authenticated ops
+- ALWAYS use `securevault run --profile Azure_DevOps` for authenticated ops
 - NEVER use `az` directly, NEVER ask for PAT values
 - `#<number>` in Azure DevOps PR comments/descriptions auto-links to a **work item**, not a PR. To reference a PR, use the full URL: `[PR 12345](https://dev.azure.com/ORG/PROJECT/_git/REPO/pullrequest/12345)`
 

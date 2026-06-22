@@ -22,7 +22,7 @@ import {
 
 // ── /mode command: handled specially (side-effect + expansion) ──────────
 import { setThreadConversationMode, type ConversationMode } from "../../config.js";
-const MODE_PATTERN = /^\/mode\s+(concise|voice)\s*$/i;
+import { registerTopic } from "../../sessions.js";
 import type { StoredMessage, StoredReaction } from "./broker.js";
 import {
     readLock,
@@ -31,7 +31,7 @@ import {
     tryAcquireLock,
     tryAcquireLockWithRetry,
 } from "./lock.js";
-import { registerTopic } from "../../sessions.js";
+const MODE_PATTERN = /^\/mode\s+(concise|voice)\s*$/i;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -214,12 +214,12 @@ async function pollOnce(
             try {
                 // Handle /mode command (side-effect: persists mode to settings)
                 if (stored.message.text) {
-                  const modeMatch = stored.message.text.trim().match(MODE_PATTERN);
-                  if (modeMatch && typeof threadId === "number") {
-                    const mode = modeMatch[1].toLowerCase() as ConversationMode;
-                    setThreadConversationMode(threadId, mode);
-                    stored.message.text = `Conversation mode switched to "${mode}".`;
-                  }
+                    const modeMatch = stored.message.text.trim().match(MODE_PATTERN);
+                    if (modeMatch && typeof threadId === "number") {
+                        const mode = modeMatch[1].toLowerCase() as ConversationMode;
+                        setThreadConversationMode(threadId, mode);
+                        stored.message.text = `Conversation mode switched to "${mode}".`;
+                    }
                 }
                 appendToThread(threadId, stored);
                 committedOffset = u.update_id + 1;
