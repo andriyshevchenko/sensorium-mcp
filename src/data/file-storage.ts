@@ -97,6 +97,18 @@ export function readThreadHeartbeat(threadId: number): number | null {
   } catch (err: any) { if (err?.code !== "ENOENT") log.debug(`[heartbeat] Read failed for thread ${threadId}: ${err}`); return null; }
 }
 
+/** Delete a thread's heartbeat file. Called when a tracked process exits so a
+ *  stale (spawn-time or last-activity) heartbeat can't make a dead thread look
+ *  alive — which would otherwise block the keeper's restart. A live worker that
+ *  is still serving the thread simply rewrites the heartbeat within ~2s. */
+export function clearThreadHeartbeat(threadId: number): void {
+  try {
+    unlinkSync(join(HEARTBEATS_DIR, `${threadId}`));
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") log.debug(`[heartbeat] Clear failed for thread ${threadId}: ${err}`);
+  }
+}
+
 // ─── Maintenance flag ───────────────────────────────────────────────────────
 
 const MAINTENANCE_FLAG_PATH = join(DATA_DIR, "maintenance.flag");

@@ -13,7 +13,7 @@ import { PROCESS_BASE_DIR, PROCESS_PIDS_DIR, THREAD_LOGS_DIR, ensureDirs, findAl
 import { ThreadState, type ThreadLifecycleService } from "./thread-lifecycle.service.js";
 import { buildClaudeMcpConfig, buildCopilotMcpConfig, buildCodexMcpArgs, type SensoriumTransport } from "./mcp-config.service.js";
 import { decommissionWorker } from "./worker-cleanup.service.js";
-import { writeThreadHeartbeatSync } from "../data/file-storage.js";
+import { writeThreadHeartbeatSync, clearThreadHeartbeat } from "../data/file-storage.js";
 
 const ENV_DENYLIST = new Set(["TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID", "MCP_HTTP_SECRET", "DASHBOARD_TOKEN", "MCP_START_COMMAND", "WATCHER_START_COMMAND", "CLAUDE_CODE_OAUTH_TOKEN"]);
 
@@ -146,11 +146,17 @@ async function handleProcessExit(code: number | null, threadId: number, pid: num
   if (idx !== -1) spawnedThreads.splice(idx, 1);
   // Only delete PID file if it still belongs to this process — a replacement
   // process may have already overwritten the file with its own PID.
+  let stillOwnedPidFile = false;
   try {
     const raw = readFileSync(pidFilePath, "utf-8");
     const parsed = JSON.parse(raw);
-    if (parsed.pid === pid) unlinkSync(pidFilePath);
+    if (parsed.pid === pid) { unlinkSync(pidFilePath); stillOwnedPidFile = true; }
   } catch { /* file missing or unparseable — already cleaned up */ }
+  // Clear the heartbeat so a stale (spawn-time / last-activity) timestamp can't
+  // make this now-dead thread look alive and block the keeper's restart. Only do
+  // this if no replacement has taken over the PID file — otherwise the live
+  // replacement owns the heartbeat and we must not delete it.
+  if (stillOwnedPidFile) clearThreadHeartbeat(threadId);
   let db: ReturnType<typeof initMemoryDb> | undefined;
   try {
     db = initMemoryDb();

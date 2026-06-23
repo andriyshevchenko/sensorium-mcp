@@ -26,6 +26,10 @@ interface KeeperEntry {
   cooldownUntil: number;
   stopped: boolean;
   checking: boolean;
+  /** True while we are skipping restart because a live untracked worker is
+   *  serving the thread (fresh heartbeat, dead tracked PID). Used to log the
+   *  warning once per episode instead of every keeper cycle. */
+  limboWarned: boolean;
 }
 
 export class KeeperService {
@@ -93,6 +97,7 @@ export class KeeperService {
           cooldownUntil: 0,
           stopped: false,
           checking: false,
+          limboWarned: false,
         });
         log.info(`[keeper] Started keeper for thread ${thread.threadId} ('${thread.name}')`);
       }
@@ -122,6 +127,33 @@ export class KeeperService {
 
     // 2. Check if thread is running — reads PID file directly (authoritative OS evidence)
     const alivePid = findAliveThreadViaPidFile(entry.threadId);
+
+    // 2a. PID file shows no live tracked process — but a fresh heartbeat is the
+    // authoritative "someone is actively serving this thread" signal: the poll
+    // loop rewrites it every ~2s (and every tool call). If it is fresh, a live
+    // Claude worker is STILL serving the thread under a PID we failed to track
+    // (e.g. on Windows a process-tree/launcher death leaves the real worker
+    // running while the tracked PID is gone). Spawning now would create a
+    // DUPLICATE process → the operator gets answered twice. Skip the restart;
+    // when the real worker finally exits, its heartbeat goes stale and the
+    // normal restart path takes over.
+    if (alivePid === undefined) {
+      const heartbeat = readThreadHeartbeat(entry.threadId);
+      if (heartbeat !== null && (now - heartbeat) < STUCK_THRESHOLD_MS) {
+        if (!entry.limboWarned) {
+          log.warn(
+            `[keeper] Thread ${entry.threadId}: no live tracked PID but heartbeat is fresh (${Math.round((now - heartbeat) / 1000)}s ago) — a live worker is still serving it under an untracked PID. Skipping restart to avoid a duplicate process.`,
+          );
+          entry.limboWarned = true;
+        } else {
+          log.debug(`[keeper] Thread ${entry.threadId}: still in untracked-live-worker limbo (heartbeat ${Math.round((now - heartbeat) / 1000)}s ago) — skipping restart.`);
+        }
+        return;
+      }
+    }
+    // Not in limbo (PID alive, or heartbeat stale/absent) — clear the flag so a
+    // future episode logs afresh.
+    entry.limboWarned = false;
 
     if (alivePid !== undefined) {
       // 3. Check if stuck via heartbeat
