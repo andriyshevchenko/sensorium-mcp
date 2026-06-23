@@ -224,6 +224,11 @@ export function killProcessTree(pid: number, threadId: number): Promise<void> {
       // Retry kill after a short delay
       log.warn(`[process] PID ${pid} (thread ${threadId}) still alive after kill attempt ${attempt} — retrying`);
       if (process.platform === "win32") {
+        // Native TerminateProcess (via libuv) as well as taskkill — they take
+        // different paths (taskkill is an external process with its own token;
+        // process.kill issues the syscall directly from this process), so one
+        // can succeed where the other fails on a stubborn process.
+        try { process.kill(pid); } catch (err) { log.debug(`[process] native kill PID ${pid} failed: ${errorMessage(err)}`); }
         execFile("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 10000, windowsHide: true }, () => {
           setTimeout(() => verifyDead(attempt + 1), 1000);
         });

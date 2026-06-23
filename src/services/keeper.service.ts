@@ -16,6 +16,8 @@ const FAST_EXIT_MAX_COUNT = 3;
 const FAST_EXIT_BASE_COOLDOWN_MS = 600_000;    // 10 min
 const FAST_EXIT_MAX_COOLDOWN_MS = 14_400_000;  // 4 hours
 const STUCK_THRESHOLD_MS = 1_800_000;          // 30 min
+const SURVIVED_KILL_MAX = 3;                    // consecutive failed kills before escalating
+const SURVIVED_KILL_COOLDOWN_MS = 600_000;     // 10 min — back off after escalating an unkillable process
 
 interface KeeperEntry {
   threadId: number;
@@ -30,6 +32,10 @@ interface KeeperEntry {
    *  serving the thread (fresh heartbeat, dead tracked PID). Used to log the
    *  warning once per episode instead of every keeper cycle. */
   limboWarned: boolean;
+  /** Consecutive cycles where a stuck process survived killProcessTree. Drives
+   *  escalation (operator notification) so a truly unkillable process does not
+   *  loop silently forever. Reset when a kill finally succeeds. */
+  survivedKillCount: number;
 }
 
 export class KeeperService {
@@ -98,6 +104,7 @@ export class KeeperService {
           stopped: false,
           checking: false,
           limboWarned: false,
+          survivedKillCount: 0,
         });
         log.info(`[keeper] Started keeper for thread ${thread.threadId} ('${thread.name}')`);
       }
@@ -150,6 +157,8 @@ export class KeeperService {
         }
         return;
       }
+      // Process is genuinely gone — any prior survived-kill episode is over.
+      entry.survivedKillCount = 0;
     }
     // Not in limbo (PID alive, or heartbeat stale/absent) — clear the flag so a
     // future episode logs afresh.
@@ -177,7 +186,11 @@ export class KeeperService {
         log.warn(`[keeper] Thread ${entry.threadId} is stuck (${reason}) — killing`);
         try {
           const stuckDb = this.deps.getMemoryDb();
-          this.deps.threadLifecycle.transitionThread(stuckDb, entry.threadId, ThreadState.Stuck);
+          // Only transition if not already Stuck — Stuck->Stuck is an invalid
+          // transition and would throw every cycle while a kill keeps failing.
+          if (this.deps.threadLifecycle.getThreadState(stuckDb, entry.threadId) !== ThreadState.Stuck) {
+            this.deps.threadLifecycle.transitionThread(stuckDb, entry.threadId, ThreadState.Stuck);
+          }
         } catch (err) {
           log.warn(`[keeper] Active→Stuck transition failed for ${entry.threadId}: ${errorMessage(err)}`);
         }
@@ -186,14 +199,27 @@ export class KeeperService {
         // Verify kill succeeded before restarting — if the process is still alive,
         // do NOT spawn a second instance. Keeper will retry on the next cycle.
         if (isProcessAlive(alivePid)) {
-          log.warn(`[keeper] Thread ${entry.threadId} PID=${alivePid} survived kill — skipping restart (will retry next cycle)`);
+          entry.survivedKillCount++;
+          log.warn(`[keeper] Thread ${entry.threadId} PID=${alivePid} survived kill (${entry.survivedKillCount}x) — skipping restart (will retry next cycle)`);
+          // Escalate: a process that repeatedly refuses to die needs operator
+          // attention. Without this the keeper would loop here forever, silently,
+          // and the thread would stay dead (this is exactly what happened to 1327).
+          if (entry.survivedKillCount >= SURVIVED_KILL_MAX) {
+            entry.cooldownUntil = now + SURVIVED_KILL_COOLDOWN_MS;
+            log.error(`[keeper] Thread ${entry.threadId} PID=${alivePid} is UNKILLABLE after ${entry.survivedKillCount} attempts — operator intervention required (manual kill). Backing off ${Math.round(SURVIVED_KILL_COOLDOWN_MS / 60000)}m.`);
+            await this.notifyDeath(entry.threadId, `process PID=${alivePid} is stuck and won't terminate — needs a manual kill`, SURVIVED_KILL_COOLDOWN_MS);
+            entry.survivedKillCount = 0;
+          }
           return;
         }
 
+        // Kill succeeded — clear the escalation counter and fall through to restart.
+        entry.survivedKillCount = 0;
         entry.retryCount = 0;
         // Fall through to restart
       } else {
         // Healthy — reset counters
+        entry.survivedKillCount = 0;
         if (entry.retryCount > 0) {
           log.info(`[keeper] Thread ${entry.threadId} is healthy again (was at retry ${entry.retryCount})`);
         } else {
