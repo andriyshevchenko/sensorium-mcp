@@ -241,7 +241,7 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
   // get copied on every restart, causing an infinite 401 → restart death loop.
   const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
   const mainClaudeDir = join(homedir(), ".claude");
-  const sharedFiles = oauthToken ? ["settings.json"] : [".credentials.json", "settings.json"];
+  const sharedFiles = [...(oauthToken ? ["settings.json"] : [".credentials.json", "settings.json"]), "CLAUDE.md"];
   // Remove stale credentials from previous runs so Claude doesn't try to use them
   if (oauthToken) { try { const stale = join(claudeConfigDir, ".credentials.json"); if (existsSync(stale)) unlinkSync(stale); } catch {} }
   for (const shared of sharedFiles) {
