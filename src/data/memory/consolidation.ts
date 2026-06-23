@@ -1,6 +1,6 @@
 import type { Database } from "./schema.js";
 import { cleanupOldSentMessages } from "./schema.js";
-import { archiveNotesForThread, getThreadIdsWithActiveNotes } from "./semantic.js";
+import { archiveNotesForThread, getThreadIdsWithActiveNotes, migrateInboundLinks } from "./semantic.js";
 import { log } from "../../logger.js";
 import { nowISO } from "./utils.js";
 import { getAllThreads } from "./thread-registry.js";
@@ -126,6 +126,9 @@ export function mergeDuplicateNote(
   db.prepare(
     `UPDATE semantic_notes SET valid_to = ?, superseded_by = ?, updated_at = ? WHERE note_id = ?`,
   ).run(now, keepId, now, expireId);
+
+  // Repoint inbound causal links from the merged-away note to the kept note.
+  migrateInboundLinks(db, expireId, keepId);
 }
 
 /**

@@ -495,20 +495,40 @@ export function supersedeNote(
     oldNoteId
   );
 
-  // Create bidirectional link: add old note to new note's linked_notes
-  const newRow = db.prepare(`SELECT linked_notes, link_reasons FROM semantic_notes WHERE note_id = ?`).get(newId) as Record<string, unknown> | undefined;
-  const currentLinked = parseJsonArray(newRow?.linked_notes as string | null);
-  const currentReasons = parseJsonObject(newRow?.link_reasons as string | null) as Record<string, string>;
-  if (!currentLinked.includes(oldNoteId)) {
-    currentLinked.push(oldNoteId);
-  }
-  currentReasons[oldNoteId] = "supersedes";
-  updateSemanticNote(db, newId, {
-    linkedNotes: currentLinked,
-    linkReasons: currentReasons,
-  });
+  // The supersession relationship is already recorded by superseded_by above.
+  // Repoint any inbound causal links from the now-expired note to its successor
+  // so they stay live for the bootstrap consumer.
+  migrateInboundLinks(db, oldNoteId, newId);
 
   return newId;
+}
+
+/**
+ * Repoint inbound causal links from a now-dead note to its successor.
+ * When `fromNoteId` is superseded/merged into `toNoteId`, any active note that
+ * linked to `fromNoteId` is repointed at the live successor — otherwise the link
+ * is dead-on-arrival, since the consumer filters out expired link targets.
+ */
+export function migrateInboundLinks(db: Database, fromNoteId: string, toNoteId: string): void {
+  if (fromNoteId === toNoteId) return;
+  const inbound = db.prepare(
+    `SELECT note_id, linked_notes, link_reasons FROM semantic_notes
+     WHERE valid_to IS NULL AND superseded_by IS NULL AND linked_notes LIKE ?`
+  ).all(`%${fromNoteId}%`) as Array<{ note_id: string; linked_notes: string | null; link_reasons: string | null }>;
+  for (const row of inbound) {
+    const linked = parseJsonArray(row.linked_notes);
+    if (!linked.includes(fromNoteId)) continue; // LIKE prefilter false positive
+    const reasons = parseJsonObject(row.link_reasons as string | null) as Record<string, string>;
+    const reason = reasons[fromNoteId];
+    delete reasons[fromNoteId];
+    const next = linked.filter((id) => id !== fromNoteId);
+    // Skip if the successor is the note itself — never create a self-link.
+    if (toNoteId !== row.note_id && !next.includes(toNoteId)) {
+      next.push(toNoteId);
+      if (reason && !reasons[toNoteId]) reasons[toNoteId] = reason;
+    }
+    updateSemanticNote(db, row.note_id, { linkedNotes: next, linkReasons: reasons });
+  }
 }
 
 // ─── Embedding-based Semantic Search ─────────────────────────────────────────
