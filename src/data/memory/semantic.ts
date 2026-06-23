@@ -511,10 +511,13 @@ export function supersedeNote(
  */
 export function migrateInboundLinks(db: Database, fromNoteId: string, toNoteId: string): void {
   if (fromNoteId === toNoteId) return;
+  // Escape LIKE wildcards — note IDs contain underscores ("sn_<hex>") which
+  // would otherwise match any character and produce unnecessary false positives.
+  const escapedId = fromNoteId.replace(/%/g, "\\%").replace(/_/g, "\\_");
   const inbound = db.prepare(
     `SELECT note_id, linked_notes, link_reasons FROM semantic_notes
-     WHERE valid_to IS NULL AND superseded_by IS NULL AND linked_notes LIKE ?`
-  ).all(`%${fromNoteId}%`) as Array<{ note_id: string; linked_notes: string | null; link_reasons: string | null }>;
+     WHERE valid_to IS NULL AND superseded_by IS NULL AND linked_notes LIKE ? ESCAPE '\\'`
+  ).all(`%${escapedId}%`) as Array<{ note_id: string; linked_notes: string | null; link_reasons: string | null }>;
   for (const row of inbound) {
     const linked = parseJsonArray(row.linked_notes);
     if (!linked.includes(fromNoteId)) continue; // LIKE prefilter false positive
