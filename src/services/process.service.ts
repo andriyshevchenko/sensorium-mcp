@@ -1,4 +1,4 @@
-import { execSync, execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -45,10 +45,51 @@ export const spawnedThreads: SpawnedThread[] = [];
 export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (err: unknown) {
+    // EPERM = the process exists but we lack permission to signal it (still
+    // alive). Anything else (ESRCH) = no such process.
     return (err as NodeJS.ErrnoException).code === "EPERM";
   }
+  // process.kill(pid, 0) succeeded. On Windows this ALSO returns true for a
+  // process that has already TERMINATED but whose PID is still held open by a
+  // lingering handle — a kernel "zombie" (e.g. a CLI child wedged in unread-pipe
+  // I/O that taskkill marked for death but the kernel hasn't reaped). That made
+  // the keeper treat an unkillable zombie as alive forever and never restart the
+  // thread. Confirm against the authoritative process table, which excludes
+  // terminated processes even while their PID lingers.
+  if (process.platform === "win32") return isPidInWindowsTable(pid);
+  return true;
+}
+
+const WIN_PID_SNAPSHOT_TTL_MS = 2000;
+
+/** Authoritative Windows liveness check via the process table, which — unlike
+ *  OpenProcess/process.kill(0) — does NOT list a terminated process whose PID is
+ *  still held by a lingering handle. A single `tasklist` snapshot of ALL pids is
+ *  taken at most once per TTL window and reused for every pid, so a sweep over
+ *  many threads costs one spawn, not N, and never blocks the loop repeatedly. */
+let winPidSnapshot: { pids: Set<number>; ts: number } | null = null;
+
+function getWindowsPidSet(): Set<number> | null {
+  const now = Date.now();
+  if (winPidSnapshot && now - winPidSnapshot.ts < WIN_PID_SNAPSHOT_TTL_MS) return winPidSnapshot.pids;
+  try {
+    // /NH = no header, /FO CSV = quoted columns; PID is column 2: "image","PID",...
+    const out = execFileSync("tasklist", ["/NH", "/FO", "CSV"], { encoding: "utf-8", windowsHide: true, timeout: 5000 });
+    const pids = new Set<number>();
+    for (const m of out.matchAll(/^"[^"]*","(\d+)"/gm)) pids.add(Number(m[1]));
+    winPidSnapshot = { pids, ts: now };
+    return pids;
+  } catch (err) {
+    log.debug(`[process] tasklist snapshot failed: ${errorMessage(err)} — assuming pids alive`);
+    return null; // conservative: caller treats null as "can't confirm dead" → alive
+  }
+}
+
+function isPidInWindowsTable(pid: number): boolean {
+  const pids = getWindowsPidSet();
+  if (pids === null) return true; // tasklist unavailable — never declare a real process dead
+  return pids.has(pid);
 }
 
 export function readPidFiles(): PidFileEntry[] {
@@ -86,15 +127,6 @@ export function findAliveThread(threadId: number): SpawnedThread | undefined {
   }
   const pidEntry = readPidFiles().find((entry) => entry.threadId === threadId && isProcessAlive(entry.pid));
   if (!pidEntry) return undefined;
-  if (process.platform === "win32") {
-    try {
-      const out = execSync(`tasklist /FI "PID eq ${pidEntry.pid}" /NH`, { encoding: "utf-8", timeout: 5000, windowsHide: true });
-      if (!out.includes(String(pidEntry.pid))) {
-        try { unlinkSync(pidEntry.filePath); } catch {}
-        return undefined;
-      }
-    } catch (err) { log.debug(`[findAliveThread] tasklist check failed for PID ${pidEntry.pid}: ${errorMessage(err)}`); }
-  }
   const restored: SpawnedThread = { pid: pidEntry.pid, threadId, name: pidEntry.name ?? `Thread ${threadId}`, startedAt: pidEntry.startedAt ?? Date.now(), createdAt: pidEntry.startedAt ?? Date.now(), logFile: "", ...(pidEntry.threadType ? { threadType: pidEntry.threadType } : {}) };
   spawnedThreads.push(restored);
   log.info(`[findAliveThread] Restored thread ${threadId} PID=${pidEntry.pid} from PID file`);
