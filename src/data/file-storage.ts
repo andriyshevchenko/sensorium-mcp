@@ -6,7 +6,7 @@
  */
 
 import { mkdirSync, existsSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { writeFile, rename } from "node:fs/promises";
+import { writeFile, rename, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
@@ -65,14 +65,53 @@ mkdirSync(HEARTBEATS_DIR, { recursive: true });
 try { for (const f of readdirSync(HEARTBEATS_DIR)) if (f.includes(".tmp.")) try { unlinkSync(join(HEARTBEATS_DIR, f)); } catch {} } catch {}
 let hbSeq = 0;
 
+// On Windows a concurrent reader (the keeper reading the heartbeat) or an AV
+// scanner can hold the target file open WITHOUT share-delete for a few micro-
+// seconds, making rename-over-existing fail with EPERM/EACCES/EBUSY. At the
+// heartbeat write frequency (every tool call + poll loop ~2s) these transient
+// collisions are inevitable. The lock clears in milliseconds, so retry briefly.
+const RENAME_RETRY_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+
+/** Synchronous sleep without busy-spinning the CPU (rare error-path only). */
+function sleepSync(ms: number): void {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* SAB unavailable — skip */ }
+}
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /** Write epoch timestamp for a specific thread. Called on every MCP tool call.
- *  Uses atomic write (tmp + rename) to prevent keeper from reading a truncated file. */
+ *  Uses atomic write (tmp + rename) to prevent keeper from reading a truncated
+ *  file, with retry + direct-write fallback so a transient Windows lock can't
+ *  silently drop the heartbeat (a dropped heartbeat risks a false "stuck"). */
 export function writeThreadHeartbeat(threadId: number): void {
   const target = join(HEARTBEATS_DIR, `${threadId}`);
   const tmp = target + `.tmp.${process.pid}.${++hbSeq}`;
-  writeFile(tmp, String(Date.now()), "utf-8")
-    .then(() => rename(tmp, target))
-    .catch((err) => { log.debug(`[heartbeat] Async write failed for thread ${threadId}: ${err instanceof Error ? err.message : err}`); });
+  void commitHeartbeatAsync(threadId, tmp, target, String(Date.now()));
+}
+
+async function commitHeartbeatAsync(threadId: number, tmp: string, target: string, data: string): Promise<void> {
+  try {
+    await writeFile(tmp, data, "utf-8");
+    for (let attempt = 1; ; attempt++) {
+      try { await rename(tmp, target); return; }
+      catch (err: any) {
+        if (RENAME_RETRY_CODES.has(err?.code)) {
+          if (attempt < 5) { await delay(4 * attempt); continue; }
+          // Transient lock didn't clear in ~40ms. Do NOT truncate the live
+          // target (that would risk a torn read → false "stuck"). The previous
+          // heartbeat is only seconds old and still valid; the next beat (~2s)
+          // retries once the lock clears.
+          log.debug(`[heartbeat] Rename contended for thread ${threadId} (${attempt} attempts) — keeping prior heartbeat`);
+        } else {
+          log.debug(`[heartbeat] Async write failed for thread ${threadId}: ${err instanceof Error ? err.message : err}`);
+        }
+        try { await unlink(tmp); } catch {}
+        return;
+      }
+    }
+  } catch (err) {
+    log.debug(`[heartbeat] Async write failed for thread ${threadId}: ${err instanceof Error ? err.message : err}`);
+  }
 }
 
 /** Synchronous heartbeat write — guarantees the file is flushed before returning.
@@ -80,11 +119,27 @@ export function writeThreadHeartbeat(threadId: number): void {
 export function writeThreadHeartbeatSync(threadId: number): void {
   const target = join(HEARTBEATS_DIR, `${threadId}`);
   const tmp = target + `.tmp.${process.pid}.${++hbSeq}`;
+  const data = String(Date.now());
   try {
-    writeFileSync(tmp, String(Date.now()), "utf-8");
-    renameSync(tmp, target);
+    writeFileSync(tmp, data, "utf-8");
+    for (let attempt = 1; ; attempt++) {
+      try { renameSync(tmp, target); return; }
+      catch (err: any) {
+        if (RENAME_RETRY_CODES.has(err?.code)) {
+          if (attempt < 5) { sleepSync(4 * attempt); continue; }
+          // Transient lock persisted — keep the prior (seconds-old, valid)
+          // heartbeat rather than truncating the live target; the next beat
+          // retries. Never risks a torn read that could trip a false "stuck".
+          log.debug(`[heartbeat] Rename contended for thread ${threadId} (${attempt} attempts) — keeping prior heartbeat`);
+        } else {
+          log.warn(`[heartbeat] Write failed for thread ${threadId}: ${err instanceof Error ? err.message : err}`);
+        }
+        try { unlinkSync(tmp); } catch {}
+        return;
+      }
+    }
   } catch (err) {
-    console.error(`[heartbeat] Write FAILED for thread ${threadId}: ${err instanceof Error ? err.message : err}`);
+    log.warn(`[heartbeat] Write failed for thread ${threadId}: ${err instanceof Error ? err.message : err}`);
   }
 }
 
