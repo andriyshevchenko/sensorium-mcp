@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, copyFileSync, createWriteStream, existsSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDefaultThreadModel, getDefaultWorkerModel, type AgentType } from "../config.js";
@@ -257,15 +257,22 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
       ? (process.env.CLAUDE_WORKER_MODEL || getDefaultWorkerModel())
       : (process.env.CLAUDE_MODEL || getDefaultThreadModel());
     const sessionPrompt = `Start remote session with sensorium. Thread name = '${name}'. Use threadId=${threadId} when calling start_session.`;
-    const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "--model", claudeModel, "-p", sessionPrompt, "--output-format", "stream-json", "--include-partial-messages"], { stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
-    // Relay child stdout/stderr to log file via pipe to avoid OS-level full-buffering
-    // that occurs when stdout is a regular file handle (64KB blocks on Windows).
-    const logStream = createWriteStream(logFilePath, { flags: "a" });
-    logStream.on("error", (err) => log.warn(`[spawn] log stream error for thread ${threadId}: ${err}`));
-    child.stdout?.pipe(logStream, { end: false });
-    child.stderr?.pipe(logStream, { end: false });
-    child.on("close", () => logStream.end());
-    return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: effectiveConfigPath, agentLabel: "Claude", memorySourceThreadId, memoryTargetThreadId, threadType }, threadLifecycle);
+    // Send the child's stdout/stderr to a file descriptor the CHILD owns, not a
+    // pipe drained by this (ephemeral) server process. A pipe's only reader is
+    // this node process; when it dies on a self-update/restart the orphaned,
+    // detached child keeps writing, the ~64KB OS pipe buffer fills, and the next
+    // write() blocks the child's event loop forever — killing MCP polling, the
+    // API stream and any reconnect (the exact zombie we saw on thread 20869).
+    // A file fd is duplicated into the child at spawn and drained by the OS, so
+    // it survives our restarts. (64KB blocking is a PIPE phenomenon, not a file.)
+    const outFd = openSync(logFilePath, "a");
+    try {
+      const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "--model", claudeModel, "-p", sessionPrompt, "--output-format", "stream-json", "--include-partial-messages"], { stdio: ["ignore", outFd, outFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
+      return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: effectiveConfigPath, agentLabel: "Claude", memorySourceThreadId, memoryTargetThreadId, threadType }, threadLifecycle);
+    } finally {
+      // Parent no longer needs the fd — the child holds its own duplicated handle.
+      try { closeSync(outFd); } catch (err) { log.debug(`[spawn] closeSync log fd failed for thread ${threadId}: ${errorMessage(err)}`); }
+    }
   } catch (err) { return { error: `Failed to spawn Claude process: ${errorMessage(err)}` }; }
 }
 
@@ -280,13 +287,15 @@ export function spawnCopilotProcess(copilotPath: string, name: string, threadId:
   const logFilePath = join(THREAD_LOGS_DIR, `${safeName}_${threadId}_${new Date().toISOString().slice(0, 10)}.json`);
   try {
     const sessionPrompt = `Start remote session with sensorium. Thread name = '${name}'. Use threadId=${threadId} when calling start_session.`;
-    const child = spawn(copilotPath, ["-p", sessionPrompt, "--allow-all-tools", "--model", agentType === "copilot_codex" ? "gpt-5.3-codex" : (process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL), "--autopilot"], { stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(copilotPath), detached: true, windowsHide: false, env: sanitizeSpawnEnv({ COPILOT_HOME: copilotHomeDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}) }), cwd: workingDirectory || undefined });
-    const logStream = createWriteStream(logFilePath, { flags: "a" });
-    logStream.on("error", (err) => log.warn(`[spawn] log stream error for thread ${threadId}: ${err}`));
-    child.stdout?.pipe(logStream, { end: false });
-    child.stderr?.pipe(logStream, { end: false });
-    child.on("close", () => logStream.end());
-    return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: copilotHomeDir, agentLabel: "Copilot", memorySourceThreadId, threadType }, threadLifecycle);
+    // File fd owned by the child (see Claude spawn above) — survives this
+    // server's self-update/restart without deadlocking the orphaned child.
+    const outFd = openSync(logFilePath, "a");
+    try {
+      const child = spawn(copilotPath, ["-p", sessionPrompt, "--allow-all-tools", "--model", agentType === "copilot_codex" ? "gpt-5.3-codex" : (process.env.COPILOT_MODEL || DEFAULT_COPILOT_MODEL), "--autopilot"], { stdio: ["ignore", outFd, outFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(copilotPath), detached: true, windowsHide: false, env: sanitizeSpawnEnv({ COPILOT_HOME: copilotHomeDir, ...(memorySourceThreadId !== undefined ? { MEMORY_SOURCE_THREAD_ID: String(memorySourceThreadId) } : {}) }), cwd: workingDirectory || undefined });
+      return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: copilotHomeDir, agentLabel: "Copilot", memorySourceThreadId, threadType }, threadLifecycle);
+    } finally {
+      try { closeSync(outFd); } catch (err) { log.debug(`[spawn] closeSync log fd failed for thread ${threadId}: ${errorMessage(err)}`); }
+    }
   } catch (err) { return { error: `Failed to spawn Copilot process: ${errorMessage(err)}` }; }
 }
 
@@ -305,14 +314,17 @@ export function spawnCodexProcess(codexPath: string, name: string, threadId: num
   try {
     const nativeExe = resolveCodexExe();
     const nodeExeResult = !nativeExe && process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath) ? resolveCodexNodeExe() : null;
-    const child = nativeExe ? spawn(nativeExe, cliArgs, { stdio: ["pipe", "pipe", "pipe"], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : nodeExeResult ? spawn(nodeExeResult.nodeExe, [nodeExeResult.codexJs, ...cliArgs], { stdio: ["pipe", "pipe", "pipe"], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : spawn(codexPath, cliArgs, { stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
-    const logStream = createWriteStream(logFilePath, { flags: "a" });
-    logStream.on("error", (err) => log.warn(`[spawn] log stream error for thread ${threadId}: ${err}`));
-    child.stdout?.pipe(logStream, { end: false });
-    child.stderr?.pipe(logStream, { end: false });
-    child.on("close", () => logStream.end());
-    try { child.stdin?.write(prompt + "\n"); child.stdin?.end(); } catch {}
-    return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: CODEX_HOME_DIR, agentLabel: "Codex", memorySourceThreadId, threadType }, threadLifecycle);
+    // stdin stays a pipe (we write the prompt below); stdout/stderr go to a
+    // child-owned file fd so a server self-update/restart can't orphan the pipe
+    // and deadlock the detached child (see Claude spawn above for the full why).
+    const outFd = openSync(logFilePath, "a");
+    try {
+      const child = nativeExe ? spawn(nativeExe, cliArgs, { stdio: ["pipe", outFd, outFd], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : nodeExeResult ? spawn(nodeExeResult.nodeExe, [nodeExeResult.codexJs, ...cliArgs], { stdio: ["pipe", outFd, outFd], shell: false, detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined }) : spawn(codexPath, cliArgs, { stdio: ["pipe", outFd, outFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(codexPath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
+      try { child.stdin?.write(prompt + "\n"); child.stdin?.end(); } catch {}
+      return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: CODEX_HOME_DIR, agentLabel: "Codex", memorySourceThreadId, threadType }, threadLifecycle);
+    } finally {
+      try { closeSync(outFd); } catch (err) { log.debug(`[spawn] closeSync log fd failed for thread ${threadId}: ${errorMessage(err)}`); }
+    }
   } catch (err) { return { error: `Failed to spawn Codex process: ${errorMessage(err)}` }; }
 }
 
