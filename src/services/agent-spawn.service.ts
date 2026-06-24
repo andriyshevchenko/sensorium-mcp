@@ -267,7 +267,7 @@ export function spawnAgentProcess(claudePath: string, name: string, threadId: nu
     // it survives our restarts. (64KB blocking is a PIPE phenomenon, not a file.)
     const outFd = openSync(logFilePath, "a");
     try {
-      const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "--model", claudeModel, "-p", sessionPrompt, "--output-format", "stream-json", "--include-partial-messages"], { stdio: ["ignore", outFd, outFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
+      const child = spawn(claudePath, ["--verbose", "--dangerously-skip-permissions", "--mcp-config", effectiveConfigPath, "--model", claudeModel, "-p", sessionPrompt, "--output-format", "stream-json"], { stdio: ["ignore", outFd, outFd], shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(claudePath), detached: true, windowsHide: false, env: spawnEnv, cwd: workingDirectory || undefined });
       return registerSpawnedProcess({ child, threadId, name, logFilePath, configPath: effectiveConfigPath, agentLabel: "Claude", memorySourceThreadId, memoryTargetThreadId, threadType }, threadLifecycle);
     } finally {
       // Parent no longer needs the fd — the child holds its own duplicated handle.

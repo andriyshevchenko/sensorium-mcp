@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { log } from "../logger.js";
@@ -153,6 +153,31 @@ export function ensureDirs(): void {
   mkdirSync(LOGS_DIR, { recursive: true });
   mkdirSync(THREAD_LOGS_DIR, { recursive: true });
   mkdirSync(PIDS_DIR, { recursive: true });
+  pruneOldThreadLogs();
+}
+
+/** Thread transcripts (logs/threads/*.json) are append-only debug artifacts with
+ *  one file per thread per day. Nothing consumes them at runtime except the
+ *  segfault tail (which only ever reads the current day's file), so old ones can
+ *  be deleted freely. Without this they grow unbounded — they were the single
+ *  largest disk consumer (hundreds of MB across months). Bound retention to a
+ *  configurable window (default 14 days). Called from ensureDirs() (server
+ *  startup and each spawn); once retention is in effect the dir stays small so
+ *  the readdir/stat sweep is cheap. */
+export function pruneOldThreadLogs(): void {
+  const parsed = Number(process.env.THREAD_LOG_RETENTION_DAYS);
+  const days = Number.isFinite(parsed) && parsed > 0 ? parsed : 14;
+  const cutoff = Date.now() - days * 86_400_000;
+  let removed = 0;
+  try {
+    for (const file of readdirSync(THREAD_LOGS_DIR)) {
+      const full = join(THREAD_LOGS_DIR, file);
+      try {
+        if (statSync(full).mtimeMs < cutoff) { unlinkSync(full); removed++; }
+      } catch { /* file vanished or locked — skip */ }
+    }
+    if (removed > 0) log.info(`[process] Pruned ${removed} thread transcript(s) older than ${days}d`);
+  } catch (err) { log.debug(`[process] pruneOldThreadLogs failed: ${errorMessage(err)}`); }
 }
 
 /**
