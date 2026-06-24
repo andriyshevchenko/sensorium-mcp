@@ -1,4 +1,4 @@
-import type { Thread, Message } from './types'
+import type { Thread, Message } from './types.js'
 
 export const mockThreads: Thread[] = [
   {
