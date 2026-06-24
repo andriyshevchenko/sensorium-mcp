@@ -269,7 +269,9 @@ export async function checkForUpdate(): Promise<void> {
     if (remoteVersion === null) return;
 
     if (remoteVersion === currentVersion) {
-      log.debug(`[self-update] Up to date (v${currentVersion})`);
+      // Routine "up to date" result — not logged. It fired every check (~once a
+      // minute) and was pure noise; the meaningful events (update found/applied/
+      // failed) are logged on their own branches.
       return;
     }
 

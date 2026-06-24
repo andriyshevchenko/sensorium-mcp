@@ -222,8 +222,6 @@ export class KeeperService {
         entry.survivedKillCount = 0;
         if (entry.retryCount > 0) {
           log.info(`[keeper] Thread ${entry.threadId} is healthy again (was at retry ${entry.retryCount})`);
-        } else {
-          log.debug(`[keeper] Thread ${entry.threadId} is healthy`);
         }
         entry.retryCount = 0;
         entry.fastExitCount = 0;

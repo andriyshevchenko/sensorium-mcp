@@ -159,8 +159,10 @@ process.on("exit", () => {
 
 const TELEMETRY_FILE = join(LOG_DIR, "telemetry.log");
 let telemetryStream: WriteStream | null = null;
+let telemetrySize = 0;
 
 function openTelemetryStream(): void {
+  try { if (existsSync(TELEMETRY_FILE)) telemetrySize = statSync(TELEMETRY_FILE).size; } catch { telemetrySize = 0; }
   telemetryStream = createWriteStream(TELEMETRY_FILE, { flags: "a", encoding: "utf8" });
   telemetryStream.on("error", () => { /* non-fatal */ });
 }
@@ -229,8 +231,23 @@ export const log = {
   },
   /** Write to telemetry.log only (no stderr, no server.log). */
   telemetry(msg: string): void {
+    if (!telemetryStream) return;
+    const line = `[${new Date().toISOString()}] ${msg}\n`;
+    // Size-bound this otherwise-unbounded sink: at 5 MB roll to a single backup
+    // (telemetry.1.log) and start fresh, so it can never grow without limit.
+    if (telemetrySize >= MAX_LOG_SIZE) {
+      try {
+        const fd = (telemetryStream as unknown as { fd?: number }).fd;
+        telemetryStream.destroy();
+        if (typeof fd === "number") { try { closeSync(fd); } catch { /* already closed */ } }
+        renameSync(TELEMETRY_FILE, join(LOG_DIR, "telemetry.1.log"));
+      } catch { /* non-fatal */ }
+      telemetrySize = 0;
+      openTelemetryStream();
+    }
     if (telemetryStream) {
-      telemetryStream.write(`[${new Date().toISOString()}] ${msg}\n`);
+      telemetryStream.write(line);
+      telemetrySize += Buffer.byteLength(line, "utf8");
     }
   },
 };

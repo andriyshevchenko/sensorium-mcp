@@ -138,7 +138,13 @@ export class ThreadLifecycleService {
     });
 
     const updated = this.requireThread(db, threadId, "touchThread");
-    this.logger.info(`[thread-lifecycle] touchThread -> active (${threadId})`);
+    // Only log a REAL reactivation (e.g. exited/dormant -> active). When the
+    // thread is already Active this is a routine poll-loop heartbeat that fired
+    // ~once a minute per thread and produced ~50% of all server.log lines,
+    // drowning out real signal. A no-op transition carries no information.
+    if (current.status !== ThreadState.Active) {
+      this.logger.info(`[thread-lifecycle] touchThread -> active (${threadId})`);
+    }
     return updated;
   }
 
